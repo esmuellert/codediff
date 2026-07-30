@@ -16,11 +16,12 @@ painting.
 
 ### S1 — Skeleton, vendored C, FFI
 
-**Build.** Cargo workspace with all nine crates stubbed and **the complete dependency graph
-declared in `Cargo.toml` before any logic exists** — from this point, an architecture
-violation is a compile error. Copy `libvscode-diff` into `vendor/` with `UPSTREAM.lock`.
-`vsdiff-sys` compiles it with `cc`, OpenMP off. CI: fmt, `clippy -D warnings`, test,
-`lint-size`, `lint-arch`, `verify-c`.
+**Build.** Cargo workspace with all ten shipped crates stubbed (plus `xtask`; `fixtures`
+arrives at S5) and **the complete dependency graph declared in `Cargo.toml` before any logic
+exists** — from this point, an architecture violation is a compile error. Copy `libvscode-diff` into `vendor/` with `UPSTREAM.lock`.
+`vscode-diff-sys` compiles it with `cc`, OpenMP off. CI: fmt, `clippy -D warnings`, test,
+`lint-size`, `lint-arch`, `verify-c`, and a check that the seven crates other than
+`vscode-diff-sys` and `vscode-diff` carry `#![forbid(unsafe_code)]`.
 
 **Check.**
 ```
@@ -39,8 +40,9 @@ ldd target/release/codediff        # otool -L on macOS
 
 ### S2 — Safe diff wrapper, oracle parity
 
-**Build.** `vsdiff`: `compute()` returning owned Rust types. C memory converted eagerly and
-freed immediately — no C pointer escapes into application types. All `unsafe` confined here.
+**Build.** `vscode-diff`: `compute()` returning owned Rust types. C memory converted eagerly
+and freed immediately — no C pointer escapes into application types. All `unsafe` confined
+to `vscode-diff-sys` plus the conversion function.
 
 **Check.**
 ```
@@ -129,7 +131,7 @@ cd /tmp/cdfix && codediff debug status
 ### S6 — Blob reading and single-file diff
 
 **Build.** Long-lived `git cat-file --batch` child process for blob reads. Worktree reads.
-Wire `vcs` → `vsdiff` → `align` for one file.
+Wire `vcs` → `vscode-diff` → `align` for one file.
 
 **Check.**
 ```
@@ -156,7 +158,7 @@ git diff src/changed.rs                 # compare
 panes rendering an `AlignedDoc`, line numbers, gutter, line and inner-change highlighting,
 status line, theme table. Event loop *shape* installed (channel plus
 `update(state, event) -> Vec<Command>`) even with only Key, Resize and Tick. `SpanSet`
-compositor with priorities. `Highlighter` trait returning empty spans.
+compositor with priorities. `syntax` crate with the `Syntax` trait returning empty spans.
 
 **Check.**
 ```
@@ -223,16 +225,18 @@ through tab expansion.
 
 ### S11 — Syntax highlighting
 
-**Build.** `Highlighter` implementation behind the trait. Composition with diff spans via
-`SpanSet` priorities. Filetype detection.
+**Build.** `syntect` (with `two-face`) behind the `Syntax` trait in `crates/syntax`. Composition with diff
+and inner-change spans via the `SpanSet` priorities built at S7. Filetype detection.
 
-**Check.** Open `.rs`, `.ts`, `.py`, `.md` fixtures. Toggle syntax on and off with a key.
+**Check.** Open the twelve S11 fixtures — Rust, TypeScript, JavaScript, Python, Go, Java, C,
+C++, JSON, YAML, Markdown, Bash. Toggle syntax on and off with a key to A/B compare.
 
 **Pass when.**
-- [ ] keywords, strings and comments are coloured correctly
+- [ ] keywords, strings and comments are coloured correctly in all twelve
 - [ ] **diff backgrounds remain visible underneath syntax foregrounds**
 - [ ] a line that is both changed and contains a string shows both correctly
 - [ ] character-level inner-change highlighting still wins where they overlap
+- [ ] an unrecognised file type renders as plain text rather than failing
 - [ ] no measurable scroll lag on a 5000-line file
 
 ---
@@ -297,20 +301,29 @@ generations with stale-drop. Loading states. `--debug-events`.
 
 ### S15 — File watcher and targeted refresh
 
-**Build.** `notify` plus debouncer, worktree watching filtered through `.gitignore`,
-selective `.git` watching, event classification, targeted refresh, position restoration by
-`(path, HunkId)`, degradation to polling on inotify exhaustion.
+**Build.** `notify` plus `notify-debouncer-full` (~50 ms debounce). Watch non-ignored
+worktree **directories** recursively and `.git/` non-recursively. Classify events, filter
+lock files **by destination path**, suppress refresh while our own git subprocess is in
+flight, targeted refresh, position restoration by `(path, HunkId)`, `Flag::Rescan` handling,
+`PollWatcher` fallback, opt-out config. See
+[D16](05-decisions.md#d16--watcher-design-informed-by-upstream-production-failures).
 
-**Check.** With codediff open on `src/changed.rs`, edit that file in another terminal.
+**Check.** With codediff open, in another terminal: edit the open file; `touch newfile.txt`;
+`git commit`. Then leave it completely idle for 60 s with a CPU probe attached.
 
 **Pass when.**
-- [ ] the view updates within **~200 ms**
-- [ ] **the cursor stays on the same hunk**
-- [ ] no flicker and no scroll jump
+- [ ] a working-tree edit surfaces within **100 ms**
+- [ ] `touch newfile.txt` — a **new untracked file** — surfaces within **100 ms**
+      (this is the regression upstream shipped in #480; it must not recur)
+- [ ] an external `git commit` surfaces within **100 ms**
+- [ ] **the cursor stays on the same hunk**; no flicker and no scroll jump
 - [ ] `--debug-events` proves **exactly one file was re-diffed**, not the whole tree
+- [ ] idle CPU **≤ 5 ms per 10 s**
+- [ ] **zero git subprocesses fired while idle** over 60 s — verified with a process counter
+- [ ] no self-triggering loop: codediff's own `git status` never wakes its own watcher
 - [ ] creating a file inside `target/` or `node_modules/` triggers **nothing**
-- [ ] a repository with a very large tree does not exhaust inotify watches, or degrades
-      cleanly with a warning if it does
+- [ ] watch count stays proportional to directory count, not file count
+- [ ] killing the process leaves **no orphaned threads**
 
 ---
 
@@ -370,5 +383,6 @@ Settle before the milestone noted.
 | # | question | needed by | recommendation |
 |---|---|---|---|
 | 1 | three-state explorer (Changes / Staged / Merge) or simple worktree-vs-HEAD? | S5 | **three-state** — matches the plugin and is what agent review needs |
-| 2 | syntax engine: `syntect` (via `two-face`) or `tree-sitter`? | S11 | **syntect** for MVP, behind the `Highlighter` trait so tree-sitter can replace it |
 | 3 | include inline (single-pane) mode in MVP? | S7 | **no** — it is a projection over the same model, roughly two days to add later |
+
+*Question 2 (syntax engine) is settled — see [D11](05-decisions.md#d11--syntax-highlighting-is-in-the-mvp-via-syntect).*

@@ -80,6 +80,18 @@ a copy of libgomp beside it — which is why `installer.lua` contains ~130 lines
 probing, `$ORIGIN` RPATH and Nix workarounds. Compiling from source with OpenMP disabled
 removes that entire problem.
 
+**This failure mode is not hypothetical.** Two upstream user reports:
+
+- **#48** — `GLIBC_2.38 not found (required by /lib/x86_64-linux-gnu/libgomp.so.1)`;
+  installation fails outright on a snap-provided glibc.
+- **#58** — `libgomp.so.1: cannot open shared object file`; a Nix-installed Neovim cannot
+  see the system libgomp, requiring the user to patch `LD_LIBRARY_PATH` through Home
+  Manager.
+
+Upstream's own issue #482 draws the same conclusion: *"the libgomp saga (#48, #58) taught us
+that dynamically linked C++ runtime deps are the failure mode. Static linking closes that
+entire class."*
+
 The library is 12 C files, 7,538 lines, with no external dependencies (utf8proc is
 vendored). It builds to a 446 KB static archive in **2.1 seconds**. There is no build cost
 worth avoiding.
@@ -111,14 +123,14 @@ you do not control. This C is first-party, shared between two first-party consum
 **Superseded when.** The C stabilises or a third consumer appears. Then extract
 `libvscode-diff` into its own repository and submodule it from both projects, so that
 codediff.nvim and codediff become **peer consumers of one upstream** rather than one being a
-satellite of the other. Publishing `vsdiff-sys` to crates.io is a later, optional step, and
-is not a prerequisite for anything.
+satellite of the other. Publishing `vscode-diff-sys` to crates.io is a later, optional step,
+and is not a prerequisite for anything.
 
 ---
 
 ## D4 — Crate boundaries as the architectural firewall
 
-**Decision.** Split the project into nine crates with a strictly acyclic dependency graph
+**Decision.** Split the project into ten crates with a strictly acyclic dependency graph
 declared in `Cargo.toml` **before any logic is written**.
 
 **Rationale.** Rust modules within a crate may reference each other freely, so module
@@ -139,7 +151,7 @@ that produced a 674-line `explorer/render.lua`.
 a layer.
 
 ```
-vsdiff-sys  vsdiff  metrics  align  explorer  vcs  runtime  display  codediff
+vscode-diff-sys  vscode-diff  metrics  syntax  align  explorer  vcs  runtime  display  codediff
 ```
 
 **Rationale.** `core`, `common`, `utils` and `model` are banned not on aesthetic grounds but
@@ -236,21 +248,70 @@ Blob reads go through a long-lived `git cat-file --batch` process rather than on
 
 ---
 
-## D11 — Syntax highlighting is in the MVP
+## D11 — Syntax highlighting is in the MVP, via `syntect`
 
-**Decision.** Included, at S11, using `syntect` (via `two-face`) behind a `Highlighter`
-trait.
+**Decision.** Included, at S11, using `syntect` (with `two-face` for bat's extended syntax
+set) behind the `Syntax` trait in `crates/syntax` (see [D17](#d17--syntax-highlighting-is-its-own-crate-with-an-engine-free-interface)).
 
-**Rationale.** An earlier draft deferred syntax highlighting entirely, on the grounds that it
-is the largest single net-new subsystem and contributes nothing to proving the core thesis.
-That reasoning still holds for *ordering* but not for *scope*: the MVP is defined as one
-narrow scenario experienced completely, and a diff reviewer without syntax highlighting is
-not complete.
+**Why it is in scope at all.** An earlier draft deferred syntax highlighting entirely, on
+the grounds that it is the largest single net-new subsystem and contributes nothing to
+proving the core thesis. That reasoning still holds for *ordering* but not for *scope*: the
+MVP is defined as one narrow scenario experienced completely, and a diff reviewer without
+syntax highlighting is not complete.
 
-`syntect` over `tree-sitter` for MVP because it bundles cleanly into a single static binary
-with no grammar curation. The trait allows tree-sitter to replace it without touching the
-renderer. The `SpanSet` compositor with priorities is built at S7, before any syntax spans
-exist, so that composition is never retrofitted.
+### Why `syntect` rather than tree-sitter
+
+**The usual objection to tree-sitter no longer applies.** Grammar crates historically pinned
+incompatible `tree-sitter` cores. Verified as of 2026-07, `tree-sitter-rust` (v0.24),
+`tree-sitter-typescript` (v0.23), `tree-sitter-python` (v0.25) and `tree-sitter-go` all
+depend only on the `tree-sitter-language ^0.1` shim, so despite the version spread they
+coexist cleanly. This decision does not rest on that argument.
+
+The reasons that do hold:
+
+1. **We do not need tree-sitter's headline feature.** Incremental parsing exists so an
+   editor can reparse on every keystroke. We highlight static snapshots — a committed blob
+   and a worktree file. Nothing is being typed.
+2. **~200 languages immediately, with no per-language work.** With tree-sitter each language
+   needs a crate, a `highlights.scm`, and a mapping from *its own* capture names to our
+   theme. Capture names vary between grammars; that mapping is the real tax.
+3. **Binary size.** syntect uses one serialized syntax blob of a few megabytes. Bundled
+   tree-sitter grammars are large generated C parsers — `tree-sitter-typescript` alone is
+   roughly 10 MB — plus the compile time that implies.
+4. **Precedent from the closest comparable tools.** `delta` — Rust, terminal, git diff
+   viewer, the nearest analog that exists — uses `syntect 5.0`. `bat` uses syntect with a
+   prebuilt `syntaxes.bin`. Helix and Zed use tree-sitter, but both are editors, and Helix
+   ships grammars as **runtime-fetched shared libraries**, which is precisely the
+   single-static-binary property we are protecting.
+
+### What tree-sitter would buy, and the trigger to switch
+
+Tree-sitter is more accurate on nested and injected languages (JavaScript in HTML, SQL in
+strings) and recovers better from files that do not parse. Neither is decisive.
+
+The decisive one would be **structure**: answering *"which function is this hunk in?"* and
+rendering hunk context as `impl Config > fn merge`. For reviewing a sixty-file agent diff
+that is genuinely valuable, and syntect cannot do it at all — there is no parse tree.
+
+**The trigger is therefore: when we want structural features, not better colours.** The
+`Syntax` trait makes the swap possible per-language rather than wholesale.
+
+### Composition
+
+The `SpanSet` compositor with priorities is built at S7, before any syntax spans exist, so
+that compositing syntax foregrounds with diff and inner-change backgrounds is never
+retrofitted.
+
+### Languages covered by S11 acceptance
+
+syntect supplies roughly 200 languages with no work, so the question is what to *test*. S11
+fixtures cover twelve, chosen as the realistic distribution of agent-edited code plus the
+configuration and markup formats that exercise composition edge cases:
+
+```
+Rust · TypeScript · JavaScript · Python · Go · Java
+C · C++ · JSON · YAML · Markdown · Bash
+```
 
 ---
 
@@ -289,12 +350,287 @@ strongest argument for the `VcsBackend` trait existing from S5 rather than being
 
 ---
 
+## D14 — Split `vscode-diff-sys` and `vscode-diff`, following the `-sys` convention
+
+**Decision.** Two crates: `vscode-diff-sys` holding the build script and the raw FFI, and
+`vscode-diff` holding the safe API. This is the standard Rust `-sys` split.
+
+*An earlier draft of this decision argued for merging them into one crate. That is
+superseded — the convention wins, principally on unsafe containment.*
+
+**What `-sys` is.** A documented Cargo convention: a `foo-sys` crate holds only raw
+`extern "C"` declarations, `#[repr(C)]` types and the build script — everything unsafe and
+1:1 with the C API — with a safe crate `foo` layered on top providing ownership, `Result`
+and `Drop`. It declares `links = "foo"` in its manifest, and Cargo enforces that **only one
+package in a dependency graph may link a given native library**, which prevents
+duplicate-symbol failures when two crates independently build the same native code.
+
+**Why we follow it.**
+
+1. **Unsafe containment is absolute rather than conventional.** With the split, the seven
+   crates that touch neither the C nor its raw pointers carry `#![forbid(unsafe_code)]` — a
+   hard compiler guarantee that cannot be overridden from within the crate. In a merged
+   crate the best available anywhere is `#![deny]` plus a module-level `#[allow]`, which any
+   future edit can quietly widen.
+2. **The unsafe surface becomes countable and auditable.** One crate, ~150 lines, that a
+   reviewer can read in full. "How much unsafe does codediff contain?" has an exact answer.
+3. **It is what every Rust developer expects.** `libgit2-sys`, `libz-sys`, `curl-sys`,
+   `zstd-sys`, `openssl-src` all follow it. Deviating costs explanation forever.
+4. **Different rebuild triggers.** `vscode-diff-sys` recompiles when the C changes;
+   `vscode-diff` when the Rust changes. Splitting keeps incremental builds sharp.
+5. **Publishing stays open** without restructuring, and with it the `links` guarantee.
+
+**Layout.**
+
+```
+crates/vscode-diff-sys/
+  Cargo.toml      links = "vscode_diff"
+  build.rs        cc compiles vendor/libvscode-diff, OpenMP off
+  src/lib.rs      #[repr(C)] structs + extern "C" declarations, 1:1 with the C API
+
+crates/vscode-diff/
+  src/lib.rs      #![deny(unsafe_code)] — public safe API
+  src/convert.rs  #[allow(unsafe_code)] — ~40 lines; C → owned Rust, frees immediately
+  src/types.rs    Diff, LineRange, CharRange, Move
+  src/options.rs  DiffOptions builder
+```
+
+Naming a binding after the library it binds is itself the convention (`zstd`, `curl`,
+`git2`).
+
+**Note.** `convert.rs` dereferences the raw pointers returned by `vscode-diff-sys`, so a
+narrow `#[allow(unsafe_code)]` is still required there. The conversion is eager: C memory is
+walked once into owned `Vec`s and freed immediately, so **no C pointer ever escapes into
+application types**. That is what keeps the unsafe surface at roughly 40 lines rather than
+spreading a lifetime obligation across the whole program.
+
+---
+
+## D15 — File watcher: `notify`, not Watchman
+
+**Decision.** `notify` + `notify-debouncer-full` as the default and only implementation for
+MVP, behind a `WatcherBackend` trait. Watchman is an optional backend to be built only on
+demand, auto-detected from `PATH`.
+
+**Why Watchman was rejected as primary.**
+
+| crate | version | last updated | recent 90d downloads |
+|---|---|---|---|
+| `watchman_client` | 0.9.0 | 2024-06-18 | 425,754 |
+| `notify` | 8.2.0 | 2026-05-02 | 34,564,519 |
+
+1. **It is a daemon the user must install.** That contradicts the core value proposition of
+   a single static binary that works over SSH with nothing else present.
+2. **The Rust client is over two years stale**, against an actively maintained `notify` with
+   81× the usage.
+3. **It is tokio-based**, conflicting with [D8](#d8--no-async-runtime).
+4. **The scale problem it solves has largely evaporated on Linux** — the modern
+   `max_user_watches` default is 524,288, not the 8,192 that produced the exhaustion
+   folklore.
+5. It is heavy machinery — a per-user daemon with its own state directory, lifecycle and
+   version-skew modes — for watching one repository.
+
+Watchman genuinely wins on 1M+ file monorepos and with its `since <clock>` queries, but
+anyone on such a repository already has it installed and running, which is exactly what
+auto-detection exploits.
+
+**Note.** codediff.nvim independently reached the same conclusion for a different reason.
+Upstream issue #482 evaluates the same landscape and rejects the Rust `notify` crate solely
+because it *"adds Rust toolchain to the release pipeline (currently just C++)"* — a
+packaging constraint of being a Lua/C plugin, not a technical judgement. Their analysis
+otherwise endorses this class of solution.
+
+---
+
+## D16 — Watcher design, informed by upstream production failures
+
+Upstream issue #482 and PR #480 document three successive watcher designs in production,
+with measurements. Every lesson below is earned, not theorised, and is adopted directly.
+
+### The three states upstream went through
+
+| design | measured outcome |
+|---|---|
+| watch `.git/` only | **self-triggering loop.** Their own `git status` momentarily writes `.git/index.lock`, which wakes the watcher, which runs `git status`. ~20 refreshes / 10 s forever, **~120 git subprocesses/min, ~290 ms nvim CPU / 10 s while completely idle** |
+| add a `*.lock` event filter (#480) | loop fixed — 0 idle refreshes, ~6 ms CPU / 10 s. But it **silently removed detection of working-tree changes**, because the loop had been *accidentally functioning as a poller*, and the filter also suppressed the `index.lock → index` rename that carries the real signal |
+| explicit 500 ms poll (current) | correct behaviour restored, but the subprocess and CPU cost returns |
+
+### Decisions adopted from this
+
+**1. Watch both the worktree and `.git/`.** Watching only `.git/` cannot see
+`touch new_file.txt`. This is exactly the #480 regression. VSCode does both — a `.git/`
+watcher plus a workspace-wide recursive watcher — and so will we.
+
+**2. Filter lock files by *destination*, not by path substring.** A `*.lock` path means only
+that a git operation is in flight; the state change arrives afterwards. But git writes
+`index.lock` and then **renames it onto `index`** — that rename *is* the signal. A naive
+"path contains `.lock` → ignore" rule drops it, which is precisely what broke #480. With
+`notify-debouncer-full` a rename arrives as `RenameMode::Both` with `from = index.lock`,
+`to = index`: **filter on the destination path.**
+
+**3. Prevent self-triggering structurally, not heuristically.** We know when we spawn a git
+subprocess. Suppress watcher-driven refresh for its duration rather than trying to recognise
+its side effects after the fact. This closes the feedback loop by construction.
+
+**4. Watch directories, not files.** inotify watches are per-directory and cover every file
+directly inside. Measured: codediff.nvim is 58 non-ignored directories against 332 tracked
+files; a 165,000-file tree is ~28,000 directories, against a 524,288 watch limit. Recursive
+directory watching is therefore cheap *and* gives instant new-file detection.
+
+**5. Watch `.git/` non-recursively.** Recursive would place watches across `.git/objects/`'s
+256 fan-out directories and produce an event storm on every git operation. Note the notify
+caveat that a directory deletion is only observed by watching its *parent*, so to see
+`.git/rebase-merge/` disappear we watch `.git/` itself.
+
+**6. No routine polling.** Upstream's acceptance criterion is **zero git subprocesses while
+idle**, which an interval poll cannot satisfy. This supersedes the safety-net poll proposed
+in an earlier draft of this plan. Instead:
+   - handle `EventKind::Other` with `Flag::Rescan` (inotify queue overflow) as a full status
+     re-read
+   - fall back to `PollWatcher` only when the native watcher fails to initialise or reports
+     too many watches — matching watchexec's native-or-poll model
+   - offer an explicit opt-out for battery-sensitive users
+
+**7. Debounce ~50 ms** so `git checkout`-scale bursts collapse into one refresh, while
+staying inside the 100 ms latency target.
+
+**8. Exclusions.** Upstream chose glob-based `watcher_exclude`, following VSCode's
+`files.watcherExclude`. We can do better cheaply: respect `.gitignore` via the `ignore`
+crate *and* accept globs.
+
+### Acceptance criteria — adopted verbatim from #482
+
+These are upstream's, and they are measurable:
+
+- working-tree edit (`touch`, `echo x >> file`) surfaces within **100 ms**
+- external `git commit` surfaces within **100 ms**
+- idle CPU **≤ 5 ms per 10 s**
+- **zero git subprocesses fired while idle**
+- graceful fallback to polling on watcher failure or watch-limit exhaustion
+- opt-out configuration
+- reliable cleanup on exit; no orphaned threads
+
+### What this costs us versus upstream
+
+Upstream's plan (issue #482, labelled `Size/XL`, ~1 week focused) is: vendor the `efsw` C++
+library, write a ~200 LOC C shim, write a ~150 LOC Lua FFI binding, extend the release
+matrix to build and ship a **second** native binary for six platforms, extend
+`installer.lua` to fetch it, statically link `libstdc++`/`libgcc`, and build on
+manylinux2014 for glibc compatibility — then inherit efsw's ~50 open issues.
+
+Ours is two lines of `Cargo.toml`.
+
+This is one of the clearest single wins of the rewrite, and it exists only because the whole
+project is already Rust — the exact reason upstream could not take this path.
+
+---
+
+## D17 — Syntax highlighting is its own crate, with an engine-free interface
+
+**Decision.** Highlighting lives in `crates/syntax/`, not as a module inside `display`, and
+its public interface never names a syntax engine.
+
+**Why not a module in `display`.**
+
+1. It is not a rendering concern. Highlighting is text *analysis* — text plus language
+   produces spans; rendering *consumes* spans. Conflating them is the same category error
+   that produced a 674-line `explorer/render.lua`.
+2. `display` would carry a heavy dependency (syntect and two-face, or tree-sitter and N
+   grammars) that nothing else in the workspace needs.
+3. Other consumers are coming — agent export and `--dump-frames` want syntactic information
+   without rendering anything.
+
+It also meets the extraction rule stated in [D4](#d4--crate-boundaries-as-the-architectural-firewall):
+extract when a module acquires a distinct dependency set. This one does, decisively.
+
+### The interface must sit above the engines' computation models
+
+The obvious trait leaks the engine and is unswappable:
+
+```rust
+// BAD
+fn highlight_line(&self, line: &str, state: &mut syntect::ParseState) -> Vec<(Style, &str)>;
+```
+
+syntect and tree-sitter compute differently in kind:
+
+| | syntect | tree-sitter |
+|---|---|---|
+| model | stateful, line by line, carrying a parse stack | parse the whole file to a tree, then query |
+| access | must process lines in order | random access to any node |
+
+A line-oriented interface bakes in syntect's model, and tree-sitter cannot implement it. So
+the interface is whole-file-in, spans-out:
+
+```rust
+pub trait Syntax: Send + Sync {
+    fn spans(&self, text: &FileText, lang: Language) -> SpanSet;
+}
+```
+
+### The crux: a normalized `Class`, not engine scopes
+
+This matters more than the crate boundary. syntect emits Sublime scopes
+(`keyword.control.rust`); tree-sitter emits capture names (`@keyword.control`). Passing
+either through raw couples the **theme** to the engine, so swapping engines would break
+every colour in the application.
+
+`syntax` therefore owns a normalized vocabulary of roughly sixteen classes:
+
+```rust
+pub enum Class {
+    Keyword, Type, Function, Variable, Constant,
+    String, Number, Comment, Operator, Punctuation,
+    Attribute, Namespace, Property, Tag, Escape, Error,
+}
+
+pub struct Span { pub line: LineIdx, pub range: Range<ByteOff>, pub class: Class }
+```
+
+Both engines map *into* it. `display`'s theme maps `Class → Style`. The split is clean:
+**`syntax` says what something is, `display` says how it looks.**
+
+### The three conditions that make the swap free
+
+Replacing syntect with tree-sitter touches only files inside `crates/syntax/` — if and only
+if:
+
+1. the trait is whole-file-in / spans-out, hiding stateful versus tree-based computation
+2. `Class` is normalized; no engine scope string ever escapes the crate
+3. no engine type appears in any public signature
+
+Condition 3 is mechanically checkable: `cargo xtask lint-arch` fails if `syntect::` or
+`tree_sitter::` appears outside `crates/syntax/src/engine/`.
+
+```
+crates/syntax/
+  lib.rs          Syntax trait, SpanSet, Class — public, engine-free
+  language.rs     detection by extension, shebang, content
+  engine/
+    mod.rs
+    syntect.rs    the ONLY file permitted to import syntect
+  map.rs          engine scopes → Class
+```
+
+### Caching lives in `runtime`, not in `syntax`
+
+syntect on a 5,000-line file takes 50–200 ms, far too slow for a frame. So `syntax` stays
+pure and stateless — its syntax set is `include_bytes!`, not IO, so it joins the pure tier —
+while `runtime` owns a cache keyed by `(path, content_hash)` and runs highlighting as a
+Loop B effect.
+
+The first frame therefore paints unhighlighted and repaints when spans arrive, which is how
+editors behave. All caching stays in one place, and highlighting stays off the render path.
+
+---
+
 ## Open questions
 
 | # | question | needed by |
 |---|---|---|
 | 1 | three-state explorer or simple worktree-vs-HEAD? *(recommend three-state)* | S5 |
-| 2 | `syntect` or `tree-sitter`? *(recommend syntect for MVP)* | S11 |
 | 3 | inline mode in MVP? *(recommend no — a projection, ~2 days later)* | S7 |
 | 4 | binary / symlink / mode-change / submodule presentation | S6 |
 | 5 | licensing and `ATTRIBUTION.md` — the C is VSCode-derived and vendors utf8proc | S1 |
+
+*Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).*

@@ -15,7 +15,34 @@ cargo xtask fixture-repo /tmp/cdfix
 Creates a deterministic git repository in a known messy state, and **prints its own
 manifest** of exactly what it created.
 
-Contents:
+### Who uses it
+
+1. **A human running an acceptance checklist.** S5, S6, S12, S13, S15 and S16 all begin
+   `cd /tmp/cdfix`. It is the ground truth for "did the explorer list the right files, in
+   the right groups, with the right status letters?"
+2. **`crates/vcs/tests/`** — the porcelain-v2 parser can only be tested against real
+   repositories containing real renames, conflicts, CRLF and binary files.
+3. **`tests/e2e/`** — replay scripts run the real binary against it and compare frames.
+4. **CI** — runs 2 and 3 on every push.
+5. **Regression capture** — when a bug appears, its triggering case is added to the
+   fixture and becomes permanent. Over time the fixture grows into an inventory of
+   everything that has ever broken.
+
+### Where it lives
+
+The generator is a crate of its own, `crates/fixtures/`, with **no workspace dependencies**.
+`cargo xtask fixture-repo` is a thin CLI wrapper over it for human use, while `vcs` and
+`tests/e2e/` take it as a `[dev-dependencies]` entry.
+
+It must not live inside `xtask`: `xtask` depends on the workspace crates, so `vcs`'s tests
+depending on `xtask` would form a cycle. Cargo tolerates dev-dependency cycles, but relying
+on that is unnecessary cleverness for no gain.
+
+Because `fixtures` emits a plain manifest rather than sharing `vcs`'s types, drift
+protection comes from assertion rather than from a shared type: a test compares parsed
+`StatusEntry` values against the manifest, so any divergence still fails the build.
+
+### Contents
 
 | category | fixture |
 |---|---|
@@ -44,9 +71,70 @@ automated assertions, so the manual and automated checks cannot disagree.
 The fixture repository is regenerated from scratch on every invocation. It is never
 committed.
 
-## 2. Debug subcommands
+## 2. Why `xtask` rather than shell scripts
 
-Each exposes one layer's internals as plain text.
+Rust has no built-in task runner — `cargo` knows only `build`, `test`, `run`, `bench` and
+`doc`. There is no `cargo run-script`. The community convention is `cargo xtask`: a normal
+binary crate in the workspace plus an alias in `.cargo/config.toml`.
+
+```toml
+[alias]
+xtask = "run --package xtask --"
+```
+
+`cargo xtask verify-c` is then literally `cargo run -p xtask -- verify-c`. It is not a
+framework and nothing needs installing.
+
+**xtask is not a build system.** It never compiles anything — `cargo build` and `build.rs`
+do that, including the vendored C. It holds only the chores cargo has no opinion about.
+
+For comparison, codediff.nvim's `Makefile` (duplicated in full as `Makefile.win`) has
+thirteen targets, of which nine are free here:
+
+| plugin | ours |
+|---|---|
+| `make build` | `cargo build` — `build.rs` compiles the C |
+| `make test` / `test-c` / `test-lua` | `cargo test` |
+| `make lint` | `cargo clippy` |
+| `make format` | `cargo fmt` |
+| `make clean` | `cargo clean` |
+| `make bump-*` | `cargo release` |
+| `make help` | `cargo xtask` with no arguments |
+| `scripts/build-vscode-diff.sh` | `build.rs` |
+| `scripts/test_diff_comparison.sh` | `cargo xtask verify-oracle` |
+
+Both makefiles collapse to zero files, because cargo is already cross-platform.
+
+Three of our tasks — `lint-arch`, `lint-size`, `verify-c` — have **no plugin equivalent**,
+because Make and Lua had no way to express them. That is the real point:
+
+> **xtask is where the rules in this plan stop being prose and become build failures.**
+
+Cargo enforces exactly one architectural rule for free (acyclic crate dependencies).
+Everything else — `display` must not reach `vcs`, pure crates must declare no IO, files stay
+under the size cap, the vendored C must match its pinned tag — is project-specific, and
+therefore has to be encoded somewhere. That somewhere is `xtask`.
+
+Writing it in Rust rather than shell also means it is cross-platform without duplication,
+type-checked, testable, and able to `use` the workspace crates. `lint-arch` in particular
+must parse every `Cargo.toml` and walk the dependency graph: roughly 200 lines of brittle
+`jq`/`awk` in shell, or 40 lines of Rust using `toml` and `cargo_metadata`.
+
+## 3. Debug subcommands
+
+Each exposes one layer's internals as plain text. These are **shipped and permanent**, not
+scaffolding, and they do three jobs:
+
+1. **Make headless milestones human-checkable.** S1–S6 have no UI; `debug align` is how a
+   human sees whether the model is correct.
+2. **Permanent debugging.** A bug report becomes "send me `codediff debug align` output".
+3. **They keep the layering honest.** Every pure crate must be independently drivable from
+   outside. If `debug align` cannot be written without pulling in git, the layering is
+   already broken — so these commands are a continuous test of the architecture, not merely
+   an aid.
+
+They also close a loop: **`debug align`'s output format is the golden snapshot format.** The
+human-readable artifact and the regression fixture are the same file.
 
 | command | shows | first used by |
 |---|---|---|
@@ -59,10 +147,7 @@ Each exposes one layer's internals as plain text.
 | `codediff debug diff-file <path>` | aligned diff of one file, worktree vs HEAD | S6 |
 | `codediff debug events` | the event log of a session, replayable | S14 |
 
-These are permanent, not scaffolding. They are how the project is debugged for the rest of
-its life, and they keep the pure crates honest by making them independently drivable.
-
-## 3. xtask verification commands
+## 4. xtask commands
 
 | command | asserts |
 |---|---|
@@ -70,29 +155,94 @@ its life, and they keep the pure crates honest by making them independently driv
 | `cargo xtask sync-c --tag vX.Y.Z` | refreshes the vendored C, rewrites `vendor/UPSTREAM.lock` |
 | `cargo xtask verify-oracle` | our diff output matches upstream `diff_tool` on every test pair |
 | `cargo xtask fixture-repo <dir>` | builds the fixture repository, prints the manifest |
-| `cargo xtask lint-size` | no file exceeds the hard cap |
-| `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies |
+| `cargo xtask lint-size` | no file exceeds the hard cap, counting non-test lines only |
+| `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies; `forbid(unsafe_code)` present where required |
 | `cargo xtask health` | lines and `pub` counts per crate, for trend tracking |
 
-## 4. Automated test layers
+## 5. Automated test layers
 
-| layer | tool | scope |
+Three layers, each with an admission criterion that can be answered yes or no:
+
+| layer | criterion | lives in |
 |---|---|---|
-| unit | `cargo test` | per-crate logic |
-| property | `proptest` | `metrics` conversions, `align` invariants |
-| golden | `insta` | `debug align` output for curated fixture pairs |
-| oracle | `xtask verify-oracle` | parity with the upstream C tool |
-| integration | `cargo test -p vcs` | git operations against generated fixture repos |
-| **screen snapshot** | `insta` + ratatui `TestBackend` | the rendered cell grid, as text |
-| event-level | `cargo test -p runtime` | feed `Vec<Event>`, assert state and emitted commands |
+| **unit** | drives one function or type; may see private items | `#[cfg(test)] mod tests` in the same file |
+| **integration** | drives **one crate's public API** | `crates/<name>/tests/` |
+| **e2e** | drives **the real binary**, against a real repository | `tests/e2e/` |
 
-### Screen snapshots are the bridge between automated and human review
+"Integration test" is Cargo's own term for anything under `tests/`, so this taxonomy matches
+the toolchain rather than competing with it.
 
-`TestBackend` renders to an in-memory cell grid. Serialised as text and committed, every
-screen state becomes a file. A UI change then shows up as a **text diff in the pull
-request** — which is simultaneously a regression test and a human-reviewable artifact.
-This is the thing a Neovim plugin cannot do, and it is why the automated suite here can
-carry far more weight than the plugin's.
+| test | layer | tool | speed | proves |
+|---|---|---|---|---|
+| per-function logic | unit | `cargo test` | µs | one function or type |
+| `metrics` conversions | unit + property | `proptest` | ms | invariants over generated input |
+| `align` golden output | integration | `insta` | ms | `debug align` output unchanged |
+| `display` screens | integration | `insta` + `TestBackend` | ms | rendered cell grid unchanged |
+| `vcs` against git | integration | `cargo test -p vcs` | ~100 ms | real git behaviour, via fixture repos |
+| **`runtime` state machine** | integration | `cargo test -p runtime` | ms | `Vec<Event>` → `AppState` + emitted `Command`s |
+| replay scripts | e2e | `cargo test --test e2e` | seconds | the real binary, fully wired |
+| pty smoke | e2e | `cargo test --test pty` | seconds | raw mode, alt-screen, terminal restore |
+| oracle | — | `cargo xtask verify-oracle` | seconds | parity with the upstream C tool |
+| acceptance | — | `docs/acceptance/S##.md` | minutes | a human ticked every box |
+
+### State-machine tests are the load-bearing layer
+
+`crates/runtime/tests/` drives `runtime::update` with synthesized events and asserts on the
+resulting `AppState` and the `Command`s emitted — no terminal, no repository, no threads,
+no clock. Fast, fully deterministic, no flake.
+
+**This is where the bulk of behavioural coverage belongs**, and it is only possible because
+`update` is pure (invariant 2). It is an integration test of one crate, not an end-to-end
+test: both ends of the system are absent by design.
+
+### e2e is deliberately thin
+
+A handful of scripts, not a suite. Rather than driving a pseudo-terminal — flaky, and
+awkward on Windows — the binary takes a scripted mode:
+
+```
+codediff --replay tests/e2e/scripts/open-and-navigate.txt --dump-frames out/
+```
+
+This runs the real event loop, real git and real rendering, but writes each frame as text
+instead of to a terminal: deterministic, diffable, cross-platform, and it doubles as a
+bug-report format a user can send us.
+
+Then **two or three pty smoke tests only**, covering what `--replay` genuinely cannot: raw
+mode, alt-screen entry and exit, and terminal restoration on both quit and panic.
+
+The risk of thin automated e2e is under-testing the real wiring. That is covered by the
+third leg — the [acceptance checklists](#6-acceptance-checklists), run by a human at every
+milestone. The intended shape is heavy unit and integration coverage, thin automated e2e,
+and a human acceptance gate, rather than the usual pyramid with a starved top.
+
+### Where unit tests go, and why it matters
+
+Unit tests live **at the bottom of the file they test**, in `#[cfg(test)] mod tests`:
+
+```rust
+// crates/align/src/hunk.rs
+pub struct Hunk { /* ... */ }
+fn merge_adjacent(/* ... */) { /* private */ }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn merges_adjacent_hunks() { /* can call the private fn */ }
+}
+```
+
+This is not a style preference. A `#[cfg(test)] mod` is a **child module**, so it can reach
+private items. Tests placed in `crates/*/tests/` see only the public API, which pressures
+you into marking things `pub` purely for testing — directly undermining the "private by
+default" rule in [Architecture](02-architecture.md#hard-rules).
+
+So: in-file tests for every file with non-trivial logic; `crates/*/tests/` reserved for
+genuine public-API integration tests.
+
+**Consequence for the size cap:** `cargo xtask lint-size` counts **non-test lines only**.
+Otherwise the 300/500-line cap punishes writing tests, and the natural response is to move
+tests out of the file to stay under it — defeating both rules at once.
 
 ### `align` invariants (property-tested)
 
@@ -103,7 +253,15 @@ carry far more weight than the plugin's.
 5. Hunks are ordered and non-overlapping.
 6. `HunkId` is stable under changes elsewhere in the file.
 
-## 5. Acceptance checklists
+### Screen snapshots are the bridge between automated and human review
+
+`TestBackend` renders to an in-memory cell grid. Serialised as text and committed, every
+screen state becomes a file. A UI change then shows up as a **text diff in the pull
+request** — simultaneously a regression test and a human-reviewable artifact. This is the
+thing a Neovim plugin cannot do, and it is why the automated suite here can carry far more
+weight than the plugin's.
+
+## 6. Acceptance checklists
 
 Each milestone has `docs/acceptance/S##.md`: numbered steps, the exact command to run, the
 exact expected observation, and a checkbox. A milestone is done when a human has run the
@@ -112,7 +270,7 @@ checklist and every box is ticked.
 Checklists are committed. When a milestone's behaviour legitimately changes later, the
 checklist is updated in the same change.
 
-## 6. Manual TUI checks that cannot be automated
+## 7. Manual TUI checks that cannot be automated
 
 A short standing list, re-run at every TUI milestone:
 

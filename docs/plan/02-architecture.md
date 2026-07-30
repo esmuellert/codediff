@@ -11,7 +11,7 @@ state × time × host × concurrency × consumers
 A pure batch transformation scores near zero on all five and is easy to keep clean. A live,
 stateful, concurrent UI attached to a host scores high on all five simultaneously.
 
-**The strategy is therefore to shrink the hard part.** Four of the eight crates are pure
+**The strategy is therefore to shrink the hard part.** Five of the ten shipped crates are pure
 pipelines with no state, no time and no IO — they get their cleanliness structurally. All
 of the genuine architectural risk is concentrated in one crate (`runtime`), whose entire job
 is to be the single place where state, time and concurrency are permitted to exist.
@@ -26,16 +26,18 @@ problem class at once. See [Decisions §D1](05-decisions.md#d1--why-a-rewrite-ra
 codediff/
 ├── Cargo.toml                [workspace]
 ├── crates/
-│   ├── vsdiff-sys/           raw FFI + cc build of the C engine
-│   ├── vsdiff/               safe wrapper → Diff                      pure
+│   ├── vscode-diff-sys/      raw FFI + cc build of the C engine
+│   ├── vscode-diff/          safe wrapper → Diff                      pure
 │   ├── metrics/              text measurement + coordinate mapping    pure
+│   ├── syntax/               text → normalized syntactic spans        pure
 │   ├── align/                AlignedDoc · rows · hunks · projections  pure
 │   ├── explorer/             entries · grouping · tree · filter       pure
 │   ├── vcs/                  git today, jj tomorrow
 │   ├── runtime/              events · commands · effects · watcher
 │   ├── display/              ratatui rendering + input
-│   └── codediff/             binary · composition root
-├── xtask/                    build, sync, fixture and verification tooling
+│   ├── codediff/             binary · composition root
+│   └── fixtures/             dev-only: builds test repositories, emits a manifest
+├── xtask/                    lint, sync, verify and generate tasks (not a build system)
 ├── vendor/libvscode-diff/    C source, copied from a pinned upstream tag
 └── docs/
 ```
@@ -44,15 +46,17 @@ codediff/
 
 | crate | contains | purity |
 |---|---|---|
-| `vsdiff-sys` | `#[repr(C)]` structs, `extern "C"` declarations, `build.rs` invoking `cc` | unsafe, ~150 lines |
-| `vsdiff` | `compute(&[&str], &[&str], Options) -> Diff` returning owned Rust types | pure |
+| `vscode-diff-sys` | `build.rs` invoking `cc`; `#[repr(C)]` structs and `extern "C"` declarations, 1:1 with the C API | unsafe, ~150 lines |
+| `vscode-diff` | `compute(&[&str], &[&str], Options) -> Diff` returning owned Rust types; eager conversion, frees C memory immediately | pure |
 | `metrics` | UTF-16 ↔ byte ↔ char ↔ grapheme ↔ cell, display width, tab expansion, cell-range slicing | pure |
+| `syntax` | language detection; text → `SpanSet` of normalized `Class` values. The only crate that may name a syntax engine | pure |
 | `align` | building an `AlignedDoc` from a `Diff` plus two texts; hunks; projections; navigation primitives | pure |
 | `explorer` | status entries → grouped tree, path collapsing, gitignore-style filtering | pure |
 | `vcs` | `VcsBackend` trait, git subprocess implementation, blob reading, rev resolution | IO |
 | `runtime` | `Event`, `Command`, `update`, effect runner, file watcher, request generations | IO + state + concurrency |
 | `display` | terminal lifecycle, layout, panes, widgets, input state machine, theme | state |
 | `codediff` | argument parsing, config loading, backend construction, wiring | composition root |
+| `fixtures` | builds git repositories in known states and emits a manifest; **no workspace dependencies**, so `vcs` and e2e tests can dev-depend on it without forming a cycle | dev-only |
 
 Naming rules: crates are named after **the thing they contain**, never after a layer.
 `core`, `common`, `utils` and `model` are banned — a crate name should state an admission
@@ -65,11 +69,11 @@ Strictly acyclic. Enforced by cargo — a violation is a compile error, not a re
 
 ```
 codediff ──> display ──> runtime ──> vcs ──────> metrics
-              │            │
+              │            │  └────> syntax ───> metrics
               │            └──> align ────────> metrics
-              │            │         └────────> vsdiff ──> vsdiff-sys
+              │            │         └────────> vscode-diff ──> vscode-diff-sys
               │            └──> explorer
-              └──> align, explorer, metrics
+              └──> align, explorer, metrics, syntax
 ```
 
 ### Edges that must never exist
@@ -77,20 +81,21 @@ codediff ──> display ──> runtime ──> vcs ──────> metrics
 | forbidden edge | why |
 |---|---|
 | `display` → `vcs` | prevents the renderer shelling out to git — the exact failure that produced a 674-line `explorer/render.lua` |
-| `display` → `vsdiff` | rendering must consume model types, never compute diffs |
+| `display` → `vscode-diff` | rendering must consume model types, never compute diffs |
+| **anything → a syntax engine, except `crates/syntax/src/engine/`** | keeps the engine swappable; `syntect::` or `tree_sitter::` appearing anywhere else fails CI |
 | anything → `codediff` | the composition root is a leaf; nothing depends on it |
-| `align`/`explorer`/`metrics`/`vsdiff` → anything with IO | keeps the pure core pure |
+| `align`/`explorer`/`metrics`/`syntax`/`vscode-diff` → anything with IO | keeps the pure core pure |
 
 ## Hard rules
 
 | rule | rationale | enforcement |
 |---|---|---|
-| `align`, `explorer`, `metrics`, `vsdiff` perform no IO — no `std::fs`, no `std::process`, no sockets, no clock | pure core is trivially testable and cannot rot | CI lint + absent dependencies |
+| `align`, `explorer`, `metrics`, `vscode-diff` perform no IO — no `std::fs`, no `std::process`, no sockets, no clock | pure core is trivially testable and cannot rot | CI lint + absent dependencies |
 | no cyclic crate dependencies | the single mechanism that prevented the plugin's decay | cargo |
 | soft cap 300 lines/file, hard cap 500 | forces splitting before a file becomes a junk drawer | `cargo xtask lint-size` |
 | private by default; `pub(crate)` is the escalation; `pub` is deliberate | shrinks blast radius, keeps API surface countable | clippy + review |
 | split modules by **noun** (a type owns its logic), never by verb | verb-splitting is what created the `actions`/`render`/`refresh` triplets and forced a global | review |
-| all `unsafe` lives in `vsdiff-sys` and the conversion function | ~40 lines of unsafe in the whole project | CI lint: `#![forbid(unsafe_code)]` in every other crate |
+| `unsafe` is permitted only in `vscode-diff-sys` and in `vscode-diff`'s `convert` module | ~40 lines of reviewable unsafe outside the raw declarations | the other **seven** crates carry `#![forbid(unsafe_code)]`, which cannot be overridden from within; `vscode-diff` carries `#![deny]` with a single narrow `#[allow]`; CI asserts both |
 | every async operation carries a `RequestId` | stale results are dropped structurally, not by revalidation | type system |
 
 ## Seams installed early
@@ -102,7 +107,7 @@ milestone listed, even with a trivial body.
 |---|---|---|
 | `Event` / `Command` / effect runner | S7 | three event types, synchronous |
 | `VcsBackend` trait | S5 | git subprocess only |
-| `Highlighter` trait | S7 | returns empty spans until S11 |
+| `Syntax` trait in `crates/syntax` | S7 | returns empty spans until S11 |
 | `ContentSource { Blob, Worktree, Snapshot, Memory }` | S5 | only `Blob` and `Worktree` used |
 | `hunk.review: Option<ReviewMark>` | S4 | always `None` |
 | `RequestId(u64)` on every command | S7 | always 0 until S14 |
@@ -182,10 +187,10 @@ failures.
    └───────────┬────────────┘                      └───────────┬───────────┘
                │ reads model types                             │ calls
                ▼                                               ▼
-        align  ·  explorer                              vcs   ·   vsdiff
+        align  ·  explorer                              vcs   ·   vscode-diff
                │                                                  │
                ▼                                                  ▼
-            metrics                                        vsdiff-sys → C
+            metrics                                        vscode-diff-sys → C
 ```
 
 ### The two loops
@@ -233,7 +238,7 @@ through one path because Neovim owned the loop.
 1  display   Enter → Intent::OpenFile(path)
 2  runtime   state.diff_req = R2; → Command::LoadDiff { req: R2, path, base, head }
 3  effect    worker: vcs::blob(base, path) + vcs::read_worktree(path)
-4  effect    worker: vsdiff::compute(...)                    [rayon, CPU-bound]
+4  effect    worker: vscode_diff::compute(...)             [rayon, CPU-bound]
 5  effect    worker: align::AlignedDoc::build(left, right, diff)
 6  effect    → Event::DiffReady(R2, doc)
 7  runtime   if R2 != state.diff_req { drop }   ← stale results die structurally
@@ -286,7 +291,7 @@ sync channel — an implementation detail of one adapter, not a property of the 
 4. Every `Command` carries a `RequestId`; results with a stale id are dropped in `update`.
 5. `display` owns presentation state, `runtime` owns domain state; the bridge between them
    is **stable identity** (`path`, `HunkId`) — never an index.
-6. `vsdiff`, `metrics`, `align`, `explorer` are pure and testable with no terminal, no
+6. `vscode-diff`, `metrics`, `align`, `explorer` are pure and testable with no terminal, no
    repository and no threads.
 
 Invariant 2 is the one that pays most: the entire application logic can be tested by feeding
