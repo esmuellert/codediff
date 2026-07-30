@@ -1,0 +1,21 @@
+# Build artifacts
+/target
+**/*.rs.bk
+*.pdb
+
+# Vendored C build outputs (source is tracked, objects are not)
+vendor/**/*.o
+vendor/**/*.a
+vendor/**/*.so
+vendor/**/*.dylib
+vendor/**/*.dll
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local scratch
+/tmp/
+/scratch/
