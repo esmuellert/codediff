@@ -3,7 +3,8 @@
 **/*.rs.bk
 *.pdb
 
-# Vendored C build outputs (source is tracked, objects are not)
+# Vendored C build outputs. The C *source* is tracked and its provenance is
+# recorded in vendor/UPSTREAM.lock; build.rs compiles it into OUT_DIR.
 vendor/**/*.o
 vendor/**/*.a
 vendor/**/*.so

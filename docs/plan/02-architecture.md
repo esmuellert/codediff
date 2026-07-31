@@ -22,6 +22,12 @@ problem class at once. See [Decisions §D1](05-decisions.md#d1--why-a-rewrite-ra
 
 ## Workspace layout
 
+Crates are created by the milestone that needs them, not up front: an empty crate
+constrains nothing, since there is no code in it to violate a rule. What follows is the
+intended set. `cargo xtask lint-arch` enforces the forbidden edges as each crate
+appears, and reports which rules are still waiting on their crate so that none can
+quietly stay dead.
+
 ```
 codediff/
 ├── Cargo.toml                [workspace]

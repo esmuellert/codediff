@@ -1,0 +1,21 @@
+[package]
+name = "vscode-diff-sys"
+description = "Raw FFI bindings to the vendored libvscode-diff C engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# Cargo enforces that only one package in a dependency graph may link a given
+# native library. See docs/plan/05-decisions.md D14.
+links = "vscode_diff"
+
+# This crate does NOT use `[lints] workspace = true`: it is the one place in the
+# workspace where `unsafe` is permitted, because it declares the raw C ABI.
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[build-dependencies]
+cc = "1"

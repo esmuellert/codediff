@@ -16,12 +16,16 @@ painting.
 
 ### S1 — Skeleton, vendored C, FFI
 
-**Build.** Cargo workspace with all ten shipped crates stubbed (plus `xtask`; `fixtures`
-arrives at S5) and **the complete dependency graph declared in `Cargo.toml` before any logic
-exists** — from this point, an architecture violation is a compile error. Copy `libvscode-diff` into `vendor/` with `UPSTREAM.lock`.
-`vscode-diff-sys` compiles it with `cc`, OpenMP off. CI: fmt, `clippy -D warnings`, test,
-`lint-size`, `lint-arch`, `verify-c`, and a check that the seven crates other than
-`vscode-diff-sys` and `vscode-diff` carry `#![forbid(unsafe_code)]`.
+**Build.** Cargo workspace with the crates S1 actually needs — `vscode-diff-sys`,
+`vscode-diff`, `codediff` and `xtask`. Copy `libvscode-diff` into `vendor/` with
+`UPSTREAM.lock`. `vscode-diff-sys` compiles it with `cc`, OpenMP off. CI: fmt,
+`clippy -D warnings`, test, `lint-size`, `lint-arch`, `verify-c`, and a check that every
+crate other than `vscode-diff-sys` and `vscode-diff` carries `#![forbid(unsafe_code)]`.
+
+The remaining crates are created by the milestone that needs them. Stubbing them up
+front constrains nothing — there is no code in an empty crate to violate a rule — and
+the crate set is still moving. `lint-arch` reports which edge rules are waiting on a
+crate, so a rule cannot quietly stay dead.
 
 **Check.**
 ```
@@ -43,6 +47,11 @@ ldd target/release/codediff        # otool -L on macOS
 **Build.** `vscode-diff`: `compute()` returning owned Rust types. C memory converted eagerly
 and freed immediately — no C pointer escapes into application types. All `unsafe` confined
 to `vscode-diff-sys` plus the conversion function.
+
+**Must handle:** an empty side has to be normalised to `[""]` before calling in. The engine
+models an empty file as one empty line, following VSCode's document model; a count of 0
+silently returns *no changes*, so an entirely-added file would appear unchanged. Pinned by
+`zero_lines_is_outside_the_contract_and_silently_reports_nothing` in `vscode-diff-sys`.
 
 **Check.**
 ```

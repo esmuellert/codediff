@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No toolchain is specified anywhere in this file: rust-toolchain.toml is
+      # the single source of truth, and rustup installs it on first use. This
+      # step exists so that a toolchain problem fails here, with a clear name,
+      # rather than inside a later step.
+      - name: Show toolchain
+        run: |
+          rustc --version
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build (release)
+        run: cargo build --workspace --release
+
+      # The vendored C must match the tag recorded in vendor/UPSTREAM.lock.
+      # Without this a local patch would work, be forgotten, and quietly become
+      # a fork of upstream.
+      - name: Verify vendored C engine
+        run: cargo xtask verify-c
+
+      # Differential test: compile upstream's own diff_tool from the vendored C
+      # and check that our Rust binding reports identical results on their
+      # fixtures. Catches marshalling mistakes that unit tests cannot.
+      #
+      # Unix only: the oracle is compiled by invoking the system C compiler with
+      # GCC-style flags, which MSVC does not accept. The binding logic under
+      # test is platform independent; the platform-specific risk is struct
+      # layout, and that is covered on every OS by the layout assertions in
+      # vscode-diff-sys.
+      - name: Verify against the upstream oracle
+        if: runner.os != 'Windows'
+        run: cargo xtask verify-oracle
+
+      # Rules from docs/plan that cargo cannot enforce on its own.
+      - name: Lint architecture
+        run: cargo xtask lint-arch
+
+      - name: Lint file size
+        run: cargo xtask lint-size
+
+      # The point of compiling the C from source is a self-contained binary.
+      # libgomp is what broke real users of the upstream Neovim plugin
+      # (codediff.nvim #48 and #58), so this asserts it never comes back.
+      - name: Assert the diff engine is statically linked
+        if: runner.os == 'Linux'
+        run: |
+          ldd target/release/codediff
+          if ldd target/release/codediff | grep -qE 'libvscode_diff|libgomp'; then
+            echo "::error::the binary dynamically depends on the diff engine or libgomp"
+            exit 1
+          fi
+
+      - name: Assert the diff engine is statically linked
+        if: runner.os == 'macOS'
+        run: |
+          otool -L target/release/codediff
+          if otool -L target/release/codediff | grep -qE 'libvscode_diff|libomp'; then
+            echo "::error::the binary dynamically depends on the diff engine or libomp"
+            exit 1
+          fi
+
+      # Proves the shipped artifact runs and can call into the C, which the
+      # test binaries do not: they are separate executables.
+      - name: Smoke test the shipped binary
+        if: runner.os != 'Windows'
+        run: ./target/release/codediff doctor
+
+      - name: Smoke test the shipped binary (Windows)
+        if: runner.os == 'Windows'
+        run: .\target\release\codediff.exe doctor

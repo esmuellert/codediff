@@ -1,0 +1,9 @@
+# Provenance of the vendored C diff engine.
+# Written by `cargo xtask sync-c`; checked by `cargo xtask verify-c`.
+# Do not edit vendor/libvscode-diff by hand — patch upstream instead.
+
+repository = "https://github.com/esmuellert/codediff.nvim.git"
+tag = "v2.60.0"
+commit = "dc38f0b8a2ba8cc198cc024f3abe887341788820"
+version = "2.60.0"
+tree_sha256 = "af3f6d6c11a77fba037a22ca7427858e49690c3cdfaf75aebbd3e70be77a2939"

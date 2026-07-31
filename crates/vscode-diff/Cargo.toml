@@ -1,0 +1,21 @@
+[package]
+name = "vscode-diff"
+description = "Safe Rust wrapper over the libvscode-diff C engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+vscode-diff-sys.workspace = true
+
+# Not `workspace = true`: the conversion from C to owned Rust must dereference
+# raw pointers, so this crate denies rather than forbids and carries a single
+# narrow `#[allow(unsafe_code)]` on `convert`. See docs/plan/05-decisions.md D14.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }

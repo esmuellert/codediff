@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+# Crates are created when the milestone that needs them arrives, not up front.
+# The intended set and its dependency graph are in docs/plan/02-architecture.md;
+# `cargo xtask lint-arch` enforces the forbidden edges as each crate appears.
+members = [
+    "crates/vscode-diff-sys",
+    "crates/vscode-diff",
+    "crates/codediff",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/esmuellert/codediff"
+authors = ["Yanuo Ma"]
+
+# Every crate opts in with `[lints] workspace = true`.
+# The two FFI crates declare their own weaker policy; see crates/vscode-diff-sys
+# and crates/vscode-diff. Nothing else in the workspace may contain `unsafe`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[workspace.dependencies]
+vscode-diff-sys = { path = "crates/vscode-diff-sys" }
+vscode-diff = { path = "crates/vscode-diff" }
+
+anyhow = "1"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

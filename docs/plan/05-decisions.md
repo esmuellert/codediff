@@ -96,9 +96,13 @@ The library is 12 C files, 7,538 lines, with no external dependencies (utf8proc 
 vendored). It builds to a 446 KB static archive in **2.1 seconds**. There is no build cost
 worth avoiding.
 
-Disabling OpenMP loses intra-diff parallel refinement. This is acceptable and arguably
-better: the explorer parallelises *across files* with rayon, which yields more than four
-threads inside a single file's diff.
+Disabling OpenMP removes the libgomp dependency entirely. That is a convenience rather than
+the reason: the upstream failures were runtime dynamic-linking failures of a *prebuilt* `.so`,
+which does not apply to a build from source. The measured case for disabling it is in
+`crates/vscode-diff-sys/build.rs` — on realistic files the difference is noise, on a
+pathological 20,000-line file it is ~21% wall clock at 1.31x parallelism, and diffs are
+computed concurrently across files anyway, which scales better and would oversubscribe if
+combined.
 
 ---
 

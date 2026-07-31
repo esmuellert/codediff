@@ -149,15 +149,19 @@ human-readable artifact and the regression fixture are the same file.
 
 ## 4. xtask commands
 
-| command | asserts |
-|---|---|
-| `cargo xtask verify-c` | vendored C matches the pinned upstream tag; fails on drift |
-| `cargo xtask sync-c --tag vX.Y.Z` | refreshes the vendored C, rewrites `vendor/UPSTREAM.lock` |
-| `cargo xtask verify-oracle` | our diff output matches upstream `diff_tool` on every test pair |
-| `cargo xtask fixture-repo <dir>` | builds the fixture repository, prints the manifest |
-| `cargo xtask lint-size` | no file exceeds the hard cap, counting non-test lines only |
-| `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies; `forbid(unsafe_code)` present where required |
-| `cargo xtask health` | lines and `pub` counts per crate, for trend tracking |
+| command | asserts | arrives |
+|---|---|---|
+| `cargo xtask verify-c` | vendored C matches the pinned upstream tag; fails on drift | S1 |
+| `cargo xtask sync-c --tag vX.Y.Z` | refreshes the vendored C and its oracle fixtures, rewrites `vendor/UPSTREAM.lock` | S1 |
+| `cargo xtask lint-size` | no file exceeds the hard cap, counting non-test lines only | S1 |
+| `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies; `forbid(unsafe_code)` present where required | S1 |
+| `cargo xtask verify-oracle` | our diff output matches upstream `diff_tool` on every fixture | S2 |
+| `cargo xtask fixture-repo <dir>` | builds the fixture repository, prints the manifest | S5 |
+| `cargo xtask drift` | lines and `pub` counts per crate, for trend tracking | later |
+
+`drift` is named for what it measures. It is not `health`, which would collide with
+`codediff doctor` — that reports on the *user's environment*, while this reports on the
+*codebase*.
 
 ## 5. Automated test layers
 
