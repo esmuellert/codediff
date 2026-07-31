@@ -1,0 +1,19 @@
+[package]
+name = "metrics"
+description = "Text measurement: coordinate systems, display width, tab expansion, cell slicing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+unicode-segmentation = "1"
+unicode-width = "0.2"
+
+[dev-dependencies]
+proptest = "1"
+
+[lints]
+workspace = true

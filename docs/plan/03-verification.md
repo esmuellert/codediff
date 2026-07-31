@@ -140,7 +140,7 @@ human-readable artifact and the regression fixture are the same file.
 |---|---|---|
 | `codediff doctor` | version, engine version, linkage, runtime deps, config path | S1 |
 | `codediff debug diff <a> <b>` | the raw `Diff` — changes, inner changes, moves | S2 |
-| `codediff debug measure --file <f>` | per-line cell ruler and a byte/char/utf16/cell table | S3 |
+| `codediff debug measure <f> [-v]` | per-character byte/utf16/column/width for the characters that diverge, and for control characters | S3 |
 | `codediff debug align <a> <b>` | plain-text side-by-side with fillers and change markers | S4 |
 | `codediff debug status` | parsed status entries as a table | S5 |
 | `codediff debug show <rev>:<path>` | blob content as read through the vcs layer | S6 |

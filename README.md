@@ -9,10 +9,10 @@ A standalone, read-only terminal diff reviewer built for reviewing LLM-agent cod
   and linked statically.
 - **Agent-focused.** Built for the workflow where an agent edits while you review.
 
-**Status: S1 and S2 complete.** The vendored C engine, the FFI layer and the safe Rust
-wrapper build, link, are covered by tests, and agree with upstream's own `diff_tool` on
-every fixture. There is no review interface yet — see
-[docs/plan/04-milestones.md](docs/plan/04-milestones.md).
+**Status: S1–S3 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper
+and the text-measurement layer build, link and are covered by tests; the diff results
+agree with upstream's own `diff_tool` on every fixture. There is no review interface yet
+— see [docs/plan/04-milestones.md](docs/plan/04-milestones.md).
 
 ## Building
 
@@ -83,6 +83,32 @@ engine    libvscode-diff 2.60.0
   moves
   [0] original 4..8  ->  modified 1..5
 ```
+
+### Inspecting text measurement
+
+```sh
+codediff debug measure crates/metrics/fixtures/nasty.txt [--verbose]
+```
+
+Lists the characters whose byte, UTF-16 and column positions disagree, plus any control
+characters. Plain ASCII is skipped, because there all three are the same number — which is
+exactly why confusing them survives every test until a file contains a tab or an emoji:
+
+```text
+  line 13  "tab then    日本    then    emoji 🎉"
+    ├─ ⇥   byte   3   utf16   3   column   3   width 1
+    ├─ ⇥   byte   8   utf16   8   column   8   width 4
+    ├─ 日  byte   9   utf16   9   column  12   width 2
+    ├─ 本  byte  12   utf16  10   column  14   width 2
+    ├─ ⇥   byte  15   utf16  11   column  16   width 4
+    ├─ ⇥   byte  20   utf16  16   column  24   width 4
+    └─ 🎉  byte  27   utf16  23   column  34   width 2
+```
+
+Three different numbers for one character is the point: the diff engine reports UTF-16
+columns, Rust slices by byte, and the terminal draws in cells. Tabs are shown as `⇥` so
+they cannot be mistaken for the literal word "tab" in the text. Pass `--verbose` to list
+every character rather than only the diverging ones.
 
 ### The vendored C engine
 

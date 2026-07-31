@@ -7,6 +7,7 @@
 
 mod debug;
 mod doctor;
+mod measure;
 
 use anyhow::{Result, bail};
 
@@ -23,8 +24,15 @@ fn main() -> Result<()> {
                 (Some(original), Some(modified)) => debug::run(original, modified),
                 _ => bail!("usage: codediff debug diff <original> <modified>"),
             },
+            Some("measure") => match args.get(2) {
+                Some(path) => {
+                    let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
+                    measure::run(path, verbose)
+                }
+                None => bail!("usage: codediff debug measure <file> [--verbose]"),
+            },
             Some(other) => bail!("unknown debug command: {other}"),
-            None => bail!("usage: codediff debug diff <original> <modified>"),
+            None => bail!("usage: codediff debug <diff|measure> ..."),
         },
         Some("--version") | Some("-V") => {
             println!("codediff {}", env!("CARGO_PKG_VERSION"));
@@ -49,6 +57,7 @@ codediff {version} — a standalone, read-only terminal diff reviewer
 USAGE:
     codediff doctor                          report how this binary was built
     codediff debug diff <old> <new>          print the raw diff of two files
+    codediff debug measure <file> [-v]       print where each character lives
     codediff --version                       print the version
     codediff --help                          print this message
 

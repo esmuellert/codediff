@@ -35,10 +35,10 @@ ldd target/release/codediff        # otool -L on macOS
 ```
 
 **Pass when.**
-- [ ] `doctor` prints the engine version (`2.59.0`) and `linkage: static`
-- [ ] `ldd` shows **neither `libvscode_diff` nor `libgomp`** — only libc and libm
-- [ ] `cargo xtask verify-c` passes
-- [ ] `cargo xtask lint-arch` passes
+- [x] `doctor` prints the engine version (`2.60.0`) and reports static linkage
+- [x] `ldd` shows **neither `libvscode_diff` nor `libgomp`** — only libc and libm
+- [x] `cargo xtask verify-c` passes
+- [x] `cargo xtask lint-arch` passes
 
 ---
 
@@ -60,9 +60,9 @@ codediff debug diff <a> <b>
 ```
 
 **Pass when.**
-- [ ] `verify-oracle` prints one row per `test_pairs/*` fixture, **every row PASS**, exit 0
-- [ ] `debug diff` output is legible and matches the upstream tool by eye on a sample
-- [ ] the wrapper is leak-clean under ASAN
+- [x] `verify-oracle` prints one row per `test_pairs/*` fixture, **every row PASS**, exit 0
+- [x] `debug diff` output is legible and matches the upstream tool by eye on a sample
+- [x] the wrapper is leak-clean under Valgrind (0 errors, 0 bytes lost)
 
 ---
 
@@ -73,15 +73,17 @@ width, tab expansion, grapheme-safe slicing by cell range.
 
 **Check.**
 ```
-codediff debug measure --file crates/metrics/fixtures/nasty.txt
+codediff debug measure crates/metrics/fixtures/nasty.txt
 ```
-Prints each line, a **cell ruler beneath it**, and a conversion table per grapheme boundary.
+Lists, per line, every character whose byte / UTF-16 / column positions disagree, with its
+display width. Plain ASCII is skipped — there all three are equal, which is why confusing
+them goes unnoticed until a file contains a tab or an emoji.
 
 **Pass when.**
-- [ ] the ruler **visually aligns** under text containing tabs, CJK, emoji ZWJ sequences and
-      combining accents
-- [ ] printed cell widths match the reference table shipped with the fixture
-- [ ] property tests pass: round-trip conversions, monotonicity, never splits a grapheme
+- [x] the reported positions are correct for text containing tabs, CJK, emoji ZWJ sequences
+      and combining accents
+- [x] printed cell widths match the reference table shipped with the fixture
+- [x] property tests pass: round-trip conversions, monotonicity, never splits a grapheme
 
 ---
 

@@ -1,0 +1,14 @@
+ASCII only, every coordinate system agrees here
+let timeout = 30;
+	leading tab, then text
+a	b	c	aligned by tab stops
+abcd	tab at a stop boundary
+日本語のコメント — East Asian, two cells each
+mixed 日本 and ASCII on one line
+emoji 🎉 party 🚀 rocket
+café vs café — same word precomposed then decomposed
+é base letter with a combining acute after it
+👨‍👩‍👧 family sequence — terminals disagree on this one
+🇯🇵 regional indicator pair
+tab	then	日本	then	emoji 🎉
+very long line to exercise horizontal scrolling: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

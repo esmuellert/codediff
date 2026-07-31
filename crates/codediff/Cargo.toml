@@ -15,6 +15,7 @@ path = "src/main.rs"
 # The composition root: the only place that names concrete implementations.
 [dependencies]
 anyhow.workspace = true
+metrics.workspace = true
 vscode-diff.workspace = true
 
 [lints]

@@ -1,0 +1,22 @@
+#![doc = include_str!("../README.md")]
+//!
+//! ---
+//!
+//! Admission criterion: does this determine *where* text sits on a terminal
+//! grid, or how to convert between two ways of indexing it? Measurement and
+//! conversion only — never drawing.
+//!
+//! This crate performs no IO.
+
+mod coord;
+mod grapheme;
+mod line;
+mod width;
+
+pub use coord::{ByteOff, CellCol, CharIdx, Utf16Col};
+pub use grapheme::{Grapheme, graphemes};
+pub use line::LineMetrics;
+pub use width::{grapheme_width, tab_advance};
+
+/// Columns a tab advances to by default, matching most editors.
+pub const DEFAULT_TAB_WIDTH: u8 = 4;

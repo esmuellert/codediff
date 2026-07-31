@@ -1,0 +1,53 @@
+# Expected measurements for nasty.txt, one row per line.
+#
+#   line  bytes  utf16  cells  graphemes
+#
+# Why this file exists: `codediff debug measure` shows cell widths, which a
+# human can check against what the terminal actually draws. It cannot show byte
+# or UTF-16 offsets — those are invisible on screen, and they are the ones the
+# diff engine depends on. This table covers them.
+#
+# Provenance of each column, since "recorded from output" would make this a
+# change detector rather than a check:
+#
+#   bytes, utf16,        cross-checked against Node's ICU `Intl.Segmenter`,
+#   graphemes            `Buffer.byteLength` and `String.length` — a different
+#                        Unicode implementation from the `unicode-segmentation`
+#                        crate under test. All 14 rows agree exactly, including
+#                        the ZWJ family (50) and the regional indicator pair
+#                        (25).
+#
+#   cells                derived by hand from tab-stop arithmetic and East
+#                        Asian Width, since no second implementation was
+#                        available. Line 13 is the worked example: "tab" ends
+#                        at column 3, so its tab advances 1 column to 4, while
+#                        the next starts at 8 and advances a full 4.
+#
+# The interesting segmentation cases are pinned separately by unit tests in
+# tests/coordinates.rs: a regional indicator pair is one cluster, an emoji ZWJ
+# sequence is one cluster, and a combining mark does not start a new one.
+#
+# Line 9 holds the same word twice, precomposed (U+00E9) and decomposed
+# (U+0065 U+0301). They look identical and measure identically in cells, yet
+# differ in bytes and UTF-16 units — which is the whole point of the file.
+#
+# Line 11 — the emoji ZWJ family sequence — is a deliberate choice rather than
+# a measurement. Unicode TR51 says it renders as a single glyph, so it is 2
+# cells; counting its three component emoji separately gives 6, and some
+# terminals do exactly that. If this row ever needs changing, the fix belongs
+# in a per-terminal width override rather than in the measurement itself.
+
+1    47   47   47   47
+2    17   17   17   17
+3    23   23   26   23
+4    26   26   32   26
+5    27   27   30   27
+6    55   37   45   37
+7    34   30   32   30
+8    28   24   24   22
+9    57   53   52   52
+10   47   46   45   45
+11   69   57   51   50
+12   32   28   26   25
+13   31   25   36   24
+14  145  145  145  145
