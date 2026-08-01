@@ -144,25 +144,26 @@ diff <(grep -vE '^#|^$' /tmp/cdfix/MANIFEST.txt) <(codediff debug status /tmp/cd
 
 ---
 
-### S6 — Blob reading and single-file diff
+### S6 — One file, end to end ✅
 
-**Build.** Long-lived `git cat-file --batch` child process for blob reads. Worktree reads.
-Wire `vcs` → `vscode-diff` → `align` for one file.
+**Build.** `vcs` → `vscode-diff` → `align` wired together: one path in, both sides found,
+compared and paired. `Content` classifies bytes — text, binary, or absent — since `vcs`
+hands back `Vec<u8>` and a repository holds pictures as readily as source.
 
 **Check.**
 ```
 cd /tmp/cdfix
-codediff debug show HEAD:src/changed.rs
-codediff debug diff-file src/changed.rs
-git diff src/changed.rs                 # compare
+codediff debug show HEAD:modified.txt --raw | cmp - <(git show HEAD:modified.txt)
+codediff debug diff-file modified.txt
+git diff modified.txt                   # compare
 ```
 
 **Pass when.**
-- [ ] blob content matches `git show HEAD:src/changed.rs` byte for byte
-- [ ] the aligned diff has the same added and removed lines as `git diff`
-- [ ] `src/crlf.rs` produces **no phantom diff** from line-ending handling
-- [ ] `src/nonewline.rs` handles the missing trailing newline correctly
-- [ ] binary and deleted files are reported, not crashed on
+- [x] blob content matches `git show` byte for byte, binaries included
+- [x] the aligned diff has the same added and removed lines as `git diff`
+- [x] `crlf.txt` produces **no phantom diff** from line-ending handling
+- [x] `no-trailing-newline.txt` handles the missing trailing newline correctly
+- [x] binary and deleted files are reported, not crashed on
 
 ---
 

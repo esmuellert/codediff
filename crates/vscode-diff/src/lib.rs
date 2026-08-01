@@ -48,6 +48,25 @@ pub fn engine_version() -> &'static str {
         .expect("the engine version is an ASCII string literal")
 }
 
+/// Splits text into the lines [`compute`] counts.
+///
+/// On `\n` only, keeping the empty piece a trailing newline leaves behind:
+/// the engine counts that line, so both sides must agree it is there.
+///
+/// `str::lines()` is wrong here twice over. It drops that final piece, and it
+/// swallows a `\r` before the newline — which would hide exactly the
+/// line-ending differences a reviewer needs to see.
+///
+/// ```
+/// assert_eq!(vscode_diff::lines("a\nb\n"), ["a", "b", ""]);
+/// assert_eq!(vscode_diff::lines("a\r\nb"), ["a\r", "b"]);
+/// // An empty file is one empty line, not none — see `compute`.
+/// assert_eq!(vscode_diff::lines(""), [""]);
+/// ```
+pub fn lines(text: &str) -> Vec<&str> {
+    text.split('\n').collect()
+}
+
 /// Computes the difference between two texts, given as lines without their
 /// terminators.
 ///
@@ -147,6 +166,28 @@ impl Marshalled {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_trailing_newline_leaves_an_empty_last_line() {
+        // The engine counts it, so both sides must agree that it is there.
+        assert_eq!(super::lines("a\nb\n"), ["a", "b", ""]);
+        assert_eq!(super::lines("a\nb"), ["a", "b"]);
+    }
+
+    #[test]
+    fn empty_text_is_one_empty_line() {
+        // Not zero lines: `compute` documents that the engine models an empty
+        // file as a single empty line, and reports nothing at all for a
+        // genuinely empty sequence.
+        assert_eq!(super::lines(""), [""]);
+    }
+
+    #[test]
+    fn carriage_returns_are_kept() {
+        // `str::lines()` would eat these, and a file that gained CRLF endings
+        // would then diff as unchanged.
+        assert_eq!(super::lines("a\r\nb\r\n"), ["a\r", "b\r", ""]);
+    }
+
     use super::*;
 
     #[test]

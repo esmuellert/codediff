@@ -17,7 +17,7 @@ mod repo;
 pub mod diff;
 pub mod git;
 
-pub use diff::{Diff, DiffKind, FileDiff};
+pub use diff::{Content, Diff, DiffKind, FileDiff};
 pub use error::{Error, Result};
 pub use git::Git;
 pub use path::RelPath;

@@ -4,8 +4,10 @@
 //! and kept apart from the engine's `LinesDiff`: this one is **per file**, that
 //! one is per line.
 
+mod content;
 mod types;
 
+pub use content::Content;
 pub use types::{DiffKind, FileDiff};
 
 use crate::error::Result;
@@ -23,12 +25,15 @@ pub trait Diff {
     /// Every file that differs between the two sides.
     fn files(&mut self) -> Result<Vec<FileDiff>>;
 
-    /// The file's content before the change. `None` when it did not exist.
+    /// The file's content before the change.
     ///
     /// Takes the whole [`FileDiff`] rather than a path so that a move reads its
-    /// old path without the caller having to know that rule.
-    fn before(&mut self, file: &FileDiff) -> Result<Option<Vec<u8>>>;
+    /// old path without the caller having to know that rule. Returns
+    /// [`Content`] rather than bytes because a repository holds pictures as
+    /// readily as source, and every caller would otherwise have to work that
+    /// out for itself.
+    fn before(&mut self, file: &FileDiff) -> Result<Content>;
 
-    /// The file's content after the change. `None` when it no longer exists.
-    fn after(&mut self, file: &FileDiff) -> Result<Option<Vec<u8>>>;
+    /// The file's content after the change.
+    fn after(&mut self, file: &FileDiff) -> Result<Content>;
 }

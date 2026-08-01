@@ -75,6 +75,7 @@ version = "0.1.0"
 dependencies = [
  "align",
  "anyhow",
+ "fixtures",
  "line-index",
  "vcs",
  "vscode-diff",

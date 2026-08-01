@@ -42,6 +42,10 @@ pub fn repo(dir: &Path) -> Result<()> {
     write(dir, "crlf.txt", "one\r\ntwo\r\n")?;
     write(dir, "no-trailing-newline.txt", "last line has no newline")?;
     write(dir, "conflict.txt", "base\n")?;
+    // A file that is not text: `before`/`after` hand back bytes, and a picture
+    // has no lines to align.
+    write_bytes(dir, "picture.png", PNG)?;
+    write(dir, "gains-a-line.txt", "one\ntwo\n")?;
     write(
         dir,
         ".gitignore",
@@ -92,6 +96,15 @@ pub fn repo(dir: &Path) -> Result<()> {
         "last line still has no newline",
     )?;
 
+    // Added and deleted files are where the engine's empty-side handling is
+    // exercised for real: one side has no lines at all.
+    write(dir, "gains-a-line.txt", "one\ntwo\nthree\n")?;
+    write_bytes(dir, "picture.png", &{
+        let mut edited = PNG.to_vec();
+        edited.extend_from_slice(&[0x00, 0x99, 0x88]);
+        edited
+    })?;
+
     write(dir, "untracked.txt", "never added\n")?;
     write(
         dir,
@@ -135,9 +148,11 @@ fn manifest(dir: &Path) -> Result<()> {
 # Sorted by path.
 
 .  M  crlf.txt
+.  M  gains-a-line.txt
 U  U  conflict.txt
 D  .  deleted.txt
 .  M  modified.txt
+.  M  picture.png
 .  M  no-trailing-newline.txt
 R  .  renamed-to.txt <- renamed-from.txt
 M  M  staged-then-edited.txt
@@ -154,6 +169,21 @@ M  M  staged-then-edited.txt
 #   MANIFEST.txt           this file, ignored so it does not report itself
 ";
     std::fs::write(dir.join(MANIFEST), text)?;
+    Ok(())
+}
+
+/// The first bytes of a real PNG, including the zero byte that makes every
+/// tool call it binary.
+const PNG: &[u8] = &[
+    0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, b'I', b'H', b'D', b'R',
+];
+
+fn write_bytes(dir: &Path, path: &str, body: &[u8]) -> Result<()> {
+    let full = dir.join(path);
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&full, body)?;
     Ok(())
 }
 

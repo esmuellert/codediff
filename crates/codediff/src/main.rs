@@ -5,11 +5,8 @@
 //! the only place in the workspace that names concrete implementations, and
 //! nothing depends on it.
 
-mod align;
 mod debug;
 mod doctor;
-mod line;
-mod status;
 mod text;
 
 use anyhow::{Result, bail};
@@ -22,32 +19,7 @@ fn main() -> Result<()> {
             doctor::run();
             Ok(())
         }
-        Some("debug") => match args.get(1).map(String::as_str) {
-            Some("diff") => match (args.get(2), args.get(3)) {
-                (Some(original), Some(modified)) => debug::run(original, modified),
-                _ => bail!("usage: codediff debug diff <original> <modified>"),
-            },
-            Some("line") => match args.get(2) {
-                Some(path) => {
-                    let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
-                    line::run(path, verbose)
-                }
-                None => bail!("usage: codediff debug line <file> [--verbose]"),
-            },
-            Some("align") => match (args.get(2), args.get(3)) {
-                (Some(original), Some(modified)) => {
-                    let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
-                    align::run(original, modified, verbose)
-                }
-                _ => bail!("usage: codediff debug align <original> <modified> [--verbose]"),
-            },
-            Some("status") => {
-                let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
-                status::run(args.get(2).map_or(".", String::as_str), verbose)
-            }
-            Some(other) => bail!("unknown debug command: {other}"),
-            None => bail!("usage: codediff debug <diff|align|line|status> ..."),
-        },
+        Some("debug") => debug::run(&args[1..]),
         Some("--version") | Some("-V") => {
             println!("codediff {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -70,10 +42,7 @@ codediff {version} — a standalone, read-only terminal diff reviewer
 
 USAGE:
     codediff doctor                          report how this binary was built
-    codediff debug diff <old> <new>          print the raw diff of two files
-    codediff debug align <old> <new> [-v]    print the two files paired up
-    codediff debug line <file> [-v]          print where each character sits
-    codediff debug status [dir] [-v]         print what git says about a worktree
+    codediff debug <command>                 inspect one layer; run bare to list
     codediff --version                       print the version
     codediff --help                          print this message
 

@@ -125,8 +125,8 @@ fn compare(tool: &Path, pair: &Path) -> Result<()> {
     // diff_tool splits on '\n' only and keeps a trailing empty line, matching
     // JavaScript's String.split. `str::lines` does neither, so it must not be
     // used here or the two sides would see different input.
-    let original: Vec<&str> = original.split('\n').collect();
-    let modified: Vec<&str> = modified.split('\n').collect();
+    let original = vscode_diff::lines(&original);
+    let modified = vscode_diff::lines(&modified);
 
     // diff_tool computes moves and uses a 5s budget; match it exactly.
     let options = Options::default().with_moves().with_time_budget_ms(5_000);

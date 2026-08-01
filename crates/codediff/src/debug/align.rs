@@ -15,8 +15,8 @@ const COLUMN: u32 = 44;
 pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
-    let original: Vec<&str> = split(&original_text);
-    let modified: Vec<&str> = split(&modified_text);
+    let original = vscode_diff::lines(&original_text);
+    let modified = vscode_diff::lines(&modified_text);
 
     // Moves are part of what this layer has to get right, so ask for them.
     let options = vscode_diff::Options::default().with_moves();
@@ -31,14 +31,21 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
         &modified,
         &alignment,
     );
-    for row in alignment.rows() {
-        println!("{}", line(&alignment, &row));
-    }
-
-    if verbose {
-        detail(&alignment);
-    }
+    print(&alignment, verbose);
     Ok(())
+}
+
+/// The rows, and optionally everything the grid cannot show.
+///
+/// Shared with `debug diff-file`, which finds its two sides through git rather
+/// than being handed them, but renders the result identically.
+pub fn print(alignment: &Alignment<'_>, verbose: bool) {
+    for row in alignment.rows() {
+        println!("{}", line(alignment, &row));
+    }
+    if verbose {
+        detail(alignment);
+    }
 }
 
 fn header(
@@ -220,13 +227,4 @@ fn label(side: Side) -> &'static str {
 
 fn read(path: &str) -> Result<String> {
     std::fs::read_to_string(path).with_context(|| format!("reading {path}"))
-}
-
-/// Splits the way the engine does: on `\n` only.
-///
-/// `str::lines()` is wrong here — it drops the empty line that a file's final
-/// newline produces, and the engine counts that line. `debug diff` and
-/// `xtask verify-oracle` split identically.
-fn split(text: &str) -> Vec<&str> {
-    text.split('\n').collect()
 }

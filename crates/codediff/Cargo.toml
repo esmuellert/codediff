@@ -22,5 +22,8 @@ align.workspace = true
 vcs.workspace = true
 vscode-diff.workspace = true
 
+[dev-dependencies]
+fixtures.workspace = true
+
 [lints]
 workspace = true

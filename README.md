@@ -9,8 +9,8 @@ A standalone, read-only terminal diff reviewer built for reviewing LLM-agent cod
   and linked statically.
 - **Agent-focused.** Built for the workflow where an agent edits while you review.
 
-**Status: S1–S5 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper,
-the text-measurement layer, the line pairing and the git reader build, link and are covered by tests; the
+**Status: S1–S6 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper,
+the text-measurement layer, the line pairing and the git reader build, and are wired together, link and are covered by tests; the
 diff results agree with upstream's own `diff_tool` on every fixture. There is no review
 interface yet — see [docs/plan/04-milestones.md](docs/plan/04-milestones.md).
 
@@ -102,6 +102,34 @@ codediff debug status /tmp/cdfix [-v]
 
 Two codes per file — the index against `HEAD`, then the working tree against the index.
 The output is in the manifest's own format, so the acceptance check is `diff`ing them.
+
+### Diffing one file of your repository
+
+```sh
+codediff debug diff-file src/whatever.rs [--verbose]
+```
+
+One path in: git finds the file, reads both sides, the engine compares them and the pairing
+is printed. This is every layer at once.
+
+```text
+crlf.txt
+Modified
+
+before   10 bytes of text
+after    17 bytes of text
+
+3 line(s) -> 4 line(s), 4 row(s), 1 change(s)
+
+    1   one␍                       │     1   one␍
+    2   two␍                       │     2   two␍
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   │     3 + three␍
+```
+
+Carriage returns show as `␍` rather than vanishing, so a file that gained CRLF endings
+cannot look unchanged. A binary file says so instead of being fed to the engine, and a file
+that exists on only one side lists its lines rather than being paired against a phantom
+blank one.
 
 ### Pairing up the two files
 

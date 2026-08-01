@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use vcs::git::Untracked;
-use vcs::{Diff, DiffKind, FileDiff, Git, RelPath};
+use vcs::{Content, Diff, DiffKind, FileDiff, Git, RelPath};
 
 /// A fixture repository in a temporary directory, removed on drop.
 struct Fixture {
@@ -194,12 +194,12 @@ fn the_two_sides_of_a_change_come_back_byte_for_byte() {
     let modified = file(&entries, "modified.txt");
 
     assert_eq!(
-        git.before(&modified).expect("reads").expect("exists"),
-        b"one\ntwo\nthree\n"
+        git.before(&modified).expect("reads").text(),
+        Some("one\ntwo\nthree\n")
     );
     assert_eq!(
-        git.after(&modified).expect("reads").expect("exists"),
-        b"one\nTWO\nthree\n"
+        git.after(&modified).expect("reads").text(),
+        Some("one\nTWO\nthree\n")
     );
 }
 
@@ -212,12 +212,32 @@ fn a_one_sided_change_has_only_the_side_it_has() {
     let entries = git.files().expect("status runs");
 
     let untracked = file(&entries, "untracked.txt");
-    assert_eq!(git.before(&untracked).expect("reads"), None);
-    assert!(git.after(&untracked).expect("reads").is_some());
+    assert!(matches!(
+        git.before(&untracked).expect("reads"),
+        Content::Absent
+    ));
+    assert!(git.after(&untracked).expect("reads").text().is_some());
 
     let deleted = file(&entries, "deleted.txt");
-    assert!(git.before(&deleted).expect("reads").is_some());
-    assert_eq!(git.after(&deleted).expect("reads"), None);
+    assert!(git.before(&deleted).expect("reads").text().is_some());
+    assert!(matches!(
+        git.after(&deleted).expect("reads"),
+        Content::Absent
+    ));
+}
+
+#[test]
+fn a_picture_comes_back_classified_rather_than_as_bytes() {
+    // The caller cannot use raw bytes without asking "is this text?", so the
+    // answer arrives with the content instead of every caller working it out.
+    let fixture = Fixture::new("binary");
+    let mut git = fixture.git();
+    let entries = git.files().expect("status runs");
+    let picture = file(&entries, "picture.png");
+
+    assert!(git.before(&picture).expect("reads").is_binary());
+    assert!(git.after(&picture).expect("reads").is_binary());
+    assert_eq!(git.after(&picture).expect("reads").text(), None);
 }
 
 #[test]
@@ -232,7 +252,7 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
     assert_eq!(moved.kind, DiffKind::Moved);
     assert_eq!(moved.before_path().as_str(), "renamed-from.txt");
     assert!(
-        git.before(&moved).expect("reads").is_some(),
+        git.before(&moved).expect("reads").text().is_some(),
         "the before side must be read from the path the file used to have"
     );
 }

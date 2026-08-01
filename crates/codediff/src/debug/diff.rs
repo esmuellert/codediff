@@ -16,8 +16,8 @@ pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     // Split on '\n' only, keeping a trailing empty line, which is how the
     // engine and JavaScript both model a file. `str::lines` discards the
     // trailing empty line and strips '\r', which would shift every range.
-    let original: Vec<&str> = original_text.split('\n').collect();
-    let modified: Vec<&str> = modified_text.split('\n').collect();
+    let original = vscode_diff::lines(&original_text);
+    let modified = vscode_diff::lines(&modified_text);
 
     let options = Options::default().with_moves();
     let diff = vscode_diff::compute(&original, &modified, &options)?;

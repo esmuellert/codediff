@@ -14,7 +14,7 @@ pub mod worktree;
 
 use std::path::Path;
 
-use crate::diff::{Diff, DiffKind, FileDiff};
+use crate::diff::{Content, Diff, DiffKind, FileDiff};
 use crate::error::Result;
 use crate::{RelPath, Repo};
 
@@ -113,24 +113,24 @@ impl Diff for Git {
         Ok(self.entries()?.into_iter().map(to_file_diff).collect())
     }
 
-    fn before(&mut self, file: &FileDiff) -> Result<Option<Vec<u8>>> {
+    fn before(&mut self, file: &FileDiff) -> Result<Content> {
         // An untracked file has no before side at all, and asking git for one
         // would spend a round trip to be told so.
         if file.kind == DiffKind::Untracked || file.kind == DiffKind::Added {
-            return Ok(None);
+            return Ok(Content::Absent);
         }
         let rev = self.before.clone();
         let path = file.before_path().clone();
-        self.blobs()?.read(&rev, &path)
+        Ok(Content::of(self.blobs()?.read(&rev, &path)?))
     }
 
-    fn after(&mut self, file: &FileDiff) -> Result<Option<Vec<u8>>> {
+    fn after(&mut self, file: &FileDiff) -> Result<Content> {
         if file.kind == DiffKind::Deleted {
-            return Ok(None);
+            return Ok(Content::Absent);
         }
         // The after side of the default comparison is the working tree, which
         // is on disk rather than in the object store.
-        worktree::read(&self.repo.root, &file.path)
+        Ok(Content::of(worktree::read(&self.repo.root, &file.path)?))
     }
 }
 
