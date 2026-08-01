@@ -5,7 +5,7 @@
 //! those are invisible on screen, and they are the ones the diff engine
 //! depends on. This test covers them.
 
-use metrics::{ByteOff, DEFAULT_TAB_WIDTH, LineMetrics, Utf16Col};
+use line_index::{ByteOff, DEFAULT_TAB_WIDTH, LineIndex, Utf16Col};
 
 const FIXTURE: &str = include_str!("../fixtures/nasty.txt");
 const EXPECTED: &str = include_str!("../fixtures/nasty.expected");
@@ -46,7 +46,7 @@ fn measured() -> Vec<Row> {
         .lines()
         .enumerate()
         .map(|(index, text)| {
-            let line = LineMetrics::new(text, DEFAULT_TAB_WIDTH);
+            let line = LineIndex::new(text, DEFAULT_TAB_WIDTH);
             Row {
                 line: index + 1,
                 bytes: line.byte_len().get(),
@@ -87,7 +87,7 @@ fn every_fixture_line_is_internally_consistent() {
     // Totals must equal the sum of the parts, on real-world content rather
     // than the generated input the property tests use.
     for (index, text) in FIXTURE.lines().enumerate() {
-        let line = LineMetrics::new(text, DEFAULT_TAB_WIDTH);
+        let line = LineIndex::new(text, DEFAULT_TAB_WIDTH);
         let bytes: u32 = line.graphemes().map(|g| g.text.len() as u32).sum();
         let cells: u32 = line.graphemes().map(|g| g.width).sum();
 
@@ -99,7 +99,7 @@ fn every_fixture_line_is_internally_consistent() {
 
 /// An independent byte-to-UTF-16 table for one line, built from `std` alone.
 ///
-/// `LineMetrics` indexes by grapheme cluster and binary-searches; this walks
+/// `LineIndex` indexes by grapheme cluster and binary-searches; this walks
 /// characters and accumulates `char::len_utf16`. The two share nothing but the
 /// input, so agreement is evidence rather than restatement.
 fn utf16_oracle(text: &str) -> Vec<(u32, u32)> {
@@ -118,7 +118,7 @@ fn every_character_boundary_agrees_with_an_independent_oracle() {
     // The reference table above checks per-line totals, which two different
     // errors can cancel out of. This checks every boundary in between.
     for (index, text) in FIXTURE.lines().enumerate() {
-        let line = LineMetrics::new(text, DEFAULT_TAB_WIDTH);
+        let line = LineIndex::new(text, DEFAULT_TAB_WIDTH);
         let oracle = utf16_oracle(text);
 
         assert_eq!(
@@ -154,7 +154,7 @@ fn every_engine_range_over_the_fixture_yields_sliceable_bytes() {
     // range to a byte range and slice the line with it. A range that is not on
     // character boundaries panics; one that collapses highlights nothing.
     for (index, text) in FIXTURE.lines().enumerate() {
-        let line = LineMetrics::new(text, DEFAULT_TAB_WIDTH);
+        let line = LineIndex::new(text, DEFAULT_TAB_WIDTH);
         let units = line.utf16_len().get();
 
         for start in 0..=units {

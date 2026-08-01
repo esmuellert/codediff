@@ -69,7 +69,7 @@ impl<'a> Alignment<'a> {
             diff,
             original,
             modified,
-            metrics::DEFAULT_TAB_WIDTH,
+            line_index::DEFAULT_TAB_WIDTH,
             DEFAULT_CONTEXT,
         )
     }

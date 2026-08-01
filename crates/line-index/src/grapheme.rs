@@ -1,6 +1,6 @@
 //! Walking a line, cluster by cluster.
 //!
-//! The counterpart to [`LineMetrics`](crate::LineMetrics), which *queries* a
+//! The counterpart to [`LineIndex`](crate::LineIndex), which *queries* a
 //! line. Drawing needs only a forward walk and no index, so the two are kept
 //! apart: nothing here allocates.
 
@@ -36,7 +36,7 @@ impl Grapheme<'_> {
 
 /// A grapheme boundary, in all three coordinate systems at once.
 ///
-/// Doubles as an entry in [`LineMetrics`](crate::LineMetrics)' index and as a
+/// Doubles as an entry in [`LineIndex`](crate::LineIndex)' index and as a
 /// place to resume a walk from, which is how scrolling right avoids rewalking
 /// the line from column zero.
 #[derive(Debug, Clone, Copy)]
@@ -58,9 +58,9 @@ impl Position {
 /// system, **without building an index**.
 ///
 /// Drawing a line needs only a forward walk, so paying for a
-/// [`LineMetrics`](crate::LineMetrics) table that nothing queries is waste —
+/// [`LineIndex`](crate::LineIndex) table that nothing queries is waste —
 /// and a renderer rebuilds its visible lines on every frame. Use this to draw,
-/// and `LineMetrics` to answer questions about positions.
+/// and `LineIndex` to answer questions about positions.
 pub fn graphemes(text: &str, tab_width: u8) -> impl Iterator<Item = Grapheme<'_>> {
     graphemes_from(text, tab_width, Position::ORIGIN)
 }

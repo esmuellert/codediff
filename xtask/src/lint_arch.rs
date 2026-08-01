@@ -30,12 +30,12 @@ const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
         "vcs",
         "the explorer model is pure; obtaining entries belongs to vcs",
     ),
-    ("metrics", "vcs", "text measurement must not perform IO"),
+    ("line-index", "vcs", "text measurement must not perform IO"),
     ("syntax", "vcs", "syntactic analysis must not perform IO"),
 ];
 
 /// Crates that must not perform IO, so that they stay trivially testable.
-const PURE_CRATES: &[&str] = &["metrics", "syntax", "align", "explorer", "vscode-diff"];
+const PURE_CRATES: &[&str] = &["line-index", "syntax", "align", "explorer", "vscode-diff"];
 
 const IO_MARKERS: &[&str] = &["std::fs", "std::process", "std::net", "std::env::var"];
 

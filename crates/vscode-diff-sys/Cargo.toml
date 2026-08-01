@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# Workspace-internal: these short names are taken on crates.io.
+publish = false
 
 # Cargo enforces that only one package in a dependency graph may link a given
 # native library. See docs/plan/05-decisions.md D14.

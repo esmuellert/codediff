@@ -1,6 +1,6 @@
-# metrics
+# line-index
 
-Translates the diff engine's text positions into terminal positions.
+Tells you where each character of a line sits.
 
 For the line `a日🎉b`:
 
@@ -20,9 +20,9 @@ JavaScript strings are UTF-16. Rust slices strings by **byte offset**. A termina
 **cell columns**. Something has to translate, and this is it.
 
 ```rust
-use metrics::{LineMetrics, Utf16Col};
+use line_index::{LineIndex, Utf16Col};
 
-let line = LineMetrics::new("let x = \"日本\";", 4);
+let line = LineIndex::new("let x = \"日本\";", 4);
 
 // The engine says "column 10"; find it in the bytes, then on screen.
 let byte = line.utf16_to_byte(Utf16Col::from_engine(10));
@@ -74,9 +74,9 @@ Rounding both ends down gives `0..0`, and the change is highlighted nowhere at a
 So the start rounds **down** and the exclusive end rounds **up**:
 
 ```rust
-use metrics::{LineMetrics, Utf16Col};
+use line_index::{LineIndex, Utf16Col};
 
-let line = LineMetrics::new("😀", 4);
+let line = LineIndex::new("😀", 4);
 let bytes = line.utf16_range_to_bytes(Utf16Col::from_engine(1)..Utf16Col::from_engine(2));
 
 assert_eq!(bytes.start.get()..bytes.end.get(), 0..4); // the whole character
@@ -88,19 +88,19 @@ travels with its base, can widen the result using `graphemes`.
 
 ## Measuring versus drawing
 
-`LineMetrics::new` allocates an index on any line that is not plain ASCII. That is worth it
+`LineIndex::new` allocates an index on any line that is not plain ASCII. That is worth it
 for positional queries, and waste for a renderer walking a line to draw it — which it does
 for every visible line on every frame. So there are two entry points:
 
 | you want to | use |
 |---|---|
-| ask where something is | `LineMetrics`, built once and kept |
-| walk a line to draw it | `metrics::graphemes(text, tab_width)`, no allocation |
+| ask where something is | `LineIndex`, built once and kept |
+| walk a line to draw it | `line_index::graphemes(text, tab_width)`, no allocation |
 
 ## Checking it
 
 ```sh
-codediff debug measure crates/metrics/fixtures/nasty.txt [--verbose]
+codediff debug line crates/line-index/fixtures/nasty.txt [--verbose]
 ```
 
 Lists the characters whose byte, UTF-16 and column positions disagree, plus any control

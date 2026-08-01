@@ -66,14 +66,14 @@ codediff debug diff <a> <b>
 
 ---
 
-### S3 — `metrics`, text measurement
+### S3 — `line-index`, where each character sits
 
 **Build.** `ByteOff` / `CharIdx` / `Utf16Col` / `CellCol` newtypes, conversions, display
 width, tab expansion, grapheme-safe slicing by cell range.
 
 **Check.**
 ```
-codediff debug measure crates/metrics/fixtures/nasty.txt
+codediff debug line crates/line-index/fixtures/nasty.txt
 ```
 Lists, per line, every character whose byte / UTF-16 / column positions disagree, with its
 display width. Plain ASCII is skipped — there all three are equal, which is why confusing
@@ -90,7 +90,7 @@ them goes unnoticed until a file contains a tab or an emoji.
 ### S4 — `align`, pairing the two files — **KEYSTONE** ✅
 
 **Build.** `Alignment` over a `LinesDiff` plus two texts: `Row`/`Slot`/`RowKind`, hunks with
-content-hash `HunkId`, inner-change spans resolved to byte ranges via `metrics`, unchanged
+content-hash `HunkId`, inner-change spans resolved to byte ranges via `line-index`, unchanged
 regions, moves by line lookup. A **plain-text renderer** — no TUI in this milestone.
 
 It stores no rows and copies no text; every answer is computed from the diff it borrows.
@@ -241,7 +241,7 @@ arrives in S10a.
 
 ### S10a — Optional line wrapping
 
-**Build.** Opt-in wrap. `metrics` gains "break this line into rows of width W". `display`
+**Build.** Opt-in wrap. `line-index` gains "break this line into rows of width W". `display`
 computes each line's row count at its pane width, pairs ranges by **row** height rather than
 line count, and pads the shorter side after the range. Viewport position becomes
 `(row, subrow)`; the row index is rebuilt on resize.

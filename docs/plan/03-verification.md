@@ -140,7 +140,7 @@ human-readable artifact and the regression fixture are the same file.
 |---|---|---|
 | `codediff doctor` | version, engine version, linkage, runtime deps, config path | S1 |
 | `codediff debug diff <a> <b>` | the raw `LinesDiff` — changes, inner changes, moves | S2 |
-| `codediff debug measure <f> [-v]` | per-character byte/utf16/column/width for the characters that diverge, and for control characters | S3 |
+| `codediff debug line <f> [-v]` | per-character byte/utf16/column/width for the characters that diverge, and for control characters | S3 |
 | `codediff debug align <a> <b> [-v]` | plain-text side-by-side with fillers, change markers and move notes; `-v` adds hunks, character spans and unchanged regions | S4 |
 | `codediff debug status` | parsed status entries as a table | S5 |
 | `codediff debug show <rev>:<path>` | blob content as read through the vcs layer | S6 |
@@ -179,7 +179,7 @@ the toolchain rather than competing with it.
 | test | layer | tool | speed | proves |
 |---|---|---|---|---|
 | per-function logic | unit | `cargo test` | µs | one function or type |
-| `metrics` conversions | unit + property | `proptest` | ms | invariants over generated input |
+| `line-index` conversions | unit + property | `proptest` | ms | invariants over generated input |
 | `align` golden output | integration | std, `UPDATE_GOLDEN=1` | ms | `debug align` output unchanged, and each column still reads back as its file |
 | `display` screens | integration | `insta` + `TestBackend` | ms | rendered cell grid unchanged |
 | `vcs` against git | integration | `cargo test -p vcs` | ~100 ms | real git behaviour, via fixture repos |

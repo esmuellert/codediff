@@ -1,11 +1,11 @@
-//! `codediff debug measure <file>` — where each character lives.
+//! `codediff debug line <file>` — where each character of a line sits.
 //!
 //! Lists only the characters whose byte, UTF-16 and column positions differ.
 //! Plain ASCII is skipped: for it all three are the same number, which is
 //! precisely why nothing interesting happens there.
 
 use anyhow::{Context, Result};
-use metrics::{CellCol, DEFAULT_TAB_WIDTH, Grapheme, LineMetrics};
+use line_index::{CellCol, DEFAULT_TAB_WIDTH, Grapheme, LineIndex};
 
 use crate::text::{display_width, expand, pad, visible};
 
@@ -26,7 +26,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
 
     for (number, raw) in text.lines().enumerate() {
         total += 1;
-        let line = LineMetrics::new(raw, DEFAULT_TAB_WIDTH);
+        let line = LineIndex::new(raw, DEFAULT_TAB_WIDTH);
         let notable: Vec<Grapheme<'_>> = line.graphemes().filter(is_notable).collect();
 
         if notable.is_empty() && !verbose {
@@ -115,7 +115,7 @@ fn name(g: &Grapheme<'_>) -> String {
 
 /// A visual check that the computed widths match what the terminal draws:
 /// `^` where a character starts, `-` for the columns it continues into.
-fn ruler_check(line: &LineMetrics<'_>) {
+fn ruler_check(line: &LineIndex<'_>) {
     let mut map = String::new();
     for g in line.graphemes() {
         if g.width > 0 {

@@ -6,9 +6,9 @@
 //! cover the tail of one line, several whole lines, and the head of another.
 //!
 //! Columns are UTF-16 code units, one-based and end-exclusive. Rust needs byte
-//! offsets, so every span goes through [`metrics`].
+//! offsets, so every span goes through [`line_index`].
 
-use metrics::{DEFAULT_TAB_WIDTH, LineMetrics, Utf16Col};
+use line_index::{DEFAULT_TAB_WIDTH, LineIndex, Utf16Col};
 use vscode_diff::CharRange;
 
 /// A run of changed characters within one line.
@@ -44,7 +44,7 @@ pub fn span_on(range: &CharRange, line: u32, lines: &[&str], tab_width: u8) -> O
         return None;
     }
     let text = lines.get(line.checked_sub(1)? as usize)?;
-    let metrics = LineMetrics::new(text, tab_width);
+    let index = LineIndex::new(text, tab_width);
 
     // The first line starts where the range does, later lines at column 0; the
     // last line stops where the range does, earlier lines at their end.
@@ -56,10 +56,10 @@ pub fn span_on(range: &CharRange, line: u32, lines: &[&str], tab_width: u8) -> O
     let to = if line == range.end_line {
         Utf16Col::from_engine(range.end_col)
     } else {
-        metrics.utf16_len()
+        index.utf16_len()
     };
 
-    let bytes = metrics.utf16_range_to_bytes(from..to);
+    let bytes = index.utf16_range_to_bytes(from..to);
     if bytes.start >= bytes.end {
         return None;
     }

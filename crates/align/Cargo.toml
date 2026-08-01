@@ -7,10 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# Workspace-internal: these short names are taken on crates.io.
+publish = false
 
 [dependencies]
 vscode-diff.workspace = true
-metrics.workspace = true
+line-index.workspace = true
 
 [dev-dependencies]
 proptest = "1"

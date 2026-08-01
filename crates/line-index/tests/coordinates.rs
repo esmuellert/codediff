@@ -1,12 +1,12 @@
 //! Conversion between coordinate systems, checked against hand-computed values
 //! and against invariants that must hold for any input.
 
-use metrics::{ByteOff, CellCol, LineMetrics, Utf16Col};
+use line_index::{ByteOff, CellCol, LineIndex, Utf16Col};
 
 const TAB: u8 = 4;
 
-fn m(text: &str) -> LineMetrics<'_> {
-    LineMetrics::new(text, TAB)
+fn m(text: &str) -> LineIndex<'_> {
+    LineIndex::new(text, TAB)
 }
 
 // ---------------------------------------------------------------------------

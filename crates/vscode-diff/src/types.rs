@@ -34,7 +34,7 @@ impl LineRange {
 /// A position range within a line: 1-based, `end_col` exclusive, columns in
 /// UTF-16 code units.
 ///
-/// Converting these to byte offsets is the `metrics` crate's job; doing it
+/// Converting these to byte offsets is the `line-index` crate's job; doing it
 /// naively will misplace highlights on any non-ASCII line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharRange {

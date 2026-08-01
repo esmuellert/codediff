@@ -163,7 +163,7 @@ because they are **unfalsifiable**. "Does this belong in `align`?" has an answer
 belong in `core`?" is always yes. A crate name should state an admission criterion that can
 be applied in code review.
 
-`metrics` covers measurement and coordinate mapping — the established term for both.
+`line-index` covers measurement and coordinate mapping — the established term for both.
 `align` is named for its algorithm, not its data, because the alignment builder and the
 projections are the valuable part. `runtime` states its criterion: things that exist only
 while the application is running. `vcs` rather than `git` leaves room for jj and avoids the
@@ -658,7 +658,7 @@ Four defects in the replaced design, in order of severity:
 **What we add that VSCode does not need.** Its editor answers "what is on screen row *n*";
 we have no editor, so `rows()` expands ranges into lines at draw time — a walk, not a stored
 structure. And the engine reports UTF-16 columns, which JavaScript takes for granted and
-Rust does not, so inner changes go through `metrics::utf16_range_to_bytes`.
+Rust does not, so inner changes go through `line_index::utf16_range_to_bytes`.
 
 **Ownership.** `Alignment` borrows the `LinesDiff` and both files, so it is a view and never a
 stored field: `runtime` owns a `Document` (the texts, their line vectors and the `LinesDiff`) and

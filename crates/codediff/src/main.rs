@@ -8,7 +8,7 @@
 mod align;
 mod debug;
 mod doctor;
-mod measure;
+mod line;
 mod text;
 
 use anyhow::{Result, bail};
@@ -26,12 +26,12 @@ fn main() -> Result<()> {
                 (Some(original), Some(modified)) => debug::run(original, modified),
                 _ => bail!("usage: codediff debug diff <original> <modified>"),
             },
-            Some("measure") => match args.get(2) {
+            Some("line") => match args.get(2) {
                 Some(path) => {
                     let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
-                    measure::run(path, verbose)
+                    line::run(path, verbose)
                 }
-                None => bail!("usage: codediff debug measure <file> [--verbose]"),
+                None => bail!("usage: codediff debug line <file> [--verbose]"),
             },
             Some("align") => match (args.get(2), args.get(3)) {
                 (Some(original), Some(modified)) => {
@@ -41,7 +41,7 @@ fn main() -> Result<()> {
                 _ => bail!("usage: codediff debug align <original> <modified> [--verbose]"),
             },
             Some(other) => bail!("unknown debug command: {other}"),
-            None => bail!("usage: codediff debug <diff|align|measure> ..."),
+            None => bail!("usage: codediff debug <diff|align|line> ..."),
         },
         Some("--version") | Some("-V") => {
             println!("codediff {}", env!("CARGO_PKG_VERSION"));
@@ -67,7 +67,7 @@ USAGE:
     codediff doctor                          report how this binary was built
     codediff debug diff <old> <new>          print the raw diff of two files
     codediff debug align <old> <new> [-v]    print the two files paired up
-    codediff debug measure <file> [-v]       print where each character lives
+    codediff debug line <file> [-v]          print where each character sits
     codediff --version                       print the version
     codediff --help                          print this message
 

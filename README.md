@@ -107,7 +107,7 @@ have the modified one. That is the property the tests assert over all twelve fix
 ### Inspecting text measurement
 
 ```sh
-codediff debug measure crates/metrics/fixtures/nasty.txt [--verbose]
+codediff debug line crates/line-index/fixtures/nasty.txt [--verbose]
 ```
 
 Lists the characters whose byte, UTF-16 and column positions disagree, plus any control

@@ -1,6 +1,6 @@
 //! Positional queries about a single line of text.
 //!
-//! A [`LineMetrics`] indexes one line once, then answers conversions between
+//! A [`LineIndex`] indexes one line once, then answers conversions between
 //! byte offsets, UTF-16 columns and terminal cells by binary search. Walking a
 //! line rather than querying it lives in [`crate::grapheme`], and needs no
 //! index.
@@ -24,13 +24,13 @@ enum Index {
 
 /// Measurements for one line of text.
 #[derive(Debug, Clone)]
-pub struct LineMetrics<'a> {
+pub struct LineIndex<'a> {
     text: &'a str,
     tab_width: u8,
     index: Index,
 }
 
-impl<'a> LineMetrics<'a> {
+impl<'a> LineIndex<'a> {
     /// Indexes `text`, which must be a single line without its terminator.
     ///
     /// Building the index costs an allocation on any line that is not plain

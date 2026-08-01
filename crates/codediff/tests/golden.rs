@@ -225,7 +225,7 @@ fn check_column(
 /// each. A tab starting at column 3 is one column wide, not four.
 fn expand_tabs(text: &str) -> String {
     let mut out = String::new();
-    for g in metrics::graphemes(text, metrics::DEFAULT_TAB_WIDTH) {
+    for g in line_index::graphemes(text, line_index::DEFAULT_TAB_WIDTH) {
         if g.is_tab() {
             out.extend(std::iter::repeat_n(' ', g.width as usize));
         } else {

@@ -34,7 +34,7 @@ codediff/
 ├── crates/
 │   ├── vscode-diff-sys/      raw FFI + cc build of the C engine
 │   ├── vscode-diff/          safe wrapper → LinesDiff                    pure
-│   ├── metrics/              text measurement + coordinate mapping    pure
+│   ├── line-index/           where each character of a line sits      pure
 │   ├── syntax/               text → normalized syntactic spans        pure
 │   ├── align/                Alignment · rows · hunks · spans        pure
 │   ├── explorer/             entries · grouping · tree · filter       pure
@@ -54,7 +54,7 @@ codediff/
 |---|---|---|
 | `vscode-diff-sys` | `build.rs` invoking `cc`; `#[repr(C)]` structs and `extern "C"` declarations, 1:1 with the C API | unsafe, ~150 lines |
 | `vscode-diff` | `compute(&[&str], &[&str], Options) -> LinesDiff` returning owned Rust types; eager conversion, frees C memory immediately | pure |
-| `metrics` | UTF-16 ↔ byte ↔ char ↔ grapheme ↔ cell, display width, tab expansion, cell-range slicing | pure |
+| `line-index` | where each character of a line sits: UTF-16 ↔ byte ↔ char ↔ grapheme ↔ cell, display width, tab expansion, cell-range slicing | pure |
 | `syntax` | language detection; text → `SpanSet` of normalized `Class` values. The only crate that may name a syntax engine | pure |
 | `align` | pairing lines from a `LinesDiff` plus two texts; fillers; hunks; inner-change byte ranges; unchanged regions | pure |
 | `explorer` | status entries → grouped tree, path collapsing, gitignore-style filtering | pure |
@@ -74,12 +74,12 @@ criterion that can be applied in review. "Does this belong in `align`?" has an a
 Strictly acyclic. Enforced by cargo — a violation is a compile error, not a review comment.
 
 ```
-codediff ──> display ──> runtime ──> vcs ──────> metrics
-              │            │  └────> syntax ───> metrics
-              │            └──> align ────────> metrics
+codediff ──> display ──> runtime ──> vcs ──────> line-index
+              │            │  └────> syntax ───> line-index
+              │            └──> align ────────> line-index
               │            │         └────────> vscode-diff ──> vscode-diff-sys
               │            └──> explorer
-              └──> align, explorer, metrics, syntax
+              └──> align, explorer, line-index, syntax
 ```
 
 ### Edges that must never exist
@@ -90,13 +90,13 @@ codediff ──> display ──> runtime ──> vcs ──────> metrics
 | `display` → `vscode-diff` | rendering must consume model types, never compute diffs |
 | **anything → a syntax engine, except `crates/syntax/src/engine/`** | keeps the engine swappable; `syntect::` or `tree_sitter::` appearing anywhere else fails CI |
 | anything → `codediff` | the composition root is a leaf; nothing depends on it |
-| `align`/`explorer`/`metrics`/`syntax`/`vscode-diff` → anything with IO | keeps the pure core pure |
+| `align`/`explorer`/`line-index`/`syntax`/`vscode-diff` → anything with IO | keeps the pure core pure |
 
 ## Hard rules
 
 | rule | rationale | enforcement |
 |---|---|---|
-| `align`, `explorer`, `metrics`, `vscode-diff` perform no IO — no `std::fs`, no `std::process`, no sockets, no clock | pure core is trivially testable and cannot rot | CI lint + absent dependencies |
+| `align`, `explorer`, `line-index`, `vscode-diff` perform no IO — no `std::fs`, no `std::process`, no sockets, no clock | pure core is trivially testable and cannot rot | CI lint + absent dependencies |
 | no cyclic crate dependencies | the single mechanism that prevented the plugin's decay | cargo |
 | soft cap 300 lines/file, hard cap 500 | forces splitting before a file becomes a junk drawer | `cargo xtask lint-size` |
 | private by default; `pub(crate)` is the escalation; `pub` is deliberate | shrinks blast radius, keeps API surface countable | clippy + review |
@@ -188,7 +188,7 @@ Consequences:
 ### Newtypes are load-bearing
 
 Four distinct column concepts all look like `usize`, and the C engine reports UTF-16
-columns because it mirrors VSCode. Confusing them produces invisible misalignment. `metrics`
+columns because it mirrors VSCode. Confusing them produces invisible misalignment. `line-index`
 therefore defines `ByteOff`, `CharIdx`, `Utf16Col`, `CellCol` as distinct types, and `align`
 defines `LineNo` vs `LineIdx`. These conversions become compile errors rather than test
 failures.
@@ -216,7 +216,7 @@ failures.
         align  ·  explorer                              vcs   ·   vscode-diff
                │                                                  │
                ▼                                                  ▼
-            metrics                                        vscode-diff-sys → C
+            line-index                                        vscode-diff-sys → C
 ```
 
 ### The two loops
@@ -317,7 +317,7 @@ sync channel — an implementation detail of one adapter, not a property of the 
 4. Every `Command` carries a `RequestId`; results with a stale id are dropped in `update`.
 5. `display` owns presentation state, `runtime` owns domain state; the bridge between them
    is **stable identity** (`path`, `HunkId`) — never an index.
-6. `vscode-diff`, `metrics`, `align`, `explorer` are pure and testable with no terminal, no
+6. `vscode-diff`, `line-index`, `align`, `explorer` are pure and testable with no terminal, no
    repository and no threads.
 
 Invariant 2 is the one that pays most: the entire application logic can be tested by feeding
@@ -331,12 +331,12 @@ Named in advance so they are cheap. Unnamed, each is a month-three refactor.
 |---|---|---|
 | 1 | `AppState` grows into a god object | nest by domain (`state.explorer`, `state.diff`, `state.watch`); `update/` submodules may only touch their own sub-state; track its line count |
 | 2 | the `runtime`/`display` state boundary gets re-argued (is "expanded set" domain or presentation?) | expect to redraw this line once around S12; the rule is presentation, keyed by path |
-| 3 | `metrics` gets pulled into rendering | strictly measurement and conversion, never drawing |
+| 3 | `line-index` gets pulled into rendering | strictly measurement and conversion, never drawing |
 | 4 | syntax spans must composite with diff and inner-change spans | build the generic `SpanSet` compositor with priorities at S7, when only diff spans feed it |
 | 5 | compact/fold projection shifts row indices and breaks cursor | viewport stores the cursor as a *domain* position and derives the visual row, never the reverse |
 | 6 | effects sprout `unwrap` | effects return `Result`; errors become `Event::Error` shown in the status line; never panic, never silently swallow |
 
-## Health metrics
+## Health line-index
 
 Architecture decays invisibly. These make it visible. Wired into CI at S1.
 
@@ -344,5 +344,5 @@ Architecture decays invisibly. These make it visible. Wired into CI at S1.
 - **lines per crate, tracked over time** — alarm if `runtime` grows faster than the pure
   crates. That ratio *is* the health metric: the hard part must stay small.
 - **`pub` item count per crate** — API surface growth is coupling growth, and it is countable
-- **test dependencies of pure crates** — if `align` or `metrics` tests ever need a temp
+- **test dependencies of pure crates** — if `align` or `line-index` tests ever need a temp
   directory or a repository fixture, purity has leaked. This canary fires earliest.

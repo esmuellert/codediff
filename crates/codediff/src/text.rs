@@ -5,7 +5,7 @@
 //! review is neutralised before it reaches the screen — otherwise the file
 //! decides what the reviewer sees.
 
-use metrics::{DEFAULT_TAB_WIDTH, LineMetrics};
+use line_index::{DEFAULT_TAB_WIDTH, LineIndex};
 
 /// Text with anything the terminal would act on replaced by a printable
 /// stand-in of the same width.
@@ -28,7 +28,7 @@ pub fn visible(text: &str) -> String {
 ///   what it executes. This is the Trojan Source attack, and `char::is_control`
 ///   does not cover it: those are format characters, category `Cf`, not `Cc`.
 fn is_dangerous(c: char) -> bool {
-    c.is_control() || metrics::is_bidi_control(c)
+    c.is_control() || line_index::is_bidi_control(c)
 }
 
 fn picture(c: char) -> char {
@@ -48,7 +48,7 @@ fn picture(c: char) -> char {
 ///
 /// A raw tab would use the *terminal's* tab stops rather than the ones we
 /// measured with, so the two would disagree about where anything sits.
-pub fn expand(line: &LineMetrics<'_>) -> String {
+pub fn expand(line: &LineIndex<'_>) -> String {
     let mut out = String::with_capacity(line.text().len());
     for g in line.graphemes() {
         if g.is_tab() {
@@ -62,12 +62,12 @@ pub fn expand(line: &LineMetrics<'_>) -> String {
 
 /// The same, straight from a string.
 pub fn expand_str(text: &str) -> String {
-    expand(&LineMetrics::new(text, DEFAULT_TAB_WIDTH))
+    expand(&LineIndex::new(text, DEFAULT_TAB_WIDTH))
 }
 
 /// Terminal columns the text occupies.
 pub fn display_width(text: &str) -> u32 {
-    LineMetrics::new(text, DEFAULT_TAB_WIDTH).width().get()
+    LineIndex::new(text, DEFAULT_TAB_WIDTH).width().get()
 }
 
 /// Pads to terminal columns rather than characters, so a double-width
@@ -95,7 +95,7 @@ pub fn fit(text: &str, columns: u32) -> String {
     let budget = columns.saturating_sub(1);
     let mut out = String::new();
     let mut used = 0;
-    for g in metrics::graphemes(text, DEFAULT_TAB_WIDTH) {
+    for g in line_index::graphemes(text, DEFAULT_TAB_WIDTH) {
         if used + g.width > budget {
             break;
         }

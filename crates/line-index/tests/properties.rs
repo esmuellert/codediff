@@ -4,13 +4,13 @@
 //! These say what must be true of *all* text, which is how the cases nobody
 //! thought to write down get covered.
 
-use metrics::{ByteOff, CellCol, LineMetrics, Utf16Col};
+use line_index::{ByteOff, CellCol, LineIndex, Utf16Col};
 use proptest::prelude::*;
 
 const TAB: u8 = 4;
 
-fn m(text: &str) -> LineMetrics<'_> {
-    LineMetrics::new(text, TAB)
+fn m(text: &str) -> LineIndex<'_> {
+    LineIndex::new(text, TAB)
 }
 
 // ---------------------------------------------------------------------------

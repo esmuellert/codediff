@@ -13,7 +13,7 @@
 //! - `LineRange` is 1-indexed, start inclusive, end exclusive.
 //! - `CharRange` is 1-indexed; `end_col` is exclusive. Columns are **UTF-16
 //!   code units**, because the algorithm mirrors VSCode, whose strings are
-//!   UTF-16. Converting them to byte offsets is `metrics`' job.
+//!   UTF-16. Converting them to byte offsets is `line-index`'s job.
 
 #![allow(non_camel_case_types)]
 
