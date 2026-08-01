@@ -5,9 +5,11 @@
 //! the only place in the workspace that names concrete implementations, and
 //! nothing depends on it.
 
+mod align;
 mod debug;
 mod doctor;
 mod measure;
+mod text;
 
 use anyhow::{Result, bail};
 
@@ -31,8 +33,15 @@ fn main() -> Result<()> {
                 }
                 None => bail!("usage: codediff debug measure <file> [--verbose]"),
             },
+            Some("align") => match (args.get(2), args.get(3)) {
+                (Some(original), Some(modified)) => {
+                    let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
+                    align::run(original, modified, verbose)
+                }
+                _ => bail!("usage: codediff debug align <original> <modified> [--verbose]"),
+            },
             Some(other) => bail!("unknown debug command: {other}"),
-            None => bail!("usage: codediff debug <diff|measure> ..."),
+            None => bail!("usage: codediff debug <diff|align|measure> ..."),
         },
         Some("--version") | Some("-V") => {
             println!("codediff {}", env!("CARGO_PKG_VERSION"));
@@ -57,6 +66,7 @@ codediff {version} — a standalone, read-only terminal diff reviewer
 USAGE:
     codediff doctor                          report how this binary was built
     codediff debug diff <old> <new>          print the raw diff of two files
+    codediff debug align <old> <new> [-v]    print the two files paired up
     codediff debug measure <file> [-v]       print where each character lives
     codediff --version                       print the version
     codediff --help                          print this message

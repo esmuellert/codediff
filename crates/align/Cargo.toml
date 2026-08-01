@@ -1,0 +1,19 @@
+[package]
+name = "align"
+description = "Pairs original and modified lines, and says where fillers go."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+vscode-diff.workspace = true
+metrics.workspace = true
+
+[dev-dependencies]
+proptest = "1"
+
+[lints]
+workspace = true

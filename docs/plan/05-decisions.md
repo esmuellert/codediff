@@ -327,7 +327,7 @@ structural change; one forced a decision that is now made.
 | test | outcome |
 |---|---|
 | connect to an agent backend (streaming, cancellable) | **clean** — new crate beside `vcs`, plus event variants. `RequestId` already handles cancellation |
-| agent comments displayed inline against hunks | **required a decision**: `VisualRow` must be an enum with room for non-diff rows, and projections must take a context struct. Made at S4 |
+| agent comments displayed inline against hunks | **required a decision**: `display`'s `VisualRow` must be an enum wrapping `align::Row` with room for non-diff rows, and projections must take a context struct. Due at S7 |
 | "what changed since I last looked" | **free** — falls out of `HunkId` being a content hash |
 | MCP server so the agent queries the diff | **clean** — everything except `display` and `codediff` is already headless |
 | base revision = "when the agent started" | **clean** — `ContentSource::Snapshot` reserved; free if the repo is jj-backed |
@@ -338,7 +338,7 @@ structural change; one forced a decision that is now made.
 | risk | insurance taken now |
 |---|---|
 | review state becomes primary and diff secondary, making `align` the wrong centre | watch for annotations gaining more fields than hunks |
-| multiple simultaneous diffs (three-way, tabs, comparing two revisions) | `AppState.docs: HashMap<DocId, AlignedDoc>` from the start, with one entry |
+| multiple simultaneous diffs (three-way, tabs, comparing two revisions) | `AppState.docs: HashMap<DocId, Document>` from the start, with one entry |
 | a GUI or web frontend | already covered by the `display` split |
 | crash recovery, session replay, server-side review | `AppState` is `serde`-serializable from the start |
 | `runtime` becomes a god object | `update/` submodules touch only their own sub-state; line count tracked in CI |
@@ -395,7 +395,7 @@ crates/vscode-diff-sys/
 crates/vscode-diff/
   src/lib.rs      #![deny(unsafe_code)] — public safe API
   src/convert.rs  #[allow(unsafe_code)] — ~40 lines; C → owned Rust, frees immediately
-  src/types.rs    Diff, LineRange, CharRange, Move
+  src/types.rs    LinesDiff, LineRange, CharRange, MovedText
   src/options.rs  DiffOptions builder
 ```
 
@@ -628,13 +628,130 @@ editors behave. All caching stays in one place, and highlighting stays off the r
 
 ---
 
+## D18 — `align` matches VSCode's model: nothing per row, nothing copied
+
+**Decided at S4.** The pairing is `Alignment`, which borrows the `LinesDiff` and both files and
+computes every answer on demand. It stores no rows, no text and no derived index.
+
+The design it replaced was `AlignedDoc { rows: Vec<Row> }` with `Row { left, right, kind }`
+and `RowKind::MovedFrom/MovedTo`. That was written before reading either reference
+implementation, and reading them collapsed it:
+
+- **VSCode's `DiffState` is four fields** — the engine's mappings, its moves, `identical`,
+  `quitEarly`. Its alignment entries are `{ originalRange, modifiedRange }` plus two pixel
+  heights that exist only for line wrapping and plugin-inserted view zones. Strip those and
+  what remains is already in our `LinesDiff`.
+- **VSCode emits alignment entries only at changes.** Unchanged stretches are implicit,
+  carried by a running offset.
+- **`DiffMapping.movedTo` / `movedFrom` are commented out in the VSCode source.** They tried
+  attaching moves to changes and abandoned it.
+
+Four defects in the replaced design, in order of severity:
+
+| defect | consequence |
+|---|---|
+| `MovedFrom`/`MovedTo` as row kinds | **wrong output.** In `comprehensive_move` a move covers original 32..89 while a change covers 37..139. Move ranges need not agree with change ranges, so a move cannot be a property of one |
+| `left` / `right` | bakes layout into the model; inline view draws both sides in one column and contradicts it |
+| one entry per row | grows with file size, not edit count. Most entries were `Unchanged` — pure derivable padding |
+| stored beside `LinesDiff` | two structures that can disagree, rebuilt on every save by a watcher-driven tool |
+
+**What we add that VSCode does not need.** Its editor answers "what is on screen row *n*";
+we have no editor, so `rows()` expands ranges into lines at draw time — a walk, not a stored
+structure. And the engine reports UTF-16 columns, which JavaScript takes for granted and
+Rust does not, so inner changes go through `metrics::utf16_range_to_bytes`.
+
+**Ownership.** `Alignment` borrows the `LinesDiff` and both files, so it is a view and never a
+stored field: `runtime` owns a `Document` (the texts, their line vectors and the `LinesDiff`) and
+constructs an `Alignment` where one is needed. Storing the borrowing type would make
+`AppState` self-referential.
+
+**Cost accepted.** Locating a row is a walk over the changes rather than an array index.
+Rendering asks for consecutive rows, so this is one pass per frame — seven iterations on
+`comprehensive_move`. A prefix sum would make it `O(log n)`, is derivable from the changes,
+and can be added without changing the interface if a file with thousands of changes ever
+makes a scrollbar drag feel slow.
+
+---
+
+## D19 — the container owns the row index, so scroll sync cannot exist
+
+**Decided at S4, before building `display`.** A `View` owns one vertical position; a `Pane`
+owns only its width, gutter and row source.
+
+```rust
+enum Layout { SideBySide { left: Pane, right: Pane, split: u16 }, Inline { pane: Pane } }
+struct View { layout: Layout, row: u32, subrow: u16, h_scroll: CellCol, cursor: Cursor }
+```
+
+Side-by-side draws row *n* in both panes — left takes `row.original`, right `row.modified`.
+They cannot drift.
+
+VSCode instead gives each side a `CodeEditorWidget` that owns its own `scrollTop`, pads the
+shorter side with view zones until the heights match, then holds the two scroll values in a
+bidirectional constraint with write guards to stop feedback. It needs two editors because
+each side is *editable* and wants its own cursor, selection, find and folding. Read-only,
+none of that applies. The plugin spent 415 lines (`scrollsync.lua`) on the same problem and
+got it wrong twice.
+
+**Alignment with heights belongs in `display`, not `align`.** Once wrapping exists a line is
+no longer one row, so pairing depends on pane width — which is why VSCode computes
+`ILineRangeAlignment` in its *view* while `DiffState` stays width-independent. `align` keeps
+the width-independent pairing; `display` computes row counts at the current width and pads
+after a range on the shorter side. `LineRangeAlignment { original, modified, original_rows,
+modified_rows }` is the right name for that, in `display`, at S10a.
+
+**Costs accepted.**
+
+- **Draggable split.** Unequal panes mean identical unchanged text wraps to different heights
+  on each side, so wrapping needs VSCode's `handleAlignmentsOutsideOfDiffs` checkpoints. Only
+  under wrap, which is opt-in.
+- **No auto-switch to inline.** VSCode flips to inline below 900px by default; we do not.
+  Horizontal scroll is the answer to a narrow terminal, matching the plugin, which sets
+  `wrap = false` in all six of its windows. `Layout::Inline` exists but is unused at MVP.
+
+**Also settled:** folding does not feed back into alignment either — VSCode calls
+`setHiddenAreas` on the editors and leaves `computeRangeAlignment` alone. Folding and inline
+are both projections over the same pairing. Inline must group by hunk, emitting a hunk's
+deletions then its insertions; a row-by-row walk of side-by-side pairs would interleave them
+wrongly.
+
+---
+
+## D20 — type names mirror the C header
+
+The C engine is a faithful port and already carries VSCode's vocabulary, so one rule settles
+naming in `vscode-diff`: **our Rust types mirror `vendor/libvscode-diff/include/types.h`,
+which mirrors VSCode.**
+
+| was | now | C header |
+|---|---|---|
+| `LinesDiff` | `LinesDiff` | `LinesDiff` |
+| `Change` | `DetailedLineRangeMapping` | `DetailedLineRangeMapping` |
+| `Move` | `MovedText` | `MovedText` |
+| `change.inner` | `inner_changes` | `inner_changes` |
+| `LineRange { start, end }` | `{ start_line, end_line }` | `{ start_line, end_line }` |
+
+`CharRange` and `RangeMapping { original, modified }` already matched. The rule also settles
+what *not* to add: VSCode's `IDocumentDiff` has an `identical` flag, the C header does not,
+and it is derivable from `changes.is_empty()`.
+
+In `align`, `Region` became `UnchangedRegion`, matching VSCode. `Row`, `Slot`, `Hunk` and
+`Side` have no counterpart in either and keep their own names. `Alignment` is deliberately
+*not* renamed to `LineRangeAlignment`: there that name means one entry of an array, here it
+would mean the whole model.
+
+The cost is verbosity — `DetailedLineRangeMapping` is a mouthful. The rule is worth more than
+the keystrokes, and it is checkable rather than a matter of taste.
+
+---
+
 ## Open questions
 
 | # | question | needed by |
 |---|---|---|
 | 1 | three-state explorer or simple worktree-vs-HEAD? *(recommend three-state)* | S5 |
-| 3 | inline mode in MVP? *(recommend no — a projection, ~2 days later)* | S7 |
 | 4 | binary / symlink / mode-change / submodule presentation | S6 |
 | 5 | licensing and `ATTRIBUTION.md` — the C is VSCode-derived and vendors utf8proc | S1 |
 
-*Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).*
+*Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).
+Question 3 (inline mode) is settled in [D19](#d19--the-container-owns-the-row-index-so-scroll-sync-cannot-exist): out of the MVP, no auto-switch.*

@@ -9,7 +9,9 @@
 
 use vscode_diff_sys as sys;
 
-use crate::types::{Change, CharRange, Diff, LineRange, Move, RangeMapping};
+use crate::types::{
+    CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, MovedText, RangeMapping,
+};
 
 /// Takes ownership of a `LinesDiff`, copies it into owned Rust values, and
 /// frees the C allocation.
@@ -19,7 +21,7 @@ use crate::types::{Change, CharRange, Diff, LineRange, Move, RangeMapping};
 /// `raw` must be a non-null pointer returned by `sys::compute_diff` that has
 /// not already been freed. It is freed here, so the caller must not use it
 /// afterwards.
-pub(crate) unsafe fn take(raw: *mut sys::LinesDiff) -> Diff {
+pub(crate) unsafe fn take(raw: *mut sys::LinesDiff) -> LinesDiff {
     debug_assert!(!raw.is_null(), "take() requires a non-null LinesDiff");
 
     // SAFETY: the caller guarantees `raw` is a live, non-null result from
@@ -32,17 +34,17 @@ pub(crate) unsafe fn take(raw: *mut sys::LinesDiff) -> Diff {
         let mut changes = Vec::with_capacity(diff.changes.count.max(0) as usize);
         for i in 0..diff.changes.count.max(0) as isize {
             let mapping = &*diff.changes.mappings.offset(i);
-            changes.push(Change {
+            changes.push(DetailedLineRangeMapping {
                 original: line_range(mapping.original),
                 modified: line_range(mapping.modified),
-                inner: inner_changes(mapping.inner_changes, mapping.inner_change_count),
+                inner_changes: inner_changes(mapping.inner_changes, mapping.inner_change_count),
             });
         }
 
         let mut moves = Vec::with_capacity(diff.moves.count.max(0) as usize);
         for i in 0..diff.moves.count.max(0) as isize {
             let moved = &*diff.moves.moves.offset(i);
-            moves.push(Move {
+            moves.push(MovedText {
                 original: line_range(moved.original),
                 modified: line_range(moved.modified),
             });
@@ -55,7 +57,7 @@ pub(crate) unsafe fn take(raw: *mut sys::LinesDiff) -> Diff {
     // above is copied, so releasing it now leaves no dangling reference.
     unsafe { sys::free_lines_diff(raw) };
 
-    Diff {
+    LinesDiff {
         changes,
         moves,
         hit_timeout,
@@ -89,8 +91,8 @@ unsafe fn inner_changes(ptr: *mut sys::RangeMapping, count: i32) -> Vec<RangeMap
 /// instead of a plausible four-billion.
 fn line_range(range: sys::LineRange) -> LineRange {
     LineRange {
-        start: non_negative(range.start_line),
-        end: non_negative(range.end_line),
+        start_line: non_negative(range.start_line),
+        end_line: non_negative(range.end_line),
     }
 }
 

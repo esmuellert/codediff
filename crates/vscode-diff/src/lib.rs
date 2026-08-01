@@ -12,7 +12,7 @@
 //! ```
 //!
 //! The boundary rule is *convert eagerly, free immediately*: C memory is walked
-//! once into owned Rust values and released before returning, so a [`Diff`] is
+//! once into owned Rust values and released before returning, so a [`LinesDiff`] is
 //! an ordinary value with no borrows and no hidden lifetime. All `unsafe` lives
 //! in `vscode_diff_sys` and this crate's `convert` module.
 
@@ -26,7 +26,9 @@ use std::os::raw::c_char;
 
 pub use error::{Error, Side};
 pub use options::Options;
-pub use types::{Change, CharRange, Diff, LineRange, Move, RangeMapping};
+pub use types::{
+    CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, MovedText, RangeMapping,
+};
 
 /// The version of the C diff engine compiled into this binary.
 ///
@@ -65,7 +67,11 @@ pub fn engine_version() -> &'static str {
 /// Returns [`Error::InteriorNul`] if a line contains a NUL byte, which the
 /// engine's NUL-terminated strings cannot represent, and [`Error::OutOfMemory`]
 /// if the engine could not allocate its result.
-pub fn compute(original: &[&str], modified: &[&str], options: &Options) -> Result<Diff, Error> {
+pub fn compute(
+    original: &[&str],
+    modified: &[&str],
+    options: &Options,
+) -> Result<LinesDiff, Error> {
     let original = Marshalled::new(original, Side::Original)?;
     let modified = Marshalled::new(modified, Side::Modified)?;
     let raw_options = vscode_diff_sys::DiffOptions::from(*options);

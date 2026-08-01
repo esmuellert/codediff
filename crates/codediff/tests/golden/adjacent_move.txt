@@ -1,0 +1,33 @@
+adjacent_move
+12 lines -> 12 lines, 16 rows
+2 change(s), 1 move(s), 1 hunk(s)
+
+    1 - function first()                             │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 4
+    2 -     return 1                                 │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    3 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    4 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    5   function second()                            │     1   function second()
+    6       return 2                                 │     2       return 2
+    7   end                                          │     3   end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     4 +                                                ↑ moved from original 1
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     5 + function first()
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     6 +     return 1
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     7 + end
+    8                                                │     8
+    9   function third()                             │     9   function third()
+   10       return 3                                 │    10       return 3
+   11   end                                          │    11   end
+   12                                                │    12
+
+hunks
+  2fc43cd39ca1afcd  original 1..8  modified 1..8  (2 change(s))
+
+character changes
+  none
+
+unchanged regions
+  original 5..8  modified 1..4
+  original 8..13  modified 8..13
+
+moves
+  original 1..5  ->  modified 4..8

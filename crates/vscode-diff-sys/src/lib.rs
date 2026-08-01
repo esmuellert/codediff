@@ -224,15 +224,15 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq)]
-    struct Change {
+    struct DetailedLineRangeMapping {
         original: LineRange,
         modified: LineRange,
-        inner: Vec<RangeMapping>,
+        inner_changes: Vec<RangeMapping>,
     }
 
     #[derive(Debug)]
     struct Snapshot {
-        changes: Vec<Change>,
+        changes: Vec<DetailedLineRangeMapping>,
         moves: Vec<MovedText>,
         hit_timeout: bool,
     }
@@ -260,7 +260,7 @@ mod tests {
             let changes = (0..d.changes.count as isize)
                 .map(|i| {
                     let m = &*d.changes.mappings.offset(i);
-                    let inner = if m.inner_changes.is_null() {
+                    let inner_changes = if m.inner_changes.is_null() {
                         assert_eq!(m.inner_change_count, 0, "null inner_changes with a count");
                         Vec::new()
                     } else {
@@ -268,10 +268,10 @@ mod tests {
                             .map(|j| *m.inner_changes.offset(j))
                             .collect()
                     };
-                    Change {
+                    DetailedLineRangeMapping {
                         original: m.original,
                         modified: m.modified,
-                        inner,
+                        inner_changes,
                     }
                 })
                 .collect();
@@ -331,7 +331,7 @@ mod tests {
             }
         );
         assert!(
-            !d.changes[0].inner.is_empty(),
+            !d.changes[0].inner_changes.is_empty(),
             "a modified line should carry character-level detail"
         );
     }
@@ -380,7 +380,7 @@ mod tests {
         let d = diff(&["value one here"], &["value three here"]);
         assert_eq!(d.changes.len(), 1, "{:?}", d.changes);
 
-        let inner = &d.changes[0].inner;
+        let inner = &d.changes[0].inner_changes;
         assert!(!inner.is_empty(), "expected character-level detail");
 
         let first = inner[0];
@@ -400,7 +400,7 @@ mod tests {
         // marshalling or indexing mistake.
         let d = diff(&["日本語 alpha 🎉"], &["日本語 beta 🎉"]);
         assert_eq!(d.changes.len(), 1, "{:?}", d.changes);
-        assert!(!d.changes[0].inner.is_empty());
+        assert!(!d.changes[0].inner_changes.is_empty());
     }
 
     #[test]

@@ -1,0 +1,22 @@
+single_line_move
+6 lines -> 6 lines, 7 rows
+2 change(s), 0 move(s), 1 hunk(s)
+
+    1   aaa                                          │     1   aaa
+    2 - local x = 42                                 │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    3   bbb                                          │     2   bbb
+    4   ccc                                          │     3   ccc
+    5   ddd                                          │     4   ddd
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     5 + local x = 42
+    6                                                │     6
+
+hunks
+  61258da2ff894541  original 2..6  modified 2..6  (2 change(s))
+
+character changes
+  none
+
+unchanged regions
+  original 1..2  modified 1..2
+  original 3..6  modified 2..5
+  original 6..7  modified 6..7

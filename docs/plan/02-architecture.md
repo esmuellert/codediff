@@ -33,10 +33,10 @@ codediff/
 ├── Cargo.toml                [workspace]
 ├── crates/
 │   ├── vscode-diff-sys/      raw FFI + cc build of the C engine
-│   ├── vscode-diff/          safe wrapper → Diff                      pure
+│   ├── vscode-diff/          safe wrapper → LinesDiff                    pure
 │   ├── metrics/              text measurement + coordinate mapping    pure
 │   ├── syntax/               text → normalized syntactic spans        pure
-│   ├── align/                AlignedDoc · rows · hunks · projections  pure
+│   ├── align/                Alignment · rows · hunks · spans        pure
 │   ├── explorer/             entries · grouping · tree · filter       pure
 │   ├── vcs/                  git today, jj tomorrow
 │   ├── runtime/              events · commands · effects · watcher
@@ -53,10 +53,10 @@ codediff/
 | crate | contains | purity |
 |---|---|---|
 | `vscode-diff-sys` | `build.rs` invoking `cc`; `#[repr(C)]` structs and `extern "C"` declarations, 1:1 with the C API | unsafe, ~150 lines |
-| `vscode-diff` | `compute(&[&str], &[&str], Options) -> Diff` returning owned Rust types; eager conversion, frees C memory immediately | pure |
+| `vscode-diff` | `compute(&[&str], &[&str], Options) -> LinesDiff` returning owned Rust types; eager conversion, frees C memory immediately | pure |
 | `metrics` | UTF-16 ↔ byte ↔ char ↔ grapheme ↔ cell, display width, tab expansion, cell-range slicing | pure |
 | `syntax` | language detection; text → `SpanSet` of normalized `Class` values. The only crate that may name a syntax engine | pure |
-| `align` | building an `AlignedDoc` from a `Diff` plus two texts; hunks; projections; navigation primitives | pure |
+| `align` | pairing lines from a `LinesDiff` plus two texts; fillers; hunks; inner-change byte ranges; unchanged regions | pure |
 | `explorer` | status entries → grouped tree, path collapsing, gitignore-style filtering | pure |
 | `vcs` | `VcsBackend` trait, git subprocess implementation, blob reading, rev resolution | IO |
 | `runtime` | `Event`, `Command`, `update`, effect runner, file watcher, request generations | IO + state + concurrency |
@@ -117,8 +117,8 @@ milestone listed, even with a trivial body.
 | `ContentSource { Blob, Worktree, Snapshot, Memory }` | S5 | only `Blob` and `Worktree` used |
 | `hunk.review: Option<ReviewMark>` | S4 | always `None` |
 | `RequestId(u64)` on every command | S7 | always 0 until S14 |
-| `VisualRow` as an **enum** with room for non-diff rows | S4 | only diff variants — but the enum must exist, or agent annotations require surgery |
-| `AppState.docs: HashMap<DocId, AlignedDoc>` | S7 | exactly one entry — but the map must exist, or multi-diff requires surgery |
+| `VisualRow` as an **enum** with room for non-diff rows | S7 | wraps `align::Row` — but the enum must exist, or agent annotations require surgery |
+| `AppState.docs: HashMap<DocId, Document>` | S7 | exactly one entry — but the map must exist, or multi-diff requires surgery |
 | `AppState` is `serde`-serializable | S7 | free crash dumps and session replay |
 | theme table, no hardcoded colors | S7 | one dark theme |
 
@@ -127,40 +127,60 @@ milestone listed, even with a trivial body.
 Built in S4. This is the keystone of the whole design.
 
 ```rust
-/// 1-based line number, as the C engine reports.
-pub struct LineNo(u32);
-/// 0-based index into a Vec of lines.
-pub struct LineIdx(u32);
+/// Which file a line number refers to. Never `Left`/`Right`: those are places
+/// on a screen, and inline view puts both on the same side.
+pub enum Side { Original, Modified }
 
-pub enum Cell { Text { line: LineIdx }, Filler }
+/// What one side shows on one row.
+pub enum Slot { Line(u32), Filler }
 
-pub enum RowKind {
-    Unchanged,
-    Inserted,
-    Deleted,
-    Modified,
-    MovedFrom(MoveId),
-    MovedTo(MoveId),
-}
+pub enum RowKind { Unchanged, Modified, Deleted, Inserted }
 
-pub struct Row { pub left: Cell, pub right: Cell, pub kind: RowKind }
+pub struct Row { pub original: Slot, pub modified: Slot, pub kind: RowKind }
 
-pub struct AlignedDoc {
-    pub rows:  Vec<Row>,
-    pub hunks: Vec<Hunk>,
-    pub hit_timeout: bool,
+/// Borrows the diff and both files. Stores no rows and no text.
+pub struct Alignment<'a> { /* LinesDiff, two line slices, hunks */ }
+
+impl Alignment<'_> {
+    pub fn rows(&self) -> impl Iterator<Item = Row>;   // computed, never stored
+    pub fn row_count(&self) -> u32;
+    pub fn spans(&self, side: Side, line: u32) -> Vec<Span>;   // byte ranges
+    pub fn hunk_at(&self, side: Side, line: u32) -> Option<&Hunk>;
+    pub fn moved(&self, side: Side, line: u32) -> Option<&Move>;
+    pub fn unchanged(&self) -> Vec<Region>;
 }
 ```
 
+**This is VSCode's model.** Its `DiffState` is a thin wrapper over the engine result and its
+alignment entries are line-range pairs; ours drops the two pixel fields it carries for line
+wrapping and plugin-inserted boxes, neither of which a terminal has. See D18.
+
+**`Alignment` borrows and is therefore never stored.** `runtime` owns a `Document` — the two
+texts, their line vectors and the `LinesDiff` — and builds an `Alignment` from it where one
+is needed. Storing the borrowing type in `AppState` would make the state self-referential.
+
+**`display` owns the viewport, and there is no scroll synchronisation.** A `View` holds one
+row index; a `Pane` holds only its width, gutter and row source, so the two sides cannot
+drift. Wrapping makes pairing depend on pane width, so the wrap-aware alignment lives there
+too, not in `align`. See [D19](05-decisions.md#d19).
+
 Consequences:
 
+- **Nothing is stored per row.** A change of `original 2..3, modified 2..2` already says
+  "one original line, no modified line", which *is* the filler. Materialising a row per line
+  would mean a structure the size of the file, rebuilt on every save, that can disagree with
+  the diff it came from. It grows with edits, not with file size: the `comprehensive_move`
+  fixture is 404 lines and 7 changes.
 - **Scrolling is one shared `scroll_offset`.** The plugin needed 536 lines
   (`scrollsync.lua` + `scroll.lua`) to fight Neovim's `topline`/`topfill` because fillers
-  were virtual lines. Here fillers are rows.
-- **Side-by-side, inline and compact are *projections*** — functions
-  `&AlignedDoc -> Vec<VisualRow>` — not three subsystems. The plugin spent 2,035 lines on
-  what is one model and three functions.
-- **Hunk navigation is a scan over `rows`.**
+  were virtual lines. Here a row index means the same thing on both sides.
+- **Side-by-side, inline and compact are *projections*** — different walks of `rows()`, not
+  three subsystems. The plugin spent 2,035 lines on what is one model and three functions.
+  This is why the model names `Original`/`Modified` and not left and right.
+- **A move is not a kind of row.** The engine reports a moved block as an ordinary deletion
+  plus an ordinary insertion, and its move ranges need not agree with its change ranges — in
+  `comprehensive_move` a move covers original 32..89 while a change covers 37..139. Moves are
+  a lookup by line number. VSCode has the equivalent fields on `DiffMapping` commented out.
 - `HunkId` is a **content hash** of the hunk, not an index. This is what makes review state
   and cursor position survive an agent rewriting the file underneath you, and it makes
   "what changed since I last looked" pure set arithmetic.
@@ -245,7 +265,7 @@ through one path because Neovim owned the loop.
 2  runtime   state.diff_req = R2; → Command::LoadDiff { req: R2, path, base, head }
 3  effect    worker: vcs::blob(base, path) + vcs::read_worktree(path)
 4  effect    worker: vscode_diff::compute(...)             [rayon, CPU-bound]
-5  effect    worker: align::AlignedDoc::build(left, right, diff)
+5  effect    worker: align::Alignment::new(&diff, &left, &right)
 6  effect    → Event::DiffReady(R2, doc)
 7  runtime   if R2 != state.diff_req { drop }   ← stale results die structurally
 8  runtime   state.docs.insert(id, doc)

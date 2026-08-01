@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use vscode_diff::{Change, Diff, Options};
+use vscode_diff::{DetailedLineRangeMapping, LinesDiff, Options};
 
 pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     let original_text = read(original_path)?;
@@ -30,7 +30,7 @@ pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     Ok(())
 }
 
-fn report(diff: &Diff) {
+fn report(diff: &LinesDiff) {
     if diff.is_empty() {
         println!("no changes");
         return;
@@ -52,10 +52,10 @@ fn report(diff: &Diff) {
         println!(
             "  [{i}] {:<9}  original {}  modified {}",
             kind(change),
-            span(change.original.start, change.original.end),
-            span(change.modified.start, change.modified.end),
+            span(change.original.start_line, change.original.end_line),
+            span(change.modified.start_line, change.modified.end_line),
         );
-        for inner in &change.inner {
+        for inner in &change.inner_changes {
             println!(
                 "        inner  L{}:C{}-L{}:C{}  ->  L{}:C{}-L{}:C{}",
                 inner.original.start_line,
@@ -76,8 +76,8 @@ fn report(diff: &Diff) {
         for (i, moved) in diff.moves.iter().enumerate() {
             println!(
                 "  [{i}] original {}  ->  modified {}",
-                span(moved.original.start, moved.original.end),
-                span(moved.modified.start, moved.modified.end),
+                span(moved.original.start_line, moved.original.end_line),
+                span(moved.modified.start_line, moved.modified.end_line),
             );
         }
     }
@@ -86,7 +86,7 @@ fn report(diff: &Diff) {
     println!("line ranges are 1-based and end-exclusive; columns are UTF-16 code units");
 }
 
-fn kind(change: &Change) -> &'static str {
+fn kind(change: &DetailedLineRangeMapping) -> &'static str {
     if change.is_insertion() {
         "inserted"
     } else if change.is_deletion() {

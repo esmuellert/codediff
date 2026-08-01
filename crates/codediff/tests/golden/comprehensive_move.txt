@@ -1,0 +1,554 @@
+comprehensive_move
+362 lines -> 405 lines, 506 rows
+7 change(s), 4 move(s), 7 hunk(s)
+
+    1   -- Module: data_processor.lua                │     1   -- Module: data_processor.lua
+    2 ~ -- A comprehensive data processing library   │     2 ~ -- A comprehensive data processing library …
+    3                                                │     3
+    4   local M = {}                                 │     4   local M = {}
+    5                                                │     5
+    6   -- ========================================… │     6   -- ========================================…
+    7   -- Section 1: Configuration (unchanged betw… │     7   -- Section 1: Configuration (unchanged betw…
+    8   -- ========================================… │     8   -- ========================================…
+    9                                                │     9
+   10 ~ M.VERSION = "1.0.0"                          │    10 ~ M.VERSION = "2.0.0"
+   11 ~ M.MAX_RETRIES = 3                            │    11 ~ M.MAX_RETRIES = 5
+   12 ~ M.TIMEOUT_MS = 5000                          │    12 ~ M.TIMEOUT_MS = 10000
+   13                                                │    13
+   14   local default_config = {                     │    14   local default_config = {
+   15       debug = false,                           │    15       debug = false,
+   16       verbose = false,                         │    16       verbose = false,
+   17       log_level = "info",                      │    17       log_level = "info",
+   18       output_format = "json",                  │    18       output_format = "json",
+   19       max_batch_size = 100,                    │    19       max_batch_size = 100,
+   20       retry_delay_ms = 1000,                   │    20       retry_delay_ms = 1000,
+   21   }                                            │    21   }
+   22                                                │    22
+   23   function M.create_config(overrides)          │    23   function M.create_config(overrides)
+   24       local config = {}                        │    24       local config = {}
+   25       for k, v in pairs(default_config) do     │    25       for k, v in pairs(default_config) do
+   26           config[k] = v                        │    26           config[k] = v
+   27       end                                      │    27       end
+   28       if overrides then                        │    28       if overrides then
+   29           for k, v in pairs(overrides) do      │    29           for k, v in pairs(overrides) do
+   30               config[k] = v                    │    30               config[k] = v
+   31           end                                  │    31           end
+   32       end                                      │    32       end                                        ↓ moved to modified 197
+   33       return config                            │    33       return config
+   34   end                                          │    34   end
+   35                                                │    35
+   36   -- ========================================… │    36   -- ========================================…
+   37 ~ -- Section 2: Validation utilities (this bl… │    37 ~ -- Section 2: Output formatting (MOVED HERE…
+   38 - -- ========================================… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   39 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   40 - local function validate_string(value, field… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   41 -     if type(value) ~= "string" then          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   42 -         return false, field_name .. " must … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   43 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   44 -     if #value == 0 then                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   45 -         return false, field_name .. " canno… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   46 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   47 -     if #value > 1024 then                    │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   48 -         return false, field_name .. " excee… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   49 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   50 -     return true                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   51 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   52 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   53 - local function validate_number(value, field… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   54 -     if type(value) ~= "number" then          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   55 -         return false, field_name .. " must … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   56 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   57 -     if min_val and value < min_val then      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   58 -         return false, field_name .. " must … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   59 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   60 -     if max_val and value > max_val then      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   61 -         return false, field_name .. " must … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   62 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   63 -     return true                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   64 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   65 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   66 - local function validate_table(value, field_… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   67 -     if type(value) ~= "table" then           │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   68 -         return false, field_name .. " must … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   69 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   70 -     return true                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   71 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   72 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   73 - local function validate_record(record)       │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   74 -     local ok, err                            │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   75 -     ok, err = validate_string(record.id, "i… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   76 -     if not ok then return false, err end     │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   77 -     ok, err = validate_string(record.name, … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   78 -     if not ok then return false, err end     │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   79 -     ok, err = validate_number(record.value,… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   80 -     if not ok then return false, err end     │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   81 -     if record.tags then                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   82 -         ok, err = validate_table(record.tag… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   83 -         if not ok then return false, err end │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   84 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   85 -     return true                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   86 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   87 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   88 - -- ========================================… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   89 - -- Section 3: Data transformation (stays in… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 110
+   90 - -- ========================================… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   91 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   92 - function M.transform_record(record, options) │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   93 -     options = options or {}                  │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   94 -     local result = {                         │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   95 -         id = record.id,                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   96 -         name = record.name,                  │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   97 -         value = record.value,                │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   98 -         processed = true,                    │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   99 -         timestamp = os.time(),               │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  100 -     }                                        │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  101 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  102 -     if options.uppercase_name then           │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  103 -         result.name = string.upper(result.n… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  104 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  105 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  106 -     if options.multiply_value then           │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  107 -         result.value = result.value * (opti… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  108 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  109 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  110 -     if record.tags then                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 136
+  111 -         result.tags = {}                     │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  112 -         for i, tag in ipairs(record.tags) do │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  113 -             result.tags[i] = string.lower(t… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  114 -         end                                  │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  115 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 145
+  116 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  117 -     return result                            │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  118 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  119 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  120 - function M.batch_transform(records, options) │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  121 -     local results = {}                       │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  122 -     local errors = {}                        │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  123 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  124 -     for i, record in ipairs(records) do      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  125 -         local ok, err = validate_record(rec… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  126 -         if ok then                           │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  127 -             local transformed = M.transform… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  128 -             table.insert(results, transform… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  129 -         else                                 │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  130 -             table.insert(errors, { index = … │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  131 -         end                                  │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  132 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  133 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  134 -     return results, errors                   │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  135 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  136 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  137 - -- ========================================… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  138 - -- Section 4: Output formatting (this block… │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+  139   -- ========================================… │    38   -- ========================================…
+  140                                                │    39
+  141   local function format_json(data)             │    40   local function format_json(data)
+  142       if type(data) == "string" then           │    41       if type(data) == "string" then
+  143           return '"' .. data:gsub('"', '\\"')… │    42           return '"' .. data:gsub('"', '\\"')…
+  144       elseif type(data) == "number" then       │    43       elseif type(data) == "number" then
+  145           return tostring(data)                │    44           return tostring(data)
+  146       elseif type(data) == "boolean" then      │    45       elseif type(data) == "boolean" then
+  147           return data and "true" or "false"    │    46           return data and "true" or "false"
+  148       elseif type(data) == "table" then        │    47       elseif type(data) == "table" then
+  149           local parts = {}                     │    48           local parts = {}
+  150           local is_array = #data > 0           │    49           local is_array = #data > 0
+  151           if is_array then                     │    50           if is_array then
+  152               for _, v in ipairs(data) do      │    51               for _, v in ipairs(data) do
+  153                   table.insert(parts, format_… │    52                   table.insert(parts, format_…
+  154               end                              │    53               end
+  155               return "[" .. table.concat(part… │    54               return "[" .. table.concat(part…
+  156           else                                 │    55           else
+  157               for k, v in pairs(data) do       │    56               for k, v in pairs(data) do
+  158                   table.insert(parts, '"' .. … │    57                   table.insert(parts, '"' .. …
+  159               end                              │    58               end
+  160               return "{" .. table.concat(part… │    59               return "{" .. table.concat(part…
+  161           end                                  │    60           end
+  162       end                                      │    61       end
+  163       return "null"                            │    62       return "null"
+  164   end                                          │    63   end
+  165                                                │    64
+  166   local function format_csv(data, headers)     │    65   local function format_csv(data, headers)
+  167       local lines = {}                         │    66       local lines = {}
+  168       if headers then                          │    67       if headers then
+  169           table.insert(lines, table.concat(he… │    68           table.insert(lines, table.concat(he…
+  170       end                                      │    69       end
+  171       for _, record in ipairs(data) do         │    70       for _, record in ipairs(data) do
+  172           local values = {}                    │    71           local values = {}
+  173           for _, h in ipairs(headers or {}) do │    72           for _, h in ipairs(headers or {}) do
+  174               local val = record[h]            │    73               local val = record[h]
+  175               if type(val) == "string" then    │    74               if type(val) == "string" then
+  176                   table.insert(values, '"' ..… │    75                   table.insert(values, '"' ..…
+  177               else                             │    76               else
+  178                   table.insert(values, tostri… │    77                   table.insert(values, tostri…
+  179               end                              │    78               end
+  180           end                                  │    79           end
+  181           table.insert(lines, table.concat(va… │    80           table.insert(lines, table.concat(va…
+  182       end                                      │    81       end
+  183       return table.concat(lines, "\n")         │    82       return table.concat(lines, "\n")
+  184   end                                          │    83   end
+  185                                                │    84
+  186   local function format_plain(data)            │    85   local function format_plain(data)
+  187       local lines = {}                         │    86       local lines = {}
+  188       for _, record in ipairs(data) do         │    87       for _, record in ipairs(data) do
+  189           local parts = {}                     │    88           local parts = {}
+  190           for k, v in pairs(record) do         │    89           for k, v in pairs(record) do
+  191               table.insert(parts, k .. "=" ..… │    90               table.insert(parts, k .. "=" ..…
+  192           end                                  │    91           end
+  193           table.insert(lines, table.concat(pa… │    92           table.insert(lines, table.concat(pa…
+  194       end                                      │    93       end
+  195       return table.concat(lines, "\n")         │    94       return table.concat(lines, "\n")
+  196   end                                          │    95   end
+  197                                                │    96
+  198   function M.format_output(data, format_type)  │    97   function M.format_output(data, format_type)
+  199       if format_type == "json" then            │    98       if format_type == "json" then
+  200           return format_json(data)             │    99           return format_json(data)
+  201       elseif format_type == "csv" then         │   100       elseif format_type == "csv" then
+  202           return format_csv(data, { "id", "na… │   101           return format_csv(data, { "id", "na…
+  203       elseif format_type == "plain" then       │   102       elseif format_type == "plain" then
+  204           return format_plain(data)            │   103           return format_plain(data)
+  205       else                                     │   104       else
+  206           error("Unknown format: " .. tostrin… │   105           error("Unknown format: " .. tostrin…
+  207       end                                      │   106       end
+  208   end                                          │   107   end
+  209                                                │   108
+  210   -- ========================================… │   109   -- ========================================…
+  211 ~ -- Section 5: Statistics and aggregation (u… │   110 ~ -- Section 3: Data transformation (modified…   ↑ moved from original 89
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   111 + -- ========================================…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   112 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   113 + function M.transform_record(record, options)
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   114 +     options = options or {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   115 +     local result = {
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   116 +         id = record.id,
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   117 +         name = record.name,
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   118 +         value = record.value,
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   119 +         processed = true,
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   120 +         timestamp = os.time(),
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   121 +         version = M.VERSION,
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   122 +     }
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   123 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   124 +     if options.uppercase_name then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   125 +         result.name = string.upper(result.n…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   126 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   127 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   128 +     if options.multiply_value then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   129 +         result.value = result.value * (opti…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   130 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   131 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   132 +     if options.round_value then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   133 +         result.value = math.floor(result.va…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   134 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   135 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   136 +     if record.tags then                        ↑ moved from original 110
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   137 +         result.tags = {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   138 +         for i, tag in ipairs(record.tags) do
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   139 +             result.tags[i] = string.lower(t…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   140 +         end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   141 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   142 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   143 +     if record.metadata then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   144 +         result.metadata = record.metadata
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   145 +     end                                        ↑ moved from original 115
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   146 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   147 +     return result
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   148 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   149 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   150 + function M.batch_transform(records, options)
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   151 +     local results = {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   152 +     local errors = {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   153 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   154 +     for i, record in ipairs(records) do
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   155 +         local ok, err = validate_record(rec…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   156 +         if ok then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   157 +             local transformed = M.transform…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   158 +             table.insert(results, transform…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   159 +         else
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   160 +             table.insert(errors, { index = …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   161 +         end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   162 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   163 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   164 +     return results, errors
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   165 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   166 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   167 + -- ========================================…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   168 + -- Section 4: NEW — Caching layer (entirely…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   169 + -- ========================================…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   170 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   171 + local cache = {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   172 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   173 + function M.cache_get(key)
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   174 +     local entry = cache[key]
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   175 +     if entry and entry.expires > os.time() …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   176 +         return entry.value
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   177 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   178 +     cache[key] = nil
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   179 +     return nil
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   180 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   181 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   182 + function M.cache_set(key, value, ttl_second…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   183 +     cache[key] = {
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   184 +         value = value,
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   185 +         expires = os.time() + (ttl_seconds …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   186 +     }
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   187 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   188 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   189 + function M.cache_clear()
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   190 +     cache = {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   191 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   192 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   193 + function M.cache_size()
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   194 +     local count = 0
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   195 +     for _ in pairs(cache) do
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   196 +         count = count + 1
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   197 +     end                                        ↑ moved from original 32
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   198 +     return count
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   199 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   200 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   201 + -- ========================================…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   202 + -- Section 5: Validation utilities (MOVED H…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   203 + -- ========================================…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   204 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   205 + local function validate_string(value, field…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   206 +     if type(value) ~= "string" then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   207 +         return false, field_name .. " must …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   208 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   209 +     if #value == 0 then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   210 +         return false, field_name .. " canno…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   211 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   212 +     if #value > 1024 then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   213 +         return false, field_name .. " excee…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   214 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   215 +     return true
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   216 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   217 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   218 + local function validate_number(value, field…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   219 +     if type(value) ~= "number" then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   220 +         return false, field_name .. " must …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   221 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   222 +     if min_val and value < min_val then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   223 +         return false, field_name .. " must …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   224 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   225 +     if max_val and value > max_val then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   226 +         return false, field_name .. " must …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   227 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   228 +     return true
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   229 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   230 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   231 + local function validate_table(value, field_…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   232 +     if type(value) ~= "table" then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   233 +         return false, field_name .. " must …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   234 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   235 +     return true
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   236 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   237 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   238 + local function validate_record(record)
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   239 +     local ok, err
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   240 +     ok, err = validate_string(record.id, "i…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   241 +     if not ok then return false, err end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   242 +     ok, err = validate_string(record.name, …
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   243 +     if not ok then return false, err end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   244 +     ok, err = validate_number(record.value,…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   245 +     if not ok then return false, err end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   246 +     if record.tags then
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   247 +         ok, err = validate_table(record.tag…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   248 +         if not ok then return false, err end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   249 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   250 +     return true
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   251 + end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   252 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   253 + -- ========================================…
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   254 + -- Section 6: Statistics and aggregation (u…
+  212   -- ========================================… │   255   -- ========================================…
+  213                                                │   256
+  214   function M.compute_stats(records)            │   257   function M.compute_stats(records)
+  215       if #records == 0 then                    │   258       if #records == 0 then
+  216           return { count = 0, sum = 0, avg = … │   259           return { count = 0, sum = 0, avg = …
+  217       end                                      │   260       end
+  218                                                │   261
+  219       local sum = 0                            │   262       local sum = 0
+  220       local min_val = math.huge                │   263       local min_val = math.huge
+  221       local max_val = -math.huge               │   264       local max_val = -math.huge
+  222                                                │   265
+  223       for _, record in ipairs(records) do      │   266       for _, record in ipairs(records) do
+  224           local v = record.value or 0          │   267           local v = record.value or 0
+  225           sum = sum + v                        │   268           sum = sum + v
+  226           if v < min_val then min_val = v end  │   269           if v < min_val then min_val = v end
+  227           if v > max_val then max_val = v end  │   270           if v > max_val then max_val = v end
+  228       end                                      │   271       end
+  229                                                │   272
+  230       return {                                 │   273       return {
+  231           count = #records,                    │   274           count = #records,
+  232           sum = sum,                           │   275           sum = sum,
+  233           avg = sum / #records,                │   276           avg = sum / #records,
+  234           min = min_val,                       │   277           min = min_val,
+  235           max = max_val,                       │   278           max = max_val,
+  236       }                                        │   279       }
+  237   end                                          │   280   end
+  238                                                │   281
+  239   function M.group_by(records, key)            │   282   function M.group_by(records, key)
+  240       local groups = {}                        │   283       local groups = {}
+  241       for _, record in ipairs(records) do      │   284       for _, record in ipairs(records) do
+  242           local group_key = record[key]        │   285           local group_key = record[key]
+  243           if group_key then                    │   286           if group_key then
+  244               if not groups[group_key] then    │   287               if not groups[group_key] then
+  245                   groups[group_key] = {}       │   288                   groups[group_key] = {}
+  246               end                              │   289               end
+  247               table.insert(groups[group_key],… │   290               table.insert(groups[group_key],…
+  248           end                                  │   291           end
+  249       end                                      │   292       end
+  250       return groups                            │   293       return groups
+  251   end                                          │   294   end
+  252                                                │   295
+  253   function M.filter(records, predicate)        │   296   function M.filter(records, predicate)
+  254       local result = {}                        │   297       local result = {}
+  255       for _, record in ipairs(records) do      │   298       for _, record in ipairs(records) do
+  256           if predicate(record) then            │   299           if predicate(record) then
+  257               table.insert(result, record)     │   300               table.insert(result, record)
+  258           end                                  │   301           end
+  259       end                                      │   302       end
+  260       return result                            │   303       return result
+  261   end                                          │   304   end
+  262                                                │   305
+  263   function M.sort_by(records, key, descending) │   306   function M.sort_by(records, key, descending)
+  264       local sorted = {}                        │   307       local sorted = {}
+  265       for i, r in ipairs(records) do           │   308       for i, r in ipairs(records) do
+  266           sorted[i] = r                        │   309           sorted[i] = r
+  267       end                                      │   310       end
+  268       table.sort(sorted, function(a, b)        │   311       table.sort(sorted, function(a, b)
+  269           if descending then                   │   312           if descending then
+  270               return (a[key] or 0) > (b[key] … │   313               return (a[key] or 0) > (b[key] …
+  271           else                                 │   314           else
+  272               return (a[key] or 0) < (b[key] … │   315               return (a[key] or 0) < (b[key] …
+  273           end                                  │   316           end
+  274       end)                                     │   317       end)
+  275       return sorted                            │   318       return sorted
+  276   end                                          │   319   end
+  277                                                │   320
+  278   -- ========================================… │   321   -- ========================================…
+  279 ~ -- Section 6: Pipeline processing (unchange… │   322 ~ -- Section 7: Pipeline processing (unchange…
+  280   -- ========================================… │   323   -- ========================================…
+  281                                                │   324
+  282   function M.create_pipeline(steps)            │   325   function M.create_pipeline(steps)
+  283       return {                                 │   326       return {
+  284           steps = steps or {},                 │   327           steps = steps or {},
+  285           add = function(self, step)           │   328           add = function(self, step)
+  286               table.insert(self.steps, step)   │   329               table.insert(self.steps, step)
+  287               return self                      │   330               return self
+  288           end,                                 │   331           end,
+  289           run = function(self, data)           │   332           run = function(self, data)
+  290               local result = data              │   333               local result = data
+  291               for _, step in ipairs(self.step… │   334               for _, step in ipairs(self.step…
+  292                   result = step(result)        │   335                   result = step(result)
+  293               end                              │   336               end
+  294               return result                    │   337               return result
+  295           end,                                 │   338           end,
+  296       }                                        │   339       }
+  297   end                                          │   340   end
+  298                                                │   341
+  299   -- ========================================… │   342   -- ========================================…
+  300 ~ -- Section 7: Error handling utilities (unc… │   343 ~ -- Section 8: Error handling utilities (unc…
+  301   -- ========================================… │   344   -- ========================================…
+  302                                                │   345
+  303   local function create_error(code, message, … │   346   local function create_error(code, message, …
+  304       return {                                 │   347       return {
+  305           code = code,                         │   348           code = code,
+  306           message = message,                   │   349           message = message,
+  307           details = details,                   │   350           details = details,
+  308           timestamp = os.time(),               │   351           timestamp = os.time(),
+  309       }                                        │   352       }
+  310   end                                          │   353   end
+  311                                                │   354
+  312   function M.safe_call(fn, ...)                │   355   function M.safe_call(fn, ...)
+  313       local ok, result = pcall(fn, ...)        │   356       local ok, result = pcall(fn, ...)
+  314       if ok then                               │   357       if ok then
+  315           return result, nil                   │   358           return result, nil
+  316       else                                     │   359       else
+  317           return nil, create_error("RUNTIME_E… │   360           return nil, create_error("RUNTIME_E…
+  318       end                                      │   361       end
+  319   end                                          │   362   end
+  320                                                │   363
+  321   function M.retry(fn, max_attempts, delay_fn) │   364   function M.retry(fn, max_attempts, delay_fn)
+  322       max_attempts = max_attempts or M.MAX_RE… │   365       max_attempts = max_attempts or M.MAX_RE…
+  323       local last_error                         │   366       local last_error
+  324       for attempt = 1, max_attempts do         │   367       for attempt = 1, max_attempts do
+  325           local result, err = M.safe_call(fn)  │   368           local result, err = M.safe_call(fn)
+  326           if not err then                      │   369           if not err then
+  327               return result                    │   370               return result
+  328           end                                  │   371           end
+  329           last_error = err                     │   372           last_error = err
+  330           if delay_fn and attempt < max_attem… │   373           if delay_fn and attempt < max_attem…
+  331               delay_fn(attempt)                │   374               delay_fn(attempt)
+  332           end                                  │   375           end
+  333       end                                      │   376       end
+  334       return nil, last_error                   │   377       return nil, last_error
+  335   end                                          │   378   end
+  336                                                │   379
+  337   -- ========================================… │   380   -- ========================================…
+  338 ~ -- Section 8: Logging (unchanged)            │   381 ~ -- Section 9: Logging (unchanged)
+  339   -- ========================================… │   382   -- ========================================…
+  340                                                │   383
+  341   local log_levels = { debug = 1, info = 2, w… │   384   local log_levels = { debug = 1, info = 2, w…
+  342                                                │   385
+  343   function M.create_logger(config)             │   386   function M.create_logger(config)
+  344       local level = log_levels[config.log_lev… │   387       local level = log_levels[config.log_lev…
+  345       return {                                 │   388       return {
+  346           debug = function(msg)                │   389           debug = function(msg)
+  347               if level <= 1 then print("[DEBU… │   390               if level <= 1 then print("[DEBU…
+  348           end,                                 │   391           end,
+  349           info = function(msg)                 │   392           info = function(msg)
+  350               if level <= 2 then print("[INFO… │   393               if level <= 2 then print("[INFO…
+  351           end,                                 │   394           end,
+  352           warn = function(msg)                 │   395           warn = function(msg)
+  353               if level <= 3 then print("[WARN… │   396               if level <= 3 then print("[WARN…
+  354           end,                                 │   397           end,
+  355           error = function(msg)                │   398           error = function(msg)
+  356               if level <= 4 then print("[ERRO… │   399               if level <= 4 then print("[ERRO…
+  357           end,                                 │   400           end,
+  358       }                                        │   401       }
+  359   end                                          │   402   end
+  360                                                │   403
+  361   return M                                     │   404   return M
+  362                                                │   405
+
+hunks
+  075b1f039e0e58af  original 2..3  modified 2..3  (1 change(s))
+  70c8e6c4542b982a  original 10..13  modified 10..13  (1 change(s))
+  353ea99a45af3e98  original 37..139  modified 37..38  (1 change(s))
+  92fea598fd47f603  original 211..212  modified 110..255  (1 change(s))
+  b5ce2dd177e5fe78  original 279..280  modified 322..323  (1 change(s))
+  86bb470b221088ee  original 300..301  modified 343..344  (1 change(s))
+  2097f52d2d3ecb10  original 338..339  modified 381..382  (1 change(s))
+
+character changes
+  modified line    2  bytes   42..55   " (refactored)"
+  original line   10  bytes   13..14   "1"
+  modified line   10  bytes   13..14   "2"
+  original line   11  bytes   16..17   "3"
+  modified line   11  bytes   16..17   "5"
+  original line   12  bytes   15..16   "5"
+  modified line   12  bytes   15..17   "10"
+  original line   37  bytes   14..66   "Validation utilities (this block moves to Section 5)"
+  modified line   37  bytes   14..59   "Output formatting (MOVED HERE from Section 4)"
+  original line  211  bytes   11..52   "5: Statistics and aggregation (unchanged)"
+  modified line  110  bytes   11..64   "3: Data transformation (modified — added new field)"
+  original line  279  bytes   11..12   "6"
+  modified line  322  bytes   11..12   "7"
+  original line  300  bytes   11..12   "7"
+  modified line  343  bytes   11..12   "8"
+  original line  338  bytes   11..12   "8"
+  modified line  381  bytes   11..12   "9"
+
+unchanged regions
+  original 1..2  modified 1..2
+  original 3..10  modified 3..10
+  original 13..37  modified 13..37  (18 line(s) could be hidden)
+  original 139..211  modified 38..110  (66 line(s) could be hidden)
+  original 212..279  modified 255..322  (61 line(s) could be hidden)
+  original 280..300  modified 323..343  (14 line(s) could be hidden)
+  original 301..338  modified 344..381  (31 line(s) could be hidden)
+  original 339..363  modified 382..406  (18 line(s) could be hidden)
+
+moves
+  original 32..89  ->  modified 197..254
+  original 89..110  ->  modified 110..132
+  original 110..115  ->  modified 136..141
+  original 115..138  ->  modified 145..168

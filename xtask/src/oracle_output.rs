@@ -19,7 +19,7 @@ pub type CharSpan = (u32, u32, u32, u32);
 pub struct OracleChange {
     pub original: LineSpan,
     pub modified: LineSpan,
-    pub inner: Vec<OracleInner>,
+    pub inner_changes: Vec<OracleInner>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +75,9 @@ pub fn parse(output: &str) -> Result<OracleDiff> {
             let change = changes
                 .last_mut()
                 .context("an Inner line appeared before any change")?;
-            change.inner.push(OracleInner { original, modified });
+            change
+                .inner_changes
+                .push(OracleInner { original, modified });
             continue;
         }
 
@@ -88,7 +90,7 @@ pub fn parse(output: &str) -> Result<OracleDiff> {
                 changes.push(OracleChange {
                     original,
                     modified,
-                    inner: Vec::new(),
+                    inner_changes: Vec::new(),
                 });
             }
         }
@@ -159,7 +161,7 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = "\
-Diff Results:
+LinesDiff Results:
 Number of changes: 1
 Hit timeout: no
 
@@ -184,9 +186,9 @@ Hit timeout: no
     #[test]
     fn reads_inner_positions() {
         let parsed = parse(SAMPLE).unwrap();
-        assert_eq!(parsed.changes[0].inner.len(), 1);
-        assert_eq!(parsed.changes[0].inner[0].original, (2, 1, 2, 3));
-        assert_eq!(parsed.changes[0].inner[0].modified, (2, 1, 3, 4));
+        assert_eq!(parsed.changes[0].inner_changes.len(), 1);
+        assert_eq!(parsed.changes[0].inner_changes[0].original, (2, 1, 2, 3));
+        assert_eq!(parsed.changes[0].inner_changes[0].modified, (2, 1, 3, 4));
     }
 
     #[test]

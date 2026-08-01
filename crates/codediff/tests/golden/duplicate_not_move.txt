@@ -1,0 +1,26 @@
+duplicate_not_move
+8 lines -> 12 lines, 12 rows
+1 change(s), 0 move(s), 1 hunk(s)
+
+    1   function shared()                            │     1   function shared()
+    2       return "hello"                           │     2       return "hello"
+    3   end                                          │     3   end
+    4                                                │     4
+    5   function unique_original()                   │     5   function unique_original()
+    6       return "only here"                       │     6       return "only here"
+    7   end                                          │     7   end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     8 +
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     9 + function shared()
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    10 +     return "hello"
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    11 + end
+    8                                                │    12
+
+hunks
+  fd7e1a3325b7501e  original 8..8  modified 8..12  (1 change(s))
+
+character changes
+  none
+
+unchanged regions
+  original 1..8  modified 1..8
+  original 8..9  modified 12..13

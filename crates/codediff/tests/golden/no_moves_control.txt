@@ -1,0 +1,22 @@
+no_moves_control
+6 lines -> 7 lines, 7 rows
+2 change(s), 0 move(s), 1 hunk(s)
+
+    1   line 1                                       │     1   line 1
+    2 ~ line 2                                       │     2 ~ changed line 2
+    3   line 3                                       │     3   line 3
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     4 + new line inserted
+    4   line 4                                       │     5   line 4
+    5   line 5                                       │     6   line 5
+    6                                                │     7
+
+hunks
+  d57190850ac9d29a  original 2..4  modified 2..5  (2 change(s))
+
+character changes
+  modified line    2  bytes    0..8    "changed "
+
+unchanged regions
+  original 1..2  modified 1..2
+  original 3..4  modified 3..4
+  original 4..7  modified 5..8

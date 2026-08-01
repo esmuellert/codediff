@@ -9,10 +9,10 @@ A standalone, read-only terminal diff reviewer built for reviewing LLM-agent cod
   and linked statically.
 - **Agent-focused.** Built for the workflow where an agent edits while you review.
 
-**Status: S1–S3 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper
-and the text-measurement layer build, link and are covered by tests; the diff results
-agree with upstream's own `diff_tool` on every fixture. There is no review interface yet
-— see [docs/plan/04-milestones.md](docs/plan/04-milestones.md).
+**Status: S1–S4 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper,
+the text-measurement layer and the line pairing build, link and are covered by tests; the
+diff results agree with upstream's own `diff_tool` on every fixture. There is no review
+interface yet — see [docs/plan/04-milestones.md](docs/plan/04-milestones.md).
 
 ## Building
 
@@ -83,6 +83,26 @@ engine    libvscode-diff 2.60.0
   moves
   [0] original 4..8  ->  modified 1..5
 ```
+
+### Pairing up the two files
+
+```sh
+codediff debug align old.txt new.txt [--verbose]
+```
+
+Shows which line sits opposite which, and where the gaps fall. `--verbose` adds hunks,
+character-level byte ranges and the stretches that could be collapsed:
+
+```text
+    1   -- Header comment            │     1   -- Header comment
+    2   local config = {}            │     2   local config = {}
+    3 -                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 11
+    4 - function setup()             │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    9                                │     3
+```
+
+Read the left column top to bottom and you have the original file; read the right and you
+have the modified one. That is the property the tests assert over all twelve fixtures.
 
 ### Inspecting text measurement
 

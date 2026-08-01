@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 metrics.workspace = true
+align.workspace = true
 vscode-diff.workspace = true
 
 [lints]

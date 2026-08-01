@@ -7,6 +7,8 @@
 use anyhow::{Context, Result};
 use metrics::{CellCol, DEFAULT_TAB_WIDTH, Grapheme, LineMetrics};
 
+use crate::text::{display_width, expand, pad, visible};
+
 pub fn run(path: &str, verbose: bool) -> Result<()> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
 
@@ -111,46 +113,6 @@ fn name(g: &Grapheme<'_>) -> String {
     visible(g.text)
 }
 
-/// Tabs replaced by the spaces they expand to, and control characters by a
-/// picture of themselves.
-///
-/// A raw tab handed to the terminal would use *its* tab stops rather than ours,
-/// and a raw ESC would be **obeyed** — a file under review could move the
-/// cursor, recolour the output or hide part of itself from the reviewer. Every
-/// replacement is one column wide, which is what `grapheme_width` counted, so
-/// the ruler still lines up.
-fn expand(line: &LineMetrics<'_>) -> String {
-    let mut out = String::with_capacity(line.text().len());
-    for g in line.graphemes() {
-        if g.is_tab() {
-            out.extend(std::iter::repeat_n(' ', g.width as usize));
-        } else {
-            out.push_str(&visible(g.text));
-        }
-    }
-    out
-}
-
-/// Text with anything the terminal would act on replaced by a printable stand-in.
-fn visible(text: &str) -> String {
-    if !text.chars().any(char::is_control) {
-        return text.to_owned();
-    }
-    text.chars().map(picture).collect()
-}
-
-fn picture(c: char) -> char {
-    match c {
-        // Unicode Control Pictures: U+2400 draws U+0000, U+2401 draws U+0001,
-        // and so on through the C0 range.
-        '\u{0}'..='\u{1f}' => char::from_u32(0x2400 + c as u32).unwrap_or('\u{fffd}'),
-        '\u{7f}' => '\u{2421}', // DEL has its own picture
-        // The C1 controls have none, so fall back to the replacement character.
-        c if c.is_control() => '\u{fffd}',
-        c => c,
-    }
-}
-
 /// A visual check that the computed widths match what the terminal draws:
 /// `^` where a character starts, `-` for the columns it continues into.
 fn ruler_check(line: &LineMetrics<'_>) {
@@ -174,20 +136,4 @@ fn ruler(width: CellCol) -> String {
             _ => '·',
         })
         .collect()
-}
-
-fn display_width(text: &str) -> u32 {
-    LineMetrics::new(text, DEFAULT_TAB_WIDTH).width().get()
-}
-
-/// Pads to terminal columns rather than characters, so a double-width
-/// character does not shift the row.
-fn pad(text: &str, columns: u32) -> String {
-    let width = display_width(text);
-    let mut out = text.to_owned();
-    out.extend(std::iter::repeat_n(
-        ' ',
-        columns.saturating_sub(width) as usize,
-    ));
-    out
 }

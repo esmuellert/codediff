@@ -10,12 +10,17 @@ use crate::coord::CellCol;
 /// East Asian wide and fullwidth characters measure two.
 ///
 /// Control characters other than tab are treated as one column: they are
-/// rendered as a placeholder rather than being allowed to move the cursor.
+/// rendered as a placeholder rather than being allowed to move the cursor. So
+/// are the bidirectional controls, for the same reason — see
+/// [`is_bidi_control`].
 pub fn grapheme_width(grapheme: &str) -> u32 {
     debug_assert!(!grapheme.is_empty(), "a grapheme cluster is never empty");
 
     if grapheme == "\t" {
         // Meaningless without a starting column; callers use `tab_advance`.
+        return 1;
+    }
+    if grapheme.chars().next().is_some_and(is_bidi_control) {
         return 1;
     }
     match grapheme.width() as u32 {
@@ -24,6 +29,29 @@ pub fn grapheme_width(grapheme: &str) -> u32 {
         0 if !starts_with_combining(grapheme) => 1,
         width => width,
     }
+}
+
+/// Characters that reorder text on screen without being visible.
+///
+/// Unicode gives these zero width, and by that measure they are harmless. They
+/// are not: `U+202E RIGHT-TO-LEFT OVERRIDE` makes a line *read* as something
+/// other than what it says, which is the Trojan Source attack. A reviewer must
+/// never be handed one unaltered, so a renderer draws a placeholder instead,
+/// and the placeholder needs a column — which is why they are measured as one
+/// here rather than as zero.
+///
+/// Deliberately not all of Unicode's format category. `U+200D ZERO WIDTH
+/// JOINER` and the variation selectors build ordinary emoji and reorder
+/// nothing; mangling those would corrupt legitimate text to no benefit.
+pub fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{202a}'..='\u{202e}'   // LRE, RLE, PDF, LRO, RLO
+        | '\u{2066}'..='\u{2069}' // LRI, RLI, FSI, PDI
+        | '\u{200e}'              // LEFT-TO-RIGHT MARK
+        | '\u{200f}'              // RIGHT-TO-LEFT MARK
+        | '\u{061c}'              // ARABIC LETTER MARK
+    )
 }
 
 /// Columns a tab occupies when it begins at `from`.
@@ -68,6 +96,41 @@ mod tests {
     #[test]
     fn a_control_character_still_occupies_its_column() {
         assert_eq!(grapheme_width("\u{0}"), 1);
+    }
+
+    #[test]
+    fn bidi_controls_occupy_a_column_so_a_placeholder_can_be_drawn() {
+        // Unicode gives these zero width. Measuring them that way would leave a
+        // renderer no room for the stand-in it must draw instead of passing
+        // them through, and every column after them would shift.
+        for c in [
+            '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}',
+            '\u{2068}', '\u{2069}', '\u{200e}', '\u{200f}', '\u{061c}',
+        ] {
+            assert!(
+                is_bidi_control(c),
+                "U+{:04X} should be recognised",
+                c as u32
+            );
+            assert_eq!(
+                grapheme_width(&c.to_string()),
+                1,
+                "U+{:04X} should measure one column",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn emoji_joiners_are_left_alone() {
+        // ZWJ and the variation selectors build ordinary emoji and reorder
+        // nothing, so they keep their real width and pass through untouched.
+        assert!(!is_bidi_control('\u{200d}'));
+        assert!(!is_bidi_control('\u{fe0f}'));
+        assert_eq!(
+            grapheme_width("\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}"),
+            2
+        );
     }
 
     #[test]

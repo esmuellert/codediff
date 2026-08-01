@@ -1,0 +1,232 @@
+//! `codediff debug align <old> <new>` — the two files paired up, as plain text.
+//!
+//! This is the check for the `align` crate and its regression format at once:
+//! the left column must read as exactly the original file and the right as
+//! exactly the modified one, which a human can confirm by looking.
+
+use ::align::{Alignment, Row, RowKind, Side, Slot};
+use anyhow::{Context, Result};
+
+use crate::text::{expand_str, fit, pad, visible};
+
+/// Columns given to each file's text.
+const COLUMN: u32 = 44;
+
+pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()> {
+    let original_text = read(original_path)?;
+    let modified_text = read(modified_path)?;
+    let original: Vec<&str> = split(&original_text);
+    let modified: Vec<&str> = split(&modified_text);
+
+    // Moves are part of what this layer has to get right, so ask for them.
+    let options = vscode_diff::Options::default().with_moves();
+    let diff =
+        vscode_diff::compute(&original, &modified, &options).context("computing the diff")?;
+    let alignment = Alignment::new(&diff, &original, &modified);
+
+    header(
+        original_path,
+        modified_path,
+        &original,
+        &modified,
+        &alignment,
+    );
+    for row in alignment.rows() {
+        println!("{}", line(&alignment, &row));
+    }
+
+    if verbose {
+        detail(&alignment);
+    }
+    Ok(())
+}
+
+fn header(
+    original_path: &str,
+    modified_path: &str,
+    original: &[&str],
+    modified: &[&str],
+    alignment: &Alignment<'_>,
+) {
+    println!("{}  ->  {}", visible(original_path), visible(modified_path));
+    println!(
+        "{} lines -> {} lines, {} rows",
+        original.len(),
+        modified.len(),
+        alignment.row_count()
+    );
+    println!(
+        "{} change(s), {} move(s), {} hunk(s){}",
+        alignment.diff().changes.len(),
+        alignment.diff().moves.len(),
+        alignment.hunks().len(),
+        if alignment.diff().hit_timeout {
+            "  [TIMED OUT]"
+        } else {
+            ""
+        }
+    );
+    println!();
+}
+
+/// One row: line number, marker and text for each side.
+fn line(alignment: &Alignment<'_>, row: &Row) -> String {
+    let (left_mark, right_mark) = marks(row.kind);
+    let body = format!(
+        "{} {} {} │ {} {} {}",
+        number(row.original),
+        left_mark,
+        side(alignment, Side::Original, row.original),
+        number(row.modified),
+        right_mark,
+        pad(&side(alignment, Side::Modified, row.modified), COLUMN),
+    );
+    format!("{body}{}", move_note(alignment, row))
+        .trim_end()
+        .to_owned()
+}
+
+/// Where a moved block begins, and where its other end is.
+///
+/// Only on the row the block starts at. Repeating it down every line of a
+/// forty-line move says nothing new and buries the text.
+fn move_note(alignment: &Alignment<'_>, row: &Row) -> String {
+    if let Some(n) = row.original.line()
+        && let Some(moved) = alignment.moved(Side::Original, n)
+        && moved.original.start_line == n
+    {
+        return format!("   ↓ moved to modified {}", moved.modified.start_line);
+    }
+    if let Some(n) = row.modified.line()
+        && let Some(moved) = alignment.moved(Side::Modified, n)
+        && moved.modified.start_line == n
+    {
+        return format!("   ↑ moved from original {}", moved.original.start_line);
+    }
+    String::new()
+}
+
+fn marks(kind: RowKind) -> (char, char) {
+    match kind {
+        RowKind::Unchanged => (' ', ' '),
+        RowKind::Modified => ('~', '~'),
+        RowKind::Deleted => ('-', ' '),
+        RowKind::Inserted => (' ', '+'),
+    }
+}
+
+fn number(slot: Slot) -> String {
+    match slot.line() {
+        Some(n) => format!("{n:>5}"),
+        None => "     ".to_owned(),
+    }
+}
+
+fn side(alignment: &Alignment<'_>, side: Side, slot: Slot) -> String {
+    match slot.line() {
+        None => "╱".repeat(COLUMN as usize),
+        Some(number) => fit(
+            &expand_str(alignment.line(side, number).unwrap_or_default()),
+            COLUMN,
+        ),
+    }
+}
+
+/// Everything the row grid cannot show.
+fn detail(alignment: &Alignment<'_>) {
+    println!();
+    println!("hunks");
+    for hunk in alignment.hunks() {
+        println!(
+            "  {:016x}  original {}..{}  modified {}..{}  ({} change(s))",
+            hunk.id.0,
+            hunk.original.start_line,
+            hunk.original.end_line,
+            hunk.modified.start_line,
+            hunk.modified.end_line,
+            hunk.changes.len()
+        );
+    }
+
+    println!();
+    println!("character changes");
+    let mut any = false;
+    for row in alignment.rows() {
+        if row.kind != RowKind::Modified {
+            continue;
+        }
+        for (side, slot) in [
+            (Side::Original, row.original),
+            (Side::Modified, row.modified),
+        ] {
+            let Some(number) = slot.line() else { continue };
+            for span in alignment.spans(side, number) {
+                any = true;
+                let text = alignment.line(side, number).unwrap_or_default();
+                let piece = text
+                    .get(span.bytes.start as usize..span.bytes.end as usize)
+                    .unwrap_or("<not a character boundary>");
+                println!(
+                    "  {:<8} line {number:>4}  bytes {:>4}..{:<4} {:?}",
+                    label(side),
+                    span.bytes.start,
+                    span.bytes.end,
+                    visible(piece)
+                );
+            }
+        }
+    }
+    if !any {
+        println!("  none");
+    }
+
+    println!();
+    println!("unchanged regions");
+    for region in alignment.unchanged() {
+        let collapsible = region
+            .hidden(3, 4)
+            .map(|h| format!("  ({} line(s) could be hidden)", h.len()))
+            .unwrap_or_default();
+        println!(
+            "  original {}..{}  modified {}..{}{collapsible}",
+            region.original.start_line,
+            region.original.end_line,
+            region.modified.start_line,
+            region.modified.end_line
+        );
+    }
+
+    if !alignment.diff().moves.is_empty() {
+        println!();
+        println!("moves");
+        for moved in &alignment.diff().moves {
+            println!(
+                "  original {}..{}  ->  modified {}..{}",
+                moved.original.start_line,
+                moved.original.end_line,
+                moved.modified.start_line,
+                moved.modified.end_line
+            );
+        }
+    }
+}
+
+fn label(side: Side) -> &'static str {
+    match side {
+        Side::Original => "original",
+        Side::Modified => "modified",
+    }
+}
+
+fn read(path: &str) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("reading {path}"))
+}
+
+/// Splits the way the engine does: on `\n` only.
+///
+/// `str::lines()` is wrong here — it drops the empty line that a file's final
+/// newline produces, and the engine counts that line. `debug diff` and
+/// `xtask verify-oracle` split identically.
+fn split(text: &str) -> Vec<&str> {
+    text.split('\n').collect()
+}

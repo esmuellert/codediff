@@ -7,7 +7,7 @@ pub struct Options {
     pub ignore_trim_whitespace: bool,
 
     /// Give up refining after this long and return a coarser result with
-    /// [`crate::Diff::hit_timeout`] set. Zero means no limit.
+    /// [`crate::LinesDiff::hit_timeout`] set. Zero means no limit.
     pub max_computation_time_ms: u32,
 
     /// Detect blocks that moved rather than being deleted and re-added.

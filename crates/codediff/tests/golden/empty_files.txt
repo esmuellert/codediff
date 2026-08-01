@@ -1,0 +1,14 @@
+empty_files
+2 lines -> 2 lines, 2 rows
+0 change(s), 0 move(s), 0 hunk(s)
+
+    1                                                │     1
+    2                                                │     2
+
+hunks
+
+character changes
+  none
+
+unchanged regions
+  original 1..3  modified 1..3

@@ -14,7 +14,7 @@ use std::process::Command;
 
 use crate::lock;
 use crate::oracle_output::{self, OracleChange, OracleInner};
-use vscode_diff::{Diff, Options, compute};
+use vscode_diff::{LinesDiff, Options, compute};
 
 /// Mirrors DIFF_CORE_SOURCES; see crates/vscode-diff-sys/build.rs.
 const SOURCES: &[&str] = &[
@@ -139,7 +139,7 @@ fn compare(tool: &Path, pair: &Path) -> Result<()> {
     Ok(())
 }
 
-fn describe_mismatch(expected: &oracle_output::OracleDiff, actual: &Diff) -> Option<String> {
+fn describe_mismatch(expected: &oracle_output::OracleDiff, actual: &LinesDiff) -> Option<String> {
     if expected.hit_timeout != actual.hit_timeout {
         return Some(format!(
             "hit_timeout: oracle {} vs ours {}",
@@ -169,10 +169,10 @@ fn describe_mismatch(expected: &oracle_output::OracleDiff, actual: &Diff) -> Opt
 
     for (i, (want, got)) in expected.moves.iter().zip(&actual.moves).enumerate() {
         let ours = (
-            got.original.start,
-            got.original.end,
-            got.modified.start,
-            got.modified.end,
+            got.original.start_line,
+            got.original.end_line,
+            got.modified.start_line,
+            got.modified.end_line,
         );
         if *want != ours {
             return Some(format!("move {i}: oracle {want:?} vs ours {ours:?}"));
@@ -182,29 +182,38 @@ fn describe_mismatch(expected: &oracle_output::OracleDiff, actual: &Diff) -> Opt
     None
 }
 
-fn change_mismatch(i: usize, want: &OracleChange, got: &vscode_diff::Change) -> Option<String> {
-    let ours = (got.original.start, got.original.end);
+fn change_mismatch(
+    i: usize,
+    want: &OracleChange,
+    got: &vscode_diff::DetailedLineRangeMapping,
+) -> Option<String> {
+    let ours = (got.original.start_line, got.original.end_line);
     if want.original != ours {
         return Some(format!(
             "change {i} original: oracle {:?} vs ours {ours:?}",
             want.original
         ));
     }
-    let ours = (got.modified.start, got.modified.end);
+    let ours = (got.modified.start_line, got.modified.end_line);
     if want.modified != ours {
         return Some(format!(
             "change {i} modified: oracle {:?} vs ours {ours:?}",
             want.modified
         ));
     }
-    if want.inner.len() != got.inner.len() {
+    if want.inner_changes.len() != got.inner_changes.len() {
         return Some(format!(
             "change {i} inner count: oracle {} vs ours {}",
-            want.inner.len(),
-            got.inner.len()
+            want.inner_changes.len(),
+            got.inner_changes.len()
         ));
     }
-    for (j, (want_inner, got_inner)) in want.inner.iter().zip(&got.inner).enumerate() {
+    for (j, (want_inner, got_inner)) in want
+        .inner_changes
+        .iter()
+        .zip(&got.inner_changes)
+        .enumerate()
+    {
         let ours = OracleInner {
             original: (
                 got_inner.original.start_line,

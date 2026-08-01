@@ -1,0 +1,91 @@
+large_file_move
+64 lines -> 64 lines, 72 rows
+2 change(s), 1 move(s), 2 hunk(s)
+
+    1   -- Utility functions module                  │     1   -- Utility functions module
+    2   local M = {}                                 │     2   local M = {}
+    3                                                │     3
+    4   function M.helper1()                         │     4   function M.helper1()
+    5       local x = 1                              │     5       local x = 1
+    6       local y = 2                              │     6       local y = 2
+    7       return x + y                             │     7       return x + y
+    8   end                                          │     8   end
+    9 -                                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 29
+   10 - function M.helper2()                         │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   11 -     local data = {}                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   12 -     for i = 1, 10 do                         │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   13 -         table.insert(data, i * 2)            │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   14 -     end                                      │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   15 -     return data                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   16 - end                                          │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+   17                                                │     9
+   18   function M.helper3()                         │    10   function M.helper3()
+   19       return os.time()                         │    11       return os.time()
+   20   end                                          │    12   end
+   21                                                │    13
+   22   function M.helper4()                         │    14   function M.helper4()
+   23       local result = {}                        │    15       local result = {}
+   24       for k, v in pairs({ a = 1, b = 2, c = 3… │    16       for k, v in pairs({ a = 1, b = 2, c = 3…
+   25           result[k] = v * 10                   │    17           result[k] = v * 10
+   26       end                                      │    18       end
+   27       return result                            │    19       return result
+   28   end                                          │    20   end
+   29                                                │    21
+   30   function M.helper5()                         │    22   function M.helper5()
+   31       local sum = 0                            │    23       local sum = 0
+   32       for i = 1, 100 do                        │    24       for i = 1, 100 do
+   33           sum = sum + i                        │    25           sum = sum + i
+   34       end                                      │    26       end
+   35       return sum                               │    27       return sum
+   36   end                                          │    28   end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    29 +                                                ↑ moved from original 9
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    30 + function M.helper2()
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    31 +     local data = {}
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    32 +     for i = 1, 10 do
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    33 +         table.insert(data, i * 2)
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    34 +     end
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    35 +     return data
+        ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │    36 + end
+   37                                                │    37
+   38   function M.helper6()                         │    38   function M.helper6()
+   39       local str = ""                           │    39       local str = ""
+   40       for i = 1, 5 do                          │    40       for i = 1, 5 do
+   41           str = str .. tostring(i) .. ", "     │    41           str = str .. tostring(i) .. ", "
+   42       end                                      │    42       end
+   43       return str                               │    43       return str
+   44   end                                          │    44   end
+   45                                                │    45
+   46   function M.helper7()                         │    46   function M.helper7()
+   47       local t = {}                             │    47       local t = {}
+   48       for i = 1, 20 do                         │    48       for i = 1, 20 do
+   49           t[i] = math.random(1, 100)           │    49           t[i] = math.random(1, 100)
+   50       end                                      │    50       end
+   51       table.sort(t)                            │    51       table.sort(t)
+   52       return t                                 │    52       return t
+   53   end                                          │    53   end
+   54                                                │    54
+   55   function M.helper8()                         │    55   function M.helper8()
+   56       local count = 0                          │    56       local count = 0
+   57       for _ in pairs(M) do                     │    57       for _ in pairs(M) do
+   58           count = count + 1                    │    58           count = count + 1
+   59       end                                      │    59       end
+   60       return count                             │    60       return count
+   61   end                                          │    61   end
+   62                                                │    62
+   63   return M                                     │    63   return M
+   64                                                │    64
+
+hunks
+  790311682b378052  original 9..17  modified 9..9  (1 change(s))
+  2c2aeeaa920075fc  original 37..37  modified 29..37  (1 change(s))
+
+character changes
+  none
+
+unchanged regions
+  original 1..9  modified 1..9
+  original 17..37  modified 9..29  (14 line(s) could be hidden)
+  original 37..65  modified 37..65  (22 line(s) could be hidden)
+
+moves
+  original 9..17  ->  modified 29..37

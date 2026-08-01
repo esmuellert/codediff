@@ -87,33 +87,35 @@ them goes unnoticed until a file contains a tab or an emoji.
 
 ---
 
-### S4 — `align`, the aligned model — **KEYSTONE**
+### S4 — `align`, pairing the two files — **KEYSTONE** ✅
 
-**Build.** `AlignedDoc` from a `Diff` plus two texts. `Row`/`Cell`/`RowKind`. Hunks with
-content-hash `HunkId`. Inner-change spans resolved to byte ranges via `metrics`. Projections
-(side-by-side today, inline and compact later). Navigation primitives. A **plain-text
-renderer** — no TUI in this milestone.
+**Build.** `Alignment` over a `LinesDiff` plus two texts: `Row`/`Slot`/`RowKind`, hunks with
+content-hash `HunkId`, inner-change spans resolved to byte ranges via `metrics`, unchanged
+regions, moves by line lookup. A **plain-text renderer** — no TUI in this milestone.
+
+It stores no rows and copies no text; every answer is computed from the diff it borrows.
+This is VSCode's model — see D18.
 
 **Check.**
 ```
-codediff debug align crates/align/fixtures/pairs/<name>/{original,modified}.txt
+codediff debug align vendor/test-pairs/<name>/original.txt \
+                     vendor/test-pairs/<name>/modified.txt [-v]
 ```
 for all twelve fixture pairs. Output resembles:
 ```
-   1 │ fn main() {                │   1 │ fn main() {
-   2 │     let x = 1;             │   2 │     let x = 42;
-   3 │     println!("hi");        │   3 │     println!("hello");
-     │ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │   4 │     return;
-   4 │ }                          │   5 │ }
+    1   -- Header comment            │     1   -- Header comment
+    3 -                              │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 11
+    4 - function setup()             │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    9                                │     3
 ```
 
 **Pass when.**
-- [ ] for each of the twelve pairs, the left column reads as **exactly** the original file
+- [x] for each of the twelve pairs, the left column reads as **exactly** the original file
       and the right column as **exactly** the modified file
-- [ ] fillers sit precisely where lines were added or removed
-- [ ] change markers identify the right rows
-- [ ] all six `align` invariants hold under `proptest`
-- [ ] golden snapshots committed
+- [x] fillers sit precisely where lines were added or removed
+- [x] change markers identify the right rows
+- [x] all six `align` invariants hold under `proptest`
+- [x] golden snapshots committed
 
 ---
 
@@ -165,11 +167,12 @@ git diff src/changed.rs                 # compare
 
 ### S7 — First pixels
 
-**Build.** Terminal lifecycle with a panic hook that restores the terminal. Layout, two
-panes rendering an `AlignedDoc`, line numbers, gutter, line and inner-change highlighting,
-status line, theme table. Event loop *shape* installed (channel plus
-`update(state, event) -> Vec<Command>`) even with only Key, Resize and Tick. `SpanSet`
-compositor with priorities. `syntax` crate with the `Syntax` trait returning empty spans.
+**Build.** Terminal lifecycle with a panic hook that restores the terminal. `Pane` /
+`Layout` / `View` per [D19](05-decisions.md#d19), two panes over one container-owned row
+index, line numbers, gutter, line and inner-change highlighting, status line, theme table.
+Event loop *shape* installed (channel plus `update(state, event) -> Vec<Command>`) even
+with only Key, Resize and Tick. `SpanSet` compositor with priorities. `syntax` crate with
+the `Syntax` trait returning empty spans.
 
 **Check.**
 ```
@@ -179,6 +182,7 @@ codediff --self-panic
 
 **Pass when.**
 - [ ] the diff renders side by side, correctly coloured, matching `debug align` row for row
+- [ ] dragging the split resizes both panes; **no scroll synchronisation code exists**
 - [ ] `q` exits and the shell prompt is **intact** — cursor visible, no alt-screen residue
 - [ ] `--self-panic` panics and **still restores the terminal**
 - [ ] resizing during use reflows without corruption
@@ -222,7 +226,8 @@ codediff --file /tmp/cdfix/big-a.rs /tmp/cdfix/big-b.rs      # 5000 lines
 ### S10 — Horizontal scroll and long lines
 
 **Build.** Shared horizontal offset, grapheme-safe slicing, inner-change spans remapped
-through tab expansion.
+through tab expansion. This is the **default** answer to long lines; wrapping is opt-in and
+arrives in S10a.
 
 **Check.** Open `src/longlines.rs`, `src/tabs.rs` and `src/unicode.rs`; scroll right.
 
@@ -231,6 +236,31 @@ through tab expansion.
 - [ ] **inner-change highlights stay on the correct characters at every offset**
 - [ ] no character is ever split mid-grapheme at the pane edge
 - [ ] CJK and emoji do not shift the columns
+
+---
+
+### S10a — Optional line wrapping
+
+**Build.** Opt-in wrap. `metrics` gains "break this line into rows of width W". `display`
+computes each line's row count at its pane width, pairs ranges by **row** height rather than
+line count, and pads the shorter side after the range. Viewport position becomes
+`(row, subrow)`; the row index is rebuilt on resize.
+
+Because the split is draggable the two panes differ in width, so identical unchanged text
+wraps differently on each side and needs its own checkpoints — VSCode's
+`handleAlignmentsOutsideOfDiffs`. See [D19](05-decisions.md#d19).
+
+**Check.**
+```
+codediff --file src/longlines.rs src/longlines.rs   # then toggle wrap, then drag the split
+```
+
+**Pass when.**
+- [ ] with wrap off, behaviour is unchanged and no per-line height is computed
+- [ ] with wrap on, no line is cut off at the pane edge
+- [ ] the two sides stay aligned when they wrap to different heights
+- [ ] dragging the split rewraps and stays aligned
+- [ ] inner-change highlights stay on the right characters across a wrap boundary
 
 ---
 

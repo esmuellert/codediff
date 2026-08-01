@@ -39,13 +39,19 @@ fn main() {
     // lines 2..4 and modified lines 2..5 — 1-based, end-exclusive.
     assert_eq!(diff.changes.len(), 1, "{:?}", diff.changes);
     let change = &diff.changes[0];
-    assert_eq!((change.original.start, change.original.end), (2, 4));
-    assert_eq!((change.modified.start, change.modified.end), (2, 5));
+    assert_eq!(
+        (change.original.start_line, change.original.end_line),
+        (2, 4)
+    );
+    assert_eq!(
+        (change.modified.start_line, change.modified.end_line),
+        (2, 5)
+    );
     assert_eq!(change.original.len(), 2);
     assert_eq!(change.modified.len(), 3);
 
     assert!(
-        !change.inner.is_empty(),
+        !change.inner_changes.is_empty(),
         "an edit within lines should carry character-level detail"
     );
 }
@@ -83,7 +89,7 @@ fn character_level_detail_locates_the_edit_within_a_line() {
     let modified = ["let timeout = 60;"];
 
     let diff = compute(&original, &modified, &Options::default()).unwrap();
-    let inner = &diff.changes[0].inner;
+    let inner = &diff.changes[0].inner_changes;
     assert!(!inner.is_empty());
 
     let first = inner[0];
@@ -153,7 +159,10 @@ fn non_ascii_content_round_trips() {
     let diff = compute(&original, &modified, &Options::default()).unwrap();
     assert_eq!(diff.changes.len(), 1, "{:?}", diff.changes);
     assert_eq!(
-        (diff.changes[0].modified.start, diff.changes[0].modified.end),
+        (
+            diff.changes[0].modified.start_line,
+            diff.changes[0].modified.end_line
+        ),
         (2, 3)
     );
 }
@@ -172,7 +181,7 @@ fn a_large_file_diffs_within_the_time_budget() {
 
     assert!(!diff.hit_timeout, "5000 lines should be well within budget");
     assert_eq!(diff.changes.len(), 2, "{:?}", diff.changes);
-    assert_eq!(diff.changes[0].original.start, 2_501);
+    assert_eq!(diff.changes[0].original.start_line, 2_501);
     assert!(diff.changes[1].is_insertion());
 }
 
