@@ -745,13 +745,67 @@ the keystrokes, and it is checkable rather than a matter of taste.
 
 ---
 
+## D21 — `vcs` runs `git` rather than linking a git library
+
+**Decided at S5.** `gix` and `git2` are real options — `gix` has 40M downloads and ships
+regularly — so this is a choice, not an absence of one.
+
+**Speed is not the reason.** Measured: `git --no-optional-locks status --porcelain=v2 -z`
+on a 340-file repository is **~4.5 ms**, twenty runs in 91 ms. That is far below the
+refresh rate a watcher will ask for.
+
+The reason is that git's own binary already honours the user's config, `.gitignore` rules,
+linked worktrees, sparse checkout and clean filters. Those rules decide **which files
+appear at all**, so a reimplementation that differs anywhere shows the wrong list — the one
+kind of wrong a review tool cannot afford. `Vcs` is a trait, so this is reversible, and a
+future `jj` backend needs one anyway.
+
+**Two layers, each in its own language.** The `Vcs` trait is in the reviewer's terms —
+`changed_files`, `before(file)`, `after(file)` — and names no git concept, because a system
+need not have one: jj has no index and no `HEAD`. Underneath, `git/` keeps every git word,
+with modules named for the commands they run, and `git::to_change` is the single point the
+two vocabularies meet.
+
+Forcing one vocabulary on both would go wrong in either direction — inventing fake-neutral
+names for git things, or making a jj backend pretend it has a staging area.
+
+**Capabilities that only some systems have get their own traits.** `Staging` and `History`
+would sit beside `Vcs`, so a backend lacking one fails to compile rather than answering
+"unsupported" at runtime. Only `Vcs` exists today. Note that staging is *not* excluded for
+being a write: it never changes file content, so it stays within what this tool does.
+Restoring, discarding and resolving a merge do change content, and those are the line.
+
+The equivalent layer in the plugin has 26 functions. Thirteen — comparing arbitrary
+revisions, history browsing, rename following — are real reads we will want later but not
+for worktree-vs-HEAD.
+
+**Three details that break naive implementations,** all found by running git rather than
+reading about it:
+
+| | |
+|---|---|
+| a **rename record spans two NUL-terminated fields** | splitting the stream on NUL and treating each piece as a record turns one rename into a record plus a garbage entry |
+| **`--no-optional-locks` goes before the subcommand** | as a `status` flag it is rejected. It stops git taking `.git/index.lock` for the optional index refresh, which would both fail a concurrent `git add` and wake the watcher that asked for the status |
+| **field offsets differ per record type** | `1` has two hashes, `2` adds a similarity score, `u` has three stages and so three modes and three hashes. Counting wrong puts a hash in the path, which the fixture caught |
+
+**Blobs come from one long-lived `cat-file --batch`.** A sixty-file diff is a hundred and
+twenty reads; at a process spawn each that is most of a second in `fork`. The child is
+stateful, so it gets its own thread rather than a slot in a pool sized for computation.
+
+**The `fixtures` crate has no workspace dependencies** so `vcs` tests and, later, end-to-end
+tests can dev-depend on it without a cycle. Its manifest is written by hand from
+`git-status(1)`; one generated from our own output would only prove the parser agrees with
+itself.
+
+---
+
 ## Open questions
 
 | # | question | needed by |
 |---|---|---|
-| 1 | three-state explorer or simple worktree-vs-HEAD? *(recommend three-state)* | S5 |
 | 4 | binary / symlink / mode-change / submodule presentation | S6 |
 | 5 | licensing and `ATTRIBUTION.md` — the C is VSCode-derived and vendors utf8proc | S1 |
 
-*Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).
+*Question 1 (explorer grouping) is settled in [04-milestones.md](04-milestones.md): one list, worktree vs HEAD, conflicts marked but not resolvable.
+Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).
 Question 3 (inline mode) is settled in [D19](#d19--the-container-owns-the-row-index-so-scroll-sync-cannot-exist): out of the MVP, no auto-switch.*

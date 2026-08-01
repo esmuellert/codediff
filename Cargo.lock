@@ -76,6 +76,7 @@ dependencies = [
  "align",
  "anyhow",
  "line-index",
+ "vcs",
  "vscode-diff",
 ]
 
@@ -135,6 +136,10 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fixtures"
+version = "0.1.0"
 
 [[package]]
 name = "fnv"
@@ -511,6 +516,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
+name = "vcs"
+version = "0.1.0"
+dependencies = [
+ "fixtures",
+]
+
+[[package]]
 name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -586,6 +598,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fixtures",
  "sha2",
  "toml",
  "vscode-diff",

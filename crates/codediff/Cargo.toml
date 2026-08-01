@@ -19,6 +19,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 line-index.workspace = true
 align.workspace = true
+vcs.workspace = true
 vscode-diff.workspace = true
 
 [lints]

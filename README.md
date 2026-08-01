@@ -9,8 +9,8 @@ A standalone, read-only terminal diff reviewer built for reviewing LLM-agent cod
   and linked statically.
 - **Agent-focused.** Built for the workflow where an agent edits while you review.
 
-**Status: S1–S4 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper,
-the text-measurement layer and the line pairing build, link and are covered by tests; the
+**Status: S1–S5 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper,
+the text-measurement layer, the line pairing and the git reader build, link and are covered by tests; the
 diff results agree with upstream's own `diff_tool` on every fixture. There is no review
 interface yet — see [docs/plan/04-milestones.md](docs/plan/04-milestones.md).
 
@@ -83,6 +83,25 @@ engine    libvscode-diff 2.60.0
   moves
   [0] original 4..8  ->  modified 1..5
 ```
+
+### Reading a repository
+
+```sh
+cargo xtask fixture-repo /tmp/cdfix     # a repo in a known state, plus a manifest
+codediff debug status /tmp/cdfix [-v]
+```
+
+```text
+  U  U  conflict.txt
+  D  .  deleted.txt
+  R  .  renamed-to.txt <- renamed-from.txt
+  M  M  staged-then-edited.txt
+  .  ?  untracked.txt
+  .  M  with spaces.txt
+```
+
+Two codes per file — the index against `HEAD`, then the working tree against the index.
+The output is in the manifest's own format, so the acceptance check is `diff`ing them.
 
 ### Pairing up the two files
 

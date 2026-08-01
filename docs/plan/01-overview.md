@@ -18,9 +18,9 @@ edits a repository while a human reviews the result.
 **One scenario, fully finished.**
 
 `codediff` with no arguments, run inside a git repository, shows the current working state:
-an explorer panel listing changed files grouped into Changes / Staged Changes / Merge
-Changes, and a side-by-side diff of the selected file with line- and character-level
-highlighting.
+an explorer panel listing every file that differs from `HEAD`, and a side-by-side diff of
+the selected file with line- and character-level highlighting. Conflicted files are listed
+and marked; resolving a merge is not something a read-only tool can do.
 
 The *scenario* is deliberately narrow. The *experience within it* is complete.
 

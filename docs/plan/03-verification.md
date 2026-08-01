@@ -142,7 +142,7 @@ human-readable artifact and the regression fixture are the same file.
 | `codediff debug diff <a> <b>` | the raw `LinesDiff` — changes, inner changes, moves | S2 |
 | `codediff debug line <f> [-v]` | per-character byte/utf16/column/width for the characters that diverge, and for control characters | S3 |
 | `codediff debug align <a> <b> [-v]` | plain-text side-by-side with fillers, change markers and move notes; `-v` adds hunks, character spans and unchanged regions | S4 |
-| `codediff debug status` | parsed status entries as a table | S5 |
+| `codediff debug status [dir] [-v]` | parsed status entries in the manifest's own format, so the two can be diffed | S5 |
 | `codediff debug show <rev>:<path>` | blob content as read through the vcs layer | S6 |
 | `codediff debug diff-file <path>` | aligned diff of one file, worktree vs HEAD | S6 |
 | `codediff debug events` | the event log of a session, replayable | S14 |

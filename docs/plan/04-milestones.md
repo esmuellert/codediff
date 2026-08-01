@@ -121,23 +121,26 @@ for all twelve fixture pairs. Output resembles:
 
 ## Phase B — Git
 
-### S5 — `vcs`, status parsing
+### S5 — `vcs`, reading the repository ✅
 
-**Build.** `VcsBackend` trait, git subprocess implementation. `git status --porcelain=v2 -z
---no-optional-locks`, typed `StatusEntry`, `ContentSource` enum. `xtask fixture-repo`.
+**Build.** `Vcs` trait and its git implementation: `discover`, `status`, `blob`, `worktree`,
+`resolve`. `git --no-optional-locks status --porcelain=v2 -z`, typed `StatusEntry` keeping
+both status codes. Blobs through one long-lived `cat-file --batch`. `fixtures` crate and
+`xtask fixture-repo`. See [D21](05-decisions.md#d21).
 
 **Check.**
 ```
 cargo xtask fixture-repo /tmp/cdfix
-cd /tmp/cdfix && codediff debug status
+codediff debug status /tmp/cdfix -v
+diff <(grep -vE '^#|^$' /tmp/cdfix/MANIFEST.txt) <(codediff debug status /tmp/cdfix | ...)
 ```
 
 **Pass when.**
-- [ ] output **matches the fixture manifest exactly** — every path, status code and group
-- [ ] renames appear as renames with both paths, not as add + delete
-- [ ] the conflicted file is identified as a conflict
-- [ ] untracked files and the untracked directory appear correctly
-- [ ] paths containing spaces and unicode survive intact
+- [x] output **matches the fixture manifest exactly** — every path and status code
+- [x] renames appear as renames with both paths, not as add + delete
+- [x] the conflicted file is identified as a conflict
+- [x] untracked files and the untracked directory appear correctly
+- [x] paths containing spaces and unicode survive intact
 
 ---
 
@@ -294,9 +297,9 @@ cd /tmp/cdfix && codediff
 ```
 
 **Pass when.**
-- [ ] the list contains **exactly the manifest files**, in the correct groups
-      (Changes / Staged Changes / Merge Changes) with correct status letters
-- [ ] `src/both.rs` appears in **both** Changes and Staged Changes
+- [ ] the list contains **exactly the manifest files** with correct status letters
+- [ ] `src/both.rs`, staged and then edited again, appears **once**, carrying both codes
+- [ ] the conflicted file is listed and marked as conflicted, with no merge view offered
 - [ ] the rename shows both old and new paths
 - [ ] `Tab` switches focus; `Enter` opens the diff; `j`/`k` moves; folds work
 - [ ] a file with a very long path truncates without breaking the layout
@@ -376,8 +379,8 @@ flight, targeted refresh, position restoration by `(path, HunkId)`, `Flag::Resca
 and a branch switch.
 
 **Pass when.**
-- [ ] `git add X` moves X from Changes to Staged Changes, **selection preserved**
-- [ ] `git reset` moves it back
+- [ ] `git add X` updates X's status codes in place, **selection preserved**
+- [ ] `git reset` puts them back
 - [ ] `git stash` empties the list; `git stash pop` restores it
 - [ ] a branch switch triggers one full refresh, not a storm
 - [ ] no `index.lock` contention is ever caused by codediff
@@ -423,7 +426,7 @@ Settle before the milestone noted.
 
 | # | question | needed by | recommendation |
 |---|---|---|---|
-| 1 | three-state explorer (Changes / Staged / Merge) or simple worktree-vs-HEAD? | S5 | **three-state** — matches the plugin and is what agent review needs |
+| 1 | ~~three-state explorer or simple worktree-vs-HEAD?~~ | S5 | **settled: one list, worktree vs HEAD.** Staging cannot be acted on from a read-only tool, and git reports both status codes anyway, so the split is additive later. Conflicted files are listed and marked, never given a merge view — three-way is a different model, not a mode, and VSCode likewise keeps `mergeEditor` separate from `diffEditor` |
 | 3 | include inline (single-pane) mode in MVP? | S7 | **no** — it is a projection over the same model, roughly two days to add later |
 
 *Question 2 (syntax engine) is settled — see [D11](05-decisions.md#d11--syntax-highlighting-is-in-the-mvp-via-syntect).*

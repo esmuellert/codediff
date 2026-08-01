@@ -9,6 +9,7 @@ mod align;
 mod debug;
 mod doctor;
 mod line;
+mod status;
 mod text;
 
 use anyhow::{Result, bail};
@@ -40,8 +41,12 @@ fn main() -> Result<()> {
                 }
                 _ => bail!("usage: codediff debug align <original> <modified> [--verbose]"),
             },
+            Some("status") => {
+                let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
+                status::run(args.get(2).map_or(".", String::as_str), verbose)
+            }
             Some(other) => bail!("unknown debug command: {other}"),
-            None => bail!("usage: codediff debug <diff|align|line> ..."),
+            None => bail!("usage: codediff debug <diff|align|line|status> ..."),
         },
         Some("--version") | Some("-V") => {
             println!("codediff {}", env!("CARGO_PKG_VERSION"));
@@ -68,6 +73,7 @@ USAGE:
     codediff debug diff <old> <new>          print the raw diff of two files
     codediff debug align <old> <new> [-v]    print the two files paired up
     codediff debug line <file> [-v]          print where each character sits
+    codediff debug status [dir] [-v]         print what git says about a worktree
     codediff --version                       print the version
     codediff --help                          print this message
 

@@ -1,0 +1,17 @@
+[package]
+name = "fixtures"
+description = "Git repositories in known states, for tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Deliberately no dependencies, so any crate can dev-depend on this one
+# without forming a cycle.
+[dependencies]
+
+[lints]
+workspace = true

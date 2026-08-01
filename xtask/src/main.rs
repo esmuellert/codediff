@@ -29,6 +29,10 @@ fn main() -> Result<()> {
         Some("verify-oracle") => verify_oracle::run(),
         Some("lint-size") => lint_size::run(),
         Some("lint-arch") => lint_arch::run(),
+        Some("fixture-repo") => match args.get(1) {
+            Some(dir) => fixtures::repo(std::path::Path::new(dir)).map_err(Into::into),
+            None => anyhow::bail!("usage: cargo xtask fixture-repo <dir>"),
+        },
         Some("help") | Some("--help") | Some("-h") | None => {
             help();
             Ok(())
@@ -53,6 +57,9 @@ Vendored C engine
 Architecture enforcement
   lint-size                            fail if a file exceeds the line cap
   lint-arch                            fail on forbidden crate edges and unsafe policy
+
+Fixtures
+  fixture-repo <dir>                   build a git repository in a known state
 "
     );
 }

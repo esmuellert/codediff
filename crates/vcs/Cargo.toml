@@ -1,0 +1,19 @@
+[package]
+name = "vcs"
+description = "Reading a git repository: status, blobs and revisions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+# Workspace-internal: these short names are taken on crates.io.
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+fixtures.workspace = true
+
+[lints]
+workspace = true

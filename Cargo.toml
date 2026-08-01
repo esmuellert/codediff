@@ -8,6 +8,8 @@ members = [
     "crates/vscode-diff",
     "crates/line-index",
     "crates/align",
+    "crates/vcs",
+    "crates/fixtures",
     "crates/codediff",
     "xtask",
 ]
@@ -34,6 +36,8 @@ vscode-diff-sys = { path = "crates/vscode-diff-sys" }
 vscode-diff = { path = "crates/vscode-diff" }
 line-index = { path = "crates/line-index" }
 align = { path = "crates/align" }
+vcs = { path = "crates/vcs" }
+fixtures = { path = "crates/fixtures" }
 
 anyhow = "1"
 
