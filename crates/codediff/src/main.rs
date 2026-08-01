@@ -5,48 +5,30 @@
 //! the only place in the workspace that names concrete implementations, and
 //! nothing depends on it.
 
+mod cli;
 mod debug;
 mod doctor;
 mod text;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
+use clap::Parser;
+
+use cli::{Cli, Command};
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-
-    match args.first().map(String::as_str) {
-        Some("doctor") => {
+    match Cli::parse().command {
+        Some(Command::Doctor) => {
             doctor::run();
             Ok(())
         }
-        Some("debug") => debug::run(&args[1..]),
-        Some("--version") | Some("-V") => {
-            println!("codediff {}", env!("CARGO_PKG_VERSION"));
+        Some(Command::Debug(command)) => debug::run(command),
+        // The review interface will go here; until then, say so rather than
+        // opening an empty screen.
+        None => {
+            use clap::CommandFactory;
+            Cli::command().print_help()?;
+            println!();
             Ok(())
-        }
-        Some("--help") | Some("-h") | None => {
-            help();
-            Ok(())
-        }
-        Some(other) => {
-            help();
-            bail!("unknown command: {other}");
         }
     }
-}
-
-fn help() {
-    println!(
-        "\
-codediff {version} — a standalone, read-only terminal diff reviewer
-
-USAGE:
-    codediff doctor                          report how this binary was built
-    codediff debug <command>                 inspect one layer; run bare to list
-    codediff --version                       print the version
-    codediff --help                          print this message
-
-The review interface is not built yet; see docs/plan/04-milestones.md.",
-        version = env!("CARGO_PKG_VERSION")
-    );
 }

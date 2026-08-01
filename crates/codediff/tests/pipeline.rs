@@ -225,6 +225,48 @@ fn every_changed_file_can_be_diffed_without_failing() {
     }
 }
 
+#[test]
+fn exit_codes_tell_misuse_apart_from_failure() {
+    // Two different things a caller may want to act on: 2 means the command
+    // line was wrong, 1 means the command ran and could not do the job. This
+    // is clap's convention, and git's.
+    let fixture = Fixture::new("exits");
+    let code = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_codediff"))
+            .args(args)
+            .current_dir(&fixture.dir)
+            .output()
+            .expect("running codediff")
+            .status
+            .code()
+    };
+
+    assert_eq!(code(&["debug", "status"]), Some(0));
+    assert_eq!(code(&["debug", "align", "only-one-argument"]), Some(2));
+    assert_eq!(code(&["not-a-command"]), Some(2));
+    assert_eq!(code(&["debug", "diff-file", "no/such/file"]), Some(1));
+}
+
+#[test]
+fn the_debug_commands_are_absent_from_the_main_help() {
+    // Plumbing, in git's sense: they ship, but a reviewer never needs them.
+    let fixture = Fixture::new("help");
+    let main = fixture.run(&["--help"]);
+    assert!(main.contains("doctor"), "{main}");
+    assert!(
+        !main.contains("diff-file"),
+        "debug commands should be hidden:\n{main}"
+    );
+
+    let debug = Command::new(env!("CARGO_BIN_EXE_codediff"))
+        .args(["debug"])
+        .current_dir(&fixture.dir)
+        .output()
+        .expect("running codediff");
+    let listed = String::from_utf8_lossy(&debug.stdout) + String::from_utf8_lossy(&debug.stderr);
+    assert!(listed.contains("diff-file"), "{listed}");
+}
+
 /// Not a fixture test: this repository, which is a real one.
 #[test]
 fn it_works_on_this_repository() {

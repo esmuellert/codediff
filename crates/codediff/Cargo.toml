@@ -17,6 +17,7 @@ path = "src/main.rs"
 # The composition root: the only place that names concrete implementations.
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 line-index.workspace = true
 align.workspace = true
 vcs.workspace = true
