@@ -1,6 +1,6 @@
 //! Against a real repository.
 //!
-//! Mostly through the neutral [`Vcs`] trait, which is what the rest of the
+//! Mostly through the neutral [`Diff`] trait, which is what the rest of the
 //! program sees. The manifest comparison reaches into `git`'s own layer, since
 //! the manifest is written in git's `XY` spelling and there is nothing to gain
 //! from restating it in ours.
@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use vcs::git::Untracked;
-use vcs::{Change, ChangedFile, Git, RelPath, Vcs};
+use vcs::{Diff, DiffKind, FileDiff, Git, RelPath};
 
 /// A fixture repository in a temporary directory, removed on drop.
 struct Fixture {
@@ -77,7 +77,7 @@ fn status_matches_the_manifest_exactly() {
 #[test]
 fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
     let fixture = Fixture::new("rename");
-    let entries = fixture.git().changed_files().expect("status runs");
+    let entries = fixture.git().files().expect("status runs");
 
     let renamed = entries
         .iter()
@@ -98,7 +98,7 @@ fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
 #[test]
 fn the_conflicted_file_is_identified_as_a_conflict() {
     let fixture = Fixture::new("conflict");
-    let entries = fixture.git().changed_files().expect("status runs");
+    let entries = fixture.git().files().expect("status runs");
     let conflict = entries
         .iter()
         .find(|e| e.path.as_str() == "conflict.txt")
@@ -109,7 +109,7 @@ fn the_conflicted_file_is_identified_as_a_conflict() {
 #[test]
 fn awkward_paths_survive_the_round_trip() {
     let fixture = Fixture::new("paths");
-    let entries = fixture.git().changed_files().expect("status runs");
+    let entries = fixture.git().files().expect("status runs");
     for path in ["with spaces.txt", "ünïcodé-ファイル.txt"] {
         assert!(
             entries.iter().any(|e| e.path.as_str() == path),
@@ -122,7 +122,7 @@ fn awkward_paths_survive_the_round_trip() {
 #[test]
 fn ignored_files_are_absent_unless_asked_for() {
     let fixture = Fixture::new("ignored");
-    let entries = fixture.git().changed_files().expect("status runs");
+    let entries = fixture.git().files().expect("status runs");
     assert!(
         !entries
             .iter()
@@ -135,14 +135,14 @@ fn ignored_files_are_absent_unless_asked_for() {
 fn untracked_directories_collapse_when_asked() {
     let fixture = Fixture::new("untracked");
 
-    let all = fixture.git().changed_files().expect("status runs");
+    let all = fixture.git().files().expect("status runs");
     assert!(
         all.iter()
             .any(|e| e.path.as_str() == "untracked-dir/inside.txt")
     );
 
     let mut normal = fixture.git().with_untracked(Untracked::Normal);
-    let collapsed = normal.changed_files().expect("status runs");
+    let collapsed = normal.files().expect("status runs");
     assert!(
         collapsed
             .iter()
@@ -151,8 +151,8 @@ fn untracked_directories_collapse_when_asked() {
     );
 
     let mut none = fixture.git().with_untracked(Untracked::No);
-    let without = none.changed_files().expect("status runs");
-    assert!(!without.iter().any(|e| e.change == Change::Untracked));
+    let without = none.files().expect("status runs");
+    assert!(!without.iter().any(|e| e.kind == DiffKind::Untracked));
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn a_path_outside_a_repository_is_reported_as_such() {
 }
 
 /// Finds one changed file by path.
-fn file(entries: &[ChangedFile], path: &str) -> ChangedFile {
+fn file(entries: &[FileDiff], path: &str) -> FileDiff {
     entries
         .iter()
         .find(|e| e.path.as_str() == path)
@@ -190,7 +190,7 @@ fn file(entries: &[ChangedFile], path: &str) -> ChangedFile {
 fn the_two_sides_of_a_change_come_back_byte_for_byte() {
     let fixture = Fixture::new("sides");
     let mut git = fixture.git();
-    let entries = git.changed_files().expect("status runs");
+    let entries = git.files().expect("status runs");
     let modified = file(&entries, "modified.txt");
 
     assert_eq!(
@@ -209,7 +209,7 @@ fn a_one_sided_change_has_only_the_side_it_has() {
     // routinely absent. That is an answer, not an error.
     let fixture = Fixture::new("onesided");
     let mut git = fixture.git();
-    let entries = git.changed_files().expect("status runs");
+    let entries = git.files().expect("status runs");
 
     let untracked = file(&entries, "untracked.txt");
     assert_eq!(git.before(&untracked).expect("reads"), None);
@@ -226,10 +226,10 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
     // the whole change rather than a path.
     let fixture = Fixture::new("moved");
     let mut git = fixture.git();
-    let entries = git.changed_files().expect("status runs");
+    let entries = git.files().expect("status runs");
     let moved = file(&entries, "renamed-to.txt");
 
-    assert_eq!(moved.change, Change::Moved);
+    assert_eq!(moved.kind, DiffKind::Moved);
     assert_eq!(moved.before_path().as_str(), "renamed-from.txt");
     assert!(
         git.before(&moved).expect("reads").is_some(),
@@ -294,9 +294,9 @@ fn revisions_resolve_and_unknown_ones_fail() {
 #[test]
 fn a_file_staged_then_edited_again_is_one_entry() {
     let fixture = Fixture::new("both");
-    let entries = fixture.git().changed_files().expect("status runs");
+    let entries = fixture.git().files().expect("status runs");
     let entry = file(&entries, "staged-then-edited.txt");
-    assert_eq!(entry.change, Change::Modified);
+    assert_eq!(entry.kind, DiffKind::Modified);
 
     // Git's own layer still has both codes for anything that wants them.
     let raw = fixture.git().entries().expect("status runs");

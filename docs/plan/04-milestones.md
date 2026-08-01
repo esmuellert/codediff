@@ -123,7 +123,7 @@ for all twelve fixture pairs. Output resembles:
 
 ### S5 — `vcs`, reading the repository ✅
 
-**Build.** `Vcs` trait and its git implementation: `discover`, `status`, `blob`, `worktree`,
+**Build.** `Diff` trait and its git implementation: `open`, `files`, `before`, `after`,
 `resolve`. `git --no-optional-locks status --porcelain=v2 -z`, typed `StatusEntry` keeping
 both status codes. Blobs through one long-lived `cat-file --batch`. `fixtures` crate and
 `xtask fixture-repo`. See [D21](05-decisions.md#d21).

@@ -24,8 +24,8 @@
 //! a quote or a non-ASCII byte, and a path containing a newline breaks the
 //! format outright.
 
-use crate::change::RelPath;
 use crate::error::{Error, Result};
+use crate::path::RelPath;
 
 /// One of git's single-letter status codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -14,9 +14,9 @@ pub mod worktree;
 
 use std::path::Path;
 
-use crate::change::{Change, ChangedFile, Repo};
+use crate::diff::{Diff, DiffKind, FileDiff};
 use crate::error::Result;
-use crate::{RelPath, Vcs};
+use crate::{RelPath, Repo};
 
 pub use status::{Code, Entry, Oid, Untracked, Xy};
 
@@ -64,7 +64,7 @@ impl Git {
     ///
     /// Runs `git --no-optional-locks status --porcelain=v2 -z`. Available for
     /// anything that genuinely needs git's staging state, which the neutral
-    /// [`ChangedFile`] deliberately does not carry.
+    /// [`FileDiff`] deliberately does not carry.
     pub fn entries(&self) -> Result<Vec<Entry>> {
         let out = run::run(
             &self.repo.root,
@@ -104,19 +104,19 @@ impl Git {
     }
 }
 
-impl Vcs for Git {
+impl Diff for Git {
     fn repo(&self) -> &Repo {
         &self.repo
     }
 
-    fn changed_files(&mut self) -> Result<Vec<ChangedFile>> {
-        Ok(self.entries()?.into_iter().map(to_change).collect())
+    fn files(&mut self) -> Result<Vec<FileDiff>> {
+        Ok(self.entries()?.into_iter().map(to_file_diff).collect())
     }
 
-    fn before(&mut self, file: &ChangedFile) -> Result<Option<Vec<u8>>> {
+    fn before(&mut self, file: &FileDiff) -> Result<Option<Vec<u8>>> {
         // An untracked file has no before side at all, and asking git for one
         // would spend a round trip to be told so.
-        if file.change == Change::Untracked || file.change == Change::Added {
+        if file.kind == DiffKind::Untracked || file.kind == DiffKind::Added {
             return Ok(None);
         }
         let rev = self.before.clone();
@@ -124,8 +124,8 @@ impl Vcs for Git {
         self.blobs()?.read(&rev, &path)
     }
 
-    fn after(&mut self, file: &ChangedFile) -> Result<Option<Vec<u8>>> {
-        if file.change == Change::Deleted {
+    fn after(&mut self, file: &FileDiff) -> Result<Option<Vec<u8>>> {
+        if file.kind == DiffKind::Deleted {
             return Ok(None);
         }
         // The after side of the default comparison is the working tree, which
@@ -141,26 +141,26 @@ impl Vcs for Git {
 /// reviewer looking at "what changed since the last commit" wants one answer.
 /// The index code wins where they differ, since it is the one that describes
 /// the file's relationship to `HEAD`.
-pub fn to_change(entry: Entry) -> ChangedFile {
-    let change = match (entry.xy.index, entry.xy.worktree) {
+pub fn to_file_diff(entry: Entry) -> FileDiff {
+    let kind = match (entry.xy.index, entry.xy.worktree) {
         // Unresolved merges first: nothing else about the codes matters.
-        (Code::Unmerged, _) | (_, Code::Unmerged) => Change::Conflicted,
-        (_, Code::Untracked) => Change::Untracked,
-        (_, Code::Ignored) => Change::Untracked,
-        (Code::Renamed | Code::Copied, _) => Change::Moved,
-        (Code::Added, _) => Change::Added,
+        (Code::Unmerged, _) | (_, Code::Unmerged) => DiffKind::Conflicted,
+        (_, Code::Untracked) => DiffKind::Untracked,
+        (_, Code::Ignored) => DiffKind::Untracked,
+        (Code::Renamed | Code::Copied, _) => DiffKind::Moved,
+        (Code::Added, _) => DiffKind::Added,
         // Deleted in the index but present on disk is a file staged for
         // deletion and then rewritten — the content differs from HEAD, so it
         // reads as a modification.
-        (Code::Deleted, Code::Unmodified) => Change::Deleted,
-        (_, Code::Deleted) => Change::Deleted,
-        _ => Change::Modified,
+        (Code::Deleted, Code::Unmodified) => DiffKind::Deleted,
+        (_, Code::Deleted) => DiffKind::Deleted,
+        _ => DiffKind::Modified,
     };
 
-    ChangedFile {
+    FileDiff {
         path: entry.path,
         previous_path: entry.original,
-        change,
+        kind,
         similarity: entry.score,
     }
 }

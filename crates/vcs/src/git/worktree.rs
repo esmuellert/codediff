@@ -6,8 +6,8 @@
 
 use std::path::Path;
 
-use crate::change::RelPath;
 use crate::error::{Error, Result};
+use crate::path::RelPath;
 
 /// A file's current content. `None` when it is not on disk — a deletion, or a
 /// path that only exists in the revision being compared against.

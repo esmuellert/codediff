@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use super::run;
-use crate::change::Repo;
 use crate::error::{Error, Result};
+use crate::repo::Repo;
 
 /// Finds the repository containing `path`.
 ///

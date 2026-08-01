@@ -12,8 +12,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use crate::change::{RelPath, Repo};
 use crate::error::{Error, Result};
+use crate::path::RelPath;
+use crate::repo::Repo;
 
 /// A `git cat-file --batch` process, kept open.
 #[derive(Debug)]

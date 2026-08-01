@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use vcs::git::Entry;
-use vcs::{Change, ChangedFile, Git, Vcs};
+use vcs::{Diff, DiffKind, FileDiff, Git};
 
 use crate::text::{pad, visible};
 
@@ -63,14 +63,14 @@ fn detail(entries: &[&Entry]) {
     println!();
     println!("as the reviewer sees them");
     for entry in entries {
-        let file: ChangedFile = vcs::git::to_change((*entry).clone());
-        let note = match file.change {
-            Change::Conflicted => "unresolved merge — listed, not diffable as two sides",
-            Change::Moved => "moved; both paths kept, not an add plus a delete",
-            Change::Untracked => "untracked — no before side to compare against",
-            Change::Added => "added",
-            Change::Deleted => "deleted",
-            Change::Modified => "modified",
+        let file: FileDiff = vcs::git::to_file_diff((*entry).clone());
+        let note = match file.kind {
+            DiffKind::Conflicted => "unresolved merge — listed, not diffable as two sides",
+            DiffKind::Moved => "moved; both paths kept, not an add plus a delete",
+            DiffKind::Untracked => "untracked — no before side to compare against",
+            DiffKind::Added => "added",
+            DiffKind::Deleted => "deleted",
+            DiffKind::Modified => "modified",
         };
         let similarity = file
             .similarity

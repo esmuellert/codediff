@@ -757,21 +757,30 @@ refresh rate a watcher will ask for.
 The reason is that git's own binary already honours the user's config, `.gitignore` rules,
 linked worktrees, sparse checkout and clean filters. Those rules decide **which files
 appear at all**, so a reimplementation that differs anywhere shows the wrong list — the one
-kind of wrong a review tool cannot afford. `Vcs` is a trait, so this is reversible, and a
+kind of wrong a review tool cannot afford. `Diff` is a trait, so this is reversible, and a
 future `jj` backend needs one anyway.
 
-**Two layers, each in its own language.** The `Vcs` trait is in the reviewer's terms —
-`changed_files`, `before(file)`, `after(file)` — and names no git concept, because a system
-need not have one: jj has no index and no `HEAD`. Underneath, `git/` keeps every git word,
-with modules named for the commands they run, and `git::to_change` is the single point the
+**Two layers, each in its own language.** The `Diff` trait is in the reviewer's terms —
+`files()`, `before(file)`, `after(file)` — and names no git concept, because a system need
+not have one: jj has no index and no `HEAD`. Underneath, `git/` keeps every git word, with
+modules named for the commands they run, and `git::to_file_diff` is the single point the
 two vocabularies meet.
+
+**One folder per capability, each holding its trait and the types in its signatures.**
+`diff/` today; `staging/` and `history/` when something needs them. `path`, `repo` and
+`error` sit above them all. A crate named for a whole domain otherwise becomes a place to
+put anything, which is how the Lua explorer got to 674 lines in one file.
+
+It is `Diff` rather than `Change` because the engine already reports **line**-level
+changes. `vcs::Diff` is per file, `vscode_diff::LinesDiff` is per line, and one word
+meaning both would be a permanent source of confusion.
 
 Forcing one vocabulary on both would go wrong in either direction — inventing fake-neutral
 names for git things, or making a jj backend pretend it has a staging area.
 
 **Capabilities that only some systems have get their own traits.** `Staging` and `History`
-would sit beside `Vcs`, so a backend lacking one fails to compile rather than answering
-"unsupported" at runtime. Only `Vcs` exists today. Note that staging is *not* excluded for
+would sit beside `Diff`, so a backend lacking one fails to compile rather than answering
+"unsupported" at runtime. Only `Diff` exists today. Note that staging is *not* excluded for
 being a write: it never changes file content, so it stays within what this tool does.
 Restoring, discarding and resolving a merge do change content, and those are the line.
 
