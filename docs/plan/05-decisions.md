@@ -143,7 +143,7 @@ cycles, and `pub(crate)` provides genuine package-private visibility, which Type
 Lua both lack. Splitting is free: everything statically links into one binary, and
 incremental builds get faster because only changed crates recompile.
 
-The critical missing edge is `display → vcs`. Because that dependency is not declared, a
+The critical missing edge is `ui → vcs`. Because that dependency is not declared, a
 renderer that shells out to git is a compile error — preventing by construction the failure
 that produced a 674-line `explorer/render.lua`.
 
@@ -155,7 +155,7 @@ that produced a 674-line `explorer/render.lua`.
 a layer.
 
 ```
-vscode-diff-sys  vscode-diff  metrics  syntax  align  explorer  vcs  runtime  display  codediff
+vscode-diff-sys  vscode-diff  metrics  syntax  align  explorer  vcs  runtime  ui  codediff
 ```
 
 **Rationale.** `core`, `common`, `utils` and `model` are banned not on aesthetic grounds but
@@ -174,18 +174,18 @@ Registry uniqueness is irrelevant for path dependencies. If publishing ever happ
 
 ---
 
-## D6 — `runtime` and `display` state split
+## D6 — `runtime` and `ui` state split
 
-**Decision.** `runtime` owns domain state; `display` owns presentation state. Events that
-change *data* go to `runtime`; events that change *presentation* never leave `display`.
+**Decision.** `runtime` owns domain state; `ui` owns presentation state. Events that
+change *data* go to `runtime`; events that change *presentation* never leave `ui`.
 
-**Consequence.** `j`, `k`, scrolling, folds and focus are handled entirely within `display`
+**Consequence.** `j`, `k`, scrolling, folds and focus are handled entirely within `ui`
 — synchronous, sub-millisecond, no channel. Only file selection, refresh and watcher events
 reach `runtime`. This is the two-loop model, and it is the whole performance story.
 
 **The follow-on problem** — preserving cursor and selection across a refresh — is solved by
 keying presentation state to **stable domain identity** (`path`, `HunkId`) that the model
-provides. `display` re-resolves its own position after any refresh without `runtime` ever
+provides. `ui` re-resolves its own position after any refresh without `runtime` ever
 knowing what a cursor is.
 
 **Expect** to redraw this line once, around S12, over questions like whether the explorer's
@@ -327,9 +327,9 @@ structural change; one forced a decision that is now made.
 | test | outcome |
 |---|---|
 | connect to an agent backend (streaming, cancellable) | **clean** — new crate beside `vcs`, plus event variants. `RequestId` already handles cancellation |
-| agent comments displayed inline against hunks | **required a decision**: `display`'s `VisualRow` must be an enum wrapping `align::Row` with room for non-diff rows, and projections must take a context struct. Due at S7 |
+| agent comments displayed inline against hunks | **required a decision**: `ui`'s `VisualRow` must be an enum wrapping `align::Row` with room for non-diff rows, and projections must take a context struct. Due at S7 |
 | "what changed since I last looked" | **free** — falls out of `HunkId` being a content hash |
-| MCP server so the agent queries the diff | **clean** — everything except `display` and `codediff` is already headless |
+| MCP server so the agent queries the diff | **clean** — everything except `ui` and `codediff` is already headless |
 | base revision = "when the agent started" | **clean** — `ContentSource::Snapshot` reserved; free if the repo is jj-backed |
 | agent writes files while you review | **clean** — read-only means *codediff* never writes, not that nothing changes; the watcher already covers it |
 
@@ -339,7 +339,7 @@ structural change; one forced a decision that is now made.
 |---|---|
 | review state becomes primary and diff secondary, making `align` the wrong centre | watch for annotations gaining more fields than hunks |
 | multiple simultaneous diffs (three-way, tabs, comparing two revisions) | `AppState.docs: HashMap<DocId, Document>` from the start, with one entry |
-| a GUI or web frontend | already covered by the `display` split |
+| a GUI or web frontend | already covered by the `ui` split |
 | crash recovery, session replay, server-side review | `AppState` is `serde`-serializable from the start |
 | `runtime` becomes a god object | `update/` submodules touch only their own sub-state; line count tracked in CI |
 
@@ -531,15 +531,15 @@ project is already Rust — the exact reason upstream could not take this path.
 
 ## D17 — Syntax highlighting is its own crate, with an engine-free interface
 
-**Decision.** Highlighting lives in `crates/syntax/`, not as a module inside `display`, and
+**Decision.** Highlighting lives in `crates/syntax/`, not as a module inside `ui`, and
 its public interface never names a syntax engine.
 
-**Why not a module in `display`.**
+**Why not a module in `ui`.**
 
 1. It is not a rendering concern. Highlighting is text *analysis* — text plus language
    produces spans; rendering *consumes* spans. Conflating them is the same category error
    that produced a 674-line `explorer/render.lua`.
-2. `display` would carry a heavy dependency (syntect and two-face, or tree-sitter and N
+2. `ui` would carry a heavy dependency (syntect and two-face, or tree-sitter and N
    grammars) that nothing else in the workspace needs.
 3. Other consumers are coming — agent export and `--dump-frames` want syntactic information
    without rendering anything.
@@ -591,8 +591,8 @@ pub enum Class {
 pub struct Span { pub line: LineIdx, pub range: Range<ByteOff>, pub class: Class }
 ```
 
-Both engines map *into* it. `display`'s theme maps `Class → Style`. The split is clean:
-**`syntax` says what something is, `display` says how it looks.**
+Both engines map *into* it. `ui`'s theme maps `Class → Style`. The split is clean:
+**`syntax` says what something is, `ui` says how it looks.**
 
 ### The three conditions that make the swap free
 
@@ -661,9 +661,11 @@ structure. And the engine reports UTF-16 columns, which JavaScript takes for gra
 Rust does not, so inner changes go through `line_index::utf16_range_to_bytes`.
 
 **Ownership.** `Alignment` borrows the `LinesDiff` and both files, so it is a view and never a
-stored field: `runtime` owns a `Document` (the texts, their line vectors and the `LinesDiff`) and
-constructs an `Alignment` where one is needed. Storing the borrowing type would make
-`AppState` self-referential.
+stored field. Every link in the chain — file contents, then line vectors, then the
+`LinesDiff`, then the alignment — borrows from the one before it, so nothing can return the
+whole chain: each link would have to outlive the value returned with it. The pipeline
+therefore returns everything **owned** and lends the borrowed part to a closure
+(`Runner::run`), rather than making the caller sequence three locals correctly. See D26.
 
 **Cost accepted.** Locating a row is a walk over the changes rather than an array index.
 Rendering asks for consecutive rows, so this is one pass per frame — seven iterations on
@@ -675,7 +677,7 @@ makes a scrollbar drag feel slow.
 
 ## D19 — the container owns the row index, so scroll sync cannot exist
 
-**Decided at S4, before building `display`.** A `View` owns one vertical position; a `Pane`
+**Decided at S4, before building `ui`.** A `View` owns one vertical position; a `Pane`
 owns only its width, gutter and row source.
 
 ```rust
@@ -693,12 +695,12 @@ each side is *editable* and wants its own cursor, selection, find and folding. R
 none of that applies. The plugin spent 415 lines (`scrollsync.lua`) on the same problem and
 got it wrong twice.
 
-**Alignment with heights belongs in `display`, not `align`.** Once wrapping exists a line is
+**Alignment with heights belongs in `ui`, not `align`.** Once wrapping exists a line is
 no longer one row, so pairing depends on pane width — which is why VSCode computes
 `ILineRangeAlignment` in its *view* while `DiffState` stays width-independent. `align` keeps
-the width-independent pairing; `display` computes row counts at the current width and pads
+the width-independent pairing; `ui` computes row counts at the current width and pads
 after a range on the shorter side. `LineRangeAlignment { original, modified, original_rows,
-modified_rows }` is the right name for that, in `display`, at S10a.
+modified_rows }` is the right name for that, in `ui`, at S10a.
 
 **Costs accepted.**
 
@@ -808,11 +810,516 @@ itself.
 
 ---
 
+## D22 — Catppuccin by arithmetic, with a theme that cannot fail beside it
+
+The plugin has no palette. Its diff colours are read out of whatever colourscheme Neovim is
+running — `DiffAdd`, `DiffDelete`, `DiffChange`. Standing alone, we have to choose.
+
+**A theme is a table of `Style`s, one per role.** Not colours: a `Style` also carries bold
+and reversed, which is what lets a theme work on a terminal that has no colour to give.
+They compose by `Style::patch`, which overrides only the fields that are set, so a role
+supplies a background and inherits the foreground, and priority is the order the patches
+are written in rather than a table of numbers nobody can read.
+
+**Catppuccin is reproduced by its arithmetic.** Its diff backgrounds *are* a function of
+its palette:
+
+```text
+out = round(alpha × accent + (1 − alpha) × base)
+
+DiffAdd  18% green    DiffChange   7% blue
+DiffDelete 18% red    DiffText    30% blue    CursorLine 64% surface0
+```
+
+So `theme/catppuccin.rs` holds four 26-colour palettes and one `const fn` derivation, and
+a flavour is 26 numbers rather than 26 plus fourteen more that must be kept in step. A test
+asserts the derivation still reproduces Catppuccin's own published values, so a theme
+claiming to be Catppuccin stays one.
+
+Two consequences worth stating:
+
+- **Inner changes use `DiffText`'s ratio, not the plugin's multiply.** The plugin brightens
+  the line colour by 1.4 — a direct RGB multiply, no alpha — which on a light background
+  darkens rather than brightens and on a saturated one clips. A second blend at a higher
+  opacity behaves the same way on all four flavours, and a test checks that on each.
+- **There is no "modified" colour.** A modification is red on the original side and green
+  on the modified one, which is what a side-by-side view means: each side says what
+  happened to *it*.
+
+**`basic` exists because Catppuccin's subtlety is also its failure mode.** Eighteen percent
+of an accent is a few points of lightness. A terminal without 24-bit colour quantises that
+straight back into the background, and the result is a diff viewer with no visible diff in
+it — the worst possible failure, because it looks like it worked. So there is a second
+family that names nothing exactly: `Color::Reset` for the background, so it inherits
+whatever scheme the reader already runs, and the 256-colour cube for the diff backgrounds.
+A test asserts it never emits a 24-bit colour at all.
+
+**Detection is from the environment, and one-way.** `COLORTERM` is what every terminal
+supporting 24-bit colour sets, and `COLORFGBG` is the existing convention for light
+backgrounds; unset means "not sure", and being unsure is a reason to pick the theme that
+cannot fail. There *is* a real way to ask — an OSC 11 query — but it needs a round trip the
+terminal may never answer, and a reviewer waiting on a timeout before the first frame is
+worse than a wrong guess they can override with `--theme`. `codediff doctor` prints what
+was detected, because "my colours are wrong" is otherwise unanswerable by looking.
+
+---
+
+## D23 — a file with only one side is shown in one pane, not diffed against nothing
+
+The engine models an empty file as **one empty line**, so `compute(&[], x)` is normalised to
+`compute(&[""], x)`. `align` normalises identically, or an `Alignment` would disagree with
+its own diff — found by proptest, which shrank to `original = []`.
+
+That is right for a file that exists and is empty. It is wrong for a file that does not
+exist. An added file rendered that way gets a phantom blank line paired against its first
+real line, and reports as *modified* rather than added. It bit us twice, at S4 and S6.
+
+**VSCode hit exactly this bug and fixed it the same way.** From the maintainer who closed
+[microsoft/vscode#239914](https://github.com/microsoft/vscode/issues/239914) as
+*as-designed*:
+
+> the file system provider that handled the `git` scheme used to return an "empty string"
+> for a file that did not exist. This implementation made it impossible to differentiate
+> between a file that did not exist and an empty file… Untracked files previously used to
+> open in the diff editor with the left hand side being empty. As [it] did not provide much
+> value, untracked files are now opened in the normal editor instead of the diff editor.
+> This matches the behaviour for deleted files.
+
+The rule in their source is one line, `git/src/repository.ts:535`:
+
+```ts
+if (!leftUri) → vscode.open   // one pane
+else          → vscode.diff   // two panes
+```
+
+and `getLeftResource` returns a left side only for `MODIFIED`, `INDEX_MODIFIED`,
+`INDEX_RENAMED`, `INTENT_TO_RENAME`, `TYPE_CHANGED` and the two conflict cases. Added,
+untracked and deleted all fall through to `return {}`.
+
+**So we do the same.** A one-sided file is not compared against anything:
+
+| | |
+|---|---|
+| `Opened::compare` | returns an **empty diff** when a side is absent — no engine call |
+| `Opened::lines_to_show` | the present side stands in for both, so every row is unchanged |
+| `Layout::Single(Side)` | one pane at full width; the other side is never read |
+
+Nothing is highlighted, because nothing changed relative to anything — there is no other
+side to be relative to. Marking every line of a new file green says nothing that the word
+"added" does not.
+
+Three consequences worth stating:
+
+- **The decision is `absent`, never `empty`.** A tracked file emptied to zero bytes still
+  has a side to compare against, so it gets a real two-pane diff showing every line
+  deleted. Verified on a terminal, alongside the one-pane cases.
+- **A deleted file shows its HEAD content** — what was removed — which is what VSCode's
+  `getRightResource` does for `DELETED`.
+- **The status line says `(added)` or `(deleted)`.** VSCode does not need to: it leaves the
+  diff editor for an ordinary tab, and the tab is the cue. We have nowhere else to go, so
+  the single pane *is* that, and it needs a label or it reads as an unchanged file.
+
+An earlier attempt made the one-sided file into a *diff* — `LinesDiff::one_sided` plus
+`Alignment::try_verbatim` — and rendered it as two panes with a column of fillers. Both
+were reverted. The data was defensible; drawing it as two panes was not.
+
+---
+
+## D24 — a key resolves to one of three kinds of command, and resolving is not dispatching
+
+`ui` had one flat `Intent` enum whose variants were answered by four different owners.
+The symptoms were measurable: `Intent::Quit` was answered **twice** — the view returned
+`false` for it while the loop intercepted it first — `Intent::Redraw` was a no-op that
+worked only because the loop redrew unconditionally, and `View::focus` was a field nothing
+outside its own file ever read.
+
+**The split is by who answers, and how long they take** — not by whether there is a side
+effect, because that question does not tell the loop what to do:
+
+| | answered by | can fail | latency |
+|---|---|---|---|
+| `View` | `ui`, in this frame | no | µs |
+| `Program` | whoever owns the terminal | no | µs |
+| `Task` | the composition root, off-thread | **yes** | ms |
+
+**A `Task` is a request, not a call.** `ui` names what it wants; something above
+performs it and returns the answer as an event. That is the only way staging can exist
+without `ui → vcs`, which `lint-arch` forbids. It is deliberately uninhabited: after
+startup this binary performs no IO, so nothing a key could ask for exists yet. The variant
+and its dispatch arm are written now so the explorer *adds* one rather than reshaping the
+loop.
+
+**Resolving and dispatching are separate.** `input/` turns keys into a `Command` and
+returns; `app.rs` sends it to whichever of the three can answer. A single "engine" doing
+both would need references to the viewport, the terminal and the task runner at once —
+exactly the coupling the split exists to prevent. The payoff is that the resolver is a
+**pure function of its own state and one key**: no clock, no IO, no view, and a test is a
+string of keys.
+
+**The table is data, not closures.** `crokey`'s `key!()` is const-capable, which is the
+reason to depend on it: the bindings are a `const` list that can be printed into a help
+screen, walked by a test, and checked for prefixes. A closure could do none of those, and
+would capture references to everything it might touch.
+
+**crokey covers what a key *is*; sequences are ours.** Its "combination" means keys pressed
+together (`Ctrl-Alt-g`); `gg` is keys pressed one after another. Different axis. It also
+supplies `KeyEvent` conversion, help-screen formatting and — later — config parsing, and it
+shares our crossterm 0.29 so nothing duplicates.
+
+**No binding may be a proper prefix of another.** Commands live only at the leaves of the
+trie. This is what vim's own built-ins already do — `g`, `d`, `z`, `[`, `]` are unbound
+alone — and it is why the resolver needs no clock. Ambiguity has no good resolution: firing
+immediately makes the longer binding unreachable, and waiting makes the shorter one feel
+broken for half a second every time. Vim needs `timeoutlen` only because user mappings
+*may* create ambiguity. Enforced by a test rather than assumed by the resolver, so relaxing
+it later means adding an injected clock and deleting one test.
+
+Two rules fall out of that, both vim's:
+
+- **Escape cancels what is in flight, and only then.** With nothing pending it reaches the
+  table, where it quits. Without the interception, pressing `g` and changing your mind
+  exits the program — and `5` then Escape quits *with a count of five attached*.
+- **`0` is a digit once a count has started and a motion otherwise** — the only point at
+  which counts and bindings interact.
+
+`View` was renamed `Viewport`, which is what it holds, freeing the name for the command
+kind. `Tab` and `focus` were deleted rather than left dead; they return when focus is real.
+
+---
+
+## D25 — what a diff *is* lives apart from the engine that computes one
+
+`align` never calls the diff engine. It is handed a result and works out where the fillers
+go — pure, no IO, proptest-tested. But it has to *name* that result, and while the six
+structs lived in `vscode-diff`, naming them meant this:
+
+```text
+align → vscode-diff → vscode-diff-sys → cc → libvscode-diff.a
+```
+
+So a clean `cargo build -p align` compiled C. Measured: **4.2s, versus 0.7s now.**
+
+The structs moved to **`diff-types`** — `LinesDiff`, `LineRange`,
+`DetailedLineRangeMapping`, `RangeMapping`, `MovedText`, `CharRange` — with no
+dependencies, no build script and no `unsafe`. `vscode-diff` depends on it, keeps
+`compute`, and re-exports the types so an existing caller needs only one dependency.
+
+**The counter-argument, and why it was wrong.** [D20](#d20) says our type names mirror the
+C header, so the types are engine-shaped rather than neutral — which sounds like a reason
+to leave them in the engine's crate. It is not. Mirroring the header is about *naming*, so
+that a question about our behaviour can be answered by reading VSCode's source. Nothing in
+those structs mentions C, and a second engine — a pure-Rust fallback, or a WASM build where
+`cc` cannot run — would produce these same values.
+
+**Tests may use the engine; the library may not.** `align`'s tests feed real engine output
+through the aligner: twelve vendored fixture pairs, and proptest cases built from actual
+diffs. Those are the tests worth having, so `vscode-diff` is a **dev-dependency**. Dev
+dependencies do not propagate, so consumers still get no C.
+
+That distinction needed a new kind of lint rule. `FORBIDDEN_SHIPPED_EDGES` checks
+`[dependencies]` and `[build-dependencies]` only, while the existing `FORBIDDEN_EDGES`
+checks all three tables. Sabotage-verified in both directions: moving `vscode-diff` into
+`align`'s `[dependencies]` fails, and leaving it in `[dev-dependencies]` passes.
+
+## D26 — one pipeline, five stages, and the interface `ui` receives
+
+Assembly used to be `open.rs` plus `review.rs`: three free functions, two methods, and four
+locals the caller had to sequence in the right order with nothing checking it. Every stage
+existed, but there was no pipeline — it was a toolkit.
+
+**The five stages, named and in order:**
+
+| | file | |
+|---|---|---|
+| 1 | `resolver` | which file, in which repository |
+| 2 | `contents` | read both sides |
+| 3 | `diff` | call the C engine |
+| 4 | `diff` | pair the lines up |
+| 5 | `runner` | hand over a `ui::Diff` |
+
+Five stages, five files, and `mod.rs` holds only the signpost. The first
+attempt left stage five inside `mod.rs`, where the folder listing did not show
+it — the same defect as burying the key resolver in `input/mod.rs`, made twice
+in one session.
+
+The files are **nouns**, per the hard rule in
+[02-architecture.md](02-architecture.md) — a type owns its logic, and
+verb-splitting is what produced the plugin's `actions`/`render`/`refresh`
+triplets. The first attempt named two of the four after verbs (`resolve.rs`,
+`compare.rs`) and the third after nothing in particular (`sources.rs` — sources
+of what?). `resolver` also matches `ui/src/input/resolver.rs`: same word,
+same job, one convention.
+
+Stage 5 did not exist before; the work was scattered through `review.rs`, which is why
+`ui` needed two constructors and the caller had to know which to call.
+
+**It lives in the binary.** `codediff` is the only crate allowed to name `vcs`,
+`vscode-diff`, `align` and `ui` together — `lint-arch` forbids those edges everywhere
+else. A renderer that could assemble its own input is a renderer that can shell out to git,
+which is what produced a 674-line `explorer/render.lua` in the plugin.
+
+**`ui` defines what it consumes.** `ui::Diff { label, alignment, sides }`, with
+`Sides = Both | Only(Side)`. The consumer defining its own input is the direction that
+keeps the graph acyclic: the composition root already depends on `ui`, whereas
+`ui` naming a type from the pipeline would be a cycle. `Session::new` and
+`Session::single` collapse into one constructor, since how many panes to draw now follows
+from `sides` rather than from which function was called.
+
+`Sides` is a **fact**, not a layout: `ui` turns `Only(s)` into `Layout::Single(s)`
+itself. It cannot work this out from the alignment, because a one-sided file is
+deliberately paired with itself and so looks exactly like an unchanged comparison (D23).
+
+**The last stage took a closure, and no longer does.** Every link borrowed the one before
+it — contents, line vectors, `LinesDiff`, alignment — so nothing could return the whole
+chain, and `Runner::run` lent its result out instead. An intermediate `Prepared → Ready →
+Diff` was tried first and was worse than the four locals it replaced.
+
+That was a symptom, and it was misread as a constraint for a long time: **a stage that
+cannot return its own output is not a stage.** [D27](#d27--a-neovim-shaped-view-view--tab--pane--buffer)
+removed the cause — `Alignment` now owns the two files it describes — so every stage
+returns, and the five stages are five again.
+
+```rust
+let runner = pipeline::Runner::new(&request)?;
+let mut session = ui::Session::new(runner.run()?, theme);
+```
+
+**`Alignment::diff()` is gone.** It read like a verb — "alignment computes a diff" — when it
+was a getter handing out the borrowed engine result. VSCode has no equivalent because
+`DiffState.fromDiffResult` *unpacks* the four values and drops the result, so there is
+nothing left to reach into. We borrow rather than copy, but the surface now matches:
+`changes()`, `moves()`, `hit_timeout()`, replacing seven `alignment.diff().field`
+reach-throughs.
+
+**`codediff <path>`, not `codediff review <path>`.** The plugin has no `review` command:
+`:CodeDiff` *is* the diff, arguments say what to compare, and subcommands are other modes
+(`history`, `merge`, `install`). `review` was scaffolding invented because the explorer
+does not exist yet, and it had leaked into the CLI surface. One consequence, caught by a
+test: a bare word is now a path, so `codediff not-a-command` exits **1** (no such file)
+rather than **2** (bad command line).
+
+## D27 — a Neovim-shaped view: View → Tab → Pane → Buffer
+
+**The problem.** One `Session` held one `Diff` and one `Viewport`. An explorer needs a
+second thing on screen with its own position, its own keys, and its own contents, and there
+was nowhere to put any of it. Adding a field per feature is what produced the plugin's
+20-field session struct and Zellij's acknowledged 80-field `Tab`.
+
+**The shape.** Four levels, each containing the next:
+
+```text
+View     tabs, and every buffer any of them can show
+└ Tab    a layout of panes, and which has focus
+  └ Pane one buffer, and one Viewport onto it
+    └ Viewport   top, cursor, left, split
+```
+
+Buffers live in `View`, referenced by `BufferId`, never by reference: a pane holding `&mut
+Buffer` makes the whole structure self-referential. Helix does exactly this with
+`DocumentId`/`ViewId`. Zellij's `Box<dyn Pane>` is the counter-example and forced
+`Rc<RefCell<_>>` throughout, because two panes cannot be borrowed mutably through trait
+objects.
+
+**The module tree is the diagram.** Four levels, four files, in containment order:
+`view/{mod,tab,pane,viewport}.rs` with `view/buffer/` inside. `buffer/` began as a sibling
+of `view/` and that was an accident of the order the files were written — the tell was that
+`view` named `crate::buffer` while all three files of `buffer` named `crate::view`. Two
+siblings each reaching for the other are one thing that got split.
+
+Neovim's buffers are global and Helix keeps `documents` beside its `tree`, so a sibling
+arrangement has precedent — but in both cases a third thing above (the editor) owns both.
+`View` owns `buffers` directly, so nesting is what the code already says. The alternative
+was inventing an owner to justify a directory.
+
+An id lives with the collection it indexes: `BufferId` beside `View::buffers`, `PaneId`
+beside `Tab::panes`.
+
+Position lives on the **pane**, not the buffer, so two panes over one buffer scroll
+independently — the same reason Neovim splits window-local options (`wrap`, `number`,
+`cursorline`) from buffer-local ones (`filetype`, `tabstop`).
+
+**A buffer is a sequence of rows you can scroll through.** That is the whole definition, and
+it settles a question that had been open since S7: side-by-side and inline are *different
+buffers* over the same diff, not one buffer with a flag. They emit different row sequences,
+so with a flag "row 40" would mean different things depending on a field stored elsewhere.
+With two kinds, row space is fully determined by the buffer.
+
+Which is why a buffer is a **projection** and not the data. `ui::Diff` — what the
+pipeline delivers — is one file's two versions and the pairing between them, and carries no
+row count: an `align::Row` is a *pair*, so a row count is already an answer to "how would
+this look side by side". `SideBySide` holds that answer next to the decision that produced
+it, and nothing else can hold a number that depends on a layout it did not choose.
+
+The kinds are an `enum`, not a trait. Exhaustive `match` means adding one breaks the build
+until it is handled everywhere — the same property that stops the keymap growing dead
+commands.
+
+### The borrow that shaped four layers, and how it was removed
+
+`Alignment` used to borrow: `&LinesDiff`, `&[&str]`, `&[&str]`. That single fact reached
+further than any other decision in the project.
+
+A borrowed alignment cannot outlive the function that builds it, so **stage 5 of the
+pipeline could not return its own result.** It took a closure instead — "I cannot hand you
+this, but I will call you while I still hold it":
+
+```rust
+pub fn run<R>(&self, f: impl FnOnce(Diff<'_>) -> R) -> R
+```
+
+And every type that held one inherited the lifetime:
+
+```text
+Alignment<'a> → Diff<'a> → Session<'a> → View<'a> → Tab<'a> → Pane<'a>
+```
+
+The first attempt at this decision worked *around* that: buffers held plain data and the
+renderer rebuilt an alignment each frame. It was measured and cheap — 2–58 µs, O(changes)
+rather than O(file size) — and it was still wrong, for reasons no measurement could show:
+
+- **The pipeline stopped being a pipeline.** Stage 4 was deleted and its work scattered into
+  `DiffData::new` and `render::diff`, in another crate. Four stages produced something the
+  renderer then had to finish.
+- **The work was done twice and thrown away once.** `DiffData::new` computed the hunks, read
+  two numbers off them, and dropped them; the renderer recomputed them every frame.
+- **Its own justification was circular.** The measurement was of waste, reported as a budget.
+
+The fix is at the source. `Alignment` **owns** its two files and the diff:
+
+```rust
+pub struct Alignment {          // no lifetime
+    diff: LinesDiff,
+    original: Vec<String>,
+    modified: Vec<String>,
+    tab_width: u8,
+    hunks: Vec<Hunk>,
+}
+```
+
+Every consequence unwinds. `ui::Diff` is the original struct minus `<'a>`. Stage 4
+returns to `pipeline/diff.rs`; stage 5 returns rather than lends; the closure is gone; no
+type in `ui` has a lifetime; and drawing a frame does no derivation at all.
+
+The price is one copy of each file, once, at open — a few hundred microseconds for a 20k-line
+file. `align`'s original reason for borrowing survives: the lines are copied *in* and the
+caller's are dropped, so there is still exactly one copy to fall out of step with nothing.
+
+The four public functions that take lines are now generic over `S: AsRef<str>`, so tests
+still write `&["a", "b"]` while `Alignment` holds `Vec<String>`.
+
+**What a walk is still needed for** — the row count and where the changed blocks sit — is
+computed once in `Diff::new` and remembered, beside the `hunks` the alignment computed at
+construction.
+
+### The executor rule
+
+> An action is executed by the **lowest level that contains everything it affects.**
+
+A motion affects one viewport → the focused pane's buffer does it. The split between a
+diff's two columns is inside one pane → the buffer again. Resizing a pane border affects
+**two** panes → only the tab contains both, so the tab must. That is why resize felt awkward
+to place: it is the first command affecting more than one thing.
+
+### The arm invariant
+
+> An arm of `Action` exists iff it has an executor no other arm has.
+
+This deleted an arm. `Action::View(View::Down)` and a proposed `Action::Buffer(..)` both
+routed to `self.focused()`, so they were one thing written twice; motions became
+`Action::Buffer(BufferAction::Motion(..))`. `Tab` stays separate when it arrives because it routes
+to the layout, not to a buffer. The full future set is `Program`, `Buffer`, `Pane`
+(window-local settings), `Tab` (focus, resize, zoom), `App` (tabs), `Task` — six executors,
+six arms, and no arm invented for a feature.
+
+Each arm's payload is that executor's own commands, named `<Executor>Action`:
+`Buffer(BufferAction)`, `Program(ProgramAction)`, `Task(TaskAction)`. The payload was once
+called `Verb`, borrowed from vim's grammar, which matched neither the other two arms nor
+vim — there a verb *takes* a motion, while `BufferAction` *contains* one.
+
+### Each level owns its commands and binds them
+
+One file per executor, holding that level's actions *and* the keys bound to them:
+
+```text
+input/buffer.rs    motions, and whatever a buffer kind adds   ← innermost
+input/pane.rs      one pane, about its own view of a buffer
+input/tab.rs       a tab, about its panes: focus, resize, zoom
+input/view.rs      the whole view, about its tabs             ← outermost
+input/program.rs   quit, suspend, redraw — below every level
+input/task.rs      what leaves the crate
+```
+
+**Lookup walks that order, innermost first.** One mechanism, two jobs: it puts each level's
+bindings where the level is, and it makes *shadowing* the answer to scoping. A buffer kind
+that binds `<` claims it; anywhere else the same key falls through to the tab. Exactly how
+Neovim's buffer-local mappings shadow global ones.
+
+I argued against this at the time, on the grounds that per-level lists lose the ability to
+scope a key — the explorer's `<` (collapse the sidebar, a *tab* action) would sit in the tab
+list, live everywhere, colliding with a diff's `<` (narrow the split, a *buffer* action).
+That was wrong: with innermost-first lookup the diff's `<` shadows it, and in the explorer,
+which binds no `<`, the chain falls through. Both work, and no third concept is needed.
+
+Two rules follow, and both are tested:
+
+- **Exact shadowing across levels is legal** — it is the mechanism above.
+- **A proper prefix anywhere in the chain is not.** `g` on a buffer would make `gg` on the
+  tab unreachable in that buffer, silently and only there.
+
+`Context` is what remains of the old design: it names which *buffer kind* has focus, and so
+selects only the innermost list. Every level above binds the same keys whatever has focus.
+
+### Two dividers, two owners
+
+The rule is scale-free, and applying it twice settles a question that had been left open:
+
+| divider | between | lowest container | owner |
+|---|---|---|---|
+| the `│` in a side-by-side diff | two **columns** | one buffer draws both | the **buffer** |
+| a pane border | two **panes** | one tab holds both | the **tab** |
+
+So `SideBySide` owns a `divider: u16` — the share of the width given to the original — and
+`>`/`<` are `BufferAction::WidenOriginal`/`NarrowOriginal`. It sat on `Viewport` at first,
+where its own comment admitted the problem: *"meaningless unless the buffer draws two"*. A
+`Text` buffer had a column divider. Position is pane state because every buffer kind has a
+position; a two-column ratio is not.
+
+That also decides what was listed as open — whether the ratio is per-buffer or per-pane.
+Per-buffer: two panes on one diff scroll together only if we want them to, but they drag
+their dividers independently, because the divider is part of how the buffer draws itself.
+
+The word is deliberately not *split*. In a Neovim-shaped model a split is what makes a new
+pane, which arrives at S8; using it for a divider inside one buffer would collide exactly
+when both exist. `Column`, `Pane` and `Side` are likewise kept apart: a column is a region
+inside a buffer, a pane is a rectangle in a tab, and a `Side` is `Original` or `Modified` —
+a *version*, not a place, since inline mode puts both in one column.
+
+### What this deletes
+
+- `Sides` from `ui`. Which kind of buffer to build is decided by the pipeline, the last
+  thing that knows how many sides were read; `Sides` moved there, where it describes what
+  was *read* rather than what is drawn.
+- `Layout::Single(Side)`, and then `Columns::One(Side)` after it. A diff always has two
+  columns — a file with one side is a `Text` buffer, not a degenerate diff — so `Frame`'s
+  fields are no longer `Option`. The compiler found this: the variant became unconstructed
+  the moment one-sided files stopped being diffs.
+- `Runner::run(|diff| …)`, and with it every `<'a>` in `ui`. D26's note about the
+  closure is superseded.
+
+### Deliberately not built
+
+`Layout` has one variant, `Full`. Every arrangement we know of — a diff alone, explorer
+beside a diff, history beside a diff — is one pane or two. Helix's `Tree` is ~600 lines with
+climb-and-descend directional focus and buys nothing until a third arrangement exists. The
+seam is a single enum in one file; `Overlay` is uninhabited for the same reason, but its
+routing exists now because event dispatch changes shape when the first overlay arrives, and
+doing that once is cheaper than doing it twice.
+
 ## Open questions
 
 | # | question | needed by |
 |---|---|---|
-| 4 | binary / symlink / mode-change / submodule presentation | S6 |
+| 4 | binary / symlink / mode-change / submodule presentation | S8 — one-sided files are settled in [D23](#d23--a-file-with-only-one-side-is-shown-in-one-pane-not-diffed-against-nothing); binary is refused with a message |
 | 5 | licensing and `ATTRIBUTION.md` — the C is VSCode-derived and vendors utf8proc | S1 |
 
 *Question 1 (explorer grouping) is settled in [04-milestones.md](04-milestones.md): one list, worktree vs HEAD, conflicts marked but not resolvable.

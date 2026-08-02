@@ -35,7 +35,7 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
     else {
         return Ok(()); // a timeout is not an alignment bug
     };
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     let mut left = Vec::new();
     let mut right = Vec::new();
@@ -98,7 +98,7 @@ proptest! {
         let text: Vec<&str> = lines.iter().map(String::as_str).collect();
         let diff = vscode_diff::compute(&text, &text, &Options::default())
             .expect("comparing a file with itself cannot time out");
-        let alignment = Alignment::new(&diff, &text, &text);
+        let alignment = Alignment::new(diff.clone(), &text, &text);
 
         prop_assert_eq!(alignment.row_count() as usize, alignment.lines(Side::Original).len());
         for row in alignment.rows() {
@@ -113,7 +113,7 @@ proptest! {
         let Ok(diff) = vscode_diff::compute(&original, &modified, &Options::default()) else {
             return Ok(());
         };
-        let alignment = Alignment::new(&diff, &original, &modified);
+        let alignment = Alignment::new(diff.clone(), &original, &modified);
 
         for (side, lines) in [(Side::Original, &original), (Side::Modified, &modified)] {
             for number in 1..=lines.len() as u32 {
@@ -136,7 +136,7 @@ proptest! {
         let Ok(diff) = vscode_diff::compute(&original, &modified, &Options::default()) else {
             return Ok(());
         };
-        let alignment = Alignment::new(&diff, &original, &modified);
+        let alignment = Alignment::new(diff.clone(), &original, &modified);
 
         for change in &diff.changes {
             for line in change.original.start_line..change.original.end_line {

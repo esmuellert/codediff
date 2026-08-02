@@ -142,7 +142,7 @@ struct Row {
     modified: String,
 }
 
-/// Splits a rendered row on its separator.
+/// Splits a rendered row on its divider.
 ///
 /// The gutters are fixed-width ASCII, so character positions are display
 /// columns there; the text runs to the end of its half, which avoids having to

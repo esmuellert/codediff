@@ -5,17 +5,20 @@ resolver = "3"
 # `cargo xtask lint-arch` enforces the forbidden edges as each crate appears.
 members = [
     "crates/vscode-diff-sys",
+    "crates/diff-types",
     "crates/vscode-diff",
     "crates/line-index",
     "crates/align",
     "crates/vcs",
     "crates/fixtures",
+    "crates/syntax",
+    "crates/ui",
     "crates/codediff",
     "xtask",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
@@ -33,14 +36,29 @@ all = { level = "deny", priority = -1 }
 
 [workspace.dependencies]
 vscode-diff-sys = { path = "crates/vscode-diff-sys" }
+diff-types = { path = "crates/diff-types" }
 vscode-diff = { path = "crates/vscode-diff" }
 line-index = { path = "crates/line-index" }
 align = { path = "crates/align" }
 vcs = { path = "crates/vcs" }
 fixtures = { path = "crates/fixtures" }
+syntax = { path = "crates/syntax" }
+ui = { path = "crates/ui" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+ratatui = "0.30"
+crossterm = "0.29"
+# Key *vocabulary* only: compile-time key literals for the binding table, and
+# formatting for a help screen. Sequences, contexts and dispatch are ours —
+# a crokey "combination" is keys pressed together, not one after another.
+crokey = { version = "1.5", default-features = false }
+# Only for suspending: raw mode disables the terminal's own Ctrl-Z handling, so
+# the signal has to be raised by hand. Safe API; no `unsafe` in our crates.
+signal-hook = { version = "0.3", default-features = false }
+# Test-only: allocates a real terminal so the alternate screen and raw mode can
+# be checked from outside the process that set them.
+portable-pty = { version = "0.9", default-features = false }
 
 [profile.release]
 lto = "thin"

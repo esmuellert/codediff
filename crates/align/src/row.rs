@@ -4,7 +4,7 @@
 //! time, which is why a ten-thousand-line file costs nothing more than a
 //! ten-line one until something asks to draw it.
 
-use vscode_diff::{DetailedLineRangeMapping, LinesDiff};
+use diff_types::{DetailedLineRangeMapping, LinesDiff};
 
 /// What a side shows on one row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

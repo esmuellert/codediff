@@ -1,0 +1,17 @@
+[package]
+name = "diff-types"
+description = "What a computed diff is: line ranges, character ranges and moved blocks."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# None, deliberately, and no build script. This crate is the reason `align` can
+# be built and tested without a C toolchain.
+[dependencies]
+
+[lints]
+workspace = true

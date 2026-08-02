@@ -41,6 +41,13 @@ wrapping and plugin-inserted boxes, neither of which a terminal has.
 | which hunk is this line in | `hunk_at(side, line)` |
 | did this line move | `moved(side, line)` |
 | what can be collapsed | `unchanged()` |
+| what the engine reported | `changes()`, `moves()`, `hit_timeout()` |
+
+That last row used to be a single `diff()` getter handing out the borrowed engine result,
+which read like a verb — "alignment computes a diff" — and left seven `alignment.diff().field`
+reach-throughs. VSCode has no equivalent because `DiffState.fromDiffResult` *unpacks* those
+values and drops the result, leaving nothing to reach into. We borrow rather than copy, but
+the surface is now the same.
 
 ## Three things worth knowing
 
@@ -59,7 +66,7 @@ inserting a function above a reviewed hunk does not mark it unread, while editin
 ## What it deliberately does not know
 
 Pane width. Once wrapping is on, a line is no longer one row and pairing depends on width, so
-the wrap-aware alignment lives in `display` — the same split VSCode makes, with `DiffState`
+the wrap-aware alignment lives in `ui` — the same split VSCode makes, with `DiffState`
 width-independent and `computeRangeAlignment` in its view. See D19.
 
 ## Checking it

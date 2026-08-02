@@ -4,17 +4,47 @@
 //! mean" and shell completions all come from one description rather than from
 //! six hand-written `match` arms that had to agree with each other.
 
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
+
+/// The themes `--theme` accepts, taken from `ui` rather than repeated
+/// here, so a new theme appears in `--help` and in tab completion without
+/// anything else being edited.
+fn themes() -> PossibleValuesParser {
+    PossibleValuesParser::new(ui::Theme::NAMES)
+}
 
 #[derive(Parser)]
 #[command(
     name = "codediff",
     version,
     about = "A standalone, read-only terminal diff reviewer",
-    after_help = "The review interface is not built yet; see docs/plan/04-milestones.md.",
+    after_help = "With no arguments this will open the explorer, listing every changed file. That\nis not built yet; until then, name a file. See docs/plan/04-milestones.md.",
     disable_help_subcommand = true
 )]
 pub struct Cli {
+    /// File to review, as given or relative to the repository root
+    ///
+    /// An argument rather than a subcommand, following the Neovim plugin,
+    /// where `:CodeDiff` *is* the diff and arguments say what to compare.
+    pub path: Option<String>,
+
+    /// Colours to draw with
+    ///
+    /// Defaults to Catppuccin Mocha, or `basic-dark` on a terminal that does
+    /// not advertise 24-bit colour, where Catppuccin's diff backgrounds would
+    /// round into the background and vanish.
+    #[arg(long, value_name = "NAME", value_parser = themes())]
+    pub theme: Option<String>,
+
+    /// Take over the terminal and then panic, to check it is given back
+    ///
+    /// The one failure mode a diff reviewer must never have is leaving the
+    /// shell with no echo and an invisible cursor. Hidden because it is for
+    /// the test suite, not for people.
+    #[arg(long, hide = true)]
+    pub self_panic: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }

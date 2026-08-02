@@ -5,7 +5,7 @@
 //! collapsed to a single "47 hidden lines" row, keeping a few lines of context
 //! on each side of the edits that remain visible.
 
-use vscode_diff::{LineRange, LinesDiff};
+use diff_types::{LineRange, LinesDiff};
 
 /// A run of lines identical on both sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

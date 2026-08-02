@@ -1,0 +1,50 @@
+//! What the pipeline hands over.
+//!
+//! ---
+//!
+//! One file's two versions and the pairing between them, and nothing about how
+//! any of it is shown. Defined here, by the consumer, rather than by whatever
+//! assembles it — that is the direction that keeps the crate graph acyclic,
+//! since the composition root already depends on `ui` and the reverse
+//! would be a cycle.
+//!
+//! It is **data, not a projection.** How many rows there are is not a property
+//! of a diff: an [`align::Row`] is a *pair*, so a row count is already an
+//! answer to "how would this look side by side". A buffer decides that, and
+//! caches the answer beside the decision. See [`SideBySide`].
+//!
+//! [`SideBySide`]: crate::view::buffer::SideBySide
+
+use align::Alignment;
+
+/// One file's two versions, paired up.
+#[derive(Debug)]
+pub struct Diff {
+    label: String,
+    alignment: Alignment,
+}
+
+impl Diff {
+    pub fn new(label: String, alignment: Alignment) -> Self {
+        Self { label, alignment }
+    }
+
+    /// What to draw from.
+    ///
+    /// A borrow of something already built, not a construction: the pipeline
+    /// paired the lines up once, when the file was opened.
+    pub fn alignment(&self) -> &Alignment {
+        &self.alignment
+    }
+
+    /// What the status line calls this file.
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    /// The engine gave up early, so the pairing is coarser than the files
+    /// warrant. The reader has to be told.
+    pub fn hit_timeout(&self) -> bool {
+        self.alignment.hit_timeout()
+    }
+}

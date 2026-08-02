@@ -20,11 +20,13 @@ anyhow.workspace = true
 clap.workspace = true
 line-index.workspace = true
 align.workspace = true
+ui.workspace = true
 vcs.workspace = true
 vscode-diff.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true
+portable-pty.workspace = true
 
 [lints]
 workspace = true

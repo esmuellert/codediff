@@ -1,0 +1,284 @@
+# ui
+
+Draws the review interface, and owns the terminal while it runs.
+
+It is handed the text of one or two files and paints them. It cannot see a repository,
+compute a diff, or read a file — `cargo xtask lint-arch` fails if it tries.
+
+## The shape
+
+Four levels, each containing the next, borrowed from Neovim because the problem is the same
+one: several things on screen, each with its own contents, position and keys.
+
+```text
+View     tabs, and every buffer any of them can show
+└ Tab    a layout of panes, and which has focus
+  └ Pane one buffer, and one Viewport onto it
+    └ Viewport   top, cursor, left
+```
+
+Two rules follow from it, and between them they decide where almost everything lives.
+
+**Containment order is execution order.** An action is carried out by the lowest level that
+contains everything it affects. A motion affects one viewport, so the focused pane's buffer
+does it. Resizing a pane border affects *two* panes, so only the tab can. This is why
+`Action` has the arms it has, and no others: an arm exists iff it has an executor no other
+arm has.
+
+**Buffers live in `View`, referenced by `BufferId`.** Never by reference — a pane holding
+`&mut Buffer` would make the whole structure self-referential. Helix does the same with
+`DocumentId`/`ViewId`; Zellij's `Box<dyn Pane>` is the counter-example and forced
+`Rc<RefCell<_>>` throughout. Position is on the *pane*, so two panes over one buffer scroll
+independently.
+
+See [D27](../../docs/plan/05-decisions.md#d27).
+
+## A buffer is a sequence of rows you can scroll through
+
+That is the whole definition.
+
+```text
+enum Buffer {
+    SideBySide(SideBySide),   // a diff, in two columns
+    Text(Text),               // one file, with nothing to compare against
+}
+```
+
+A buffer is a *projection*, not the data. `Diff` — what the pipeline delivers — is one
+file's two versions and the pairing between them, and says nothing about rows. How many
+rows there are is not a fact about a diff: an `align::Row` is already a **pair**, so a row
+count is an answer to "how would this look side by side". `SideBySide` is that answer, and
+caches it beside the decision that produced it.
+
+It settles what would otherwise be a flag: side-by-side and inline are *different buffers*
+over the same diff, not one buffer rendered two ways. They emit different row sequences, so
+with a flag "row 40" would mean different things depending on a field kept elsewhere.
+
+An `enum`, not a trait, so adding a kind breaks the build until it is handled everywhere.
+
+A `Diff` holds an `Alignment`, which **owns** both files and the engine's result. The
+pipeline builds it once, when the file is opened, and drawing a frame is pure reading.
+
+That is not a small detail. While `Alignment` borrowed, it could not be returned by the
+stage that built it — the texts it pointed at died with the call — so the pipeline had to
+lend it through a closure, and every type holding one grew a lifetime:
+`Diff<'a>` → `Session<'a>` → `View<'a>` → `Tab<'a>` → `Pane<'a>`. Making it own its files
+deleted the closure, the lifetimes, and all per-frame work at once. See
+[D27](../../docs/plan/05-decisions.md#d27).
+
+## One column or two
+
+`Viewport` holds **one** scroll position and **one** cursor, whatever the buffer draws with
+them:
+
+```text
+Viewport { top, cursor, left }
+           └ shared by every column ┘
+```
+
+The two columns of a diff are not separate scrollable things kept in agreement. They are one
+position, drawn in the same call from the same slice of rows. There is nowhere for them to
+disagree, so there is no synchronisation code, so there is nothing to get wrong.
+
+The plugin needed 415 lines of `scrollsync.lua` for this and got it wrong twice. VSCode
+gives each editor its own `scrollTop` and holds them in a bidirectional constraint with
+write guards. See [D19](../../docs/plan/05-decisions.md#d19).
+
+A diff always has **two** columns, so neither field of `Frame` is optional. A file with one
+side is not compared against anything, so it is not a diff at all — it is a `Text` buffer,
+drawn by `render/text.rs` in a single column. Nothing on it changed *relative to* anything,
+so nothing is highlighted. Marking every line of a new file green says nothing the word "added" does
+not. VSCode arrived here from the same bug and stopped opening a diff editor for added,
+untracked and deleted files entirely.
+
+The trigger is *absent*, never *empty*. A tracked file emptied to zero bytes still has a
+side to compare against, so it gets two columns and a diff showing every line deleted. See
+[D23](../../docs/plan/05-decisions.md#d23).
+
+## What is where
+
+```text
+view/                what is on screen, and where
+├── mod.rs             View — tabs, and every buffer any of them can show
+├── tab.rs             Tab — a layout of panes, and which has focus
+├── pane.rs            Pane — one buffer, and one Viewport onto it
+├── viewport.rs        Viewport — top, cursor, left
+└── buffer/            what a pane can show
+    ├── mod.rs           Buffer — the closed set of kinds
+    ├── side_by_side.rs  SideBySide — a diff in two columns, and its row space
+    └── text.rs          Text — one file, nothing to compare against
+render/              turning that into cells
+├── mod.rs             the screen: body and status line
+├── side_by_side.rs    one pane holding a diff
+├── text.rs            one pane holding a single file
+├── layout.rs          where the columns go
+├── column.rs          one column's rows
+├── cells.rs           one line onto one row of cells
+└── status.rs          the bottom row
+diff.rs              Diff — what the pipeline delivers
+input/               what does this key mean
+theme/               what colour is it
+app.rs               read a key, dispatch it, draw
+terminal.rs          who owns the screen, and how it is given back
+```
+
+**The module tree is the model.** Each of the four levels is one file, in containment
+order, so `ls view/` and the diagram above are the same picture. `buffer/` is *inside*
+`view/` because `View` owns the buffers — Neovim's are global and Helix keeps `documents`
+beside its `tree`, but both have an editor above that owns the two. We do not, and
+inventing one to justify a directory would be the tail wagging the dog.
+
+An id lives with the collection it indexes: `BufferId` in `mod.rs` beside `View::buffers`,
+`PaneId` in `tab.rs` beside `Tab::panes`.
+
+`terminal.rs` is separate from everything else because it is the only part that can leave a
+shell broken: raw mode and the alternate screen have to be undone on quit, on error, on
+panic and on suspend. It is tested through a real pty, from outside the process.
+
+## Keys
+
+A key resolves to a `Command`, and every command is one of exactly three kinds
+— split by **who answers it and how long they take**, not by whether it has a side effect,
+because that is the question the loop actually has to act on:
+
+| arm | executed by | can fail | latency |
+|---|---|---|---|
+| `Buffer(BufferAction)` | the focused pane's buffer | no | µs |
+| `Program(ProgramAction)` | whoever owns the terminal | no | µs |
+| `Task(TaskAction)` | the composition root, off-thread | **yes** | ms |
+
+One arm per executor, and each arm's payload is that executor's own set of commands,
+named `<Executor>Action`. `Pane(PaneAction)` and `Tab(TabAction)` join them when the
+explorer brings a second pane, and nothing above changes shape.
+
+A `Task` is a **request, not a call**: `ui` names what it wants and something above
+performs it. That is the only way staging can exist here without `ui → vcs`, which
+`lint-arch` forbids. It is uninhabited today — after startup this binary does no IO — and
+the first will be opening a file from the explorer.
+
+`input/resolver.rs` **resolves**; `app.rs` **dispatches**. Keeping those apart is why the
+resolver can be a pure function of its own state and one key: no clock, no IO, no view. A
+test is a string of keys.
+
+**Each level owns its commands and binds them** — one file per executor, holding the actions
+*and* the keys, so a new command is one file rather than two:
+
+```text
+buffer.rs    motions, and whatever a buffer kind adds   ← innermost, consulted first
+pane.rs      one pane, about its own view of a buffer
+tab.rs       a tab, about its panes: focus, resize, zoom
+view.rs      the whole view, about its tabs
+program.rs   quit, suspend, redraw — below every level, consulted last
+task.rs      what leaves the crate
+```
+
+**Lookup walks that order**, so an inner level *shadows* an outer one. That is what lets the
+explorer bind `<` to collapse the sidebar while a diff keeps `<` for its column divider:
+the diff's own binding is found first, and in the explorer the chain falls through. Neovim's
+buffer-local-over-global, and the reason a key's scope and a key's executor need not be tied
+together.
+
+`Context` selects only the innermost list — which *buffer kind* has focus. Every level above
+binds the same keys whatever is focused.
+
+### The table is data
+
+Each level's bindings are a `const` list — `crokey`'s `key!()` is const-capable, which is the whole
+reason to depend on it. A command is a **value**, never a closure: a closure could not be
+printed into a help screen, compared in a test, or held without capturing references to
+everything it might touch.
+
+crokey covers **what one key is** — literals, `KeyEvent` conversion, formatting for help,
+and config parsing later. Its "combination" means keys pressed *together*; a sequence like
+`gg` is keys pressed *one after another*, which is ours.
+
+### No binding is a prefix of another
+
+Lookup gives the flat list trie semantics: **commands live only at leaves**. `gg` existing
+means bare `g` is unbound, and `j` being bound means nothing may follow it.
+
+That is what vim's own built-ins do — `g`, `d`, `z`, `[`, `]` are all unbound alone — and
+it is why the resolver needs no clock. Ambiguity has no good resolution: firing immediately
+makes the longer binding unreachable, waiting makes the shorter one feel broken. Vim needs
+`timeoutlen` only because user mappings *may* create ambiguity. A test enforces the rule,
+so relaxing it later means adding a clock and deleting one test, not reshaping the
+resolver.
+
+Two consequences worth knowing:
+
+- **Escape cancels what is in flight, and only then.** With nothing pending it falls
+  through to the table, where it quits. Without this, pressing `g` and changing your mind
+  would exit.
+- **`0` is a digit mid-count and a motion otherwise** — vim's rule, and the only place
+  counts and bindings interact.
+
+## Colours
+
+A `Theme` is a table of `Style`s, one per role, and nothing else. It has no idea what a
+hunk is, and the renderer has no idea what Catppuccin is; the two meet at the field names.
+Styles compose by `patch`, which overrides only what is set — so a role supplies a
+background and inherits the foreground, and priority is the order of the patches.
+
+Six themes, in two families:
+
+| | |
+|---|---|
+| `catppuccin-mocha` (default), `-macchiato`, `-frappe`, `-latte` | exact 24-bit colours |
+| `basic-dark`, `basic-light` | the terminal's own background, and the 256-colour cube |
+
+**Catppuccin is reproduced by its arithmetic, not by a list of hex values.** Its diff
+backgrounds are an accent blended into the base at a fixed opacity:
+
+```text
+out = round(alpha × accent + (1 − alpha) × base)
+
+line added     18% green      inner change  30% green
+line removed   18% red        inner change  30% red
+moved block     7% blue       cursor line   64% surface0
+```
+
+Those are the opacities `catppuccin/nvim` uses for `DiffAdd`, `DiffDelete`, `DiffChange`
+and `DiffText`. So a flavour is 26 palette colours and a shared derivation, and a test
+asserts the derivation still reproduces Catppuccin's own published results. A new flavour
+is 26 numbers.
+
+**`basic` exists because Catppuccin's subtlety is also its failure mode.** Eighteen percent
+of an accent is a few points of lightness; a terminal without 24-bit colour rounds that
+straight back into the background, leaving a diff with no visible diff in it. `basic` names
+nothing exactly — `Color::Reset` for the background, so it inherits whatever scheme the
+reader already runs — and a test asserts it never emits a 24-bit colour at all.
+
+Which one you get, absent `--theme`, is decided by `COLORTERM` and `COLORFGBG`: the only
+things already known for free. There is a real way to ask a terminal its background — an
+OSC 11 query — but it needs a round trip the terminal may never answer, and a reviewer
+waiting on a timeout before the first frame is worse than a wrong guess they can override.
+`codediff doctor` prints what was detected and why.
+
+## Three things that are easy to get wrong
+
+**A changed line is coloured to the edge of its column**, not to the end of its text.
+Otherwise a short changed line reads as a ragged stripe. Neovim calls this `hl_eol`.
+
+**A grapheme cluster is not a column.** A double-width character straddling either edge of
+the viewport, and a tab, are drawn as spaces, because half of a wide character cannot be
+drawn and drawing all of it would shift every column after it.
+
+**The file being reviewed must never reach the terminal unaltered.** `ESC` starts a
+sequence a terminal *obeys*, and `U+202E` reorders a line so it reads as something other
+than what it says. Both are replaced by a stand-in of the same width, in `line-index`,
+beside the code that measures them — so the substitution and the measurement cannot drift.
+
+## Checking it
+
+```sh
+codediff <path>
+```
+
+`q` quits, `j`/`k` scroll, `n`/`N` step through changes, `>`/`<` drag the divider, `Ctrl-Z`
+suspends. The screen must match `codediff debug diff-file <path>` row for row.
+
+```sh
+codediff <path> --theme basic-light
+```
+
+Every theme must draw exactly the same characters — only the colours may differ.

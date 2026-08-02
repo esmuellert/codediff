@@ -18,12 +18,12 @@ fn a_hunks_identity_follows_its_text_and_not_its_position() {
     let original = split("a\nb\nc");
     let modified = split("a\nB\nc");
     let diff = compute(&original, &modified);
-    let here = Alignment::new(&diff, &original, &modified);
+    let here = Alignment::new(diff.clone(), &original, &modified);
 
     let moved_original = split("new\nlines\nhere\na\nb\nc");
     let moved_modified = split("new\nlines\nhere\na\nB\nc");
     let moved_diff = compute(&moved_original, &moved_modified);
-    let there = Alignment::new(&moved_diff, &moved_original, &moved_modified);
+    let there = Alignment::new(moved_diff.clone(), &moved_original, &moved_modified);
 
     assert_eq!(
         here.hunks()[0].id,
@@ -42,8 +42,8 @@ fn editing_a_hunk_changes_its_identity() {
     let second_diff = compute(&original, &second);
 
     assert_ne!(
-        Alignment::new(&first_diff, &original, &first).hunks()[0].id,
-        Alignment::new(&second_diff, &original, &second).hunks()[0].id,
+        Alignment::new(first_diff.clone(), &original, &first).hunks()[0].id,
+        Alignment::new(second_diff.clone(), &original, &second).hunks()[0].id,
         "a different edit must not inherit the old identity"
     );
 }
@@ -59,8 +59,8 @@ fn the_line_separator_stops_neighbours_hashing_alike() {
     let a = compute(&original, &first);
     let b = compute(&original, &second);
     assert_ne!(
-        Alignment::new(&a, &original, &first).hunks()[0].id,
-        Alignment::new(&b, &original, &second).hunks()[0].id
+        Alignment::new(a.clone(), &original, &first).hunks()[0].id,
+        Alignment::new(b.clone(), &original, &second).hunks()[0].id
     );
 }
 
@@ -70,7 +70,7 @@ fn nearby_changes_join_and_distant_ones_do_not() {
     let original = split("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl");
     let near = split("A\nb\nC\nd\ne\nf\ng\nh\ni\nj\nk\nl");
     let diff = compute(&original, &near);
-    let alignment = Alignment::with_options(&diff, &original, &near, 4, 3);
+    let alignment = Alignment::with_options(diff.clone(), &original, &near, 4, 3);
     assert_eq!(
         alignment.hunks().len(),
         1,
@@ -80,7 +80,7 @@ fn nearby_changes_join_and_distant_ones_do_not() {
     // The same two edits far apart read as two.
     let far = split("A\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nL");
     let diff = compute(&original, &far);
-    let alignment = Alignment::with_options(&diff, &original, &far, 4, 3);
+    let alignment = Alignment::with_options(diff.clone(), &original, &far, 4, 3);
     assert_eq!(alignment.hunks().len(), 2);
 }
 
@@ -91,13 +91,13 @@ fn a_wider_context_merges_more() {
     let diff = compute(&original, &modified);
 
     assert_eq!(
-        Alignment::with_options(&diff, &original, &modified, 4, 3)
+        Alignment::with_options(diff.clone(), &original, &modified, 4, 3)
             .hunks()
             .len(),
         2
     );
     assert_eq!(
-        Alignment::with_options(&diff, &original, &modified, 4, 99)
+        Alignment::with_options(diff.clone(), &original, &modified, 4, 99)
             .hunks()
             .len(),
         1
@@ -108,7 +108,7 @@ fn a_wider_context_merges_more() {
 fn a_file_with_no_changes_has_no_hunks_and_only_unchanged_rows() {
     let text = split("one\ntwo\nthree");
     let diff = compute(&text, &text);
-    let alignment = Alignment::new(&diff, &text, &text);
+    let alignment = Alignment::new(diff.clone(), &text, &text);
 
     assert_eq!(alignment.row_count(), 3);
     assert!(alignment.hunks().is_empty());
@@ -127,7 +127,7 @@ fn an_empty_file_is_one_empty_line() {
     let empty: Vec<&str> = Vec::new();
     let added = split("hello");
     let diff = compute(&empty, &added);
-    let alignment = Alignment::new(&diff, &empty, &added);
+    let alignment = Alignment::new(diff.clone(), &empty, &added);
 
     assert_eq!(alignment.lines(align::Side::Original), &[""]);
     assert_eq!(alignment.row_count(), 1);
@@ -139,7 +139,7 @@ fn hunk_change_ranges_partition_the_changes() {
     let original = split("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl");
     let modified = split("A\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nL");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     let mut next = 0;
     for hunk in alignment.hunks() {
@@ -156,7 +156,7 @@ fn two_identical_edits_in_one_file_get_different_identities() {
     let original = split("a\nX\nb\nc\nd\ne\nf\ng\na\nX\nb");
     let modified = split("a\nY\nb\nc\nd\ne\nf\ng\na\nY\nb");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     assert_eq!(alignment.hunks().len(), 2);
     let (first, second) = (alignment.hunks()[0].id, alignment.hunks()[1].id);

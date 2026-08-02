@@ -1,0 +1,27 @@
+[package]
+name = "ui"
+description = "Drawing the review interface, and owning the terminal while it runs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+diff-types.workspace = true
+align.workspace = true
+line-index.workspace = true
+syntax.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+crokey.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+signal-hook.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

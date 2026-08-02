@@ -1,6 +1,6 @@
 //! The layer's one public entry point.
 
-use vscode_diff::{LineRange, LinesDiff, MovedText};
+use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff, MovedText};
 
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
@@ -37,33 +37,45 @@ pub enum Side {
 
 /// A diff paired up with the two files it came from.
 ///
-/// Borrows all three and copies none of them. Every answer below is computed
-/// when asked, so there is no second copy of the document to fall out of step
-/// with the first.
+/// **Owns** all three, and is therefore a plain value: it can be returned from
+/// a function, stored in a struct, and moved into a collection. That is the
+/// whole reason it owns them. A borrowing version cannot be returned by the
+/// stage that builds it — the texts it points at die when that function ends —
+/// so the pipeline had to lend it through a closure, and every type that held
+/// one grew a lifetime parameter: `Diff<'a>`, `Session<'a>`, `View<'a>`, and so
+/// on down. See D27.
+///
+/// The cost is one copy of each file, once, when the alignment is built. There
+/// is still exactly one copy in existence — the lines are copied *in* and the
+/// caller's can be dropped — so the original reason for borrowing, that no
+/// second copy can fall out of step with the first, still holds.
+///
+/// Everything below is computed when asked, except [`hunks`](Self::hunks),
+/// which is O(changes) and built once here.
 #[derive(Debug, Clone)]
-pub struct Alignment<'a> {
-    diff: &'a LinesDiff,
-    original: &'a [&'a str],
-    modified: &'a [&'a str],
+pub struct Alignment {
+    diff: LinesDiff,
+    original: Vec<String>,
+    modified: Vec<String>,
     tab_width: u8,
     hunks: Vec<Hunk>,
 }
 
-impl<'a> Alignment<'a> {
+impl Alignment {
     /// Pairs a diff with the files it came from.
     ///
     /// # Panics
     ///
     /// If the diff does not describe a coherent pairing. Use
     /// [`try_new`](Self::try_new) to be told instead.
-    pub fn new(diff: &'a LinesDiff, original: &'a [&'a str], modified: &'a [&'a str]) -> Self {
+    pub fn new(diff: LinesDiff, original: &[&str], modified: &[&str]) -> Self {
         Self::try_new(diff, original, modified).expect("the engine produces well-formed diffs")
     }
 
     pub fn try_new(
-        diff: &'a LinesDiff,
-        original: &'a [&'a str],
-        modified: &'a [&'a str],
+        diff: LinesDiff,
+        original: &[&str],
+        modified: &[&str],
     ) -> Result<Self, Malformed> {
         Self::try_with_options(
             diff,
@@ -78,9 +90,9 @@ impl<'a> Alignment<'a> {
     ///
     /// As [`new`](Self::new).
     pub fn with_options(
-        diff: &'a LinesDiff,
-        original: &'a [&'a str],
-        modified: &'a [&'a str],
+        diff: LinesDiff,
+        original: &[&str],
+        modified: &[&str],
         tab_width: u8,
         context: u32,
     ) -> Self {
@@ -89,48 +101,81 @@ impl<'a> Alignment<'a> {
     }
 
     pub fn try_with_options(
-        diff: &'a LinesDiff,
-        original: &'a [&'a str],
-        modified: &'a [&'a str],
+        diff: LinesDiff,
+        original: &[&str],
+        modified: &[&str],
         tab_width: u8,
         context: u32,
     ) -> Result<Self, Malformed> {
         let original = normalise(original);
         let modified = normalise(modified);
-        if !is_well_formed(diff, original.len() as u32, modified.len() as u32) {
+        if !is_well_formed(&diff, original.len() as u32, modified.len() as u32) {
             return Err(Malformed);
         }
+        let hunks = hunks(&diff, &original, &modified, context);
         Ok(Self {
             diff,
             original,
             modified,
             tab_width,
-            hunks: hunks(diff, original, modified, context),
+            hunks,
         })
     }
 
-    pub fn diff(&self) -> &'a LinesDiff {
-        self.diff
+    /// The changed blocks, in order.
+    ///
+    /// These and the two below are the engine's result, borrowed rather than
+    /// restated: `Alignment` holds a `&LinesDiff` and reads through it. VSCode
+    /// unpacks the same four values into its `DiffState` and drops the result,
+    /// so a caller there writes `state.movedTexts` and there is no diff object
+    /// left to reach into. Borrowing is free where copying is not, so the
+    /// surface matches without the copy.
+    pub fn changes(&self) -> &[DetailedLineRangeMapping] {
+        &self.diff.changes
     }
 
-    pub fn lines(&self, side: Side) -> &'a [&'a str] {
+    /// Blocks the engine judged to have moved rather than been rewritten.
+    ///
+    /// Empty unless the diff was computed with [`Options::with_moves`].
+    ///
+    /// [`Options::with_moves`]: vscode_diff::Options::with_moves
+    pub fn moves(&self) -> &[MovedText] {
+        &self.diff.moves
+    }
+
+    /// The engine gave up before finishing, so the pairing is coarser than the
+    /// files warrant.
+    ///
+    /// What is shown is still valid, but incomplete — a reviewer who mistakes
+    /// it for a finished diff approves code they have not seen, so it must
+    /// reach the screen. VSCode calls this `quitEarly`.
+    pub fn hit_timeout(&self) -> bool {
+        self.diff.hit_timeout
+    }
+
+    /// True when the two sides are identical.
+    pub fn is_empty(&self) -> bool {
+        self.diff.changes.is_empty()
+    }
+
+    pub fn lines(&self, side: Side) -> &[String] {
         match side {
-            Side::Original => self.original,
-            Side::Modified => self.modified,
+            Side::Original => &self.original,
+            Side::Modified => &self.modified,
         }
     }
 
     /// The text of one line, numbered from 1.
-    pub fn line(&self, side: Side, number: u32) -> Option<&'a str> {
+    pub fn line(&self, side: Side, number: u32) -> Option<&str> {
         self.lines(side)
             .get(number.checked_sub(1)? as usize)
-            .copied()
+            .map(String::as_str)
     }
 
     /// Every row, in order.
-    pub fn rows(&self) -> Rows<'a> {
+    pub fn rows(&self) -> Rows<'_> {
         rows(
-            self.diff,
+            &self.diff,
             self.original.len() as u32,
             self.modified.len() as u32,
         )
@@ -138,7 +183,7 @@ impl<'a> Alignment<'a> {
 
     pub fn row_count(&self) -> u32 {
         row_count(
-            self.diff,
+            &self.diff,
             self.original.len() as u32,
             self.modified.len() as u32,
         )
@@ -149,7 +194,7 @@ impl<'a> Alignment<'a> {
     /// Still a walk — the rows before `first` are stepped over rather than
     /// built. For the change counts real files produce this costs nothing, and
     /// it keeps the alternative, a stored row index, out of the crate.
-    pub fn rows_from(&self, first: u32) -> impl Iterator<Item = Row> + 'a {
+    pub fn rows_from(&self, first: u32) -> impl Iterator<Item = Row> + '_ {
         self.rows().skip(first as usize)
     }
 
@@ -191,7 +236,7 @@ impl<'a> Alignment<'a> {
     /// Runs of lines identical on both sides.
     pub fn unchanged(&self) -> Vec<UnchangedRegion> {
         regions(
-            self.diff,
+            &self.diff,
             self.original.len() as u32,
             self.modified.len() as u32,
         )
@@ -203,7 +248,7 @@ impl<'a> Alignment<'a> {
     /// not agree with its change ranges — in the `comprehensive_move` fixture a
     /// move covers original 32..89 while a change covers 37..139 — so a move
     /// cannot be attached to a change without lying about one of them.
-    pub fn moved(&self, side: Side, line: u32) -> Option<&'a MovedText> {
+    pub fn moved(&self, side: Side, line: u32) -> Option<&MovedText> {
         self.diff
             .moves
             .iter()
@@ -222,9 +267,13 @@ fn contains(range: LineRange, line: u32) -> bool {
 /// the un-normalised `&[]` would hold a file with no line 1 and disagree with
 /// its own diff, so it normalises identically. Found by `proptest`, which
 /// shrank to `original = []`.
-fn normalise<'a>(lines: &'a [&'a str]) -> &'a [&'a str] {
-    const EMPTY_FILE: &[&str] = &[""];
-    if lines.is_empty() { EMPTY_FILE } else { lines }
+/// Copies the caller's lines in, standing an absent file up as the engine's
+/// representation of an empty one: a single empty line.
+fn normalise(lines: &[&str]) -> Vec<String> {
+    if lines.is_empty() {
+        return vec![String::new()];
+    }
+    lines.iter().map(|line| (*line).to_owned()).collect()
 }
 
 fn range(hunk: &Hunk, side: Side) -> LineRange {
@@ -234,7 +283,7 @@ fn range(hunk: &Hunk, side: Side) -> LineRange {
     }
 }
 
-fn line_range(change: &vscode_diff::DetailedLineRangeMapping, side: Side) -> LineRange {
+fn line_range(change: &diff_types::DetailedLineRangeMapping, side: Side) -> LineRange {
     match side {
         Side::Original => change.original,
         Side::Modified => change.modified,

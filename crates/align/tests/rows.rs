@@ -18,7 +18,7 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 }
 
 /// `(original, modified, kind)` for every row, as a readable table.
-fn table(alignment: &Alignment<'_>) -> Vec<(Option<u32>, Option<u32>, RowKind)> {
+fn table(alignment: &Alignment) -> Vec<(Option<u32>, Option<u32>, RowKind)> {
     alignment
         .rows()
         .map(|r| (r.original.line(), r.modified.line(), r.kind))
@@ -32,7 +32,7 @@ fn a_deletion_and_an_insertion_land_on_the_right_rows() {
     let original = split("one\ntwo\nthree\nfour\nfive");
     let modified = split("one\nthree\nfour\nNEW\nfive");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     assert_eq!(
         table(&alignment),
@@ -54,7 +54,7 @@ fn a_change_taller_on_one_side_puts_its_fillers_last() {
     let original = split("a\nb\nc\nd\nz");
     let modified = split("a\nQ\nz");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     assert_eq!(
         table(&alignment),
@@ -73,7 +73,7 @@ fn a_change_at_the_very_first_line() {
     let original = split("a\nb");
     let modified = split("Z\nb");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     assert_eq!(
         table(&alignment),
@@ -86,7 +86,7 @@ fn a_change_reaching_the_last_line() {
     let original = split("a\nb");
     let modified = split("a\nZ");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     assert_eq!(
         table(&alignment),
@@ -127,7 +127,7 @@ fn adjacent_changes_with_no_unchanged_run_between_them() {
     };
     let original = split("a\nb\nc");
     let modified = split("a\nX\nc");
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     assert_eq!(
         table(&alignment),
@@ -149,7 +149,7 @@ fn an_empty_diff_pairs_every_line() {
         moves: vec![],
         hit_timeout: false,
     };
-    let alignment = Alignment::new(&diff, &text, &text);
+    let alignment = Alignment::new(diff.clone(), &text, &text);
     assert_eq!(
         table(&alignment),
         vec![
@@ -194,7 +194,7 @@ fn a_non_monotonic_diff_is_refused_rather_than_duplicating_rows() {
         hit_timeout: false,
     };
     assert_eq!(
-        Alignment::try_new(&backwards, &text, &text).err(),
+        Alignment::try_new(backwards.clone(), &text, &text).err(),
         Some(Malformed)
     );
 }
@@ -218,7 +218,7 @@ fn a_change_running_past_the_end_of_its_file_is_refused() {
         hit_timeout: false,
     };
     assert_eq!(
-        Alignment::try_new(&too_far, &text, &text).err(),
+        Alignment::try_new(too_far.clone(), &text, &text).err(),
         Some(Malformed)
     );
 }

@@ -173,25 +173,45 @@ git diff modified.txt                   # compare
 
 **Build.** Terminal lifecycle with a panic hook that restores the terminal. `Pane` /
 `Layout` / `View` per [D19](05-decisions.md#d19), two panes over one container-owned row
-index, line numbers, gutter, line and inner-change highlighting, status line, theme table.
-Event loop *shape* installed (channel plus `update(state, event) -> Vec<Command>`) even
-with only Key, Resize and Tick. `SpanSet` compositor with priorities. `syntax` crate with
-the `Syntax` trait returning empty spans.
+index, line numbers, gutter, line and inner-change highlighting, status line, themes
+([D22](05-decisions.md#d22)) — four Catppuccin flavours derived from the published
+palettes, plus a `basic` pair for terminals without 24-bit colour, selected by `--theme` or
+detected from the environment. `syntax` crate with the `Highlighter` trait returning empty
+spans.
 
 **Check.**
 ```
-codediff --file a.rs b.rs
+codediff <path>
+codediff <path> --theme basic-light
 codediff --self-panic
+codediff doctor
 ```
 
 **Pass when.**
-- [ ] the diff renders side by side, correctly coloured, matching `debug align` row for row
-- [ ] dragging the split resizes both panes; **no scroll synchronisation code exists**
-- [ ] `q` exits and the shell prompt is **intact** — cursor visible, no alt-screen residue
-- [ ] `--self-panic` panics and **still restores the terminal**
-- [ ] resizing during use reflows without corruption
-- [ ] `Ctrl-Z` then `fg` works
-- [ ] screen snapshots committed
+- [x] the diff renders side by side, correctly coloured, matching `debug diff-file` row for row
+- [x] dragging the split resizes both panes; **no scroll synchronisation code exists**
+- [x] `q` exits and the shell prompt is **intact** — cursor visible, no alt-screen residue
+- [x] `--self-panic` panics and **still restores the terminal**
+- [x] resizing during use reflows without corruption
+- [x] `Ctrl-Z` then `fg` works
+- [x] screen snapshots committed
+- [x] every theme draws the same characters and only the colours differ
+- [x] `basic-*` emits no 24-bit colour, so a terminal without it still shows a diff
+
+**Deferred, deliberately.** The event loop is a plain blocking `read` rather than the
+channel-and-`Command` shape: there is nothing yet to run off-thread, and installing the
+seam before it has a second producer would be guessing at its shape. It arrives with the
+watcher at S12, which is its first real caller.
+
+`SpanSet` likewise. There are exactly two layers today — line background and inner change —
+and a compositor for two layers is a `match`. It earns its keep when syntax colours,
+search matches and review marks all want the same cells, at S11.
+
+**Found while building.** A file that exists on only one side has nothing to compare
+against, so it is not compared at all: one pane, no highlighting, labelled `(added)` or
+`(deleted)`. VSCode reached the same conclusion from the same bug — see
+[D23](05-decisions.md#d23). The decision is *absent*, never *empty*: a tracked file emptied
+to zero bytes still gets a real two-pane diff.
 
 ---
 
@@ -245,7 +265,7 @@ arrives in S10a.
 
 ### S10a — Optional line wrapping
 
-**Build.** Opt-in wrap. `line-index` gains "break this line into rows of width W". `display`
+**Build.** Opt-in wrap. `line-index` gains "break this line into rows of width W". `ui`
 computes each line's row count at its pane width, pairs ranges by **row** height rather than
 line count, and pads the shorter side after the range. Viewport position becomes
 `(row, subrow)`; the row index is rebuilt on resize.
@@ -288,7 +308,7 @@ C++, JSON, YAML, Markdown, Bash. Toggle syntax on and off with a key to A/B comp
 
 ### S12 — Explorer
 
-**Build.** `explorer` crate: entries → grouped tree, path collapsing, filter. `display`:
+**Build.** `explorer` crate: entries → grouped tree, path collapsing, filter. `ui`:
 explorer pane, selection, expand and collapse, focus switching. Lazy per-file diff with a
 cache, computed concurrently.
 

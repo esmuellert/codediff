@@ -1,7 +1,18 @@
-//! Owned Rust representations of a computed diff.
+#![doc = include_str!("../README.md")]
 //!
-//! These carry no borrows and no C pointers, so a `LinesDiff` is an ordinary value:
-//! it can be stored, sent between threads and outlive the call that produced it.
+//! ---
+//!
+//! Admission criterion: is this part of *what a diff is*? Never how one is
+//! computed — that is `vscode-diff`, which owns the engine and depends on
+//! this.
+//!
+//! This crate has no dependencies, no build script and no `unsafe`. That is
+//! its whole purpose: everything downstream of the engine can name a diff
+//! without inheriting a C toolchain.
+//!
+//! These carry no borrows and no C pointers, so a `LinesDiff` is an ordinary
+//! value: it can be stored, sent between threads and outlive the call that
+//! produced it.
 //!
 //! Index conventions are inherited from the engine, which mirrors VSCode:
 //!

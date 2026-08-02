@@ -19,14 +19,16 @@
 mod convert;
 mod error;
 mod options;
-mod types;
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 pub use error::{Error, Side};
 pub use options::Options;
-pub use types::{
+// Re-exported so a caller that already depends on this crate need not also name
+// `diff-types`. The structs themselves live there, with no dependencies and no
+// build script, so `align` can name a diff without inheriting a C toolchain.
+pub use diff_types::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, MovedText, RangeMapping,
 };
 

@@ -51,7 +51,7 @@ fn a_span_crossing_a_line_boundary_covers_each_line_correctly() {
         moves: vec![],
         hit_timeout: false,
     };
-    let alignment = Alignment::new(&crossing, &original, &modified);
+    let alignment = Alignment::new(crossing.clone(), &original, &modified);
 
     // Line 2 from column 1 to its end, line 3 from its start to column 6.
     let second = alignment.spans(Side::Original, 2);
@@ -101,7 +101,7 @@ fn a_span_ending_at_column_one_contributes_no_final_line() {
         moves: vec![],
         hit_timeout: false,
     };
-    let alignment = Alignment::new(&diff, &text, &text);
+    let alignment = Alignment::new(diff.clone(), &text, &text);
 
     assert_eq!(alignment.spans(Side::Original, 2).len(), 1);
     assert!(alignment.spans(Side::Original, 3).is_empty());
@@ -114,7 +114,7 @@ fn a_real_edit_reports_the_characters_that_changed() {
     let original = split("let timeout = 30;");
     let modified = split("let timeout = 45;");
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     let spans = alignment.spans(Side::Modified, 1);
     assert!(!spans.is_empty(), "an edited line must report a span");

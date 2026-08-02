@@ -22,7 +22,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
     let options = vscode_diff::Options::default().with_moves();
     let diff =
         vscode_diff::compute(&original, &modified, &options).context("computing the diff")?;
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff, &original, &modified);
 
     header(
         original_path,
@@ -39,7 +39,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
 ///
 /// Shared with `debug diff-file`, which finds its two sides through git rather
 /// than being handed them, but renders the result identically.
-pub fn print(alignment: &Alignment<'_>, verbose: bool) {
+pub fn print(alignment: &Alignment, verbose: bool) {
     for row in alignment.rows() {
         println!("{}", line(alignment, &row));
     }
@@ -53,7 +53,7 @@ fn header(
     modified_path: &str,
     original: &[&str],
     modified: &[&str],
-    alignment: &Alignment<'_>,
+    alignment: &Alignment,
 ) {
     println!("{}  ->  {}", visible(original_path), visible(modified_path));
     println!(
@@ -64,10 +64,10 @@ fn header(
     );
     println!(
         "{} change(s), {} move(s), {} hunk(s){}",
-        alignment.diff().changes.len(),
-        alignment.diff().moves.len(),
+        alignment.changes().len(),
+        alignment.moves().len(),
         alignment.hunks().len(),
-        if alignment.diff().hit_timeout {
+        if alignment.hit_timeout() {
             "  [TIMED OUT]"
         } else {
             ""
@@ -77,7 +77,7 @@ fn header(
 }
 
 /// One row: line number, marker and text for each side.
-fn line(alignment: &Alignment<'_>, row: &Row) -> String {
+fn line(alignment: &Alignment, row: &Row) -> String {
     let (left_mark, right_mark) = marks(row.kind);
     let body = format!(
         "{} {} {} │ {} {} {}",
@@ -97,7 +97,7 @@ fn line(alignment: &Alignment<'_>, row: &Row) -> String {
 ///
 /// Only on the row the block starts at. Repeating it down every line of a
 /// forty-line move says nothing new and buries the text.
-fn move_note(alignment: &Alignment<'_>, row: &Row) -> String {
+fn move_note(alignment: &Alignment, row: &Row) -> String {
     if let Some(n) = row.original.line()
         && let Some(moved) = alignment.moved(Side::Original, n)
         && moved.original.start_line == n
@@ -129,7 +129,7 @@ fn number(slot: Slot) -> String {
     }
 }
 
-fn side(alignment: &Alignment<'_>, side: Side, slot: Slot) -> String {
+fn side(alignment: &Alignment, side: Side, slot: Slot) -> String {
     match slot.line() {
         None => "╱".repeat(COLUMN as usize),
         Some(number) => fit(
@@ -140,7 +140,7 @@ fn side(alignment: &Alignment<'_>, side: Side, slot: Slot) -> String {
 }
 
 /// Everything the row grid cannot show.
-fn detail(alignment: &Alignment<'_>) {
+fn detail(alignment: &Alignment) {
     println!();
     println!("hunks");
     for hunk in alignment.hunks() {
@@ -203,10 +203,10 @@ fn detail(alignment: &Alignment<'_>) {
         );
     }
 
-    if !alignment.diff().moves.is_empty() {
+    if !alignment.moves().is_empty() {
         println!();
         println!("moves");
-        for moved in &alignment.diff().moves {
+        for moved in alignment.moves() {
             println!(
                 "  original {}..{}  ->  modified {}..{}",
                 moved.original.start_line,

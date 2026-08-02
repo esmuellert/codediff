@@ -121,30 +121,57 @@ fn a_binary_file_is_reported_rather_than_diffed() {
 }
 
 #[test]
-fn a_deleted_file_shows_every_line_as_gone() {
-    // The side that does not exist has *no* lines, and the engine cannot say
-    // that — it models an empty file as one empty line. Handled before the
-    // engine, or the file would report as modified with a phantom blank line.
+fn a_deleted_file_shows_what_was_removed_and_calls_it_deleted() {
+    // Not a diff at all. There is no "after" to compare against, so the file
+    // is simply printed — which is what the interface does too, in one pane.
+    // VSCode does the same, for the same reason. See D23.
     let fixture = Fixture::new("deleted");
     let out = fixture.run(&["debug", "diff-file", "deleted.txt"]);
 
     assert!(out.contains("after    absent"), "{out}");
-    assert!(out.contains("every line is gone"), "{out}");
-    assert!(out.contains("- goes away"), "{out}");
+    assert!(out.contains("deleted — showing what was removed"), "{out}");
+    assert!(out.contains("goes away"), "{out}");
     assert!(
-        !out.contains('~'),
-        "a one-sided file is not a modification:\n{out}"
+        !out.contains('╱') && !out.contains('~'),
+        "there is nothing to compare, so nothing is marked:\n{out}"
     );
 }
 
 #[test]
-fn an_untracked_file_shows_every_line_as_new() {
+fn an_untracked_file_shows_its_content_and_calls_it_added() {
     let fixture = Fixture::new("untracked");
     let out = fixture.run(&["debug", "diff-file", "untracked.txt"]);
 
     assert!(out.contains("before   absent"), "{out}");
-    assert!(out.contains("every line is new"), "{out}");
-    assert!(out.contains("+ never added"), "{out}");
+    assert!(
+        out.contains("added — no original to compare against"),
+        "{out}"
+    );
+    assert!(out.contains("never added"), "{out}");
+    assert!(
+        !out.contains('+') && !out.contains('-'),
+        "marking every line as added says nothing the word does not:\n{out}"
+    );
+}
+
+#[test]
+fn an_empty_file_is_still_compared_properly() {
+    // The distinction the whole thing turns on: a file that exists and is
+    // empty has a side to compare against, so it is a real two-sided diff. A
+    // file that does not exist has none. Both look like "no lines".
+    let fixture = Fixture::new("empty");
+    std::fs::write(fixture.dir.join("modified.txt"), "").expect("emptying a tracked file");
+    let out = fixture.run(&["debug", "diff-file", "modified.txt"]);
+
+    assert!(
+        out.contains("0 bytes of text"),
+        "present, not absent:\n{out}"
+    );
+    assert!(
+        !out.contains("added") && !out.contains("deleted"),
+        "an empty file was not added or deleted:\n{out}"
+    );
+    assert!(out.contains("row(s)"), "a real alignment was built:\n{out}");
 }
 
 #[test]
@@ -243,8 +270,11 @@ fn exit_codes_tell_misuse_apart_from_failure() {
 
     assert_eq!(code(&["debug", "status"]), Some(0));
     assert_eq!(code(&["debug", "align", "only-one-argument"]), Some(2));
-    assert_eq!(code(&["not-a-command"]), Some(2));
+    assert_eq!(code(&["--not-a-flag"]), Some(2));
     assert_eq!(code(&["debug", "diff-file", "no/such/file"]), Some(1));
+    // A bare word is a path now, not a subcommand, so a wrong one is a failure
+    // to find the file rather than a misuse of the command line.
+    assert_eq!(code(&["no/such/file"]), Some(1));
 }
 
 #[test]

@@ -52,12 +52,12 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 ///
 /// The alignment borrows the line vectors, so they have to outlive it here
 /// rather than being returned.
-fn for_each_pair(mut check: impl FnMut(&str, &Alignment<'_>)) {
+fn for_each_pair(mut check: impl FnMut(&str, &Alignment)) {
     for (name, original_text, modified_text) in PAIRS {
         let original = split(original_text);
         let modified = split(modified_text);
         let diff = compute(&original, &modified);
-        let alignment = Alignment::new(&diff, &original, &modified);
+        let alignment = Alignment::new(diff.clone(), &original, &modified);
         check(name, &alignment);
     }
 }
@@ -181,7 +181,7 @@ fn a_filler_never_sits_opposite_an_unchanged_line() {
 #[test]
 fn every_changed_line_belongs_to_exactly_one_hunk() {
     for_each_pair(|name, alignment| {
-        for change in &alignment.diff().changes {
+        for change in alignment.changes() {
             for line in change.original.start_line..change.original.end_line {
                 let owners = alignment
                     .hunks()
@@ -242,7 +242,7 @@ fn moves_are_found_by_line_number() {
     let original = split(original_text);
     let modified = split(modified_text);
     let diff = compute(&original, &modified);
-    let alignment = Alignment::new(&diff, &original, &modified);
+    let alignment = Alignment::new(diff.clone(), &original, &modified);
 
     let moved = diff.moves.first().expect("this fixture has a move");
     assert!(
@@ -276,7 +276,7 @@ fn the_engine_never_produces_a_malformed_diff() {
         let modified = split(modified_text);
         let diff = compute(&original, &modified);
         assert!(
-            Alignment::try_new(&diff, &original, &modified).is_ok(),
+            Alignment::try_new(diff.clone(), &original, &modified).is_ok(),
             "{name}: the engine produced a diff align refuses"
         );
     }

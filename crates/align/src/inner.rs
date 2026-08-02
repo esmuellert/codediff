@@ -8,8 +8,8 @@
 //! Columns are UTF-16 code units, one-based and end-exclusive. Rust needs byte
 //! offsets, so every span goes through [`line_index`].
 
+use diff_types::CharRange;
 use line_index::{DEFAULT_TAB_WIDTH, LineIndex, Utf16Col};
-use vscode_diff::CharRange;
 
 /// A run of changed characters within one line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,11 +25,15 @@ pub struct Span {
 /// Empty spans are dropped. An inner change can be a bare position — an
 /// insertion point carries `C1-C1` — and there is no such thing as
 /// highlighting zero characters.
-pub fn spans(range: &CharRange, lines: &[&str]) -> Vec<Span> {
+pub fn spans<S: AsRef<str>>(range: &CharRange, lines: &[S]) -> Vec<Span> {
     spans_with_tab_width(range, lines, DEFAULT_TAB_WIDTH)
 }
 
-pub fn spans_with_tab_width(range: &CharRange, lines: &[&str], tab_width: u8) -> Vec<Span> {
+pub fn spans_with_tab_width<S: AsRef<str>>(
+    range: &CharRange,
+    lines: &[S],
+    tab_width: u8,
+) -> Vec<Span> {
     (range.start_line..=range.end_line)
         .filter_map(|line| span_on(range, line, lines, tab_width))
         .collect()
@@ -39,11 +43,16 @@ pub fn spans_with_tab_width(range: &CharRange, lines: &[&str], tab_width: u8) ->
 ///
 /// Split out so a caller asking about a single line does not pay to expand
 /// every other line the range touches.
-pub fn span_on(range: &CharRange, line: u32, lines: &[&str], tab_width: u8) -> Option<Span> {
+pub fn span_on<S: AsRef<str>>(
+    range: &CharRange,
+    line: u32,
+    lines: &[S],
+    tab_width: u8,
+) -> Option<Span> {
     if line < range.start_line || line > range.end_line {
         return None;
     }
-    let text = lines.get(line.checked_sub(1)? as usize)?;
+    let text = lines.get(line.checked_sub(1)? as usize)?.as_ref();
     let index = LineIndex::new(text, tab_width);
 
     // The first line starts where the range does, later lines at column 0; the

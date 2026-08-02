@@ -11,11 +11,12 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-vscode-diff.workspace = true
+diff-types.workspace = true
 line-index.workspace = true
 
 [dev-dependencies]
 proptest = "1"
+vscode-diff.workspace = true
 
 [lints]
 workspace = true

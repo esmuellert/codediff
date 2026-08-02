@@ -9,7 +9,7 @@
 
 use vscode_diff_sys as sys;
 
-use crate::types::{
+use diff_types::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, MovedText, RangeMapping,
 };
 

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use vscode_diff::{DetailedLineRangeMapping, LineRange, LinesDiff};
+use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff};
 
 /// Unchanged lines allowed inside one hunk before it splits in two.
 pub const DEFAULT_CONTEXT: u32 = 3;
@@ -31,7 +31,12 @@ pub struct Hunk {
 ///
 /// Two changes separated by more than `context` unchanged lines are read as
 /// separate edits and get separate hunks.
-pub fn hunks(diff: &LinesDiff, original: &[&str], modified: &[&str], context: u32) -> Vec<Hunk> {
+pub fn hunks<S: AsRef<str>>(
+    diff: &LinesDiff,
+    original: &[S],
+    modified: &[S],
+    context: u32,
+) -> Vec<Hunk> {
     let mut out = Vec::new();
     // How many hunks with identical text have been seen already, so that two
     // of them can be told apart. See `identity`.
@@ -63,11 +68,11 @@ fn gap(previous: &DetailedLineRangeMapping, next: &DetailedLineRangeMapping) -> 
         .saturating_sub(previous.original.end_line)
 }
 
-fn build(
+fn build<S: AsRef<str>>(
     diff: &LinesDiff,
     changes: std::ops::Range<usize>,
-    original: &[&str],
-    modified: &[&str],
+    original: &[S],
+    modified: &[S],
     occurrences: &mut HashMap<u64, u32>,
 ) -> Hunk {
     let group = &diff.changes[changes.clone()];
@@ -107,22 +112,22 @@ fn build(
 /// hashes identically both times, and one review mark would then cover both, so
 /// the number of identical hunks seen so far is mixed in. Ids stay independent
 /// of line numbers while becoming distinct within a file.
-fn identity(
+fn identity<S: AsRef<str>>(
     original: LineRange,
     modified: LineRange,
-    original_lines: &[&str],
-    modified_lines: &[&str],
+    original_lines: &[S],
+    modified_lines: &[S],
     occurrences: &mut HashMap<u64, u32>,
 ) -> HunkId {
     let mut hash = FNV_OFFSET;
     for text in slice(original_lines, original) {
-        hash = fnv1a(text.as_bytes(), hash);
+        hash = fnv1a(text.as_ref().as_bytes(), hash);
         // Without a separator, ["ab", "c"] and ["a", "bc"] hash alike.
         hash = fnv1a(&[0xff], hash);
     }
     hash = fnv1a(&[0xfe], hash);
     for text in slice(modified_lines, modified) {
-        hash = fnv1a(text.as_bytes(), hash);
+        hash = fnv1a(text.as_ref().as_bytes(), hash);
         hash = fnv1a(&[0xff], hash);
     }
 
@@ -132,7 +137,7 @@ fn identity(
     HunkId(id)
 }
 
-fn slice<'a>(lines: &'a [&'a str], range: LineRange) -> &'a [&'a str] {
+fn slice<S>(lines: &[S], range: LineRange) -> &[S] {
     let start = range.start_line.saturating_sub(1) as usize;
     let end = range.end_line.saturating_sub(1) as usize;
     let start = start.min(lines.len());

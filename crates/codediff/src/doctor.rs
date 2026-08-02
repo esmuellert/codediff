@@ -5,9 +5,8 @@
 //! call through the C ABI. And it is the thing to ask for in a bug report, so
 //! that "which build, which engine, which compiler" never costs a round trip.
 //!
-//! Environment checks arrive with the subsystems they test — git at S5, the
-//! terminal at S7, the watcher at S15, configuration at S17. Until then this
-//! reports build facts only, and is labelled as such.
+//! Environment checks arrive with the subsystems they test — the watcher at
+//! S15, configuration at S17.
 
 pub fn run() {
     println!("codediff {}", env!("CARGO_PKG_VERSION"));
@@ -26,4 +25,24 @@ pub fn run() {
     println!("  target        {}", env!("CODEDIFF_TARGET"));
     println!("  profile       {}", env!("CODEDIFF_PROFILE"));
     println!("  rustc         {}", env!("CODEDIFF_RUSTC"));
+    println!();
+    terminal();
+}
+
+/// What the interface would look like if it were opened right now.
+///
+/// The first question a "my colours are wrong" report has to answer, and one
+/// nobody can answer by looking: whether the terminal advertised 24-bit colour
+/// decides which theme is chosen, and the variable that says so is easy to
+/// lose across `sudo`, `ssh` and `tmux`.
+fn terminal() {
+    let show = |key: &str| std::env::var(key).unwrap_or_else(|_| "unset".to_owned());
+    println!("terminal");
+    println!("  TERM          {}", show("TERM"));
+    println!("  COLORTERM     {}", show("COLORTERM"));
+    println!("  COLORFGBG     {}", show("COLORFGBG"));
+    println!(
+        "  theme         {} (default)",
+        ui::Theme::from_environment().name
+    );
 }

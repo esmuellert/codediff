@@ -1,0 +1,115 @@
+//! Building a session, and reading the screen back out.
+//!
+//! Shared by every test that draws. Here rather than in `ui` because
+//! making a diff buffer means computing a diff, and `ui` is forbidden
+//! from depending on the crate that does — see `cargo xtask lint-arch`. The
+//! composition root is the one place allowed to name every layer.
+//!
+//! An [`Alignment`] owns its two files, so these helpers return a buffer
+//! outright and there is no borrow to keep alive at the call site. Before it
+//! owned them, every one of these functions would have needed a lifetime, and
+//! so would every local holding the result. See D27.
+//!
+//! [`Alignment`]: align::Alignment
+
+#![allow(dead_code)]
+
+use ui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use ui::ratatui::Terminal;
+use ui::ratatui::backend::TestBackend;
+use ui::ratatui::buffer::Buffer as Cells;
+use ui::{Buffer, Diff, Session, SideBySide, Text, Theme};
+
+/// A side-by-side buffer over two texts.
+pub fn diff(label: &str, before: &str, after: &str) -> Buffer {
+    let original = vscode_diff::lines(before);
+    let modified = vscode_diff::lines(after);
+    let computed = vscode_diff::compute(&original, &modified, &vscode_diff::Options::default())
+        .expect("the engine runs");
+    with_diff(label, before, after, computed)
+}
+
+/// A side-by-side buffer over a diff the caller made, for the cases a real
+/// engine run cannot produce — an abandoned diff, say.
+pub fn with_diff(
+    label: &str,
+    before: &str,
+    after: &str,
+    computed: vscode_diff::LinesDiff,
+) -> Buffer {
+    let original = vscode_diff::lines(before);
+    let modified = vscode_diff::lines(after);
+    let alignment = align::Alignment::new(computed, &original, &modified);
+    Buffer::SideBySide(SideBySide::new(Diff::new(label.into(), alignment)))
+}
+
+/// A buffer for a file with nothing to compare against.
+pub fn text(label: &str, contents: &str) -> Buffer {
+    Buffer::Text(Text::new(label.into(), &vscode_diff::lines(contents)))
+}
+
+/// A session over a side-by-side buffer, in the default dark theme.
+pub fn session(label: &str, before: &str, after: &str) -> Session {
+    Session::new(diff(label, before, after), Theme::DARK)
+}
+
+/// The screen as a grid of cells, for asserting colours.
+pub fn cells(session: &mut Session, width: u16, height: u16) -> Cells {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("in-memory terminal");
+    session.draw(&mut terminal).expect("draws");
+    terminal.backend().buffer().clone()
+}
+
+/// The screen as text, one line per row.
+pub fn screen(session: &mut Session, width: u16, height: u16) -> String {
+    let cells = cells(session, width, height);
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| cells[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn key(code: KeyCode) -> Event {
+    Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+}
+
+/// Types a line of keys. `\x1b` is escape; everything else is that character.
+pub fn type_keys(session: &mut Session, keys: &str) -> ui::Flow {
+    let mut flow = ui::Flow::Continue;
+    for c in keys.chars() {
+        let code = match c {
+            '\u{1b}' => KeyCode::Esc,
+            other => KeyCode::Char(other),
+        };
+        // Shift is how a terminal reports a capital, and the table is written
+        // in that form; without it `G` would never match.
+        let modifiers = if c.is_ascii_uppercase() {
+            KeyModifiers::SHIFT
+        } else {
+            KeyModifiers::NONE
+        };
+        flow = session.handle(&Event::Key(KeyEvent::new(code, modifiers)));
+    }
+    flow
+}
+
+/// Gives the session a height, which page motions and scrolling need.
+///
+/// A viewport learns its height from a frame rather than from an event, so a
+/// test that never drew would page by nothing at all.
+pub fn measure(session: &mut Session) {
+    let mut terminal = Terminal::new(TestBackend::new(60, 12)).expect("in-memory terminal");
+    session.draw(&mut terminal).expect("draws");
+}
+
+/// The grid column a character sits in, rather than its byte offset.
+///
+/// `╱` and `│` are three bytes each, so byte offsets would be wrong in exactly
+/// the rows these tests care about.
+pub fn column_of(row: &str, wanted: char) -> Option<usize> {
+    row.chars().position(|c| c == wanted)
+}

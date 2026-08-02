@@ -111,7 +111,7 @@ because Make and Lua had no way to express them. That is the real point:
 > **xtask is where the rules in this plan stop being prose and become build failures.**
 
 Cargo enforces exactly one architectural rule for free (acyclic crate dependencies).
-Everything else — `display` must not reach `vcs`, pure crates must declare no IO, files stay
+Everything else — `ui` must not reach `vcs`, pure crates must declare no IO, files stay
 under the size cap, the vendored C must match its pinned tag — is project-specific, and
 therefore has to be encoded somewhere. That somewhere is `xtask`.
 
@@ -181,7 +181,7 @@ the toolchain rather than competing with it.
 | per-function logic | unit | `cargo test` | µs | one function or type |
 | `line-index` conversions | unit + property | `proptest` | ms | invariants over generated input |
 | `align` golden output | integration | std, `UPDATE_GOLDEN=1` | ms | `debug align` output unchanged, and each column still reads back as its file |
-| `display` screens | integration | `insta` + `TestBackend` | ms | rendered cell grid unchanged |
+| `ui` screens | integration | `insta` + `TestBackend` | ms | rendered cell grid unchanged |
 | `vcs` against git | integration | `cargo test -p vcs` | ~100 ms | real git behaviour, via fixture repos |
 | **`runtime` state machine** | integration | `cargo test -p runtime` | ms | `Vec<Event>` → `AppState` + emitted `Command`s |
 | replay scripts | e2e | `cargo test --test e2e` | seconds | the real binary, fully wired |
@@ -274,14 +274,30 @@ checklist and every box is ticked.
 Checklists are committed. When a milestone's behaviour legitimately changes later, the
 checklist is updated in the same change.
 
+### A pty makes most of the "manual" terminal checks automatic
+
+`TestBackend` renders frames but never touches a terminal, so it cannot see the one failure
+that matters most: a program that exits leaving raw mode on and the cursor hidden, which
+takes a `reset` typed blind to recover from.
+
+`portable-pty` allocates a real terminal, runs the built binary on it, sends keystrokes and
+reads back every byte written — including the escape sequences, which are only emitted when
+stdout *is* a terminal. So `crates/codediff/tests/terminal.rs` can assert that the
+alternate screen is entered and left the same number of times, that the cursor is shown
+again, that a panic message lands **after** the restore rather than on the screen about to
+be discarded, and that `Ctrl-Z` stops the process with the terminal handed back while
+`SIGCONT` brings it back and repaints in full.
+
+That last one found a real bug: `Terminal::clear` round-trips to the terminal to read the
+cursor position back, and the reply can be swallowed by anything else reading the same
+stream.
+
 ## 7. Manual TUI checks that cannot be automated
 
-A short standing list, re-run at every TUI milestone:
+What is left after the pty covers the rest — all of it about how it *looks*, which is the
+one thing no assertion settles:
 
-- `q` exits and leaves the terminal usable — prompt intact, cursor visible, no alt-screen
-  residue
-- `codediff --self-panic` panics and **still** restores the terminal
-- resizing the terminal during use never corrupts the display
-- `Ctrl-Z` suspend and `fg` resume works
 - running over SSH in a 256-colour terminal degrades sensibly
 - holding a motion key stays smooth and never blocks
+- the colours are legible against the reader's actual terminal background
+- wide characters, combining marks and tabs line up on a real font
