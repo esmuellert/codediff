@@ -1,48 +1,13 @@
 //! Turning file content into something safe to print.
 //!
-//! Shared by every `debug` subcommand. A terminal has one input stream and no
-//! way to tell text apart from commands, so anything read out of a file under
-//! review is neutralised before it reaches the screen — otherwise the file
-//! decides what the reviewer sees.
+//! Shared by every `debug` subcommand. The substitution itself lives in
+//! `line-index`, beside the code that measures those characters as one column,
+//! so the two cannot disagree; what is here is the padding and fitting that
+//! only a text-mode command needs.
 
 use line_index::{DEFAULT_TAB_WIDTH, LineIndex};
 
-/// Text with anything the terminal would act on replaced by a printable
-/// stand-in of the same width.
-pub fn visible(text: &str) -> String {
-    if !text.chars().any(is_dangerous) {
-        return text.to_owned();
-    }
-    text.chars().map(picture).collect()
-}
-
-/// Characters a file must not be allowed to send to the terminal showing it.
-///
-/// Two families, for the same reason: both let a file decide what the reviewer
-/// sees rather than what it contains.
-///
-/// - **Control characters.** `ESC` starts a sequence the terminal *obeys* —
-///   recolour, move the cursor, erase what is already drawn.
-/// - **Bidirectional formatting.** `U+202E RIGHT-TO-LEFT OVERRIDE` and the
-///   isolates reorder a line on screen, so it reads as something other than
-///   what it executes. This is the Trojan Source attack, and `char::is_control`
-///   does not cover it: those are format characters, category `Cf`, not `Cc`.
-fn is_dangerous(c: char) -> bool {
-    c.is_control() || line_index::is_bidi_control(c)
-}
-
-fn picture(c: char) -> char {
-    match c {
-        // Unicode Control Pictures: U+2400 draws U+0000, U+2401 draws U+0001,
-        // and so on through the C0 range.
-        '\u{0}'..='\u{1f}' => char::from_u32(0x2400 + c as u32).unwrap_or('\u{fffd}'),
-        '\u{7f}' => '\u{2421}', // DEL has its own picture
-        // Neither the C1 controls nor the bidi characters have a picture, and
-        // both must occupy a column so the ruler still lines up.
-        c if is_dangerous(c) => '\u{fffd}',
-        c => c,
-    }
-}
+pub use line_index::visible;
 
 /// Tabs replaced by the spaces they expand to, and controls by their picture.
 ///
