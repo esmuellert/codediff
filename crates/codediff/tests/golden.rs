@@ -173,7 +173,7 @@ fn parse(line: &str) -> Option<Row> {
 
 fn check_column(
     pair: &str,
-    side: &str,
+    version: &str,
     rows: &[Row],
     pick: impl Fn(&Row) -> (Option<u32>, &String),
     file: &str,
@@ -186,13 +186,13 @@ fn check_column(
         let Some(number) = number else {
             assert!(
                 shown.chars().all(|c| c == '\u{2571}'),
-                "{pair}/{side}: a row with no line number should be filler, got {shown:?}"
+                "{pair}/{version}: a row with no line number should be filler, got {shown:?}"
             );
             continue;
         };
         assert_eq!(
             number, next,
-            "{pair}/{side}: line numbers jumped to {number}"
+            "{pair}/{version}: line numbers jumped to {number}"
         );
         next += 1;
 
@@ -202,12 +202,12 @@ fn check_column(
         match shown.strip_suffix('\u{2026}') {
             Some(prefix) => assert!(
                 want.starts_with(prefix),
-                "{pair}/{side}: line {number} was clipped to {prefix:?}, which is not a prefix of {want:?}"
+                "{pair}/{version}: line {number} was clipped to {prefix:?}, which is not a prefix of {want:?}"
             ),
             None => assert_eq!(
                 shown.as_str(),
                 want.trim_end(),
-                "{pair}/{side}: line {number} does not match the file"
+                "{pair}/{version}: line {number} does not match the file"
             ),
         }
     }
@@ -215,7 +215,7 @@ fn check_column(
     assert_eq!(
         next as usize - 1,
         expected.len(),
-        "{pair}/{side}: rendered {} lines, the file has {}",
+        "{pair}/{version}: rendered {} lines, the file has {}",
         next - 1,
         expected.len()
     );

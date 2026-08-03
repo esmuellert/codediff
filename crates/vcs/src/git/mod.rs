@@ -14,9 +14,10 @@ pub mod worktree;
 
 use std::path::Path;
 
-use crate::diff::{Content, Diff, DiffKind, FileDiff};
+use crate::Repo;
 use crate::error::Result;
-use crate::{RelPath, Repo};
+use file_types::{ChangeType, ChangedFile};
+use file_types::{File, FileContent, RepoPath};
 
 pub use status::{Code, Entry, Oid, Untracked, Xy};
 
@@ -64,7 +65,7 @@ impl Git {
     ///
     /// Runs `git --no-optional-locks status --porcelain=v2 -z`. Available for
     /// anything that genuinely needs git's staging state, which the neutral
-    /// [`FileDiff`] deliberately does not carry.
+    /// [`ChangedFile`] deliberately does not carry.
     pub fn entries(&self) -> Result<Vec<Entry>> {
         let out = run::run(
             &self.repo.root,
@@ -87,7 +88,7 @@ impl Git {
     /// of a *changed* file, which is all a reviewer needs; this is here for
     /// comparisons the trait does not describe, such as one revision against
     /// another. `None` when the object does not exist.
-    pub fn cat_file(&mut self, rev: &str, path: &RelPath) -> Result<Option<Vec<u8>>> {
+    pub fn cat_file(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
         self.blobs()?.read(rev, path)
     }
 
@@ -104,33 +105,55 @@ impl Git {
     }
 }
 
-impl Diff for Git {
-    fn repo(&self) -> &Repo {
+/// What a reviewer needs from git.
+///
+/// There is no trait here. The contract a backend must meet is the *types*:
+/// everything below returns `file-types` values, and `cargo xtask lint-arch`
+/// forbids `file-types` from naming `vcs`, so no git concept can reach them.
+/// A second backend hits the same target by returning the same types, and the
+/// pipeline that calls these methods is what checks it did. See D30.
+impl Git {
+    /// Where the repository is.
+    pub fn repo(&self) -> &Repo {
         &self.repo
     }
 
-    fn files(&mut self) -> Result<Vec<FileDiff>> {
-        Ok(self.entries()?.into_iter().map(to_file_diff).collect())
+    /// Every file that differs between the two sides.
+    pub fn files(&mut self) -> Result<Vec<ChangedFile>> {
+        let root = self.repo.root.clone();
+        Ok(self
+            .entries()?
+            .into_iter()
+            .map(|entry| to_file_diff(entry, &root))
+            .collect())
     }
 
-    fn before(&mut self, file: &FileDiff) -> Result<Content> {
+    /// The file's content before the change.
+    ///
+    /// Takes the whole [`ChangedFile`] rather than a path so that a move reads
+    /// its old path without the caller having to know that rule. Returns
+    /// [`FileContent`] rather than bytes because a repository holds pictures as
+    /// readily as source, and every caller would otherwise have to work that
+    /// out for itself.
+    pub fn before(&mut self, file: &ChangedFile) -> Result<FileContent> {
         // An untracked file has no before side at all, and asking git for one
         // would spend a round trip to be told so.
-        if file.kind == DiffKind::Untracked || file.kind == DiffKind::Added {
-            return Ok(Content::Absent);
+        if file.change() == ChangeType::Untracked || file.change() == ChangeType::Added {
+            return Ok(FileContent::Absent);
         }
         let rev = self.before.clone();
         let path = file.before_path().clone();
-        Ok(Content::of(self.blobs()?.read(&rev, &path)?))
+        Ok(FileContent::of(self.blobs()?.read(&rev, &path)?))
     }
 
-    fn after(&mut self, file: &FileDiff) -> Result<Content> {
-        if file.kind == DiffKind::Deleted {
-            return Ok(Content::Absent);
+    /// The file's content after the change.
+    pub fn after(&mut self, file: &ChangedFile) -> Result<FileContent> {
+        if file.change() == ChangeType::Deleted {
+            return Ok(FileContent::Absent);
         }
         // The after side of the default comparison is the working tree, which
         // is on disk rather than in the object store.
-        Ok(Content::of(worktree::read(&self.repo.root, &file.path)?))
+        Ok(FileContent::of(worktree::read(file.path())?))
     }
 }
 
@@ -141,26 +164,39 @@ impl Diff for Git {
 /// reviewer looking at "what changed since the last commit" wants one answer.
 /// The index code wins where they differ, since it is the one that describes
 /// the file's relationship to `HEAD`.
-pub fn to_file_diff(entry: Entry) -> FileDiff {
-    let kind = match (entry.xy.index, entry.xy.worktree) {
+pub fn to_file_diff(entry: Entry, root: &std::path::Path) -> ChangedFile {
+    let change = match (entry.xy.index, entry.xy.worktree) {
         // Unresolved merges first: nothing else about the codes matters.
-        (Code::Unmerged, _) | (_, Code::Unmerged) => DiffKind::Conflicted,
-        (_, Code::Untracked) => DiffKind::Untracked,
-        (_, Code::Ignored) => DiffKind::Untracked,
-        (Code::Renamed | Code::Copied, _) => DiffKind::Moved,
-        (Code::Added, _) => DiffKind::Added,
+        (Code::Unmerged, _) | (_, Code::Unmerged) => ChangeType::Conflicted,
+        (_, Code::Untracked) => ChangeType::Untracked,
+        (_, Code::Ignored) => ChangeType::Untracked,
+        (Code::Renamed | Code::Copied, _) => ChangeType::Moved,
+        (Code::Added, _) => ChangeType::Added,
         // Deleted in the index but present on disk is a file staged for
         // deletion and then rewritten — the content differs from HEAD, so it
         // reads as a modification.
-        (Code::Deleted, Code::Unmodified) => DiffKind::Deleted,
-        (_, Code::Deleted) => DiffKind::Deleted,
-        _ => DiffKind::Modified,
+        (Code::Deleted, Code::Unmodified) => ChangeType::Deleted,
+        (_, Code::Deleted) => ChangeType::Deleted,
+        _ => ChangeType::Modified,
     };
 
-    FileDiff {
-        path: entry.path,
-        previous_path: entry.original,
-        kind,
-        similarity: entry.score,
+    // The one place a path gains its absolute form, because this is the first
+    // place that has both git's spelling and the root. Which versions exist is
+    // recorded here, in the paths themselves — `File`'s pair *is* that fact,
+    // and `ChangedFile` stores nothing that could contradict it.
+    let path = RepoPath::new(entry.path, root);
+    let file = match (change, entry.original) {
+        (ChangeType::Added | ChangeType::Untracked, _) => File::added(path),
+        (ChangeType::Deleted, _) => File::deleted(path),
+        (_, Some(previous)) => File::renamed(RepoPath::new(previous, root), path),
+        (_, None) => File::unchanged_path(path),
+    };
+
+    // Only the two the paths cannot express are carried; the rest is read back
+    // off `file`, so `Added` and `Moved` have exactly one source.
+    if change.needs_a_backend() {
+        ChangedFile::reported(file, change)
+    } else {
+        ChangedFile::new(file, entry.score)
     }
 }

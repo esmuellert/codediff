@@ -13,7 +13,7 @@ mod inner;
 mod region;
 mod row;
 
-pub use alignment::{Alignment, Malformed, Side};
+pub use alignment::{Alignment, DiffVersion, Malformed};
 pub use hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 pub use inner::{Span, span_on, spans, spans_with_tab_width};
 pub use region::{UnchangedRegion, regions};

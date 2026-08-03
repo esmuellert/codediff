@@ -4,7 +4,7 @@
 //! on one line and finish on another. These are hand-built rather than taken
 //! from the engine, so the awkward shapes are actually reachable.
 
-use align::{Alignment, Side};
+use align::{Alignment, DiffVersion};
 use vscode_diff::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, Options, RangeMapping,
 };
@@ -54,14 +54,14 @@ fn a_span_crossing_a_line_boundary_covers_each_line_correctly() {
     let alignment = Alignment::new(crossing.clone(), &original, &modified);
 
     // Line 2 from column 1 to its end, line 3 from its start to column 6.
-    let second = alignment.spans(Side::Original, 2);
+    let second = alignment.spans(DiffVersion::Original, 2);
     assert_eq!(second.len(), 1);
     assert_eq!(
         &original[1][second[0].bytes.start as usize..second[0].bytes.end as usize],
         "alpha"
     );
 
-    let third = alignment.spans(Side::Original, 3);
+    let third = alignment.spans(DiffVersion::Original, 3);
     assert_eq!(third.len(), 1);
     assert_eq!(
         &original[2][third[0].bytes.start as usize..third[0].bytes.end as usize],
@@ -103,8 +103,8 @@ fn a_span_ending_at_column_one_contributes_no_final_line() {
     };
     let alignment = Alignment::new(diff.clone(), &text, &text);
 
-    assert_eq!(alignment.spans(Side::Original, 2).len(), 1);
-    assert!(alignment.spans(Side::Original, 3).is_empty());
+    assert_eq!(alignment.spans(DiffVersion::Original, 2).len(), 1);
+    assert!(alignment.spans(DiffVersion::Original, 3).is_empty());
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn a_real_edit_reports_the_characters_that_changed() {
     let diff = compute(&original, &modified);
     let alignment = Alignment::new(diff.clone(), &original, &modified);
 
-    let spans = alignment.spans(Side::Modified, 1);
+    let spans = alignment.spans(DiffVersion::Modified, 1);
     assert!(!spans.is_empty(), "an edited line must report a span");
     let covered: String = spans
         .iter()

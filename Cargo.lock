@@ -16,6 +16,7 @@ name = "align"
 version = "0.7.0"
 dependencies = [
  "diff-types",
+ "file-types",
  "line-index",
  "proptest",
  "vscode-diff",
@@ -266,6 +267,7 @@ dependencies = [
  "align",
  "anyhow",
  "clap",
+ "file-types",
  "fixtures",
  "line-index",
  "portable-pty",
@@ -539,6 +541,10 @@ name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+
+[[package]]
+name = "file-types"
+version = "0.7.0"
 
 [[package]]
 name = "filedescriptor"
@@ -1886,6 +1892,7 @@ dependencies = [
  "crokey",
  "crossterm",
  "diff-types",
+ "file-types",
  "line-index",
  "ratatui",
  "signal-hook",
@@ -1949,6 +1956,7 @@ dependencies = [
 name = "vcs"
 version = "0.7.0"
 dependencies = [
+ "file-types",
  "fixtures",
 ]
 
@@ -1963,6 +1971,7 @@ name = "vscode-diff"
 version = "0.7.0"
 dependencies = [
  "diff-types",
+ "file-types",
  "vscode-diff-sys",
 ]
 

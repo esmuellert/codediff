@@ -1,12 +1,16 @@
-//! A file's content, once we know what it is.
+//! What one version of a file holds.
 //!
 //! A repository holds pictures as readily as source, so raw bytes are not
 //! something a caller can use. Classifying them here means every caller does
 //! not have to — and every caller would otherwise write the same check.
 
-/// A file's content, once we know whether it is text.
+/// What one version of a file holds, once we know whether it is text.
+///
+/// `Text` here means *not binary*, which is the only question this type
+/// answers. It is unrelated to how a file is shown — that is a `ui::Buffer`,
+/// and the two used to share the word.
 #[derive(Debug)]
-pub enum Content {
+pub enum FileContent {
     Text(String),
     /// Not diffable. Carried rather than discarded so the size can be shown.
     Binary {
@@ -16,21 +20,21 @@ pub enum Content {
     Absent,
 }
 
-impl Content {
+impl FileContent {
     /// Classifies raw bytes.
-    pub(crate) fn of(bytes: Option<Vec<u8>>) -> Self {
+    pub fn of(bytes: Option<Vec<u8>>) -> Self {
         let Some(bytes) = bytes else {
-            return Content::Absent;
+            return FileContent::Absent;
         };
         if is_binary(&bytes) {
-            return Content::Binary { bytes: bytes.len() };
+            return FileContent::Binary { bytes: bytes.len() };
         }
         match String::from_utf8(bytes) {
-            Ok(text) => Content::Text(text),
+            Ok(text) => FileContent::Text(text),
             // Valid UTF-8 is what `&str` requires and what the engine measures
             // columns in. Bytes that are neither NUL-containing nor decodable
             // are rare, and treating them as binary is honest.
-            Err(e) => Content::Binary {
+            Err(e) => FileContent::Binary {
                 bytes: e.into_bytes().len(),
             },
         }
@@ -38,7 +42,7 @@ impl Content {
 
     pub fn text(&self) -> Option<&str> {
         match self {
-            Content::Text(text) => Some(text),
+            FileContent::Text(text) => Some(text),
             _ => None,
         }
     }
@@ -52,14 +56,14 @@ impl Content {
     }
 
     pub fn is_binary(&self) -> bool {
-        matches!(self, Content::Binary { .. })
+        matches!(self, FileContent::Binary { .. })
     }
 
     pub fn describe(&self) -> String {
         match self {
-            Content::Text(text) => format!("{} bytes of text", text.len()),
-            Content::Binary { bytes } => format!("{bytes} bytes, binary"),
-            Content::Absent => "absent".to_owned(),
+            FileContent::Text(text) => format!("{} bytes of text", text.len()),
+            FileContent::Binary { bytes } => format!("{bytes} bytes, binary"),
+            FileContent::Absent => "absent".to_owned(),
         }
     }
 }
@@ -78,8 +82,8 @@ mod tests {
 
     #[test]
     fn a_zero_byte_means_binary() {
-        assert!(Content::of(Some(vec![0x89, b'P', b'N', b'G', 0])).is_binary());
-        assert!(!Content::of(Some(b"fn main() {}".to_vec())).is_binary());
+        assert!(FileContent::of(Some(vec![0x89, b'P', b'N', b'G', 0])).is_binary());
+        assert!(!FileContent::of(Some(b"fn main() {}".to_vec())).is_binary());
     }
 
     #[test]
@@ -88,19 +92,19 @@ mod tests {
         // first kilobyte is text for our purposes.
         let mut bytes = vec![b'a'; 9000];
         bytes.push(0);
-        assert!(!Content::of(Some(bytes)).is_binary());
+        assert!(!FileContent::of(Some(bytes)).is_binary());
     }
 
     #[test]
     fn bytes_that_are_not_utf8_are_treated_as_binary() {
-        assert!(Content::of(Some(vec![0xff, 0xfe, 0xfd])).is_binary());
+        assert!(FileContent::of(Some(vec![0xff, 0xfe, 0xfd])).is_binary());
     }
 
     #[test]
     fn a_missing_side_is_absent_rather_than_empty() {
         // Absent and empty are different: one file was added, the other was
         // always blank.
-        assert!(matches!(Content::of(None), Content::Absent));
-        assert_eq!(Content::of(None).or_empty(), "");
+        assert!(matches!(FileContent::of(None), FileContent::Absent));
+        assert_eq!(FileContent::of(None).or_empty(), "");
     }
 }

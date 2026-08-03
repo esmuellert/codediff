@@ -4,7 +4,7 @@
 //! the left column must read as exactly the original file and the right as
 //! exactly the modified one, which a human can confirm by looking.
 
-use ::align::{Alignment, Row, RowKind, Side, Slot};
+use ::align::{Alignment, DiffVersion, Row, RowKind, Slot};
 use anyhow::{Context, Result};
 
 use crate::text::{expand_str, fit, pad, visible};
@@ -83,10 +83,13 @@ fn line(alignment: &Alignment, row: &Row) -> String {
         "{} {} {} │ {} {} {}",
         number(row.original),
         left_mark,
-        side(alignment, Side::Original, row.original),
+        cell(alignment, DiffVersion::Original, row.original),
         number(row.modified),
         right_mark,
-        pad(&side(alignment, Side::Modified, row.modified), COLUMN),
+        pad(
+            &cell(alignment, DiffVersion::Modified, row.modified),
+            COLUMN
+        ),
     );
     format!("{body}{}", move_note(alignment, row))
         .trim_end()
@@ -99,13 +102,13 @@ fn line(alignment: &Alignment, row: &Row) -> String {
 /// forty-line move says nothing new and buries the text.
 fn move_note(alignment: &Alignment, row: &Row) -> String {
     if let Some(n) = row.original.line()
-        && let Some(moved) = alignment.moved(Side::Original, n)
+        && let Some(moved) = alignment.moved(DiffVersion::Original, n)
         && moved.original.start_line == n
     {
         return format!("   ↓ moved to modified {}", moved.modified.start_line);
     }
     if let Some(n) = row.modified.line()
-        && let Some(moved) = alignment.moved(Side::Modified, n)
+        && let Some(moved) = alignment.moved(DiffVersion::Modified, n)
         && moved.modified.start_line == n
     {
         return format!("   ↑ moved from original {}", moved.original.start_line);
@@ -129,11 +132,12 @@ fn number(slot: Slot) -> String {
     }
 }
 
-fn side(alignment: &Alignment, side: Side, slot: Slot) -> String {
+/// One version's cell on one row: its text, or fillers where it has no line.
+fn cell(alignment: &Alignment, version: DiffVersion, slot: Slot) -> String {
     match slot.line() {
         None => "╱".repeat(COLUMN as usize),
         Some(number) => fit(
-            &expand_str(alignment.line(side, number).unwrap_or_default()),
+            &expand_str(alignment.line(version, number).unwrap_or_default()),
             COLUMN,
         ),
     }
@@ -162,20 +166,20 @@ fn detail(alignment: &Alignment) {
         if row.kind != RowKind::Modified {
             continue;
         }
-        for (side, slot) in [
-            (Side::Original, row.original),
-            (Side::Modified, row.modified),
+        for (version, slot) in [
+            (DiffVersion::Original, row.original),
+            (DiffVersion::Modified, row.modified),
         ] {
             let Some(number) = slot.line() else { continue };
-            for span in alignment.spans(side, number) {
+            for span in alignment.spans(version, number) {
                 any = true;
-                let text = alignment.line(side, number).unwrap_or_default();
+                let text = alignment.line(version, number).unwrap_or_default();
                 let piece = text
                     .get(span.bytes.start as usize..span.bytes.end as usize)
                     .unwrap_or("<not a character boundary>");
                 println!(
                     "  {:<8} line {number:>4}  bytes {:>4}..{:<4} {:?}",
-                    label(side),
+                    label(version),
                     span.bytes.start,
                     span.bytes.end,
                     visible(piece)
@@ -218,10 +222,10 @@ fn detail(alignment: &Alignment) {
     }
 }
 
-fn label(side: Side) -> &'static str {
-    match side {
-        Side::Original => "original",
-        Side::Modified => "modified",
+fn label(version: DiffVersion) -> &'static str {
+    match version {
+        DiffVersion::Original => "original",
+        DiffVersion::Modified => "modified",
     }
 }
 

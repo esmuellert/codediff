@@ -8,7 +8,7 @@
 //! Content is pulled in with `include_str!`, so these tests do no IO and the
 //! crate stays provably pure.
 
-use align::{Alignment, RowKind, Side};
+use align::{Alignment, DiffVersion, RowKind};
 use vscode_diff::{LinesDiff, Options};
 
 macro_rules! pairs {
@@ -69,21 +69,29 @@ fn each_column_reads_back_as_the_file_it_came_from() {
         let mut right = Vec::new();
         for row in alignment.rows() {
             if let Some(n) = row.original.line() {
-                left.push(alignment.line(Side::Original, n).expect("line exists"));
+                left.push(
+                    alignment
+                        .line(DiffVersion::Original, n)
+                        .expect("line exists"),
+                );
             }
             if let Some(n) = row.modified.line() {
-                right.push(alignment.line(Side::Modified, n).expect("line exists"));
+                right.push(
+                    alignment
+                        .line(DiffVersion::Modified, n)
+                        .expect("line exists"),
+                );
             }
         }
 
         assert_eq!(
             left,
-            alignment.lines(Side::Original),
+            alignment.lines(DiffVersion::Original),
             "{name}: the left column is not the original file"
         );
         assert_eq!(
             right,
-            alignment.lines(Side::Modified),
+            alignment.lines(DiffVersion::Modified),
             "{name}: the right column is not the modified file"
         );
     });
@@ -113,12 +121,12 @@ fn every_line_appears_exactly_once_and_in_order() {
         }
         assert_eq!(
             last_original as usize,
-            alignment.lines(Side::Original).len(),
+            alignment.lines(DiffVersion::Original).len(),
             "{name}: original truncated"
         );
         assert_eq!(
             last_modified as usize,
-            alignment.lines(Side::Modified).len(),
+            alignment.lines(DiffVersion::Modified).len(),
             "{name}: modified truncated"
         );
     });
@@ -130,7 +138,7 @@ fn no_row_is_blank_on_both_sides() {
         for (i, row) in alignment.rows().enumerate() {
             assert!(
                 !(row.original.is_filler() && row.modified.is_filler()),
-                "{name}: row {i} shows nothing on either side"
+                "{name}: row {i} shows nothing on either version"
             );
         }
     });
@@ -156,8 +164,8 @@ fn unchanged_rows_hold_identical_text() {
             }
             let (o, m) = row.both().expect("an unchanged row has both sides");
             assert_eq!(
-                alignment.line(Side::Original, o),
-                alignment.line(Side::Modified, m),
+                alignment.line(DiffVersion::Original, o),
+                alignment.line(DiffVersion::Modified, m),
                 "{name}: rows {o}/{m} are called unchanged but differ"
             );
         }
@@ -211,11 +219,11 @@ fn every_changed_line_belongs_to_exactly_one_hunk() {
 #[test]
 fn character_spans_are_sliceable_and_non_empty() {
     for_each_pair(|name, alignment| {
-        for side in [Side::Original, Side::Modified] {
-            let lines = alignment.lines(side);
+        for version in [DiffVersion::Original, DiffVersion::Modified] {
+            let lines = alignment.lines(version);
             for number in 1..=lines.len() as u32 {
-                let text = alignment.line(side, number).expect("line exists");
-                for span in alignment.spans(side, number) {
+                let text = alignment.line(version, number).expect("line exists");
+                for span in alignment.spans(version, number) {
                     assert_eq!(
                         span.line, number,
                         "{name}: span reported for the wrong line"
@@ -247,22 +255,22 @@ fn moves_are_found_by_line_number() {
     let moved = diff.moves.first().expect("this fixture has a move");
     assert!(
         alignment
-            .moved(Side::Original, moved.original.start_line)
+            .moved(DiffVersion::Original, moved.original.start_line)
             .is_some()
     );
     assert!(
         alignment
-            .moved(Side::Original, moved.original.end_line - 1)
+            .moved(DiffVersion::Original, moved.original.end_line - 1)
             .is_some()
     );
     assert!(
         alignment
-            .moved(Side::Original, moved.original.end_line)
+            .moved(DiffVersion::Original, moved.original.end_line)
             .is_none()
     );
     assert!(
         alignment
-            .moved(Side::Modified, moved.modified.start_line)
+            .moved(DiffVersion::Modified, moved.modified.start_line)
             .is_some()
     );
 }

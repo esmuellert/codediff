@@ -129,7 +129,7 @@ fn an_empty_file_is_one_empty_line() {
     let diff = compute(&empty, &added);
     let alignment = Alignment::new(diff.clone(), &empty, &added);
 
-    assert_eq!(alignment.lines(align::Side::Original), &[""]);
+    assert_eq!(alignment.lines(align::DiffVersion::Original), &[""]);
     assert_eq!(alignment.row_count(), 1);
     assert_eq!(alignment.rows().count(), 1);
 }

@@ -6,7 +6,8 @@
 //! them hidden in the signpost.
 
 use anyhow::Result;
-use ui::{Buffer, Diff, SideBySide, Text};
+use file_types::DiffVersion;
+use ui::{Buffer, Diff, SideBySide, SingleFile};
 
 use crate::pipeline::contents::{self, Contents};
 use crate::pipeline::diff;
@@ -31,9 +32,9 @@ impl Runner {
         })
     }
 
-    /// The one side this file exists on, or `None` when it exists on both.
-    pub fn only(&self) -> Option<align::Side> {
-        self.contents.only()
+    /// The one version this file exists as, or `None` when it exists as both.
+    pub fn only(&self) -> Option<DiffVersion> {
+        self.contents.file().only()
     }
 
     /// A picture has no lines, so there is nothing to align.
@@ -48,16 +49,21 @@ impl Runner {
     /// has nothing to compare against, so it becomes a plain text buffer
     /// rather than a diff with an empty column. See D23.
     pub fn run(&self) -> Result<Buffer> {
-        let label = self.contents.label();
-        match self.contents.only() {
-            Some(side) => Ok(Buffer::Text(Text::new(label, &self.contents.side(side)))),
+        let file = self.contents.file().clone();
+        match file.only() {
+            // Nothing to compare against, so neither two columns nor an
+            // interleaving has anything to say. Both diff modes land here.
+            Some(version) => Ok(Buffer::SingleFile(SingleFile::new(
+                file,
+                &self.contents.version(version),
+            ))),
             None => {
-                let before = self.contents.side(align::Side::Original);
-                let after = self.contents.side(align::Side::Modified);
-                let changed = diff::compute(&before, &after)?;
-                let alignment = diff::align(changed, &before, &after)?;
+                let original = self.contents.version(DiffVersion::Original);
+                let modified = self.contents.version(DiffVersion::Modified);
+                let changed = diff::compute(&original, &modified)?;
+                let alignment = diff::align(changed, &original, &modified)?;
                 Ok(Buffer::SideBySide(SideBySide::new(Diff::new(
-                    label, alignment,
+                    file, alignment,
                 ))))
             }
         }

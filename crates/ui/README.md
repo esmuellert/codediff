@@ -39,8 +39,9 @@ That is the whole definition.
 
 ```text
 enum Buffer {
-    SideBySide(SideBySide),   // a diff, in two columns
-    Text(Text),               // one file, with nothing to compare against
+    SideBySide(SideBySide),   // two versions, in two columns
+    Inline(Inline),           // two versions, interleaved      (later)
+    SingleFile(SingleFile),   // one version — from either mode
 }
 ```
 
@@ -85,8 +86,9 @@ gives each editor its own `scrollTop` and holds them in a bidirectional constrai
 write guards. See [D19](../../docs/plan/05-decisions.md#d19).
 
 A diff always has **two** columns, so neither field of `Frame` is optional. A file with one
-side is not compared against anything, so it is not a diff at all — it is a `Text` buffer,
-drawn by `render/text.rs` in a single column. Nothing on it changed *relative to* anything,
+side is not compared against anything, so it is not a diff at all — it is a `SingleFile`
+buffer, drawn by `render/single_file.rs` in a single column. Both diff modes fall back to
+it, because with one version there is nothing to lay out against. Nothing on it changed *relative to* anything,
 so nothing is highlighted. Marking every line of a new file green says nothing the word "added" does
 not. VSCode arrived here from the same bug and stopped opening a diff editor for added,
 untracked and deleted files entirely.
@@ -106,11 +108,11 @@ view/                what is on screen, and where
 └── buffer/            what a pane can show
     ├── mod.rs           Buffer — the closed set of kinds
     ├── side_by_side.rs  SideBySide — a diff in two columns, and its row space
-    └── text.rs          Text — one file, nothing to compare against
+    └── single_file.rs   SingleFile — one version, shown alone
 render/              turning that into cells
 ├── mod.rs             the screen: body and status line
 ├── side_by_side.rs    one pane holding a diff
-├── text.rs            one pane holding a single file
+├── single_file.rs     one pane holding one version of a file
 ├── layout.rs          where the columns go
 ├── column.rs          one column's rows
 ├── cells.rs           one line onto one row of cells

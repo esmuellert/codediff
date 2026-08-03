@@ -39,12 +39,12 @@ pub enum Context {
     /// Two files, in two columns.
     #[default]
     SideBySide,
-    /// One file, with nothing to compare it against.
-    Text,
+    /// One version of a file, with nothing to compare it against.
+    SingleFile,
 }
 
 impl Context {
-    pub const ALL: &'static [Context] = &[Context::SideBySide, Context::Text];
+    pub const ALL: &'static [Context] = &[Context::SideBySide, Context::SingleFile];
 }
 
 /// One key sequence and what it does.
@@ -246,7 +246,7 @@ mod tests {
             lookup(Context::SideBySide, &[key!('>')]),
             Match::Exact(_)
         ));
-        assert_eq!(lookup(Context::Text, &[key!('>')]), Match::None);
+        assert_eq!(lookup(Context::SingleFile, &[key!('>')]), Match::None);
     }
 
     #[test]

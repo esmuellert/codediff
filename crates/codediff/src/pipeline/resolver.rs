@@ -8,7 +8,8 @@
 //! rather than changes to the stages that follow.
 
 use anyhow::{Context, Result, bail};
-use vcs::{Diff as _, DiffKind, FileDiff, Git, RelPath};
+use file_types::{ChangedFile, File, RepoPath};
+use vcs::Git;
 
 /// What the reader asked to see.
 #[derive(Debug, Clone)]
@@ -20,7 +21,7 @@ pub enum Request<'a> {
 /// A file found in a repository, before either side has been read.
 pub struct Resolved {
     pub git: Git,
-    pub file: FileDiff,
+    pub file: ChangedFile,
 }
 
 /// Answers stage one: what am I being asked to diff.
@@ -39,13 +40,13 @@ pub fn resolve(request: &Request<'_>) -> Result<Resolved> {
 ///
 /// By path as given, then relative to the repository root, so it works from a
 /// subdirectory the way git's own commands do.
-fn find(git: &mut Git, path: &str) -> Result<FileDiff> {
+fn find(git: &mut Git, path: &str) -> Result<ChangedFile> {
     let files = git.files().context("listing changed files")?;
-    let wanted = RelPath::new(path);
+    let wanted = RepoPath::new(path, &git.repo().root);
 
     if let Some(found) = files
         .iter()
-        .find(|f| f.path == wanted || f.previous_path.as_ref() == Some(&wanted))
+        .find(|f| f.path() == &wanted || f.file.previous_path() == Some(&wanted))
     {
         return Ok(found.clone());
     }
@@ -53,14 +54,10 @@ fn find(git: &mut Git, path: &str) -> Result<FileDiff> {
     // Not changed, but it may still exist — comparing a file with itself is a
     // legitimate thing to ask for, and produces an empty diff rather than an
     // error.
-    let absolute = wanted.to_absolute(&git.repo().root);
-    if absolute.exists() {
-        return Ok(FileDiff {
-            path: wanted,
-            previous_path: None,
-            kind: DiffKind::Modified,
-            similarity: None,
-        });
+    if wanted.as_path().exists() {
+        // Both versions exist under one path, so the paths say "modified" and
+        // nothing needs to be stored to say it again.
+        return Ok(ChangedFile::new(File::unchanged_path(wanted), None));
     }
 
     bail!(

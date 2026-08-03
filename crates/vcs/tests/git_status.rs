@@ -4,7 +4,7 @@
 //! index, similarity scores. No repository needed, so these run everywhere and
 //! pin the shapes that are awkward to produce on demand.
 
-use vcs::DiffKind;
+use file_types::ChangeType;
 use vcs::git::{Code, status, to_file_diff};
 
 /// Builds a NUL-terminated stream the way git writes one.
@@ -55,13 +55,13 @@ fn a_rename_spans_two_fields() {
         "the original path must not become a record"
     );
     assert_eq!(entries[0].path.as_str(), "renamed-to.txt");
-    assert_eq!(
-        entries[0].original.as_ref().map(|p| p.as_str()),
-        Some("renamed-from.txt")
-    );
+    assert_eq!(entries[0].original.as_deref(), Some("renamed-from.txt"));
     assert_eq!(entries[0].xy.index, Code::Renamed);
     assert_eq!(entries[0].score, Some(100));
-    assert_eq!(to_file_diff(entries[0].clone()).kind, DiffKind::Moved);
+    assert_eq!(
+        to_file_diff(entries[0].clone(), std::path::Path::new("/repo")).change(),
+        ChangeType::Moved
+    );
     // The record after a rename must still be read correctly.
     assert_eq!(entries[1].path.as_str(), "after.txt");
 }
@@ -85,7 +85,10 @@ fn an_unmerged_record_has_three_stages() {
         stream(&["u UU N... 100644 100644 100644 100644 df967b9 b19a1e9 950b81b conflict.txt"]);
     let entries = status::parse(&bytes).expect("parses");
     assert_eq!(entries[0].path.as_str(), "conflict.txt");
-    assert_eq!(to_file_diff(entries[0].clone()).kind, DiffKind::Conflicted);
+    assert_eq!(
+        to_file_diff(entries[0].clone(), std::path::Path::new("/repo")).change(),
+        ChangeType::Conflicted
+    );
     assert_eq!(entries[0].xy.index, Code::Unmerged);
 }
 
@@ -95,7 +98,10 @@ fn untracked_and_ignored_are_worktree_only() {
     let entries = status::parse(&bytes).expect("parses");
     assert_eq!(entries[0].xy.worktree, Code::Untracked);
     assert_eq!(entries[0].xy.index, Code::Unmodified);
-    assert_eq!(to_file_diff(entries[0].clone()).kind, DiffKind::Untracked);
+    assert_eq!(
+        to_file_diff(entries[0].clone(), std::path::Path::new("/repo")).change(),
+        ChangeType::Untracked
+    );
     assert_eq!(entries[1].xy.worktree, Code::Ignored);
 }
 

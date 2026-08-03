@@ -55,7 +55,14 @@ pub fn pending_names(root: &Path) -> Result<Vec<String>> {
 pub fn check_clock_free(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     for (dir, why) in CLOCK_FREE_DIRS {
         let path = root.join(dir);
+        // A missing directory is a failure, not a skip. It used to be a skip,
+        // and renaming `display` to `ui` therefore switched this whole rule
+        // off in silence — which is the exact failure the rule exists to
+        // prevent, turned on the rule itself.
         if !path.is_dir() {
+            failures.push(format!(
+                "{dir} does not exist, so the rule that {why} is checking nothing"
+            ));
             continue;
         }
         for file in rust_files(&path)? {

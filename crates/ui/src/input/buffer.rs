@@ -73,7 +73,7 @@ pub const DIVIDER_STEP: u16 = 5;
 pub const fn bindings(context: Context) -> &'static [&'static [Binding]] {
     match context {
         Context::SideBySide => &[MOTIONS, SIDE_BY_SIDE],
-        Context::Text => &[MOTIONS],
+        Context::SingleFile => &[MOTIONS],
     }
 }
 

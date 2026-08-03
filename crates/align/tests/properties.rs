@@ -4,7 +4,7 @@
 //! generated from a tiny alphabet so the engine finds real matches and produces
 //! genuinely mixed diffs rather than one big replacement.
 
-use align::{Alignment, RowKind, Side};
+use align::{Alignment, DiffVersion, RowKind};
 use proptest::prelude::*;
 use vscode_diff::Options;
 
@@ -56,20 +56,28 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
             // 3. line numbers advance by one and never repeat
             prop_assert_eq!(n, last_original + 1);
             last_original = n;
-            left.push(alignment.line(Side::Original, n).expect("line exists"));
+            left.push(
+                alignment
+                    .line(DiffVersion::Original, n)
+                    .expect("line exists"),
+            );
         }
         if let Some(n) = row.modified.line() {
             prop_assert_eq!(n, last_modified + 1);
             last_modified = n;
-            right.push(alignment.line(Side::Modified, n).expect("line exists"));
+            right.push(
+                alignment
+                    .line(DiffVersion::Modified, n)
+                    .expect("line exists"),
+            );
         }
 
         // 4. an unchanged row really does hold the same text on both sides
         if row.kind == RowKind::Unchanged {
             let (o, m) = row.both().expect("an unchanged row has both sides");
             prop_assert_eq!(
-                alignment.line(Side::Original, o),
-                alignment.line(Side::Modified, m)
+                alignment.line(DiffVersion::Original, o),
+                alignment.line(DiffVersion::Modified, m)
             );
         }
     }
@@ -78,8 +86,8 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
     //    Compared against `lines()` rather than the input, because an empty
     //    file is normalised to a single empty line — the engine's model of one,
     //    and what the diff's line numbers refer to.
-    prop_assert_eq!(left.as_slice(), alignment.lines(Side::Original));
-    prop_assert_eq!(right.as_slice(), alignment.lines(Side::Modified));
+    prop_assert_eq!(left.as_slice(), alignment.lines(DiffVersion::Original));
+    prop_assert_eq!(right.as_slice(), alignment.lines(DiffVersion::Modified));
 
     // 6. the advertised row count is the number of rows produced
     prop_assert_eq!(alignment.row_count() as usize, alignment.rows().count());
@@ -100,7 +108,7 @@ proptest! {
             .expect("comparing a file with itself cannot time out");
         let alignment = Alignment::new(diff.clone(), &text, &text);
 
-        prop_assert_eq!(alignment.row_count() as usize, alignment.lines(Side::Original).len());
+        prop_assert_eq!(alignment.row_count() as usize, alignment.lines(DiffVersion::Original).len());
         for row in alignment.rows() {
             prop_assert_eq!(row.kind, RowKind::Unchanged);
         }
@@ -115,10 +123,10 @@ proptest! {
         };
         let alignment = Alignment::new(diff.clone(), &original, &modified);
 
-        for (side, lines) in [(Side::Original, &original), (Side::Modified, &modified)] {
+        for (version, lines) in [(DiffVersion::Original, &original), (DiffVersion::Modified, &modified)] {
             for number in 1..=lines.len() as u32 {
-                let text = alignment.line(side, number).expect("line exists");
-                for span in alignment.spans(side, number) {
+                let text = alignment.line(version, number).expect("line exists");
+                for span in alignment.spans(version, number) {
                     prop_assert!(span.bytes.start < span.bytes.end);
                     prop_assert!(
                         text.get(span.bytes.start as usize..span.bytes.end as usize).is_some(),

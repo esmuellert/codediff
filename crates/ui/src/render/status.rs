@@ -4,14 +4,23 @@
 //! how much is left to look at. Kept to one row, because every row it takes is
 //! a row of diff it hides.
 
-use crate::render::cells;
-use crate::theme::Theme;
+use file_types::File;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
+use crate::render::cells;
+use crate::theme::Theme;
+
 /// What the status line says.
 pub struct Status<'a> {
-    pub path: &'a str,
+    /// Which file, as structure rather than a formatted name.
+    ///
+    /// The whole reason this is a [`File`] and not a `&str`: the directory is
+    /// dimmed while the name is not, and the directory is dropped first when
+    /// the row is too narrow. A string could support neither. It used to be
+    /// one — `"old.rs → new.rs   (added)"` — and the `(added)` was rendered
+    /// bold, as though it were part of the path. See D28.
+    pub file: &'a File,
     /// Cursor row and total rows, both 0-based internally, shown 1-based.
     pub row: u32,
     pub rows: u32,
@@ -27,7 +36,10 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
     let base = theme.status;
     cells::fill(buf, area, base);
 
-    let mut x = cells::write(buf, area, 1, status.path, base.patch(theme.status_path));
+    let right = summary(status);
+    // The room the name has, once the position on the right is accounted for.
+    let room = area.width.saturating_sub(right.chars().count() as u16 + 3);
+    let mut x = name(buf, area, status.file, room, base, theme);
 
     if status.timed_out {
         // Deliberately loud. A diff the engine abandoned is not a diff, and a
@@ -42,12 +54,70 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
         );
     }
 
-    let right = summary(status);
     let width = right.chars().count() as u16;
     let at = area.width.saturating_sub(width + 1);
     if at > x + 1 {
         cells::write(buf, area, at, &right, base);
     }
+}
+
+/// Writes which file this is, in as much detail as the width allows.
+///
+/// Three independent parts, dropped in order of what a reviewer can most
+/// afford to lose:
+///
+/// 1. the directory, dimmed — recoverable from the file name plus context
+/// 2. `from → ` for a rename — useful, rarely essential
+/// 3. the file name and any `(added)`/`(deleted)` note — never dropped
+///
+/// This is what a pre-formatted string cannot do, and why [`File`] carries the
+/// facts rather than a label.
+fn name(
+    buf: &mut Buffer,
+    area: Rect,
+    file: &File,
+    room: u16,
+    base: ratatui::style::Style,
+    theme: &Theme,
+) -> u16 {
+    let path = file.path();
+    let note = match file.only() {
+        Some(file_types::DiffVersion::Modified) => "   (added)",
+        Some(file_types::DiffVersion::Original) => "   (deleted)",
+        None => "",
+    };
+
+    let essential = path.file_name().chars().count() + note.chars().count();
+    let mut x = 1;
+
+    // Widest form first, narrowing until it fits.
+    let previous = file.previous_path().map(|p| format!("{p} → "));
+    let directory = path.directory();
+    let with_directory = !directory.is_empty()
+        && essential
+            + directory.chars().count()
+            + 1
+            + previous.as_ref().map_or(0, |p| p.chars().count())
+            <= room as usize;
+
+    if let Some(previous) = previous.filter(|p| essential + p.chars().count() <= room as usize) {
+        x = cells::write(buf, area, x, &previous, base.patch(theme.status_path));
+    }
+    if with_directory {
+        x = cells::write(buf, area, x, directory, base.patch(theme.divider));
+        x = cells::write(buf, area, x, "/", base.patch(theme.divider));
+    }
+    x = cells::write(
+        buf,
+        area,
+        x,
+        path.file_name(),
+        base.patch(theme.status_path),
+    );
+    if !note.is_empty() {
+        x = cells::write(buf, area, x, note, base);
+    }
+    x
 }
 
 fn summary(status: &Status<'_>) -> String {
@@ -63,10 +133,19 @@ fn summary(status: &Status<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use file_types::RepoPath;
+    use std::path::Path;
+    use std::sync::LazyLock;
+
+    fn at(relative: &str) -> RepoPath {
+        RepoPath::new(relative, Path::new("/repo"))
+    }
+
+    static MAIN: LazyLock<File> = LazyLock::new(|| File::unchanged_path(at("src/main.rs")));
 
     fn status() -> Status<'static> {
         Status {
-            path: "src/main.rs",
+            file: &MAIN,
             row: 0,
             rows: 100,
             changes: 3,
@@ -131,5 +210,88 @@ mod tests {
         let line = render(&status(), 16);
         assert_eq!(line.chars().count(), 16);
         assert!(!line.contains("changes"), "{line:?}");
+    }
+
+    #[test]
+    fn the_directory_goes_before_the_file_name_does() {
+        // The whole point of holding a `File` rather than a formatted string.
+        // A reviewer who loses the directory can still tell which file this
+        // is; one who loses the name cannot.
+        let deep = File::unchanged_path(at("crates/ui/src/render/status.rs"));
+        let wide = render(
+            &Status {
+                file: &deep,
+                ..status()
+            },
+            70,
+        );
+        assert!(wide.contains("crates/ui/src/render"), "{wide:?}");
+        assert!(wide.contains("status.rs"), "{wide:?}");
+
+        let narrow = render(
+            &Status {
+                file: &deep,
+                ..status()
+            },
+            30,
+        );
+        assert!(
+            narrow.contains("status.rs"),
+            "the name survives: {narrow:?}"
+        );
+        assert!(
+            !narrow.contains("crates/ui/src/render"),
+            "the directory was dropped: {narrow:?}"
+        );
+    }
+
+    #[test]
+    fn a_one_sided_file_says_which_it_is() {
+        let added = File::added(at("new.rs"));
+        let line = render(
+            &Status {
+                file: &added,
+                ..status()
+            },
+            60,
+        );
+        assert!(line.contains("new.rs"), "{line:?}");
+        assert!(line.contains("(added)"), "{line:?}");
+
+        let gone = File::deleted(at("old.rs"));
+        let line = render(
+            &Status {
+                file: &gone,
+                ..status()
+            },
+            60,
+        );
+        assert!(line.contains("(deleted)"), "{line:?}");
+    }
+
+    #[test]
+    fn a_rename_shows_both_names_when_there_is_room() {
+        let moved = File::renamed(at("old.rs"), at("new.rs"));
+        let wide = render(
+            &Status {
+                file: &moved,
+                ..status()
+            },
+            70,
+        );
+        assert!(wide.contains("old.rs"), "{wide:?}");
+        assert!(wide.contains("→"), "{wide:?}");
+        assert!(wide.contains("new.rs"), "{wide:?}");
+
+        // Too narrow for both: the name it has *now* is the one that stays.
+        let narrow = render(
+            &Status {
+                file: &moved,
+                ..status()
+            },
+            24,
+        );
+        assert!(narrow.contains("new.rs"), "{narrow:?}");
+        assert!(!narrow.contains("→"), "{narrow:?}");
     }
 }

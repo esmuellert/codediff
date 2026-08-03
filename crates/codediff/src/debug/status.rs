@@ -4,8 +4,9 @@
 //! reading the two side by side.
 
 use anyhow::{Context, Result};
+use file_types::{ChangeType, ChangedFile};
+use vcs::Git;
 use vcs::git::Entry;
-use vcs::{Diff, DiffKind, FileDiff, Git};
 
 use crate::text::{pad, visible};
 
@@ -38,7 +39,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     }
 
     if verbose {
-        detail(&sorted);
+        detail(&sorted, &repo.root);
     }
     Ok(())
 }
@@ -59,18 +60,18 @@ fn line(entry: &Entry) -> String {
 
 /// The same entries as the reviewer sees them, after the one translation from
 /// git's model to ours.
-fn detail(entries: &[&Entry]) {
+fn detail(entries: &[&Entry], root: &std::path::Path) {
     println!();
     println!("as the reviewer sees them");
     for entry in entries {
-        let file: FileDiff = vcs::git::to_file_diff((*entry).clone());
-        let note = match file.kind {
-            DiffKind::Conflicted => "unresolved merge — listed, not diffable as two sides",
-            DiffKind::Moved => "moved; both paths kept, not an add plus a delete",
-            DiffKind::Untracked => "untracked — no before side to compare against",
-            DiffKind::Added => "added",
-            DiffKind::Deleted => "deleted",
-            DiffKind::Modified => "modified",
+        let file: ChangedFile = vcs::git::to_file_diff((*entry).clone(), root);
+        let note = match file.change() {
+            ChangeType::Conflicted => "unresolved merge — listed, not diffable as two sides",
+            ChangeType::Moved => "moved; both paths kept, not an add plus a delete",
+            ChangeType::Untracked => "untracked — no before side to compare against",
+            ChangeType::Added => "added",
+            ChangeType::Deleted => "deleted",
+            ChangeType::Modified => "modified",
         };
         let similarity = file
             .similarity
@@ -80,7 +81,7 @@ fn detail(entries: &[&Entry]) {
         // as wide as its character count suggests.
         println!(
             "  {} {note}{similarity}",
-            pad(&visible(file.path.as_str()), 28)
+            pad(&visible(file.path().as_str()), 28)
         );
     }
 }

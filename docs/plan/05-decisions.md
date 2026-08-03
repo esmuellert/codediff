@@ -769,13 +769,14 @@ modules named for the commands they run, and `git::to_file_diff` is the single p
 two vocabularies meet.
 
 **One folder per capability, each holding its trait and the types in its signatures.**
-`diff/` today; `staging/` and `history/` when something needs them. `path`, `repo` and
-`error` sit above them all. A crate named for a whole domain otherwise becomes a place to
-put anything, which is how the Lua explorer got to 674 lines in one file.
+`changes/` today; `staging/` and `history/` when something needs them. `repo` and `error`
+sit above them all. A crate named for a whole domain otherwise becomes a place to put
+anything, which is how the Lua explorer got to 674 lines in one file.
 
-It is `Diff` rather than `Change` because the engine already reports **line**-level
-changes. `vcs::Diff` is per file, `vscode_diff::LinesDiff` is per line, and one word
-meaning both would be a permanent source of confusion.
+It was called `Diff` rather than `Change` because the engine already reports **line**-level
+changes. That was the wrong trade: the name was borrowed from the one git command the crate
+never runs. It is `Changes` now, and `ChangedFile` carries no such ambiguity —
+[D29](#d29--vcschanges-because-nothing-there-diffs-anything).
 
 Forcing one vocabulary on both would go wrong in either direction — inventing fake-neutral
 names for git things, or making a jj backend pretend it has a staging area.
@@ -1314,6 +1315,213 @@ climb-and-descend directional focus and buys nothing until a third arrangement e
 seam is a single enum in one file; `Overlay` is uninhabited for the same reason, but its
 routing exists now because event dispatch changes shape when the first overlay arrives, and
 doing that once is cheaper than doing it twice.
+
+## D28 — one vocabulary for a file, so its identity cannot degrade
+
+**The problem.** Fourteen types touched "a file"; five of them claimed to *be* one, and the
+file's identity got worse at every step:
+
+```text
+RelPath(String)                          typed
+FileDiff { path, previous_path, kind }   typed, structured
+"old.rs → new.rs   (added)"              a String — three facts fused
+Status { path: &str }                    called path; is not one
+```
+
+The last step is the damage, and it was irreversible. The status line rendered the whole
+string in the path's bold style — including `(added)`, which is not part of any path — and
+could not shorten a long path, because nothing could find where the path ended.
+
+**The cause was a rule we wrote ourselves.** `lint-arch` forbids `ui → vcs`, so `ui` could
+not name `vcs::RelPath`. Identity was therefore re-declared, and then flattened to a
+`String` to smuggle it across a boundary the lint enforces. The `String` was the smuggling;
+the lost facts were the toll.
+
+### Not another layer — a vocabulary
+
+A layer would add a step to the flow. This adds none: `crates/file-types` is a leaf with no
+dependencies that `vcs`, `codediff` and `ui` all name.
+
+```text
+RepoPath      where a file lives — both spellings, one constructor
+File          which file this is: a version on each side, either absent
+FileContent   what one version holds — text, a binary blob, or nothing
+DiffVersion   which of the two: Original or Modified
+```
+
+Only `File` is new; the other three were moved from where one layer happened to own them.
+`vcs::RelPath` gained the absolute form and became `RepoPath`, `vcs::Content` became
+`FileContent`, and `align::Side` became `DiffVersion` — that one had never been about
+pairing, and `ui` was reaching into `align` to say which column it was drawing.
+
+### Everything a reader is told is derived
+
+```rust
+pub struct File {
+    original: Option<RepoPath>,   // None = added
+    modified: Option<RepoPath>,   // None = deleted
+}
+```
+
+`is_renamed()`, `only()`, `previous_path()` and the `(added)`/`(deleted)` note are computed
+from that pair, never stored beside it. A `kind` field could disagree with the paths; a
+`label` field already did.
+
+This is VSCode's `MultiDiffEditorItem`, which is a pair of `Option<URI>` and whose renderer
+recomputes "renamed" at paint time from `modifiedUri.path !== originalUri.path`. Its label
+port is typed `setUri(uri, options)` — a string label is impossible by type.
+
+### What the research actually showed
+
+Neither reference passes one object through. VSCode has **eight** types between `git status`
+and pixels; `codediff.nvim` has **nine**. Both convert explicitly at every boundary. What
+they do have is one identity token that survives unchanged — VSCode's `URI`, welded onto
+`ITextModel.uri` so identity and content travel together; the plugin's `Path`, one type
+carrying both spellings from a single constructor.
+
+Both also have our bug. VSCode filed it as #110694 — *"the tab title … is too long:
+`very/long/path/file1.js <-> very/long/path/file2.js`"* — and the fix works, in the
+maintainer's own framing, precisely because it truncates the two paths **while they are
+still separate values**. He conceded the limit of the flat `(name, description)` pair:
+*"The ideal solution would be `labelA | descriptionA ↔ labelB | descriptionB` but that is a
+lot more work."*
+
+The plugin went further and lost the facts outright: `status` and `old_path` are consumed as
+control flow when a diff is opened (`explorer/render.lua:257-509`) and never stored, so its
+diff view cannot answer "is this a rename?" — `history/render.lua:309` has to re-derive it
+from the tree node. It also fuses root, revision and path into a `codediff://` buffer name
+that needs four regexes to reverse.
+
+So we are not copying either. We keep all three facts structured to the renderer, which is
+the step both of them skip.
+
+### What it fixed on screen
+
+The status line formats from structure, dropping parts in the order a reviewer can afford
+to lose them — directory first, then the rename source, never the file name:
+
+```text
+70 cols   deep/nested/dir/demo.rs → deep/nested/dir/renamed.rs   1 change  1/3
+34 cols   renamed.rs                                             1 change  1/3
+```
+
+A test asserts `(added)` no longer carries the path's style, and fails if the note is drawn
+with `status_path` again.
+
+### One more thing it settled
+
+`ui::Text` was a **presentation mode named after a content type**, sitting beside
+`SideBySide`, which is named after a layout — two different questions on one enum, one line
+apart. It is now `SingleFile`, and the axis is uniform:
+
+```rust
+enum Buffer {
+    SideBySide(..),   // two versions, two columns
+    Inline(..),       // two versions, interleaved      (later)
+    SingleFile(..),   // one version — from either mode
+}
+```
+
+Both diff modes fall back to `SingleFile` when a file exists on one side, because there is
+nothing to lay out against. Under the old name that had no obvious answer, and the plugin's
+version of not-answering-it is four near-identical `show_*_file` wrappers funnelling into
+one function.
+
+## D29 — `vcs::Changes`, because nothing there diffs anything
+
+`vcs` exposed a `Diff` trait in a `diff/` folder holding `FileDiff` and `DiffKind`. The name
+was defended in the crate's README as *"what git and jj both call it"* — but it was borrowed
+from the one git command this crate never runs. The three it does run are:
+
+```text
+files()          git status --porcelain=v2       what changed
+before(file)     git cat-file --batch           one version
+after(file)      std::fs::read                  the other
+```
+
+List, then fetch. Computing the difference between two versions happens two stages later, in
+the C engine. `FileDiff` was likewise not a diff — it is a status entry with a `kind`.
+
+So: `trait Changes`, `changes/`, `ChangedFile`, `ChangeType`, and the field is `change`
+rather than `kind` — a `kind: ChangeType` would repeat the same mismatch one level down.
+Each says what it is, and the
+word "diff" is left to the four things that genuinely are one — `diff-types` (what a diff
+is), `vscode-diff` (what computes one), `pipeline/diff.rs` (the stage that calls it) and
+`ui::Diff` (what gets drawn).
+
+`ChangeType`'s doc no longer has to explain why it is not called `Change`, because the
+conflict was with the *trait* name and that is gone.
+
+### Two scopes in one trait, worth knowing
+
+`files()` is repository-scoped; `before`/`after` are file-scoped. That is why no single word
+fit, and why the old name managed to describe neither. `Changes` names the listing, which is
+what the trait is *for*; reading one file's versions is how you follow it up.
+
+What flows downstream is always **one file**: a `ChangedFile` plus up to two
+`FileContent`s. A file present on one side is the same shape with one `Absent`, which is
+also what `File`'s `Option` pair says — so the single-file unit never needs a flag.
+
+### Caught while doing it
+
+Renaming `align::Side` to `DiffVersion` (D28) had been done with a blanket substitution, and
+`vscode-diff` had its own private `Side` enum for error reporting. The substitution renamed
+that too, producing a **second, unrelated `DiffVersion`** in a different crate — exactly the
+duplication D28 existed to remove, introduced by the commit that removed it.
+
+`vscode-diff` now names `file_types::DiffVersion`, and there is one definition in the
+workspace. `DiffVersion` deliberately has no `Display`: it is a selector, and how to spell it
+belongs to whatever is printing — an error says "original", a status line might say "before".
+
+## D30 — the contract is the types, so the trait went
+
+`vcs` exposed `trait Changes` with `files`, `before`, `after` and `repo`. Its stated job was
+neutrality: *"no index, no `HEAD`, no blob and no object id, because a system need not have
+any of them"*.
+
+It was not doing that job. One implementor, zero generic uses, and every call site importing
+it as `Changes as _` — the idiom for "I just want the methods in scope". An inherent `impl`
+wearing a trait's clothes.
+
+**The neutrality came from the types in its signatures, not from the trait.** `ChangedFile`,
+`File`, `RepoPath`, `FileContent` are all in `file-types`, which `cargo xtask lint-arch`
+forbids from naming `vcs`. A lint is not opt-in; a trait is — nothing stopped someone adding
+a `Git` method returning an `Oid`, and the trait would not have objected.
+
+Better still, the guard turned out to be structural. `vcs` depends on `file-types`, so an
+edge back is a **dependency cycle**: cargo refuses it before any lint runs. The rule is not
+merely enforced, it is unrepresentable.
+
+**What checks a backend has met the contract is the pipeline that calls it**, and that is
+the stricter test. A trait proves four methods exist with the right signatures; the pipeline
+proves they are the methods actually *needed* and that their results compose. A backend
+returning a `ChangedFile` the pipeline could not use would satisfy the trait and still not
+build.
+
+So `trait Changes` is gone, `Git`'s methods are inherent, and `vcs/src/changes/` with it.
+A second backend earns a trait extracted from two real implementations rather than guessed
+from one.
+
+### What moved, and the rule that decided it
+
+| | |
+|---|---|
+| **nouns** — `RepoPath`, `File`, `ChangeType`, `ChangedFile`, `FileContent`, `DiffVersion` | `file-types` |
+| **verbs and failures** — `Git`, `Repo`, `Error` | `vcs` |
+
+`Repo` stays because it is a property of the *repository*, not of a file: `control_dir` is
+where git keeps its own state, which the S15 watcher needs and no file has. The root is
+different — `RepoPath` carries both spellings, so `RepoPath::root()` recovers it by
+stripping the relative tail off the absolute, with no IO and no way for the two to disagree.
+That removed the last reason for `repo()` to be in the signatures.
+
+### The thing I got wrong three times
+
+Asked whether all of this could live in one crate, I twice answered with edits instead of an
+answer, and twice defended the split on "who names it today". That test is a snapshot: it
+would have kept `RepoPath` in `vcs` before `ui` existed. The rule that survives is **nouns
+below, verbs above** — a crate every layer names can hold no capability, because a
+capability needs an error type and an error type is a layer's own.
 
 ## Open questions
 

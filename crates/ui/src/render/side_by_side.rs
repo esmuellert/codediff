@@ -6,7 +6,7 @@
 //!
 //! [`Alignment`]: align::Alignment
 
-use align::Side;
+use align::DiffVersion;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
@@ -31,8 +31,8 @@ pub fn draw(
     let Some(frame) = layout::columns(
         area,
         data.divider(),
-        alignment.lines(Side::Original).len() as u32,
-        alignment.lines(Side::Modified).len() as u32,
+        alignment.lines(DiffVersion::Original).len() as u32,
+        alignment.lines(DiffVersion::Modified).len() as u32,
     ) else {
         return false;
     };

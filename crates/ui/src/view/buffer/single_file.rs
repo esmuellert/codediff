@@ -1,36 +1,47 @@
-//! One file, with nothing to compare it against.
+//! One version of a file, shown alone.
 //!
-//! An added or deleted file, or simply a file being looked at. There is no
-//! second side, so there is no diff, no highlighting and no second column —
-//! not as a special case of a diff, but because this is a different kind of
-//! buffer. VSCode reached the same place: it stopped opening a diff editor for
-//! added, untracked and deleted files, because an empty left-hand side "did
-//! not provide much value". See D23.
+//! A presentation mode, and a peer of [`SideBySide`] — not a content type. It
+//! is what both diff modes fall back to when a file exists on only one side:
+//! there is nothing to lay out against, so neither two columns nor an
+//! interleaving has anything to say.
+//!
+//! No second version means no alignment, no filler and no divider — one column
+//! of numbered lines, in the ordinary colours. Nothing here changed *relative
+//! to* anything, so nothing is highlighted; marking every line of a new file
+//! green says nothing the word "added" does not. VSCode reached the same place
+//! and stopped opening a diff editor for added, untracked and deleted files.
+//! See D23.
+//!
+//! [`SideBySide`]: super::SideBySide
+
+use file_types::File;
 
 use crate::input::BufferAction;
 use crate::view::Viewport;
 
-/// One file's text.
+/// One version of a file, and its lines.
 #[derive(Debug)]
-pub struct Text {
-    label: String,
+pub struct SingleFile {
+    file: File,
     lines: Vec<String>,
 }
 
-impl Text {
+impl SingleFile {
     /// Copies the lines in, as [`Alignment::new`] does, so a caller holding
     /// borrowed lines need not convert them first.
     ///
     /// [`Alignment::new`]: align::Alignment::new
-    pub fn new(label: String, lines: &[&str]) -> Self {
+    pub fn new(file: File, lines: &[&str]) -> Self {
         Self {
-            label,
+            file,
             lines: lines.iter().map(|line| (*line).to_owned()).collect(),
         }
     }
 
-    pub fn label(&self) -> &str {
-        &self.label
+    /// Which file this is — structured, so a status line can style and shorten
+    /// its parts independently.
+    pub fn file(&self) -> &File {
+        &self.file
     }
 
     pub fn rows(&self) -> u32 {

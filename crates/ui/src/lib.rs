@@ -42,5 +42,5 @@ pub use app::{Flow, Session, run};
 pub use diff::Diff;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
-pub use view::buffer::{Buffer, SideBySide, Text};
+pub use view::buffer::{Buffer, SideBySide, SingleFile};
 pub use view::{View, Viewport};

@@ -17,6 +17,8 @@ use std::ops::Range;
 
 use align::{Alignment, RowKind};
 
+use file_types::File;
+
 use crate::diff::Diff;
 use crate::input::{BufferAction, DIVIDER_STEP};
 use crate::view::Viewport;
@@ -67,8 +69,8 @@ impl SideBySide {
         self.diff.alignment()
     }
 
-    pub fn label(&self) -> &str {
-        self.diff.label()
+    pub fn file(&self) -> &File {
+        self.diff.file()
     }
 
     pub fn hit_timeout(&self) -> bool {
@@ -160,10 +162,11 @@ mod tests {
             moves: Vec::new(),
             hit_timeout: false,
         };
-        SideBySide::new(Diff::new(
-            "demo".into(),
-            Alignment::new(empty, &lines, &lines),
-        ))
+        let file = File::unchanged_path(file_types::RepoPath::new(
+            "demo.rs",
+            std::path::Path::new("/repo"),
+        ));
+        SideBySide::new(Diff::new(file, Alignment::new(empty, &lines, &lines)))
     }
 
     #[test]

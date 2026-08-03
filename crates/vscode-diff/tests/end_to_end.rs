@@ -5,7 +5,7 @@
 //! `unsafe`, no marshalling and no manual free. If these pass, Rust code can
 //! use the C engine directly.
 
-use vscode_diff::{Error, Options, Side, compute};
+use vscode_diff::{DiffVersion, Error, Options, compute};
 
 /// Splits source text the way a caller reading a file would.
 fn lines(text: &str) -> Vec<&str> {
@@ -191,7 +191,7 @@ fn binary_content_is_rejected_rather_than_truncated() {
     assert_eq!(
         err,
         Error::InteriorNul {
-            side: Side::Modified,
+            version: DiffVersion::Modified,
             line: 1
         }
     );

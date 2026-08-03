@@ -6,6 +6,7 @@ resolver = "3"
 members = [
     "crates/vscode-diff-sys",
     "crates/diff-types",
+    "crates/file-types",
     "crates/vscode-diff",
     "crates/line-index",
     "crates/align",
@@ -37,6 +38,7 @@ all = { level = "deny", priority = -1 }
 [workspace.dependencies]
 vscode-diff-sys = { path = "crates/vscode-diff-sys" }
 diff-types = { path = "crates/diff-types" }
+file-types = { path = "crates/file-types" }
 vscode-diff = { path = "crates/vscode-diff" }
 line-index = { path = "crates/line-index" }
 align = { path = "crates/align" }

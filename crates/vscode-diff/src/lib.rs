@@ -23,7 +23,8 @@ mod options;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-pub use error::{Error, Side};
+pub use error::Error;
+pub use file_types::DiffVersion;
 pub use options::Options;
 // Re-exported so a caller that already depends on this crate need not also name
 // `diff-types`. The structs themselves live there, with no dependencies and no
@@ -93,8 +94,8 @@ pub fn compute(
     modified: &[&str],
     options: &Options,
 ) -> Result<LinesDiff, Error> {
-    let original = Marshalled::new(original, Side::Original)?;
-    let modified = Marshalled::new(modified, Side::Modified)?;
+    let original = Marshalled::new(original, DiffVersion::Original)?;
+    let modified = Marshalled::new(modified, DiffVersion::Modified)?;
     let raw_options = vscode_diff_sys::DiffOptions::from(*options);
 
     // SAFETY: both pointer arrays are non-empty, live for the duration of this
@@ -134,7 +135,7 @@ struct Marshalled {
 }
 
 impl Marshalled {
-    fn new(lines: &[&str], side: Side) -> Result<Self, Error> {
+    fn new(lines: &[&str], version: DiffVersion) -> Result<Self, Error> {
         // The engine models an empty file as one empty line, following
         // VSCode's document model. A count of zero is not equivalent: it
         // silently yields no changes.
@@ -144,7 +145,7 @@ impl Marshalled {
         let mut owned = Vec::with_capacity(lines.len());
         for (index, line) in lines.iter().enumerate() {
             let cstring = CString::new(*line).map_err(|_| Error::InteriorNul {
-                side,
+                version,
                 line: index + 1,
             })?;
             owned.push(cstring);
@@ -207,7 +208,7 @@ mod tests {
         assert_eq!(
             err,
             Error::InteriorNul {
-                side: Side::Modified,
+                version: DiffVersion::Modified,
                 line: 1
             }
         );

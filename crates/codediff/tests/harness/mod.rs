@@ -14,11 +14,17 @@
 
 #![allow(dead_code)]
 
+use file_types::{File, RepoPath};
 use ui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ui::ratatui::Terminal;
 use ui::ratatui::backend::TestBackend;
 use ui::ratatui::buffer::Buffer as Cells;
-use ui::{Buffer, Diff, Session, SideBySide, Text, Theme};
+use ui::{Buffer, Diff, Session, SideBySide, SingleFile, Theme};
+
+/// A file under a fixed root, since these tests never touch a disk.
+pub fn file(path: &str) -> File {
+    File::unchanged_path(RepoPath::new(path, std::path::Path::new("/repo")))
+}
 
 /// A side-by-side buffer over two texts.
 pub fn diff(label: &str, before: &str, after: &str) -> Buffer {
@@ -40,12 +46,21 @@ pub fn with_diff(
     let original = vscode_diff::lines(before);
     let modified = vscode_diff::lines(after);
     let alignment = align::Alignment::new(computed, &original, &modified);
-    Buffer::SideBySide(SideBySide::new(Diff::new(label.into(), alignment)))
+    Buffer::SideBySide(SideBySide::new(Diff::new(file(label), alignment)))
 }
 
-/// A buffer for a file with nothing to compare against.
-pub fn text(label: &str, contents: &str) -> Buffer {
-    Buffer::Text(Text::new(label.into(), &vscode_diff::lines(contents)))
+/// A buffer for a file present on both sides, shown alone.
+pub fn single(label: &str, contents: &str) -> Buffer {
+    Buffer::SingleFile(SingleFile::new(file(label), &vscode_diff::lines(contents)))
+}
+
+/// A buffer for a file that exists only on the modified side.
+///
+/// The `(added)` note is derived from that, never passed in — which is the
+/// point of `File` and the reason a test cannot fake it with a label.
+pub fn added(label: &str, contents: &str) -> Buffer {
+    let file = File::added(RepoPath::new(label, std::path::Path::new("/repo")));
+    Buffer::SingleFile(SingleFile::new(file, &vscode_diff::lines(contents)))
 }
 
 /// A session over a side-by-side buffer, in the default dark theme.

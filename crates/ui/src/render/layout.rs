@@ -4,7 +4,7 @@
 //! that "is the divider in the right place" can be asked of a number rather than
 //! of a screenshot.
 
-use align::Side;
+use align::DiffVersion;
 use ratatui::layout::Rect;
 
 /// Where the columns of one pane go.
@@ -28,16 +28,21 @@ pub struct Frame {
 
 impl Frame {
     /// The columns to draw, with the side each shows.
-    pub fn columns(&self) -> impl Iterator<Item = (Side, Column)> {
+    pub fn columns(&self) -> impl Iterator<Item = (DiffVersion, Column)> {
         [
-            (Side::Original, self.original),
-            (Side::Modified, self.modified),
+            (DiffVersion::Original, self.original),
+            (DiffVersion::Modified, self.modified),
         ]
         .into_iter()
     }
 }
 
-/// One side: its line numbers and its text.
+/// One column of a pane: its line numbers and its text.
+///
+/// A place on screen, not a version — [`DiffVersion`] is which file a column
+/// shows, and inline mode puts both in one column.
+///
+/// [`DiffVersion`]: align::DiffVersion
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Column {
     pub gutter: Rect,
@@ -232,9 +237,9 @@ mod tests {
     fn both_columns_get_the_whole_pane_height() {
         let pane = body(80, 24);
         let f = columns(pane, 50, 10, 10).unwrap();
-        for (side, column) in f.columns() {
-            assert_eq!(column.text.height, pane.height, "{side:?}");
-            assert_eq!(column.gutter.height, pane.height, "{side:?}");
+        for (version, column) in f.columns() {
+            assert_eq!(column.text.height, pane.height, "{version:?}");
+            assert_eq!(column.gutter.height, pane.height, "{version:?}");
         }
     }
 }

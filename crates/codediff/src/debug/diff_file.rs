@@ -4,9 +4,9 @@
 //! a disagreement between what this prints and what the screen shows would
 //! have to come from drawing, not from the data.
 
-use align::Side;
 use anyhow::Result;
-use vcs::{Content, FileDiff};
+use file_types::ChangedFile;
+use file_types::{DiffVersion, FileContent};
 
 use crate::pipeline::{Request, Runner};
 use crate::text::visible;
@@ -14,7 +14,7 @@ use crate::text::visible;
 pub fn run(path: &str, verbose: bool) -> Result<()> {
     let runner = Runner::new(&Request::Worktree { path })?;
     let contents = &runner.contents;
-    header(&contents.file, &contents.before, &contents.after);
+    header(&contents.diff, &contents.original, &contents.modified);
 
     // Nothing to align: a picture has no lines, and saying so is the answer
     // rather than a failure.
@@ -26,8 +26,8 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     // A file that exists on only one side is not compared against anything, so
     // there is no diff to print — only the file. This is what the interface
     // shows too, in one pane rather than two.
-    if let Some(side) = runner.only() {
-        return one_sided(&runner, side);
+    if let Some(version) = runner.only() {
+        return one_sided(&runner, version);
     }
 
     // The same buffer the interface is given, read rather than drawn. Any
@@ -39,8 +39,8 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     let alignment = data.alignment();
     println!(
         "{} line(s) -> {} line(s), {} row(s), {} change(s)",
-        alignment.lines(Side::Original).len(),
-        alignment.lines(Side::Modified).len(),
+        alignment.lines(DiffVersion::Original).len(),
+        alignment.lines(DiffVersion::Modified).len(),
         alignment.row_count(),
         alignment.changes().len()
     );
@@ -53,12 +53,12 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
 ///
 /// No `+` or `-`: nothing here changed relative to anything, because there is
 /// no other side to be relative to.
-fn one_sided(runner: &Runner, present: Side) -> Result<()> {
+fn one_sided(runner: &Runner, present: DiffVersion) -> Result<()> {
     let what = match present {
-        Side::Modified => "added — no original to compare against",
-        Side::Original => "deleted — showing what was removed",
+        DiffVersion::Modified => "added — no original to compare against",
+        DiffVersion::Original => "deleted — showing what was removed",
     };
-    let numbered = runner.contents.side(present);
+    let numbered = runner.contents.version(present);
     println!("{} line(s), {what}", numbered.len());
     println!();
     for (i, line) in numbered.iter().enumerate() {
@@ -67,14 +67,14 @@ fn one_sided(runner: &Runner, present: Side) -> Result<()> {
     Ok(())
 }
 
-fn header(file: &FileDiff, before: &Content, after: &Content) {
-    println!("{}", visible(file.path.as_str()));
-    if let Some(previous) = &file.previous_path {
+fn header(diff: &ChangedFile, original: &FileContent, modified: &FileContent) {
+    println!("{}", visible(diff.path().as_str()));
+    if let Some(previous) = diff.file.previous_path() {
         println!("moved from {}", visible(previous.as_str()));
     }
-    println!("{:?}", file.kind);
+    println!("{:?}", diff.change());
     println!();
-    println!("before   {}", before.describe());
-    println!("after    {}", after.describe());
+    println!("before   {}", original.describe());
+    println!("after    {}", modified.describe());
     println!();
 }

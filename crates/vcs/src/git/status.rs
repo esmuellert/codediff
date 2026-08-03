@@ -25,7 +25,6 @@
 //! format outright.
 
 use crate::error::{Error, Result};
-use crate::path::RelPath;
 
 /// One of git's single-letter status codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,12 +116,18 @@ impl std::fmt::Display for Oid {
 }
 
 /// One record of `git status --porcelain=v2`.
+///
+/// Paths are plain strings, as git spelled them: parsing has no repository
+/// root to resolve them against. They become a [`RepoPath`] in
+/// [`to_file_diff`](crate::git::to_file_diff), which does.
+///
+/// [`RepoPath`]: file_types::RepoPath
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub xy: Xy,
-    pub path: RelPath,
+    pub path: String,
     /// Where a renamed or copied file came from.
-    pub original: Option<RelPath>,
+    pub original: Option<String>,
     /// Rename or copy similarity, 0–100.
     pub score: Option<u8>,
 }
@@ -191,7 +196,7 @@ fn ordinary(rest: &str) -> Result<Entry> {
         .ok_or_else(|| missing("ordinary record path"))?;
     Ok(Entry {
         xy,
-        path: RelPath::new(path),
+        path: path.to_owned(),
         original: None,
         score: None,
     })
@@ -208,8 +213,8 @@ fn rename(rest: &str, original: Option<&str>) -> Result<Entry> {
 
     Ok(Entry {
         xy,
-        path: RelPath::new(path),
-        original: Some(RelPath::new(original)),
+        path: path.to_owned(),
+        original: Some(original.to_owned()),
         // "R100" or "C75": a letter then a percentage.
         score: score.get(1..).and_then(|n| n.parse().ok()),
     })
@@ -225,7 +230,7 @@ fn unmerged(rest: &str) -> Result<Entry> {
         .ok_or_else(|| missing("unmerged record path"))?;
     Ok(Entry {
         xy,
-        path: RelPath::new(path),
+        path: path.to_owned(),
         original: None,
         score: None,
     })
@@ -238,7 +243,7 @@ fn simple(path: &str, code: Code) -> Entry {
             index: Code::Unmodified,
             worktree: code,
         },
-        path: RelPath::new(path),
+        path: path.to_owned(),
         original: None,
         score: None,
     }

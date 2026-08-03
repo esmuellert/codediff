@@ -1,0 +1,17 @@
+[package]
+name = "file-types"
+description = "What a file under review is: where it lives, what is in it, which version."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# None, deliberately. Every layer names this crate — `vcs` reads files, the
+# pipeline moves them, `ui` draws them — so it can depend on none of them.
+[dependencies]
+
+[lints]
+workspace = true

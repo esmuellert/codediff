@@ -11,6 +11,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+file-types.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true

@@ -1,0 +1,127 @@
+//! One changed file, as a version control system reports it.
+//!
+//! What a backend must produce, and therefore what everything downstream
+//! receives — whether the backend is git, jj, or something not written yet.
+//! Nothing here names a version control concept: no index, no `HEAD`, no blob
+//! and no object id, because a system need not have any of them. jj has no
+//! staging area at all. What "before" means is decided when a backend is
+//! constructed, not here. See D30.
+
+use crate::{ChangeType, DiffVersion, File, RepoPath};
+
+/// One file that differs between the two sides.
+///
+/// Identity is a [`File`], which every layer above can name. What happened is
+/// **not stored** where the paths already say it: `Added`, `Deleted`, `Moved`
+/// and `Modified` are read from the pair by [`File::change`], so no field here
+/// can contradict them. Only the two a backend alone knows are kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedFile {
+    /// Where the file is on each side. Absent on one side means added or
+    /// deleted, and two different paths mean a rename.
+    pub file: File,
+    /// What the backend reported, when the paths cannot say it.
+    ///
+    /// `Some` only for [`ChangeType::Untracked`] and
+    /// [`ChangeType::Conflicted`]: an untracked file's paths look exactly like
+    /// an added one's, and a conflicted file's look like an ordinary
+    /// modification.
+    reported: Option<ChangeType>,
+    /// How alike the two paths are, 0–100, when the file moved.
+    pub similarity: Option<u8>,
+}
+
+impl ChangedFile {
+    /// A file whose paths tell the whole story.
+    pub fn new(file: File, similarity: Option<u8>) -> Self {
+        Self {
+            file,
+            reported: None,
+            similarity,
+        }
+    }
+
+    /// A file the backend has more to say about than its paths do.
+    ///
+    /// # Panics
+    ///
+    /// If `reported` is one the paths could have said. Passing `Added` here
+    /// would create exactly the disagreement this type exists to prevent.
+    pub fn reported(file: File, reported: ChangeType) -> Self {
+        assert!(
+            reported.needs_a_backend(),
+            "{reported:?} is readable from the paths; do not store it"
+        );
+        Self {
+            file,
+            reported: Some(reported),
+            similarity: None,
+        }
+    }
+
+    /// What happened to this file.
+    pub fn change(&self) -> ChangeType {
+        self.reported.unwrap_or_else(|| self.file.change())
+    }
+
+    /// Where the file is now, or where it was if it is gone.
+    pub fn path(&self) -> &RepoPath {
+        self.file.path()
+    }
+
+    /// The path to read on the before side, which is the old one for a move.
+    pub fn before_path(&self) -> &RepoPath {
+        self.file
+            .on(DiffVersion::Original)
+            .unwrap_or_else(|| self.file.path())
+    }
+
+    pub fn is_conflicted(&self) -> bool {
+        self.change() == ChangeType::Conflicted
+    }
+
+    pub fn is_moved(&self) -> bool {
+        self.change() == ChangeType::Moved
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn at(relative: &str) -> RepoPath {
+        RepoPath::new(relative, Path::new("/repo"))
+    }
+
+    #[test]
+    fn the_ordinary_cases_come_from_the_paths() {
+        assert_eq!(
+            ChangedFile::new(File::added(at("new.rs")), None).change(),
+            ChangeType::Added
+        );
+        assert_eq!(
+            ChangedFile::new(File::renamed(at("o.rs"), at("n.rs")), Some(90)).change(),
+            ChangeType::Moved
+        );
+    }
+
+    #[test]
+    fn the_backend_supplies_only_what_the_paths_cannot_say() {
+        let untracked = ChangedFile::reported(File::added(at("new.rs")), ChangeType::Untracked);
+        assert_eq!(untracked.change(), ChangeType::Untracked);
+        assert_eq!(
+            untracked.file.change(),
+            ChangeType::Added,
+            "the paths still say what they say"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "readable from the paths")]
+    fn storing_a_derivable_change_is_refused() {
+        // The whole point: a stored `Added` could disagree with a `File` that
+        // has both versions, and nothing would catch it.
+        ChangedFile::reported(File::added(at("new.rs")), ChangeType::Added);
+    }
+}

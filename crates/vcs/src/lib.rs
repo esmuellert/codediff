@@ -2,23 +2,24 @@
 //!
 //! ---
 //!
-//! Admission criterion: which **capability** does this belong to? Every trait
-//! gets a folder holding itself and the types in its signatures, so adding one
-//! means adding a folder rather than growing a file. A crate named for a whole
-//! domain is otherwise an invitation to put anything in it.
+//! Admission criterion: does this **run a version control system**, or say how
+//! doing so can fail? What it *produces* is `file-types` — `ChangedFile`,
+//! `File`, `RepoPath`, `FileContent` — and `cargo xtask lint-arch` forbids
+//! that crate from naming this one, so no git concept can reach a reviewer.
 //!
-//! `path`, `repo` and `error` sit above the capabilities because all of them
-//! need those. `git` sits below, and is the only place `git` runs.
+//! There is no trait. The contract is the types, and the pipeline that calls
+//! `Git`'s methods is what checks a backend meets it. A second backend earns a
+//! trait extracted from two real implementations; one guessed from a single
+//! implementor was checking nothing. See D30.
+//!
+//! `repo` and `error` sit above; `git` sits below and is the only place `git`
+//! runs.
 
 mod error;
-mod path;
 mod repo;
 
-pub mod diff;
 pub mod git;
 
-pub use diff::{Content, Diff, DiffKind, FileDiff};
 pub use error::{Error, Result};
 pub use git::Git;
-pub use path::RelPath;
 pub use repo::Repo;

@@ -13,8 +13,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::error::{Error, Result};
-use crate::path::RelPath;
 use crate::repo::Repo;
+use file_types::RepoPath;
 
 /// A `git cat-file --batch` process, kept open.
 #[derive(Debug)]
@@ -54,7 +54,7 @@ impl Batch {
     /// the revision, or deleted before it. That is an ordinary answer, not an
     /// error: a diff against `HEAD` asks for both sides of every file and one
     /// of them is routinely absent.
-    pub fn read(&mut self, rev: &str, path: &RelPath) -> Result<Option<Vec<u8>>> {
+    pub fn read(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
         // The `rev:path` spelling is what cat-file expects for a path inside a
         // tree, and the path is relative to the root.
         writeln!(self.stdin, "{rev}:{path}").map_err(Self::broken)?;

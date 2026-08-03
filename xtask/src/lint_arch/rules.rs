@@ -56,6 +56,17 @@ pub const FORBIDDEN_SHIPPED_EDGES: &[(&str, &str, &str)] = &[
         "vscode-diff-sys",
         "what a diff *is* must be nameable without a C toolchain",
     ),
+    (
+        "file-types",
+        "vcs",
+        "every layer names the shared file vocabulary, so it can name none of \
+         them — an edge here would be a cycle waiting to happen",
+    ),
+    (
+        "file-types",
+        "align",
+        "a file does not know how two of them are paired up",
+    ),
 ];
 
 /// Crates that must not perform IO, so that they stay trivially testable.
@@ -66,6 +77,7 @@ pub const PURE_CRATES: &[&str] = &[
     "explorer",
     "vscode-diff",
     "diff-types",
+    "file-types",
 ];
 
 pub const IO_MARKERS: &[&str] = &["std::fs", "std::process", "std::net", "std::env::var"];
@@ -83,7 +95,7 @@ pub const IO_MARKERS: &[&str] = &["std::fs", "std::process", "std::net", "std::e
 /// If ambiguous bindings are ever wanted, the answer is to inject the clock as
 /// a parameter and delete this rule, not to reach for one here.
 pub const CLOCK_FREE_DIRS: &[(&str, &str)] = &[(
-    "crates/display/src/input",
+    "crates/ui/src/input",
     "the key resolver is a pure function of its own state and one key",
 )];
 

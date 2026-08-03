@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 diff-types.workspace = true
+file-types.workspace = true
 line-index.workspace = true
 
 [dev-dependencies]

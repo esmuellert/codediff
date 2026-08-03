@@ -13,6 +13,7 @@ publish = false
 [dependencies]
 vscode-diff-sys.workspace = true
 diff-types.workspace = true
+file-types.workspace = true
 
 # Not `workspace = true`: the conversion from C to owned Rust must dereference
 # raw pointers, so this crate denies rather than forbids and carries a single

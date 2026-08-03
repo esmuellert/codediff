@@ -9,7 +9,7 @@
 //! ```text
 //! mod             the screen: body and status line
 //! side_by_side    one pane holding a diff in two columns
-//! text            one pane holding a single file
+//! single_file     one pane holding one version of a file
 //! column          one gutter-and-text column of a diff
 //! cells           writing characters, tabs and wide glyphs into a rect
 //! ```
@@ -19,7 +19,7 @@
 //!
 //! ```text
 //! view/buffer/side_by_side.rs  ←→  render/side_by_side.rs
-//! view/buffer/text.rs          ←→  render/text.rs
+//! view/buffer/single_file.rs   ←→  render/single_file.rs
 //! ```
 //!
 //! A buffer kind is dispatched on exactly once, in [`pane`]. Adding one is a
@@ -29,8 +29,8 @@ mod cells;
 mod column;
 pub mod layout;
 mod side_by_side;
+mod single_file;
 mod status;
-mod text;
 
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
@@ -77,7 +77,7 @@ fn pane(
 ) -> bool {
     match buffer {
         Buffer::SideBySide(data) => side_by_side::draw(cells, area, data, viewport, theme),
-        Buffer::Text(data) => text::draw(cells, area, data, viewport, theme),
+        Buffer::SingleFile(data) => single_file::draw(cells, area, data, viewport, theme),
     }
 }
 
@@ -89,10 +89,10 @@ fn summary<'a>(buffer: &'a Buffer, viewport: &Viewport) -> status::Status<'a> {
             data.block_at(viewport.cursor()),
             data.hit_timeout(),
         ),
-        Buffer::Text(_) => (0, None, false),
+        Buffer::SingleFile(_) => (0, None, false),
     };
     status::Status {
-        path: buffer.label(),
+        file: buffer.file(),
         row: viewport.cursor(),
         rows: buffer.rows(),
         changes,

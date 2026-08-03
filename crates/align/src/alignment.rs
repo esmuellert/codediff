@@ -1,6 +1,7 @@
 //! The layer's one public entry point.
 
 use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff, MovedText};
+pub use file_types::DiffVersion;
 
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
@@ -23,17 +24,6 @@ impl std::fmt::Display for Malformed {
 }
 
 impl std::error::Error for Malformed {}
-
-/// Which file a line number refers to.
-///
-/// Deliberately not `Left` and `Right`. Those are places on a screen, and
-/// inline view puts both on the same side; a model that names them cannot
-/// describe it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Side {
-    Original,
-    Modified,
-}
 
 /// A diff paired up with the two files it came from.
 ///
@@ -158,16 +148,16 @@ impl Alignment {
         self.diff.changes.is_empty()
     }
 
-    pub fn lines(&self, side: Side) -> &[String] {
-        match side {
-            Side::Original => &self.original,
-            Side::Modified => &self.modified,
+    pub fn lines(&self, version: DiffVersion) -> &[String] {
+        match version {
+            DiffVersion::Original => &self.original,
+            DiffVersion::Modified => &self.modified,
         }
     }
 
     /// The text of one line, numbered from 1.
-    pub fn line(&self, side: Side, number: u32) -> Option<&str> {
-        self.lines(side)
+    pub fn line(&self, version: DiffVersion, number: u32) -> Option<&str> {
+        self.lines(version)
             .get(number.checked_sub(1)? as usize)
             .map(String::as_str)
     }
@@ -207,24 +197,26 @@ impl Alignment {
     }
 
     /// The hunk a line belongs to, if any.
-    pub fn hunk_at(&self, side: Side, line: u32) -> Option<&Hunk> {
-        self.hunks.iter().find(|h| contains(range(h, side), line))
+    pub fn hunk_at(&self, version: DiffVersion, line: u32) -> Option<&Hunk> {
+        self.hunks
+            .iter()
+            .find(|h| contains(range(h, version), line))
     }
 
     /// Character-level changes on one line, as byte ranges into it.
     ///
     /// An inner change can span several lines, so this asks for one line at a
     /// time rather than returning a shape the caller has to unpick.
-    pub fn spans(&self, side: Side, line: u32) -> Vec<Span> {
-        let lines = self.lines(side);
+    pub fn spans(&self, version: DiffVersion, line: u32) -> Vec<Span> {
+        let lines = self.lines(version);
         self.diff
             .changes
             .iter()
-            .filter(|change| contains(line_range(change, side), line))
+            .filter(|change| contains(line_range(change, version), line))
             .flat_map(|change| &change.inner_changes)
-            .map(|mapping| match side {
-                Side::Original => &mapping.original,
-                Side::Modified => &mapping.modified,
+            .map(|mapping| match version {
+                DiffVersion::Original => &mapping.original,
+                DiffVersion::Modified => &mapping.modified,
             })
             // Expanding a mapping walks every line it touches, so skip the ones
             // that cannot contribute before doing that work.
@@ -248,11 +240,11 @@ impl Alignment {
     /// not agree with its change ranges — in the `comprehensive_move` fixture a
     /// move covers original 32..89 while a change covers 37..139 — so a move
     /// cannot be attached to a change without lying about one of them.
-    pub fn moved(&self, side: Side, line: u32) -> Option<&MovedText> {
+    pub fn moved(&self, version: DiffVersion, line: u32) -> Option<&MovedText> {
         self.diff
             .moves
             .iter()
-            .find(|m| contains(move_range(m, side), line))
+            .find(|m| contains(move_range(m, version), line))
     }
 }
 
@@ -276,23 +268,23 @@ fn normalise(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|line| (*line).to_owned()).collect()
 }
 
-fn range(hunk: &Hunk, side: Side) -> LineRange {
-    match side {
-        Side::Original => hunk.original,
-        Side::Modified => hunk.modified,
+fn range(hunk: &Hunk, version: DiffVersion) -> LineRange {
+    match version {
+        DiffVersion::Original => hunk.original,
+        DiffVersion::Modified => hunk.modified,
     }
 }
 
-fn line_range(change: &diff_types::DetailedLineRangeMapping, side: Side) -> LineRange {
-    match side {
-        Side::Original => change.original,
-        Side::Modified => change.modified,
+fn line_range(change: &diff_types::DetailedLineRangeMapping, version: DiffVersion) -> LineRange {
+    match version {
+        DiffVersion::Original => change.original,
+        DiffVersion::Modified => change.modified,
     }
 }
 
-fn move_range(moved: &MovedText, side: Side) -> LineRange {
-    match side {
-        Side::Original => moved.original,
-        Side::Modified => moved.modified,
+fn move_range(moved: &MovedText, version: DiffVersion) -> LineRange {
+    match version {
+        DiffVersion::Original => moved.original,
+        DiffVersion::Modified => moved.modified,
     }
 }

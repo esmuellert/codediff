@@ -2,41 +2,41 @@
 
 Asks a version control system what changed, and reads the two sides of a file.
 
-## One folder per capability
+## What is here, and what is not
 
 ```text
 lib.rs        re-exports only
-path.rs       RelPath      } shared vocabulary, above every capability
-repo.rs       Repo         }
-error.rs
-
-diff/         trait Diff       files() · before(f) · after(f)      the reviewer's words
-staging/      trait Staging    stage, unstage                      later
-history/      trait History    commits, merge_base                 later
+repo.rs       Repo         where the repository is, and where it keeps its state
+error.rs      Error        how running a version control system fails
 
 git/          rev_parse · cat_file · status · worktree             git's own words
 ```
 
-Each trait lives with the types in its signatures, so adding a capability means adding a
-folder rather than growing a file. A crate named for a whole domain is otherwise an
-invitation to put anything in it.
+**Every type this crate produces lives in `file-types`** — `ChangedFile`, `File`,
+`RepoPath`, `FileContent` — and `cargo xtask lint-arch` forbids that crate from naming this
+one, so no git concept can reach a reviewer. This crate holds the verbs; `file-types` holds
+the nouns.
 
-`Diff` names no git concept — no index, no `HEAD`, no blob, no object id — because a system
-need not have any of them. jj has no staging area at all. What "before" means is decided
-when a backend is constructed, not by the trait.
+`Repo` stays here because it is a property of the *repository*, not of a file: `control_dir`
+is where git keeps its own state, which the file watcher needs and no file has. The root is
+recoverable from any `RepoPath`, which carries both spellings.
 
-It is called `Diff` because that is what git and jj both call it, and because `Change` was
-already taken: the diff engine reports **line**-level changes, and two meanings of the word
-in one pipeline is one too many. `vcs::Diff` is per file; `vscode_diff::LinesDiff` is per
-line.
+**There is no trait.** There was one, with a single implementor, no generic use, and every
+call site importing it as `Changes as _` — an inherent `impl` wearing a trait's clothes. It
+claimed to enforce neutrality, but that came from the types in its signatures and from the
+lint, not from the trait itself. What actually checks a backend is the pipeline that calls
+`Git`'s methods: a trait proves four methods exist, while the pipeline proves they are the
+methods needed and that their results compose. A second backend earns a trait extracted from
+two real implementations. See [D30](../../docs/plan/05-decisions.md#d30).
+
+**`git diff` is never run.** `files()` is `git status`; `before`/`after` are `git cat-file`
+and `std::fs`. Computing the difference is the engine's job, two stages later — which is why
+nothing here is called `Diff` ([D29](../../docs/plan/05-decisions.md#d29)).
 
 Underneath, `git/` keeps every git word it needs: `XY` codes, `Oid`, the index. Its modules
 are named for the commands they run, so the file tree says which command before you open
 anything. `git::to_file_diff` is the single place the two vocabularies meet, and the only
 thing a second backend would write its own version of.
-
-Capabilities not every system has get their own trait, so a backend lacking one fails to
-compile rather than returning "unsupported" at runtime. Only `Diff` exists today.
 
 ## Why it runs `git` rather than linking a library
 

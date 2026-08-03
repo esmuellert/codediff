@@ -16,17 +16,18 @@
 //! [`SideBySide`]: crate::view::buffer::SideBySide
 
 use align::Alignment;
+use file_types::File;
 
 /// One file's two versions, paired up.
 #[derive(Debug)]
 pub struct Diff {
-    label: String,
+    file: File,
     alignment: Alignment,
 }
 
 impl Diff {
-    pub fn new(label: String, alignment: Alignment) -> Self {
-        Self { label, alignment }
+    pub fn new(file: File, alignment: Alignment) -> Self {
+        Self { file, alignment }
     }
 
     /// What to draw from.
@@ -37,9 +38,13 @@ impl Diff {
         &self.alignment
     }
 
-    /// What the status line calls this file.
-    pub fn label(&self) -> &str {
-        &self.label
+    /// Which file this is — structured, never a formatted string.
+    ///
+    /// A `label: String` here used to fuse the path, the previous path and the
+    /// added/deleted note, after which the status line could neither style nor
+    /// shorten them separately. See D28.
+    pub fn file(&self) -> &File {
+        &self.file
     }
 
     /// The engine gave up early, so the pairing is coarser than the files

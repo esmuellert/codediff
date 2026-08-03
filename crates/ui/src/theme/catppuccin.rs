@@ -327,13 +327,13 @@ mod tests {
                     + (c.1 as i32 - base.1 as i32).abs()
                     + (c.2 as i32 - base.2 as i32).abs()
             };
-            for (side, line, text) in [
+            for (version, line, text) in [
                 ("inserted", t.inserted, t.inserted_text),
                 ("deleted", t.deleted, t.deleted_text),
             ] {
                 assert!(
                     distance(background(text)) > distance(background(line)),
-                    "{flavour:?} {side}: the inner change must stand out \
+                    "{flavour:?} {version}: the inner change must stand out \
                      further from the background than the line carrying it"
                 );
             }

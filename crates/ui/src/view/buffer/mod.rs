@@ -1,7 +1,7 @@
 //! What a pane can show.
 //!
 //! A buffer is **a sequence of rows you can scroll through**, and that is the
-//! whole definition. Side-by-side and inline are therefore *different buffers*
+//! whole definition. DiffVersion-by-side and inline are therefore *different buffers*
 //! over the same diff, not one buffer with a flag: they emit different row
 //! sequences, so "row 40" would otherwise mean different things depending on a
 //! field stored somewhere else.
@@ -23,21 +23,23 @@
 //! [`Viewport`]: crate::view::Viewport
 
 mod side_by_side;
-mod text;
+mod single_file;
 
 pub use side_by_side::SideBySide;
-pub use text::Text;
+pub use single_file::SingleFile;
 
 use crate::input::{BufferAction, Context};
+use file_types::File;
+
 use crate::view::Viewport;
 
 /// Something a pane can show.
 #[derive(Debug)]
 pub enum Buffer {
-    /// Two files, in two columns.
+    /// Two versions, in two columns.
     SideBySide(SideBySide),
-    /// One file, with no comparison — added, deleted, or simply viewed.
-    Text(Text),
+    /// One version of a file, with nothing to compare it against.
+    SingleFile(SingleFile),
 }
 
 impl Buffer {
@@ -48,7 +50,7 @@ impl Buffer {
     pub fn rows(&self) -> u32 {
         match self {
             Buffer::SideBySide(d) => d.rows(),
-            Buffer::Text(t) => t.rows(),
+            Buffer::SingleFile(f) => f.rows(),
         }
     }
 
@@ -61,15 +63,19 @@ impl Buffer {
     pub fn context(&self) -> Context {
         match self {
             Buffer::SideBySide(_) => Context::SideBySide,
-            Buffer::Text(_) => Context::Text,
+            Buffer::SingleFile(_) => Context::SingleFile,
         }
     }
 
-    /// What the status line calls this.
-    pub fn label(&self) -> &str {
+    /// Which file this buffer is showing.
+    ///
+    /// Structured, not a formatted name: the status line styles the directory
+    /// differently from the file name and drops it first when the width runs
+    /// out, which a single string could not support. See D28.
+    pub fn file(&self) -> &File {
         match self {
-            Buffer::SideBySide(d) => d.label(),
-            Buffer::Text(t) => t.label(),
+            Buffer::SideBySide(d) => d.file(),
+            Buffer::SingleFile(f) => f.file(),
         }
     }
 
@@ -81,7 +87,7 @@ impl Buffer {
     pub fn act(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
         match self {
             Buffer::SideBySide(d) => d.act(action, count, view),
-            Buffer::Text(t) => t.act(action, count, view),
+            Buffer::SingleFile(f) => f.act(action, count, view),
         }
     }
 }

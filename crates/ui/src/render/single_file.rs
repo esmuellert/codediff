@@ -13,9 +13,15 @@ use crate::render::cells::{self, Ink};
 use crate::render::layout::gutter_width;
 use crate::theme::Theme;
 use crate::view::Viewport;
-use crate::view::buffer::Text;
+use crate::view::buffer::SingleFile;
 
-pub fn draw(buf: &mut Buffer, area: Rect, data: &Text, view: &Viewport, theme: &Theme) -> bool {
+pub fn draw(
+    buf: &mut Buffer,
+    area: Rect,
+    data: &SingleFile,
+    view: &Viewport,
+    theme: &Theme,
+) -> bool {
     let gutter = gutter_width(data.rows());
     if area.width < gutter + 4 || area.height == 0 {
         return false;

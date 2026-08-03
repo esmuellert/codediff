@@ -34,6 +34,7 @@ codediff/
 ├── crates/
 │   ├── vscode-diff-sys/      raw FFI + cc build of the C engine
 │   ├── diff-types/           what a diff *is* — no deps, no C          pure
+│   ├── file-types/           what a *file* is — named by every layer   pure
 │   ├── vscode-diff/          safe wrapper → LinesDiff                    pure
 │   ├── line-index/           where each character of a line sits      pure
 │   ├── syntax/               text → normalized syntactic spans        pure
@@ -55,6 +56,7 @@ codediff/
 |---|---|---|
 | `vscode-diff-sys` | `build.rs` invoking `cc`; `#[repr(C)]` structs and `extern "C"` declarations, 1:1 with the C API | unsafe, ~150 lines |
 | `diff-types` | the six structs a diff is made of: `LinesDiff`, `LineRange`, `DetailedLineRangeMapping`, `RangeMapping`, `MovedText`, `CharRange`. **No dependencies and no build script**, so everything downstream can name a diff without inheriting a C toolchain | pure |
+| `file-types` | what a file under review is: `RepoPath` (both spellings, one constructor), `File` (a version on each side, either absent), `FileContent`, `DiffVersion`. **No dependencies**, so `vcs`, the pipeline and `ui` can all name it and a file's identity is converted at no boundary ([D28](05-decisions.md#d28)) | pure |
 | `vscode-diff` | `compute(&[&str], &[&str], Options) -> LinesDiff` returning owned Rust types; eager conversion, frees C memory immediately. Re-exports `diff-types` so one dependency suffices | pure |
 | `line-index` | where each character of a line sits: UTF-16 ↔ byte ↔ char ↔ grapheme ↔ cell, display width, tab expansion, cell-range slicing | pure |
 | `syntax` | language detection; text → `SpanSet` of normalized `Class` values. The only crate that may name a syntax engine | pure |
