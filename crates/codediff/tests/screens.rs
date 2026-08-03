@@ -14,7 +14,7 @@
 
 mod harness;
 
-use harness::{column_of, key, screen, session};
+use harness::{cells, column_of, key, screen, session};
 use ui::crossterm::event::KeyCode;
 use ui::{Flow, Session, Theme};
 
@@ -103,6 +103,27 @@ fn horizontal_scrolling_shifts_the_text_and_not_the_numbers() {
     let rendered = screen(&mut s, 44, 3);
     let rows: Vec<&str> = rendered.lines().collect();
     assert!(rows[0].starts_with("  1 ijklmnop"), "{:?}", rows[0]);
+}
+
+#[test]
+fn an_inner_change_keeps_its_highlight_on_its_character_when_scrolled() {
+    // The whole row is marked because the line changed; `9` is marked more
+    // strongly because it is what changed. Scrolled sideways the stronger mark
+    // has to travel with the character: the engine reports it as a byte offset
+    // into the line, while the scroll is counted in screen cells, and on a
+    // line with a tab or a wide character those two disagree.
+    let mut s = session("f.rs", "fn f() { total = 1; }", "fn f() { total = 9; }");
+    s.handle(&key(KeyCode::Char('l')));
+    let grid = cells(&mut s, 44, 3);
+    let row: String = (0..44).map(|x| grid[(x, 0)].symbol()).collect();
+
+    // Without this the test would still pass if scrolling stopped working.
+    assert!(!row.contains("fn f()"), "the view did not scroll: {row:?}");
+
+    let at = column_of(&row, '9').expect("the changed character is on screen");
+    let bg = |x: usize| grid[(x as u16, 0)].style().bg;
+    assert_ne!(bg(at), bg(at - 1), "the mark reaches left of it: {row:?}");
+    assert_ne!(bg(at), bg(at + 1), "the mark reaches right of it: {row:?}");
 }
 
 #[test]

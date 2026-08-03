@@ -174,6 +174,26 @@ mod tests {
         }
     }
 
+    /// Which columns came out emphasised, as a mask to read under the text.
+    fn marks(width: u16, line: &str, left: u32, span: Emphasis) -> String {
+        let (mut buf, area) = row(width);
+        let ink = Ink {
+            base: Style::new().bg(Color::Blue),
+            emphasis: Style::new().bg(Color::Red),
+            spans: &[span],
+        };
+        paint(&mut buf, area, line, 4, left, ink);
+        (area.x..area.right())
+            .map(|x| {
+                if buf[(x, area.y)].style().bg == Some(Color::Red) {
+                    '^'
+                } else {
+                    '.'
+                }
+            })
+            .collect()
+    }
+
     fn draw(width: u16, line: &str, left: u32) -> String {
         let (mut buf, area) = row(width);
         paint(&mut buf, area, line, 4, left, plain());
@@ -241,6 +261,31 @@ mod tests {
         assert_eq!(bg(3), Some(Color::Red));
         assert_eq!(bg(4), Some(Color::Red));
         assert_eq!(bg(5), Some(Color::Blue));
+    }
+
+    #[test]
+    fn emphasis_stays_on_its_characters_when_the_line_is_scrolled() {
+        // Only the `3` changed, which the engine reports as bytes 20..21.
+        let line = "let total = price * 3;";
+        assert_eq!(draw(22, line, 0), "let total = price * 3;");
+        assert_eq!(marks(22, line, 0, 20..21), "....................^.");
+        // Scrolled eight columns: the same byte is now screen column 12.
+        assert_eq!(draw(14, line, 8), "l = price * 3;");
+        assert_eq!(marks(14, line, 8, 20..21), "............^.");
+    }
+
+    #[test]
+    fn a_tab_before_the_span_moves_the_columns_but_not_the_bytes() {
+        // The tab is one byte and four cells, so byte 3 sits at cell 6.
+        assert_eq!(marks(10, "\tabc", 0, 3..4), "......^...");
+        assert_eq!(marks(10, "\tabc", 2, 3..4), "....^.....");
+    }
+
+    #[test]
+    fn a_wide_character_before_the_span_moves_the_columns_but_not_the_bytes() {
+        // Each kanji is three bytes and two cells, so byte 6 sits at cell 4.
+        assert_eq!(marks(8, "日本x", 0, 6..7), "....^...");
+        assert_eq!(marks(8, "日本x", 3, 6..7), ".^......");
     }
 
     #[test]
