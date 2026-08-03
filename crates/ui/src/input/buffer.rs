@@ -122,8 +122,11 @@ pub const MOTIONS: &[Binding] = &[
 
 /// What a side-by-side diff adds to the motions.
 pub const SIDE_BY_SIDE: &[Binding] = &[
-    buffer(&[key!(n)], BufferAction::NextChange),
-    buffer(&[key!(shift - n)], BufferAction::PrevChange),
+    // `]` and `[` are deliberately unbound on their own, like `g`: they are
+    // internal nodes of the trie. Vim's own diff-change motions, which also
+    // leaves `n` and `N` free for search — see D9.
+    buffer(&[key!(']'), key!(c)], BufferAction::NextChange),
+    buffer(&[key!('['), key!(c)], BufferAction::PrevChange),
     buffer(&[key!('>')], BufferAction::WidenOriginal),
     buffer(&[key!('<')], BufferAction::NarrowOriginal),
 ];

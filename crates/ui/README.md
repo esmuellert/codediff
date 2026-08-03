@@ -276,7 +276,7 @@ beside the code that measures them — so the substitution and the measurement c
 codediff <path>
 ```
 
-`q` quits, `j`/`k` scroll, `n`/`N` step through changes, `>`/`<` drag the divider, `Ctrl-Z`
+`q` quits, `j`/`k` scroll, `]c`/`[c` step through changes, `>`/`<` drag the divider, `Ctrl-Z`
 suspends. The screen must match `codediff debug diff-file <path>` row for row.
 
 ```sh

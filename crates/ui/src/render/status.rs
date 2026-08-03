@@ -10,6 +10,7 @@ use ratatui::layout::Rect;
 
 use crate::render::cells;
 use crate::theme::Theme;
+use crate::view::Direction;
 
 /// What the status line says.
 pub struct Status<'a> {
@@ -30,6 +31,11 @@ pub struct Status<'a> {
     pub change: Option<usize>,
     /// The engine gave up before finishing; what is shown is incomplete.
     pub timed_out: bool,
+    /// A change-navigation key that had nowhere to go, if the last one did.
+    ///
+    /// Shown instead of the change counter, since it answers the key that was
+    /// just pressed and the counter would only repeat what it already said.
+    pub exhausted: Option<Direction>,
 }
 
 pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
@@ -122,6 +128,13 @@ fn name(
 
 fn summary(status: &Status<'_>) -> String {
     let position = format!("{}/{}", status.row + 1, status.rows.max(1));
+    if let Some(direction) = status.exhausted {
+        let which = match direction {
+            Direction::Next => "next",
+            Direction::Previous => "previous",
+        };
+        return format!("no {which} change   {position}");
+    }
     match (status.change, status.changes) {
         (_, 0) => format!("no changes   {position}"),
         (Some(i), n) => format!("change {}/{n}   {position}", i + 1),
@@ -151,6 +164,7 @@ mod tests {
             changes: 3,
             change: None,
             timed_out: false,
+            exhausted: None,
         }
     }
 
@@ -179,6 +193,29 @@ mod tests {
             60,
         );
         assert!(line.contains("change 2/3"), "{line:?}");
+    }
+
+    #[test]
+    fn a_change_key_with_nowhere_to_go_says_so_instead_of_counting() {
+        // The counter would only repeat what it already said, leaving the
+        // reader unable to tell a key that did nothing from one that is not
+        // bound at all.
+        for (direction, expected) in [
+            (Direction::Next, "no next change"),
+            (Direction::Previous, "no previous change"),
+        ] {
+            let line = render(
+                &Status {
+                    change: Some(2),
+                    exhausted: Some(direction),
+                    ..status()
+                },
+                60,
+            );
+            assert!(line.contains(expected), "{line:?}");
+            assert!(!line.contains("change 3/3"), "{line:?}");
+            assert!(line.contains("1/100"), "the position stays: {line:?}");
+        }
     }
 
     #[test]

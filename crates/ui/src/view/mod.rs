@@ -35,7 +35,7 @@ mod pane;
 mod tab;
 mod viewport;
 
-pub use buffer::Buffer;
+pub use buffer::{Buffer, Direction};
 pub use pane::Pane;
 pub use tab::{Layout, PaneId, Tab};
 pub use viewport::Viewport;

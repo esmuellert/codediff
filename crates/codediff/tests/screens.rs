@@ -14,7 +14,7 @@
 
 mod harness;
 
-use harness::{cells, column_of, key, screen, session};
+use harness::{cells, column_of, key, screen, session, type_keys};
 use ui::crossterm::event::KeyCode;
 use ui::{Flow, Session, Theme};
 
@@ -184,18 +184,50 @@ fn quitting_is_the_only_way_the_loop_ends() {
 #[test]
 fn navigation_and_the_status_line_count_the_same_changes() {
     // They used to disagree: the status line reported context-merged hunks
-    // while `n` stepped through changed blocks, so a file could say "1" and
+    // while `]c` stepped through changed blocks, so a file could say "1" and
     // still stop twice.
     let mut s = demo();
     assert!(screen(&mut s, 44, 8).contains("2 changes"));
 
-    s.handle(&key(KeyCode::Char('n')));
+    type_keys(&mut s, "]c");
     assert_eq!(s.view().focused().viewport.cursor(), 1, "the two/TWO row");
     assert!(screen(&mut s, 44, 8).contains("change 1/2"));
 
-    s.handle(&key(KeyCode::Char('n')));
+    type_keys(&mut s, "]c");
     assert_eq!(s.view().focused().viewport.cursor(), 3, "the inserted row");
     assert!(screen(&mut s, 44, 8).contains("change 2/2"));
+}
+
+#[test]
+fn a_change_key_at_the_last_change_says_so_rather_than_doing_nothing() {
+    // Silence here reads as a broken key. Cycling round instead would be
+    // worse: it destroys the one signal that matters when checking an agent's
+    // work — that you have now seen everything. See S9.
+    let mut s = demo();
+    type_keys(&mut s, "]c]c");
+    assert!(screen(&mut s, 44, 8).contains("change 2/2"));
+
+    type_keys(&mut s, "]c");
+    let stuck = screen(&mut s, 44, 8);
+    assert!(stuck.contains("no next change"), "{stuck:?}");
+    assert_eq!(
+        s.view().focused().viewport.cursor(),
+        3,
+        "it must not have moved"
+    );
+
+    // Any other key answers the note, which is how vim's echo area behaves and
+    // why none of this needs a clock.
+    type_keys(&mut s, "k");
+    assert!(!screen(&mut s, 44, 8).contains("no next change"));
+}
+
+#[test]
+fn the_same_at_the_first_change_going_backwards() {
+    let mut s = demo();
+    type_keys(&mut s, "[c");
+    let stuck = screen(&mut s, 44, 8);
+    assert!(stuck.contains("no previous change"), "{stuck:?}");
 }
 
 #[test]

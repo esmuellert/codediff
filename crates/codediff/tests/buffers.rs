@@ -65,12 +65,12 @@ fn a_one_sided_file_still_scrolls() {
 
 #[test]
 fn the_keys_a_one_sided_file_cannot_use_do_nothing() {
-    // `n` and `>` are not bound in this context — there are no changes to step
-    // through and no second column to resize. Pressing them must be inert
+    // `]c` and `>` are not bound in this context — there are no changes to
+    // step through and no second column to resize. Pressing them must be inert
     // rather than an error or a stuck pending sequence.
     let mut s = Session::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
     let before = screen(&mut s, 40, 4);
-    for c in ['n', 'N', '>', '<'] {
+    for c in [']', 'c', '[', 'c', '>', '<'] {
         s.handle(&key(KeyCode::Char(c)));
     }
     assert_eq!(screen(&mut s, 40, 4), before);

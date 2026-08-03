@@ -25,7 +25,7 @@
 mod side_by_side;
 mod single_file;
 
-pub use side_by_side::SideBySide;
+pub use side_by_side::{Direction, SideBySide};
 pub use single_file::SingleFile;
 
 use crate::input::{BufferAction, Context};

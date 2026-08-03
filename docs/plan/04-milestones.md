@@ -222,28 +222,58 @@ machine with pending sequences and count prefixes.
 
 **Check.**
 ```
-codediff --file /tmp/cdfix/big-a.rs /tmp/cdfix/big-b.rs      # 5000 lines
+codediff <a file with a few thousand changed lines>
 ```
 
 **Pass when.**
-- [ ] `j k Ctrl-D Ctrl-U gg G` and counts (`5j`) behave correctly
-- [ ] **both panes always show the same logical rows** — verifiable from the row gutter
-- [ ] no flicker while scrolling fast; holding `j` stays smooth
-- [ ] the cursor line is highlighted and never scrolls off screen
+- [x] `j k Ctrl-D Ctrl-U gg G` and counts (`5j`) behave correctly
+- [x] **both panes always show the same logical rows** — verifiable from the row gutter
+- [x] no flicker while scrolling fast; holding `j` stays smooth
+- [x] the cursor line is highlighted and never scrolls off screen
+
+**Measured.** Nothing clears the screen between frames, so ratatui emits only the cells that
+changed. 5000 lines at 120×40 costs **490 µs a frame**, 33× under a 60 fps budget; the diff
+and alignment behind it cost 27 ms, once, at open.
 
 ---
 
-### S9 — Hunk navigation
+### S9 — Change navigation
 
-**Build.** `]c` / `[c`, hunk index in the status line, wrap behaviour, landing position.
+**Build.** `]c` / `[c`, change index in the status line, landing position. At the last change
+the cursor **stays put and the status line says so** — see *Stopping, by design* below.
 
-**Check.** Open a file with many hunks, press `]c` repeatedly past the end.
+**Check.** Open a file with many changes, press `]c` repeatedly past the end.
 
 **Pass when.**
-- [ ] `]c` / `[c` land on the next and previous change, never mid-hunk
-- [ ] the status line reads `hunk 3/17` and stays accurate
-- [ ] wrapping at the last hunk behaves as configured
-- [ ] panes never desynchronise after a jump
+- [x] `]c` / `[c` land on the next and previous change, never mid-change
+- [x] the status line reads `change 3/17` and stays accurate
+- [x] `]c` at the last change stays there and reports `no next change`
+- [x] panes never desynchronise after a jump
+
+**Stopping, by design.** The original wording was "wrapping at the last hunk behaves as
+configured", which could not be met here at all: there is no configuration until **S17**, so
+the criterion depended on a milestone eight ahead of it. Rather than carry a permanently
+unmeetable box, the behaviour is now decided rather than deferred — `]c` stops.
+
+That is also the better default for this tool, not merely the reachable one. Wrapping
+silently back to the top destroys the one signal that matters when checking an agent's work:
+that you have now seen everything. In an editor you are usually hunting one spot and
+cycling helps; in a reviewer you are covering all of them, and "finished" must not look like
+"going round again".
+
+The three modes stay available later, and cost little once there is a config file to choose
+between them: don't cycle (today), cycle within the file, cycle across files. The third also
+needs more than one file open, so **S12** at the earliest.
+
+**Counting blocks, not hunks.** The status line and `]c` both count *runs of changed rows*,
+never the engine's hunks. Hunks merge changes a few lines apart, which is right for
+collapsing context and wrong for navigation, where it would make two nearby edits one stop.
+Both read the same `blocks`, so they cannot disagree — the bug that motivated it.
+
+**Found while building.** `n` / `N` were bound here first, which would have left search — `/`
+`n` `N` in [D9](05-decisions.md#d9--a-deliberately-thin-motion-set) — with nothing to bind.
+Rebound to `]c` / `[c`, vim's own diff-change motions, restoring the split D9 always
+specified. Search itself is in D9 but has no milestone.
 
 ---
 
@@ -256,10 +286,17 @@ arrives in S10a.
 **Check.** Open `src/longlines.rs`, `src/tabs.rs` and `src/unicode.rs`; scroll right.
 
 **Pass when.**
-- [ ] both panes scroll horizontally together
-- [ ] **inner-change highlights stay on the correct characters at every offset**
-- [ ] no character is ever split mid-grapheme at the pane edge
-- [ ] CJK and emoji do not shift the columns
+- [x] both panes scroll horizontally together
+- [x] **inner-change highlights stay on the correct characters at every offset**
+- [x] no character is ever split mid-grapheme at the pane edge
+- [x] CJK and emoji do not shift the columns
+
+**Found while auditing.** The highlight criterion held, but nothing pinned it: every test of
+the marks ran at offset zero on ASCII, where byte, cell and scroll all coincide and any
+wrong formula gives the right answer. Two sabotages — looking the style up by cell instead
+of byte, and subtracting the scroll from the byte offset as well as from the column — left
+the whole suite green. Now covered at a non-zero offset, behind a tab, behind a wide
+character, and end to end on a real screen.
 
 ---
 
@@ -372,6 +409,10 @@ lock files **by destination path**, suppress refresh while our own git subproces
 flight, targeted refresh, position restoration by `(path, HunkId)`, `Flag::Rescan` handling,
 `PollWatcher` fallback, opt-out config. See
 [D16](05-decisions.md#d16--watcher-design-informed-by-upstream-production-failures).
+
+**Depends on S17.** "Opt-out config" needs the config file, which is S17. Decide the default
+here and leave the switch to S17, as S9 did — a criterion that depends on a later milestone
+cannot be met in order.
 
 **Check.** With codediff open, in another terminal: edit the open file; `touch newfile.txt`;
 `git commit`. Then leave it completely idle for 60 s with a CPU probe attached.

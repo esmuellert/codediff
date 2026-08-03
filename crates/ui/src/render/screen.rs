@@ -60,13 +60,14 @@ fn pane(
 
 /// What the status line says about the focused pane.
 fn summary<'a>(buffer: &'a Buffer, viewport: &Viewport) -> status::Status<'a> {
-    let (changes, change, timed_out) = match buffer {
+    let (changes, change, timed_out, exhausted) = match buffer {
         Buffer::SideBySide(data) => (
             data.blocks().len(),
             data.block_at(viewport.cursor()),
             data.hit_timeout(),
+            data.exhausted(),
         ),
-        Buffer::SingleFile(_) => (0, None, false),
+        Buffer::SingleFile(_) => (0, None, false, None),
     };
     status::Status {
         file: buffer.file(),
@@ -75,6 +76,7 @@ fn summary<'a>(buffer: &'a Buffer, viewport: &Viewport) -> status::Status<'a> {
         changes,
         change,
         timed_out,
+        exhausted,
     }
 }
 

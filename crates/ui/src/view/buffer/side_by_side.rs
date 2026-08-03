@@ -11,7 +11,7 @@
 //! open, so both are computed once here:
 //!
 //! - `rows`, the height of the document in rows rather than lines
-//! - `blocks`, the runs of changed rows that `n` steps through
+//! - `blocks`, the runs of changed rows that `]c` steps through
 
 use std::ops::Range;
 
@@ -41,6 +41,22 @@ pub struct SideBySide {
     /// pane holds only what is true of any view of any buffer, and a
     /// percentage meaningless for a plain file is not that. See D27.
     divider: u16,
+    /// Which way the last change-navigation key went when there was nowhere
+    /// left to go.
+    ///
+    /// Kept so the status line can answer the keypress. Without it `]c` at the
+    /// last change does nothing and says nothing, which reads as a broken key
+    /// rather than as the end of the file. Cleared by the next key, which is
+    /// how vim's echo area behaves — and the reason this needs no clock, which
+    /// `ui` is forbidden from having.
+    exhausted: Option<Direction>,
+}
+
+/// Which way a change-navigation key was pressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Next,
+    Previous,
 }
 
 /// The narrowest either column may be squeezed to, in percent.
@@ -56,6 +72,7 @@ impl SideBySide {
             blocks,
             rows,
             divider: 50,
+            exhausted: None,
         }
     }
 
@@ -85,27 +102,45 @@ impl SideBySide {
         &self.blocks
     }
 
+    /// Which way the last change-navigation key went with nowhere to go.
+    pub fn exhausted(&self) -> Option<Direction> {
+        self.exhausted
+    }
+
     /// Which changed block a row falls in, if any.
     pub fn block_at(&self, row: u32) -> Option<usize> {
         self.blocks.iter().position(|b| b.contains(&row))
     }
 
     pub fn act(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
+        // Any key answers the previous one, so the note lasts exactly until
+        // the reader does something else.
+        self.exhausted = None;
         match action {
             // Generic arithmetic over a row count, which this buffer supplies.
             // Nothing here is diff-specific.
             BufferAction::Motion(motion) => view.motion(motion, count, self.rows),
             // A motion that has to ask this buffer where to go.
-            BufferAction::NextChange => view.step(count, self.rows, |from| {
-                self.blocks.iter().map(|b| b.start).find(|&r| r > from)
-            }),
-            BufferAction::PrevChange => view.step(count, self.rows, |from| {
-                self.blocks
-                    .iter()
-                    .map(|b| b.start)
-                    .rev()
-                    .find(|&r| r < from)
-            }),
+            BufferAction::NextChange => {
+                let moved = view.step(count, self.rows, |from| {
+                    self.blocks.iter().map(|b| b.start).find(|&r| r > from)
+                });
+                if !moved {
+                    self.exhausted = Some(Direction::Next);
+                }
+            }
+            BufferAction::PrevChange => {
+                let moved = view.step(count, self.rows, |from| {
+                    self.blocks
+                        .iter()
+                        .map(|b| b.start)
+                        .rev()
+                        .find(|&r| r < from)
+                });
+                if !moved {
+                    self.exhausted = Some(Direction::Previous);
+                }
+            }
             // The divider between the two columns is this buffer's own
             // rendering, not a pane boundary, so it is this buffer's own
             // state — the viewport it was lent is not touched.
@@ -127,7 +162,7 @@ fn step(count: u32) -> u16 {
 
 /// Runs of adjacent changed rows.
 ///
-/// What `n` steps through and what the status line counts. Deliberately not
+/// What `]c` steps through and what the status line counts. Deliberately not
 /// [`Alignment::hunks`]: those merge changes within a few lines of each other,
 /// which is right for collapsing context and wrong for navigation, since it
 /// would make two nearby edits one stop.

@@ -157,6 +157,29 @@ fn a_one_sided_file_is_drawn_in_one_pane() {
 }
 
 #[test]
+fn a_change_key_with_nowhere_to_go_says_so_on_a_real_terminal() {
+    // `]c` is the only binding made of punctuation, and an in-memory test
+    // cannot show that a terminal delivers `]` as itself. Two presses on a
+    // one-change file: the first lands on it, the second has nowhere to go.
+    //
+    // Asserted in fragments because only changed cells are redrawn, so the
+    // phrase arrives split across a cursor move — `no` and then `next change`,
+    // the space between them already being right. Matching the whole phrase
+    // would be asserting on the redraw strategy rather than on the screen.
+    let fixture = Fixture::new("exhausted");
+    let (output, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"]c]cq");
+    assert!(ok);
+    assert!(
+        output.contains("change 1/1"),
+        "the first `]c` never landed:\n{output:?}"
+    );
+    assert!(
+        output.contains("next change"),
+        "the second `]c` said nothing:\n{output:?}"
+    );
+}
+
+#[test]
 fn a_panic_still_gives_the_terminal_back() {
     let (output, ok) = on_a_terminal(&["--self-panic"], None, &[]);
 

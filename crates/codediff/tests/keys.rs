@@ -127,9 +127,9 @@ fn gg_and_g_are_different_things() {
 
 #[test]
 fn a_count_steps_that_many_changes() {
-    // `2n` must land where `nn` lands.
-    assert_eq!(cursor_after("nn"), cursor_after("2n"));
-    assert_ne!(cursor_after("n"), cursor_after("2n"));
+    // `2]c` must land where `]c]c` lands.
+    assert_eq!(cursor_after("]c]c"), cursor_after("2]c"));
+    assert_ne!(cursor_after("]c"), cursor_after("2]c"));
 }
 
 #[test]
