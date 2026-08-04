@@ -33,9 +33,10 @@ pub fn render(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme) {
     // walk of the tab's rectangles, and nothing below it changes.
     let rect = body;
 
+    let syntax = view.syntax();
     let (buffer, viewport) = view.focused_mut();
     viewport.set_height(u32::from(rect.height), buffer.view_lines());
-    if !pane(cells, rect, buffer, viewport, theme) {
+    if !pane(cells, rect, buffer, viewport, theme, syntax) {
         return too_small(cells, area, theme);
     }
 
@@ -53,16 +54,21 @@ fn pane(
     buffer: &Buffer,
     viewport: &Viewport,
     theme: &Theme,
+    syntax: bool,
 ) -> bool {
     // The one place a buffer kind decides which renderer runs. Side by side
     // and inline are separate variants, so the layout needs no field of its
     // own to be read here.
     match buffer.buffer_type() {
         BufferType::SideBySide(data) => {
-            side_by_side::draw(cells, area, buffer, data, viewport, theme)
+            side_by_side::draw(cells, area, buffer, data, viewport, theme, syntax)
         }
-        BufferType::Inline(data) => inline::draw(cells, area, buffer, data, viewport, theme),
-        BufferType::SingleFile(data) => single_file::draw(cells, area, data, viewport, theme),
+        BufferType::Inline(data) => {
+            inline::draw(cells, area, buffer, data, viewport, theme, syntax)
+        }
+        BufferType::SingleFile(data) => {
+            single_file::draw(cells, area, data, viewport, theme, syntax)
+        }
     }
 }
 

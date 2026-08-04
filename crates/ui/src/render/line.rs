@@ -15,6 +15,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 
+use crate::highlight::Spans;
 use crate::render::cells::{self, Ink};
 use crate::theme::Theme;
 
@@ -27,6 +28,11 @@ use crate::theme::Theme;
 pub struct Painter<'a> {
     pub alignment: &'a Alignment,
     pub theme: &'a Theme,
+    /// What the language says about each line, as far as it has been read.
+    ///
+    /// Borrowed, and read-only: colouring more of the file is a decision made
+    /// before the frame, because drawing holds no state.
+    pub syntax: Spans<'a>,
     /// Index of the first line on screen.
     pub top: u32,
     /// Index of the line the cursor is on.
@@ -120,6 +126,8 @@ pub fn text(
             base,
             emphasis,
             spans: &spans,
+            syntax: painter.syntax.line(version, number),
+            code: &theme.code,
         },
     );
 }

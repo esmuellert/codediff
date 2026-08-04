@@ -10,6 +10,9 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+line-index.workspace = true
+syntect.workspace = true
+two-face.workspace = true
 
 [lints]
 workspace = true

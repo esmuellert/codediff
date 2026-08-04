@@ -17,6 +17,12 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 /// The terminal, restored when this is dropped.
+/// How long to wait for a key before doing something else.
+///
+/// Two milliseconds: shorter than a frame, so nothing perceptible is added to
+/// the latency of a keypress, and long enough that the loop is not a spin.
+const IDLE: std::time::Duration = std::time::Duration::from_millis(2);
+
 pub struct Screen {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
@@ -42,6 +48,22 @@ impl Screen {
     /// Blocks until something happens.
     pub fn next_event(&self) -> io::Result<event::Event> {
         event::read()
+    }
+
+    /// The next event, or `None` if the reader paused long enough to be worth
+    /// doing background work in.
+    ///
+    /// The whole of our idle scheduling. A terminal program spends nearly all
+    /// its time waiting for a keypress, and this is how that time is offered
+    /// to whoever wants it without a thread, a channel or a clock. The wait is
+    /// short enough that a key pressed during it is answered in the same
+    /// frame, and long enough that a reader who is not typing yields
+    /// immediately.
+    pub fn next_event_or_idle(&self) -> io::Result<Option<event::Event>> {
+        if event::poll(IDLE)? {
+            return event::read().map(Some);
+        }
+        Ok(None)
     }
 
     /// Hands the terminal back, stops, and picks up where it left off.

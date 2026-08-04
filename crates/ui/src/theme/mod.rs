@@ -18,11 +18,14 @@
 
 pub mod basic;
 pub mod catppuccin;
+pub mod code;
 mod colour;
+pub mod scopes;
 
 use ratatui::style::Style;
 
 pub use catppuccin::Flavour;
+pub use code::{Code, Token};
 pub use colour::{Rgb, blend};
 
 /// Every style the interface draws with.
@@ -60,6 +63,14 @@ pub struct Theme {
     pub status_path: Style,
     /// Patched over `status` for something the reader must not miss.
     pub warning: Style,
+
+    /// The colour of each kind of code.
+    ///
+    /// Apart from the rest because it is the only table indexed by something
+    /// the reader's *file* decides rather than something the diff decides, and
+    /// because it holds colours where everything above holds styles — syntax
+    /// may only tint letters, never repaint a line. See [`code`].
+    pub code: Code,
 }
 
 impl Theme {

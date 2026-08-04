@@ -33,10 +33,11 @@ pub use ratatui;
 mod app;
 mod diff;
 mod draw;
+mod highlight;
 pub mod input;
 mod render;
 mod terminal;
-mod theme;
+pub mod theme;
 pub mod view;
 
 pub use align::DiffLayout;

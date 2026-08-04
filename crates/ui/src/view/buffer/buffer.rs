@@ -20,7 +20,7 @@
 
 use std::ops::Range;
 
-use align::{Alignment, DiffLayout};
+use align::{Alignment, DiffLayout, Slot};
 use file_types::File;
 
 use super::{BufferType, Inline, SideBySide, SingleFile};
@@ -114,6 +114,74 @@ impl Buffer {
 
     pub fn buffer_type(&self) -> &BufferType {
         &self.buffer_type
+    }
+
+    /// Colours at least the view lines a frame is about to draw.
+    ///
+    /// Called before the frame rather than during it, because drawing holds no
+    /// state and colouring is state. What it costs depends entirely on where
+    /// the reader went: scrolling down a line is one line of work, scrolling
+    /// back is none at all, and jumping to the end of a long file pays for the
+    /// gap once and then never again.
+    ///
+    /// The range is in **view** lines and the engine reads **file** lines, so
+    /// the last file line each version reaches within the range is what is
+    /// asked for. That is not `top + height`: a run of insertions puts fillers
+    /// opposite them, and the original side has not moved at all.
+    pub fn reach(&mut self, top: u32, height: u32) {
+        let last = self.last_lines(top, height);
+        match &mut self.buffer_type {
+            BufferType::SideBySide(d) => d.reach(last.0, last.1),
+            BufferType::Inline(d) => d.reach(last.0, last.1),
+            BufferType::SingleFile(f) => f.reach(last.1),
+        }
+    }
+
+    /// The last file line of each version within the visible range, numbered
+    /// from 1 as [`Slot::Line`] and the gutter are.
+    fn last_lines(&self, top: u32, height: u32) -> (u32, u32) {
+        let Some(layout) = self.layout() else {
+            return (0, top.saturating_add(height));
+        };
+        let Some(alignment) = self.alignment() else {
+            return (0, 0);
+        };
+        let (mut original, mut modified) = (0, 0);
+        for line in alignment.view_lines_from(layout, top).take(height as usize) {
+            if let Slot::Line(n) = line.original {
+                original = original.max(n);
+            }
+            if let Slot::Line(n) = line.modified {
+                modified = modified.max(n);
+            }
+        }
+        (original, modified)
+    }
+
+    /// Whether what is on screen has been coloured yet.
+    ///
+    /// False only just after a leap through a very long file, and it is what
+    /// tells the loop that one more frame is worth drawing when the idle pass
+    /// has caught up. See [`syntax::limits::LEAP`].
+    pub fn caught_up(&self, top: u32, height: u32) -> bool {
+        let last = self.last_lines(top, height);
+        match &self.buffer_type {
+            BufferType::SideBySide(d) => d.caught_up(last.0, last.1),
+            BufferType::Inline(d) => d.caught_up(last.0, last.1),
+            BufferType::SingleFile(f) => f.caught_up(last.1),
+        }
+    }
+
+    /// Colours a little more while nothing else is happening.
+    ///
+    /// Returns whether there was anything left to do, so the caller knows
+    /// whether another idle moment is worth spending.
+    pub fn read_more(&mut self) -> bool {
+        match &mut self.buffer_type {
+            BufferType::SideBySide(d) => d.read_more(),
+            BufferType::Inline(d) => d.read_more(),
+            BufferType::SingleFile(f) => f.read_more(),
+        }
     }
 
     /// How many view lines this buffer has.

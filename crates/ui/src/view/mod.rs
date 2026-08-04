@@ -61,6 +61,11 @@ pub struct View {
     /// when the first one arrives: overlays are offered keys before the
     /// focused pane. Doing that once is cheaper than doing it twice.
     overlays: Vec<Overlay>,
+    /// Whether the code is coloured by its language.
+    ///
+    /// One switch for the session rather than one per buffer: see
+    /// [`ViewAction::ToggleSyntax`](crate::input::ViewAction::ToggleSyntax).
+    syntax: bool,
 }
 
 /// A floating layer over the tabs.
@@ -78,7 +83,46 @@ impl View {
             tabs: vec![Tab::single(BufferId(0))],
             active: 0,
             overlays: Vec::new(),
+            syntax: true,
         }
+    }
+
+    /// Whether code is being coloured by its language.
+    pub fn syntax(&self) -> bool {
+        self.syntax
+    }
+
+    pub fn toggle_syntax(&mut self) {
+        self.syntax = !self.syntax;
+    }
+
+    /// Colours at least what the focused pane is about to draw.
+    ///
+    /// Called with the height the frame will have, from outside the frame:
+    /// drawing holds no state, and how far a file has been read is state. See
+    /// [`Buffer::reach`].
+    pub fn reach(&mut self, height: u32) {
+        let (buffer, viewport) = self.focused_mut();
+        let top = viewport.top();
+        buffer.reach(top, height);
+    }
+
+    /// Whether what the focused pane is showing has been coloured yet.
+    ///
+    /// Uses the height the last frame set, so it answers about what is
+    /// actually on screen. Before the first frame there is no height and
+    /// nothing is shown, so it is trivially true.
+    pub fn caught_up(&self) -> bool {
+        let viewport = &self.focused().viewport;
+        self.focused_buffer()
+            .caught_up(viewport.top(), viewport.height())
+    }
+
+    /// Colours a little more while nothing else is happening, and says whether
+    /// there is more still to do.
+    pub fn read_more(&mut self) -> bool {
+        let (buffer, _) = self.focused_mut();
+        buffer.read_more()
     }
 
     pub fn buffer(&self, id: BufferId) -> &Buffer {

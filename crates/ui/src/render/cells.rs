@@ -10,16 +10,26 @@
 use line_index::{CellCol, LineIndex};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
+
+use crate::theme::Code;
 
 /// A byte range of the line to draw in the emphasis style.
 pub type Emphasis = std::ops::Range<u32>;
 
 /// How a line is coloured.
 ///
-/// One parameter rather than three because the three only ever travel
-/// together, and a caller that got their order wrong would silently paint the
-/// changed characters in the unchanged style.
+/// One parameter rather than five because they only ever travel together, and
+/// a caller that got their order wrong would silently paint the changed
+/// characters in the unchanged style.
+///
+/// **Two independent layers, and the order between them is the whole rule.**
+/// The diff owns the background: `base` for the line, `emphasis` for the
+/// characters within it that differ. Syntax owns the foreground and nothing
+/// else, and is patched on top. That is why [`Code`] holds colours rather than
+/// styles — a syntax background would hide which lines changed, and this way
+/// it cannot be expressed. VS Code composes exactly these two layers, and
+/// `delta` treats "syntax as a background" as a fatal error.
 #[derive(Debug, Clone, Copy)]
 pub struct Ink<'a> {
     /// The whole row, including past the end of the text.
@@ -27,6 +37,14 @@ pub struct Ink<'a> {
     /// The parts named by `spans`.
     pub emphasis: Style,
     pub spans: &'a [Emphasis],
+    /// What the language says each run of the line is, in byte order.
+    ///
+    /// Empty when the language is unknown, when the reader has switched syntax
+    /// off, or when this line has not been coloured yet — all three draw the
+    /// same, which is why none of them is a special case here.
+    pub syntax: &'a [syntax::Span],
+    /// Which colour each of those runs names.
+    pub code: &'a Code,
 }
 
 /// Draws `line` into a single row.
@@ -41,6 +59,8 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
         base,
         emphasis,
         spans,
+        syntax,
+        code,
     } = ink;
     fill(buf, row, base);
     if row.width == 0 {
@@ -52,11 +72,9 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
 
     for g in index.graphemes_in_cells(CellCol(left)..CellCol(right)) {
         let cells = g.cells();
-        let style = if in_any(spans, g.byte.get()) {
-            emphasis
-        } else {
-            base
-        };
+        let byte = g.byte.get();
+        let under = if in_any(spans, byte) { emphasis } else { base };
+        let style = under.patch(written(syntax, code, byte));
 
         // A cluster the left edge cuts through, or one the right edge would:
         // its columns are on screen but the character is not drawable there,
@@ -82,6 +100,35 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
             put(buf, row, cell - left, "", style);
         }
     }
+}
+
+/// What the language says about the byte at `byte`, as a style to patch on.
+///
+/// A foreground and modifiers only. `Style::new()` — which changes nothing —
+/// is the answer for an uncoloured byte, so a line with no spans at all costs
+/// one comparison per character and paints exactly as it did before syntax
+/// existed.
+fn written(spans: &[syntax::Span], code: &Code, byte: u32) -> Style {
+    let Some(span) = spans.iter().find(|span| span.bytes.contains(&byte)) else {
+        return Style::new();
+    };
+    let mut style = match code.pen(span.style.pen) {
+        Some(colour) => Style::new().fg(colour),
+        // A rule that sets only `markup.bold` has no colour of its own, and
+        // must keep the one underneath rather than fall back to a default.
+        None => Style::new(),
+    };
+    for (on, modifier) in [
+        (span.style.bold, Modifier::BOLD),
+        (span.style.italic, Modifier::ITALIC),
+        (span.style.underline, Modifier::UNDERLINED),
+        (span.style.strikethrough, Modifier::CROSSED_OUT),
+    ] {
+        if on {
+            style = style.add_modifier(modifier);
+        }
+    }
+    style
 }
 
 /// Paints a whole row in one style, text or not.
@@ -151,6 +198,7 @@ fn in_any(spans: &[Emphasis], byte: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::Theme;
     use ratatui::style::Color;
 
     const PLAIN: Style = Style::new();
@@ -171,6 +219,8 @@ mod tests {
             base: PLAIN,
             emphasis: PLAIN,
             spans: &[],
+            syntax: &[],
+            code: &Theme::DARK.code,
         }
     }
 
@@ -181,6 +231,8 @@ mod tests {
             base: Style::new().bg(Color::Blue),
             emphasis: Style::new().bg(Color::Red),
             spans: &[span],
+            syntax: &[],
+            code: &Theme::DARK.code,
         };
         paint(&mut buf, area, line, 4, left, ink);
         (area.x..area.right())
@@ -252,6 +304,8 @@ mod tests {
             base: Style::new().bg(Color::Blue),
             emphasis: Style::new().bg(Color::Red),
             spans: &[1..2, 3..5],
+            syntax: &[],
+            code: &Theme::DARK.code,
         };
         paint(&mut buf, area, "abcdef", 4, 0, ink);
         let bg = |x| buf[(x, 0)].style().bg;
@@ -297,6 +351,8 @@ mod tests {
             base: marked,
             emphasis: marked,
             spans: &[],
+            syntax: &[],
+            code: &Theme::DARK.code,
         };
         paint(&mut buf, area, "ab", 4, 0, ink);
         assert_eq!(buf[(9, 0)].style().bg, Some(Color::Green));
@@ -310,6 +366,8 @@ mod tests {
             base: marked,
             emphasis: marked,
             spans: &[],
+            syntax: &[],
+            code: &Theme::DARK.code,
         };
         paint(&mut buf, area, "", 4, 0, ink);
         assert_eq!(text(&buf, area), "     ");

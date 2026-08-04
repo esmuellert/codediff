@@ -20,9 +20,21 @@ pub enum ViewAction {
     /// cannot be the thing that decides to replace itself. The view owns the
     /// buffers, so the view is the lowest level that contains the change.
     ToggleLayout,
+    /// Colour the code, or stop.
+    ///
+    /// Here rather than at the buffer level because it is the reader's
+    /// preference for the whole session: turning it off in one buffer and
+    /// finding it on in the next would read as a bug. What it is *for* is a
+    /// direct comparison — syntax colour and diff colour share one small
+    /// palette, and being able to remove one of them is how you find out
+    /// whether the other still reads.
+    ToggleSyntax,
 }
 
-pub const BINDINGS: &[Binding] = &[view(&[key!(t)], ViewAction::ToggleLayout)];
+pub const BINDINGS: &[Binding] = &[
+    view(&[key!(t)], ViewAction::ToggleLayout),
+    view(&[key!(s)], ViewAction::ToggleSyntax),
+];
 
 const fn view(keys: &'static [KeyCombination], action: ViewAction) -> Binding {
     Binding {

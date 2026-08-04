@@ -386,21 +386,52 @@ codediff --file src/longlines.rs src/longlines.rs   # then toggle wrap, then dra
 
 ---
 
-### S11 — Syntax highlighting
+### S11 — Syntax highlighting ✅
 
-**Build.** `syntect` (with `two-face`) behind the `Syntax` trait in `crates/syntax`. Composition with diff
-and inner-change spans via the `SpanSet` priorities built at S7. Filetype detection.
+**Build.** `syntect` (with `two-face`) behind an engine-free interface in `crates/syntax`;
+the scope table and the colours in `ui::theme::{scopes,code}`; the join in `ui::highlight`.
+Filetype detection by name, then extension, then shebang.
 
-**Check.** Open the twelve S11 fixtures — Rust, TypeScript, JavaScript, Python, Go, Java, C,
-C++, JSON, YAML, Markdown, Bash. Toggle syntax on and off with a key to A/B compare.
+**Check.** Open the S11 fixtures — Rust, TypeScript, JavaScript, Python, Go, Java, C, C++,
+JSON, YAML, Markdown, Bash. Toggle syntax on and off with `s` to A/B compare.
 
 **Pass when.**
-- [ ] keywords, strings and comments are coloured correctly in all twelve
-- [ ] **diff backgrounds remain visible underneath syntax foregrounds**
-- [ ] a line that is both changed and contains a string shows both correctly
-- [ ] character-level inner-change highlighting still wins where they overlap
-- [ ] an unrecognised file type renders as plain text rather than failing
-- [ ] no measurable scroll lag on a 5000-line file
+- [x] keywords, strings and comments are coloured correctly in all twelve
+- [x] **diff backgrounds remain visible underneath syntax foregrounds**
+- [x] a line that is both changed and contains a string shows both correctly
+- [x] character-level inner-change highlighting still wins where they overlap
+- [x] an unrecognised file type renders as plain text rather than failing
+- [x] no measurable scroll lag on a 5000-line file
+
+**Changed while building.**
+
+- **No `SpanSet`.** S7 deferred it and the deferral stands. All three references agree that
+  a diff owns the background and syntax owns the foreground only — VS Code's diff CSS never
+  sets `color`, and `delta` treats "syntax as a background" as a fatal error. Two layers that
+  cannot collide need no priority table. `Code` therefore holds `Color`, not `Style`, so a
+  theme *cannot* express the mistake.
+- **A span carries a pen, not a colour** — see [D37](05-decisions.md#d37--a-span-carries-a-pen-not-a-colour).
+- **Twelve fixtures became seventeen**, because a scope needs the construct that produces it:
+  C for the preprocessor and `goto`, YAML for anchors, `.patch` for `markup.inserted`, and
+  two deliberately broken files, since `invalid` is a colour a reviewer of agent output will
+  actually see.
+- **`--file a b` does not exist**; the binary takes one path. Noted so the plan stops
+  implying otherwise.
+
+**Found while building.**
+
+- **`align` numbers lines from 1 and `syntax` indexes from 0.** Getting it wrong colours a
+  whole file one line out, which still *looks* coloured — every "is there colour?" test
+  passed. The two conventions now meet in `ui::highlight` and nowhere else.
+- **The engine's matcher was being rebuilt per line**, which was a third of the total time.
+  `Engine::read` takes a slice for this reason.
+- **Uncapped, `G` in a 300 000-line file would freeze for sixteen seconds**, because
+  colouring line N requires parsing every line above it. A frame now colours at most
+  `limits::LEAP` lines and the idle pass finishes — VS Code's time-slicing, budgeted in lines
+  because `ui` may not have a clock.
+- **Idle work needs no thread.** `crossterm::event::poll` gives us a background tokenizer with
+  no thread, no channel and no clock, and the loop blocks properly once there is nothing left
+  to read.
 
 ---
 

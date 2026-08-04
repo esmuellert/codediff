@@ -62,11 +62,35 @@ impl Session {
         &mut self,
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
+        // Colouring happens here, outside the frame, because `draw` holds no
+        // state and how far a file has been read is state. The height is the
+        // body's, one row short of the terminal's, which is the same
+        // arithmetic the layout does — a row out either way would colour one
+        // line too many or too few, and neither is visible.
+        let height = terminal.size()?.height;
+        self.view.reach(u32::from(height.saturating_sub(1)));
         terminal.draw(|frame| {
             let area = frame.area();
             draw::render(frame.buffer_mut(), area, &mut self.view, &self.theme);
         })?;
         Ok(())
+    }
+
+    /// Colours a little more of the file, and says whether anything changed.
+    ///
+    /// What an idle moment calls. A redraw is only worth it if this returns
+    /// true, which it stops doing once the file is fully read — so an idle
+    /// session settles down to doing nothing at all rather than spinning.
+    pub fn read_more(&mut self) -> bool {
+        self.view.read_more()
+    }
+
+    /// Whether what is on screen has been coloured yet.
+    ///
+    /// False only just after a leap through a very long file, where the frame
+    /// drew what it had and left the rest plain.
+    pub fn caught_up(&self) -> bool {
+        self.view.caught_up()
     }
 
     /// Applies one terminal event.
@@ -110,6 +134,10 @@ impl Session {
                 self.view.toggle_layout();
                 Flow::Continue
             }
+            Action::View(ViewAction::ToggleSyntax) => {
+                self.view.toggle_syntax();
+                Flow::Continue
+            }
             Action::Program(ProgramAction::Quit) => Flow::Quit,
             Action::Program(ProgramAction::Suspend) => Flow::Suspend,
             // Everything is redrawn after every event already; this exists so
@@ -132,13 +160,52 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
     session.draw(screen.terminal())?;
 
+    // Whether it is worth interrupting the wait for a key to colour a little
+    // more. Set again after every keypress because a key can move to a part
+    // of the file, or a buffer, that has not been read.
+    let mut reading = true;
+
     loop {
-        let event = screen.next_event()?;
+        let event = if reading {
+            // Colour a little more while the reader is deciding what to press.
+            // This is VS Code's background tokenizer without a thread, a
+            // channel or a clock: an idle terminal is idle for whole seconds,
+            // which is hundreds of thousands of lines, so by the time anyone
+            // scrolls to the end of a long file it has usually already been
+            // read.
+            //
+            // **No redraw.** Every frame colours what it is about to show
+            // before it shows it, so this is always work on lines that are not
+            // on screen — redrawing would repaint an identical screen at five
+            // hundred frames a second.
+            match screen.next_event_or_idle()? {
+                Some(event) => event,
+                None => {
+                    // Redraw only when the reader is looking at something that
+                    // has not been coloured yet — which happens after a leap
+                    // through a very long file and at no other time. Ordinary
+                    // background reading is always below the screen, so this
+                    // is the difference between one extra frame and five
+                    // hundred a second.
+                    let behind = !session.caught_up();
+                    reading = session.read_more();
+                    if behind {
+                        session.draw(screen.terminal())?;
+                    }
+                    continue;
+                }
+            }
+        } else {
+            // Nothing left to colour, so wait properly rather than spin.
+            screen.next_event()?
+        };
+
         match session.handle(&event) {
             Flow::Quit => return Ok(()),
             Flow::Suspend => screen.suspend()?,
             Flow::Continue => {}
         }
+        reading = true;
         session.draw(screen.terminal())?;
     }
 }

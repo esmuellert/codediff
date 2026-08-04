@@ -534,6 +534,11 @@ project is already Rust — the exact reason upstream could not take this path.
 **Decision.** Highlighting lives in `crates/syntax/`, not as a module inside `ui`, and
 its public interface never names a syntax engine.
 
+> **Revised at S11 by [D36](#d36--what-to-take-from-vs-code-delta-and-bat).** The separation
+> and the engine-free interface both stand. What does not is the *ten abstract token kinds*
+> below: a real theme needs scope paths, not ten names. The crate still says what text is and
+> `ui` still owns colour.
+
 **Why not a module in `ui`.**
 
 1. It is not a rendering concern. Highlighting is text *analysis* — text plus language
@@ -1762,6 +1767,124 @@ and never reads.
 **What it buys.** `draw/screen.rs` and the keymap match a variant the compiler checks. A third
 buffer type — the explorer at S12 — cannot be silently absorbed into an existing arm, which is
 exactly what `Option<DiffLayout>` would have allowed.
+
+---
+
+## D36 — what to take from VS Code, `delta` and `bat`
+
+**Decision.** For syntax highlighting, a feature is **included unless it exists only to
+support editing**. Nothing is left out for being inconvenient, and every exclusion is written
+down. The full audit lives in [`crates/syntax/README.md`](../../crates/syntax/README.md).
+
+**Why the rule.** An earlier pass of mine classified three things as "editing" that are not —
+the background pass, viewport-first rendering, and size limits — and dropped them. All three
+exist for reasons a read-only viewer has too. The rule inverts the burden of proof onto
+whoever wants to leave something out.
+
+**Why an inventory rather than questions.** The first research pass answered *my* questions,
+so it could only cover what I thought to ask, and it silently missed unicode/confusable
+highlighting, the theme-fidelity problem, and `bat`'s entire input-hardening layer. The second
+pass **enumerated** — every file, every setting, every constant — and cross-checked against
+the two read-only syntect tools. Completeness is a property of the method, not of the summary.
+
+**The three findings that changed the design:**
+
+1. **Ten abstract token kinds is materially lossy.** `dark_plus` resolves 65 rules over ~190
+   scope selectors and needs 20–25 colours to look like itself; `keyword` ≠ `keyword.control`,
+   `meta.template.expression` resets interpolated code back to the code colour, and rules are
+   language-qualified and parent-scope-contextual. `delta` and `bat` both use `.tmTheme` at
+   full fidelity. This **revises [D17](#d17)**: the crate still reports what text *is* and `ui`
+   still owns colour, but a scope is a path, not one of ten names.
+
+2. **`delta`'s six-year-old bug is an artefact of its input, not of syntect.** It resets the
+   highlighter per hunk, so multi-line constructs are highlighted wrongly — issues #117, #162,
+   #316, #509, #577, #886, #1091. We read whole file snapshots, so the class does not exist
+   for us. It is worth a test rather than a workaround.
+
+3. **`bat`'s input layer is not optional.** Tab stops must be computed *before* highlighting or
+   spans and columns disagree; bidi and zero-width sanitisation is a security control on a tool
+   that shows untrusted branches; long lines must be cut `bat`'s way (swap in `"\n"`,
+   preserving parse state) rather than `delta`'s (truncate, corrupting it).
+
+**Measured, not assumed.** syntect with `onig` runs at **~45 000 lines/sec** (114 ms for 5 000
+lines; 82 ms for a real 3 857-line file). `fancy-regex` is **four times slower** and ships a
+reduced grammar set, so `onig` it is — the same Oniguruma VS Code compiles to WASM. This is
+what makes VS Code's *guessed* start state unnecessary for us: their guess exists to avoid
+freezing on an exact prefix parse, and can be wrong.
+
+**Deferred, not dropped.** Bracket-pair colourisation, indent guides, whitespace rendering and
+sticky scroll are not edit-specific and are therefore in scope for the product — as their own
+milestone, not as part of S11.
+
+**Corrected by building it.** The 45 000 lines/sec above was measured with a *two-rule*
+palette. With the real 78-selector table it is **18 500 lines/sec**, because every scope
+change is matched against every selector — which is what `bat` pays too. The conclusion that
+`onig` beats `fancy-regex` fourfold is unaffected; the conclusion that an exact prefix parse
+is cheap enough to never need VS Code's guessed start state survives, but only because of
+`limits::LEAP` — see [D38](#d38--a-frame-colours-at-most-a-leap-of-lines).
+
+---
+
+## D37 — a span carries a pen, not a colour
+
+**Decision.** `syntax::Span` reports `Pen(u16)` — an index into a table `ui` supplies — rather
+than an `Rgb`. The scope-to-pen table (`ui::theme::scopes`) is one shared constant; the
+pen-to-colour table (`ui::theme::code`) is per theme.
+
+**What forced it.** The first draft put `Rgb` in a `Rule`, and it did not survive contact with
+`basic-dark`. That theme exists *because* its terminal has no 24-bit colour: Catppuccin's diff
+backgrounds are eighteen percent of an accent, and a terminal that quantises them rounds them
+straight back into the background, leaving a diff with no visible diff in it. Handing that
+theme RGB syntax colours would have broken the one invariant it has — and its own test, which
+asserts that nothing in it names a 24-bit colour, would not have caught it, because a syntax
+colour is not one of the `Style` fields it walks.
+
+An index cannot express the mistake. `basic` answers `Color::Indexed`, and the test now walks
+the syntax table too.
+
+**Two things fell out that were not the reason but are worth as much:**
+
+- **Changing theme re-reads nothing.** No span mentions a colour, so a theme switch is a table
+  lookup rather than an invalidation. Had the colour been baked in, every span in every open
+  file would have had to be recomputed.
+- **The scope table is shared.** Which scopes are keywords is a fact about TextMate, not a
+  choice a theme makes, so it is one constant rather than one per theme — and adding a theme
+  is 31 colours rather than 78 rules.
+
+**Precedent.** VS Code's token metadata packs an index into a `ColorMap` for the same reason:
+it renders `class="mtk5"`, a numbered class, not a colour.
+
+**The cost.** A `Span` is meaningless without the palette that produced it. That coupling is
+real but was already there — a span is meaningless without the *file* it describes too — and
+`Code::pen` answers `None` for a pen it does not recognise, so the failure mode is an
+uncoloured character rather than a panic.
+
+---
+
+## D38 — a frame colours at most a leap of lines
+
+**Decision.** `Highlighted::reach` stops after `limits::LEAP` (2 000) lines and returns. What
+it could not reach is drawn plainly and finished by the idle pass, which redraws once when it
+catches up.
+
+**Why.** Colouring line N requires parsing every line above it — the state is sequential, and
+no cache changes that. `limits::MAX_LINES` is VS Code's 300 000, and at the 18 500 lines a
+second measured, `G` in such a file would freeze the interface for **sixteen seconds**. VS
+Code has exactly this problem and answers it by time-slicing and showing untokenized text
+meanwhile.
+
+**Why lines rather than milliseconds.** VS Code budgets in milliseconds because it has a
+clock. `cargo xtask lint-arch` forbids `ui` a clock — the reason snapshots are reproducible —
+so the budget is a line count instead. 2 000 lines is about a ninth of a second and is longer
+than almost every file anyone reviews, so in the ordinary case nothing is ever deferred and
+the cap costs nothing.
+
+**Why the idle pass needs no thread.** `crossterm::event::poll` with a 2 ms timeout is a
+background tokenizer with no thread, no channel and no clock: an idle terminal is idle for
+whole seconds, and a slice is 64 lines. It redraws **only** when what is on screen is not
+coloured yet, which happens after a leap and at no other time — otherwise it would repaint an
+identical screen five hundred times a second. Once the file is read the loop blocks properly
+rather than spinning.
 
 ## Open questions
 

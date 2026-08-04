@@ -24,6 +24,7 @@ use align::Alignment;
 use file_types::File;
 
 use crate::diff::Diff;
+use crate::highlight::Spans;
 use crate::input::{BufferAction, DIVIDER_STEP};
 
 /// The narrowest either column may be squeezed to, in percent.
@@ -65,6 +66,26 @@ impl SideBySide {
 
     pub fn hit_timeout(&self) -> bool {
         self.diff.hit_timeout()
+    }
+
+    /// How each version is coloured, for a frame.
+    pub fn spans(&self) -> Spans<'_> {
+        self.diff.spans()
+    }
+
+    /// Colours up to the given line of each version.
+    pub fn reach(&mut self, original: u32, modified: u32) {
+        self.diff.reach(original, modified);
+    }
+
+    /// Whether both versions are coloured as far as the given lines.
+    pub fn caught_up(&self, original: u32, modified: u32) -> bool {
+        self.diff.caught_up(original, modified)
+    }
+
+    /// Colours a little more, and says whether there was anything to do.
+    pub fn read_more(&mut self) -> bool {
+        self.diff.read_more()
     }
 
     /// Where the divider sits: the share of the width given to the original,

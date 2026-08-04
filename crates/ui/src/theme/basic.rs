@@ -14,6 +14,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::theme::Theme;
+use crate::theme::code::Code;
 
 /// Indices into the 6×6×6 colour cube that starts at 16.
 ///
@@ -51,6 +52,88 @@ const fn ink(colour: Color) -> Style {
     Style::new().fg(colour)
 }
 
+/// Syntax colours from the sixteen every terminal has.
+///
+/// The same roles Catppuccin parts, resolved onto a palette a quarter the
+/// size, so several of them necessarily land together — `constant` and
+/// `library` share a colour here because Catppuccin gives both peach, and
+/// `character` and `operator` share one because teal and sky are neighbours.
+/// The roles stay apart in the table so a richer theme can part them; only
+/// this rendering of them collapses.
+///
+/// The bright half on a dark background and the plain half on a light one:
+/// bright yellow on white is unreadable, and plain yellow on black is dim.
+const DARK_CODE: Code = Code {
+    comment: Color::DarkGray,
+    string: Color::LightGreen,
+    character: Color::Cyan,
+    escape: Color::Magenta,
+    regexp: Color::Magenta,
+    constant: Color::Yellow,
+    keyword: Color::LightMagenta,
+    operator: Color::Cyan,
+    preprocessor: Color::Magenta,
+    kind: Color::LightYellow,
+    function: Color::LightBlue,
+    library: Color::Yellow,
+    // The terminal's own foreground: an ordinary name should look ordinary,
+    // which is the same argument as `normal` above.
+    variable: Color::Reset,
+    builtin: Color::LightRed,
+    parameter: Color::Red,
+    property: Color::LightCyan,
+    namespace: Color::LightYellow,
+    label: Color::Blue,
+    punctuation: Color::DarkGray,
+    tag: Color::LightBlue,
+    attribute: Color::LightYellow,
+    invalid: Color::LightRed,
+    heading: Color::LightBlue,
+    link: Color::Blue,
+    reference: Color::LightCyan,
+    raw: Color::LightGreen,
+    list: Color::Cyan,
+    quote: Color::Magenta,
+    emphasis: Color::LightRed,
+    inserted: Color::LightGreen,
+    deleted: Color::LightRed,
+};
+
+/// The same roles for a light terminal. See [`DARK_CODE`].
+const LIGHT_CODE: Code = Code {
+    comment: Color::DarkGray,
+    string: Color::Green,
+    character: Color::Cyan,
+    escape: Color::Magenta,
+    regexp: Color::Magenta,
+    constant: Color::Red,
+    keyword: Color::Magenta,
+    operator: Color::Cyan,
+    preprocessor: Color::Magenta,
+    kind: Color::Yellow,
+    function: Color::Blue,
+    library: Color::Red,
+    variable: Color::Reset,
+    builtin: Color::Red,
+    parameter: Color::Magenta,
+    property: Color::Cyan,
+    namespace: Color::Yellow,
+    label: Color::Blue,
+    punctuation: Color::DarkGray,
+    tag: Color::Blue,
+    attribute: Color::Yellow,
+    invalid: Color::Red,
+    heading: Color::Blue,
+    link: Color::Blue,
+    reference: Color::Magenta,
+    raw: Color::Green,
+    list: Color::Cyan,
+    quote: Color::Magenta,
+    emphasis: Color::Red,
+    inserted: Color::Green,
+    deleted: Color::Red,
+};
+
 /// For a terminal with a dark background.
 pub const DARK: Theme = Theme {
     name: "basic-dark",
@@ -79,6 +162,8 @@ pub const DARK: Theme = Theme {
         .fg(Color::Red)
         .add_modifier(Modifier::BOLD)
         .add_modifier(Modifier::REVERSED),
+
+    code: DARK_CODE,
 };
 
 /// For a terminal with a light background.
@@ -106,6 +191,8 @@ pub const LIGHT: Theme = Theme {
         .fg(Color::Red)
         .add_modifier(Modifier::BOLD)
         .add_modifier(Modifier::REVERSED),
+
+    code: LIGHT_CODE,
 };
 
 #[cfg(test)]
@@ -125,6 +212,16 @@ mod tests {
                         theme.name
                     );
                 }
+            }
+            // Syntax colours too: they are the largest table here, and the
+            // one most easily filled in by copying a 24-bit theme.
+            for token in crate::theme::Token::ALL {
+                assert!(
+                    !matches!(theme.code.colour(token), Color::Rgb(..)),
+                    "{}: {}",
+                    theme.name,
+                    token.name()
+                );
             }
         }
     }

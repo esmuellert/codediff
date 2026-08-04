@@ -256,10 +256,12 @@ pub const fn theme(flavour: Flavour) -> Theme {
         status: on(p.text, p.mantle),
         status_path: Style::new().add_modifier(Modifier::BOLD),
         warning: ink(p.red).add_modifier(Modifier::BOLD),
+
+        code: crate::theme::code::catppuccin(p),
     }
 }
 
-/// `Rgb` to `Color` in a const keymap_type, where `From` is unavailable.
+/// `Rgb` to `Color` in a const context, where `From` is unavailable.
 const fn colour(Rgb(r, g, b): Rgb) -> ratatui::style::Color {
     ratatui::style::Color::Rgb(r, g, b)
 }
