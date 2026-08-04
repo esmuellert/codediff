@@ -1,9 +1,9 @@
 //! One version of a file, shown alone.
 //!
-//! A presentation mode, and a peer of [`SideBySide`] — not a content type. It
-//! is what both diff modes fall back to when a file exists on only one side:
-//! there is nothing to lay out against, so neither two columns nor an
-//! interleaving has anything to say.
+//! A peer of [`SideBySide`] and [`Inline`], not a content type. It is what
+//! both diff layouts fall back to when a file exists on only one side: there
+//! is nothing to lay out against, so neither two columns nor an interleaving
+//! has anything to say.
 //!
 //! No second version means no alignment, no filler and no divider — one column
 //! of numbered lines, in the ordinary colours. Nothing here changed *relative
@@ -12,12 +12,14 @@
 //! and stopped opening a diff editor for added, untracked and deleted files.
 //! See D23.
 //!
+//! It holds no [`Diff`](crate::diff::Diff) for the same reason, which is why
+//! that field cannot move up to the parent: an `Option<Diff>` there would be
+//! the empty-model trap D23 records.
+//!
 //! [`SideBySide`]: super::SideBySide
+//! [`Inline`]: super::Inline
 
 use file_types::File;
-
-use crate::input::BufferAction;
-use crate::view::Viewport;
 
 /// One version of a file, and its lines.
 #[derive(Debug)]
@@ -44,25 +46,11 @@ impl SingleFile {
         &self.file
     }
 
-    pub fn rows(&self) -> u32 {
+    pub fn lines(&self) -> u32 {
         self.lines.len() as u32
     }
 
-    pub fn line(&self, row: u32) -> Option<&str> {
-        self.lines.get(row as usize).map(String::as_str)
-    }
-
-    pub fn act(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
-        match action {
-            BufferAction::Motion(motion) => view.motion(motion, count, self.rows()),
-            // Nothing changed relative to anything, so there are no changes to
-            // step through and no second column to resize. These are not bound
-            // in this buffer's context, so they cannot arrive — but the match
-            // is exhaustive, which is what stops a new action being forgotten.
-            BufferAction::NextChange
-            | BufferAction::PrevChange
-            | BufferAction::WidenOriginal
-            | BufferAction::NarrowOriginal => {}
-        }
+    pub fn line(&self, view_line: u32) -> Option<&str> {
+        self.lines.get(view_line as usize).map(String::as_str)
     }
 }

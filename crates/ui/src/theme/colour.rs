@@ -52,7 +52,7 @@ impl Rgb {
 pub const fn blend(fg: Rgb, bg: Rgb, alpha_percent: u32) -> Rgb {
     const fn channel(fg: u8, bg: u8, a: u32) -> u8 {
         // Integer arithmetic with a +50 rounding term, since floating point is
-        // not available in a const context.
+        // not available in a const keymap_type.
         (((fg as u32 * a) + (bg as u32 * (100 - a)) + 50) / 100) as u8
     }
     Rgb(

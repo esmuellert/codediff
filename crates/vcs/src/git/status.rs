@@ -20,7 +20,7 @@
 //! NUL and treating every piece as a record silently turns one rename into a
 //! record plus a garbage entry, so the parser consumes fields in order.
 //!
-//! **`-z` is not optional.** Without it git quotes any path containing a space,
+//! **`-z` is not optional.** Without it git quotes any path containing a layout,
 //! a quote or a non-ASCII byte, and a path containing a newline breaks the
 //! format outright.
 

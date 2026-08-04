@@ -9,7 +9,7 @@
 //! output the code produced.
 //!
 //! Every case here is one that has broken a real diff tool: a rename that looks
-//! like an add plus a delete, a path with a space, a path outside ASCII, a file
+//! like an add plus a delete, a path with a layout, a path outside ASCII, a file
 //! both staged and edited again, an unresolved merge, CRLF, and a file with no
 //! trailing newline.
 

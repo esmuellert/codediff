@@ -327,7 +327,7 @@ structural change; one forced a decision that is now made.
 | test | outcome |
 |---|---|
 | connect to an agent backend (streaming, cancellable) | **clean** — new crate beside `vcs`, plus event variants. `RequestId` already handles cancellation |
-| agent comments displayed inline against hunks | **required a decision**: `ui`'s `VisualRow` must be an enum wrapping `align::Row` with room for non-diff rows, and projections must take a context struct. Due at S7 |
+| agent comments displayed inline against hunks | **required a decision**: `ui`'s `VisualRow` must be an enum wrapping `align::ViewLine` with room for non-diff rows, and projections must take a context struct. Due at S7 |
 | "what changed since I last looked" | **free** — falls out of `HunkId` being a content hash |
 | MCP server so the agent queries the diff | **clean** — everything except `ui` and `codediff` is already headless |
 | base revision = "when the agent started" | **clean** — `ContentSource::Snapshot` reserved; free if the repo is jj-backed |
@@ -634,7 +634,7 @@ editors behave. All caching stays in one place, and highlighting stays off the r
 computes every answer on demand. It stores no rows, no text and no derived index.
 
 The design it replaced was `AlignedDoc { rows: Vec<Row> }` with `Row { left, right, kind }`
-and `RowKind::MovedFrom/MovedTo`. That was written before reading either reference
+and `ViewLineType::MovedFrom/MovedTo`. That was written before reading either reference
 implementation, and reading them collapsed it:
 
 - **VSCode's `DiffState` is four fields** — the engine's mappings, its moves, `identical`,
@@ -656,7 +656,7 @@ Four defects in the replaced design, in order of severity:
 | stored beside `LinesDiff` | two structures that can disagree, rebuilt on every save by a watcher-driven tool |
 
 **What we add that VSCode does not need.** Its editor answers "what is on screen row *n*";
-we have no editor, so `rows()` expands ranges into lines at draw time — a walk, not a stored
+we have no editor, so `view_lines()` expands ranges into lines at draw time — a walk, not a stored
 structure. And the engine reports UTF-16 columns, which JavaScript takes for granted and
 Rust does not, so inner changes go through `line_index::utf16_range_to_bytes`.
 
@@ -709,7 +709,8 @@ modified_rows }` is the right name for that, in `ui`, at S10a.
   under wrap, which is opt-in.
 - **No auto-switch to inline.** VSCode flips to inline below 900px by default; we do not.
   Horizontal scroll is the answer to a narrow terminal, matching the plugin, which sets
-  `wrap = false` in all six of its windows. `Layout::Inline` exists but is unused at MVP.
+  `wrap = false` in all six of its windows. `DiffLayout::Inline` is built and reachable with
+  `t` as of S10b, but only ever because the reader asked.
 
 **Also settled:** folding does not feed back into alignment either — VSCode calls
 `setHiddenAreas` on the editors and leaves `computeRangeAlignment` alone. Folding and inline
@@ -737,7 +738,7 @@ which mirrors VSCode.**
 what *not* to add: VSCode's `IDocumentDiff` has an `identical` flag, the C header does not,
 and it is derivable from `changes.is_empty()`.
 
-In `align`, `Region` became `UnchangedRegion`, matching VSCode. `Row`, `Slot`, `Hunk` and
+In `align`, `Region` became `UnchangedRegion`, matching VSCode. `ViewLine`, `Slot`, `Hunk` and
 `Side` have no counterpart in either and keep their own names. `Alignment` is deliberately
 *not* renamed to `LineRangeAlignment`: there that name means one entry of an array, here it
 would mean the whole model.
@@ -1143,11 +1144,16 @@ independently — the same reason Neovim splits window-local options (`wrap`, `n
 it settles a question that had been open since S7: side-by-side and inline are *different
 buffers* over the same diff, not one buffer with a flag. They emit different row sequences,
 so with a flag "row 40" would mean different things depending on a field stored elsewhere.
-With two kinds, row space is fully determined by the buffer.
+
+> **Upheld at S10b, and extended.** Inline is a separate kind, not a flag. What building it
+> added is a *parent*: everything true of any buffer — row count, changed blocks, change
+> navigation — lives on `Buffer`, and `BufferType` holds only what differs. See
+> [D31](#d31--a-row-space-is-a-layout-and-align-owns-both-of-them).
+With two kinds, layout is fully determined by the buffer.
 
 Which is why a buffer is a **projection** and not the data. `ui::Diff` — what the
 pipeline delivers — is one file's two versions and the pairing between them, and carries no
-row count: an `align::Row` is a *pair*, so a row count is already an answer to "how would
+row count: an `align::ViewLine` is a *pair*, so a row count is already an answer to "how would
 this look side by side". `SideBySide` holds that answer next to the decision that produced
 it, and nothing else can hold a number that depends on a layout it did not choose.
 
@@ -1523,6 +1529,240 @@ would have kept `RepoPath` in `vcs` before `ui` existed. The rule that survives 
 below, verbs above** — a crate every layer names can hold no capability, because a
 capability needs an error type and an error type is a layer's own.
 
+---
+
+## D31 — a layout is a layout, and `align` owns both of them
+
+**Decision.** `align` exposes two layouts — `DiffLayout::SideBySide` and `DiffLayout::Inline`
+— behind one vocabulary shared with `ui`, and its admission criterion is amended from "never
+what it looks like" to **never what a row *looks* like**. Which row a line lands on is
+admitted; a style, a width or a cell is not.
+
+**Why it could not stay out.** `align::rows()` already *was* a layout: it pairs the two
+versions across a row, which is the definition of side by side. [D19](#d19) had already
+conceded as much — "a row count is already an answer to *how would this look side by
+side*". Keeping the pretence meant the second layout had nowhere to live but a renderer,
+where it would have been invisible to every test that does not draw.
+
+**Why one vocabulary rather than two.** The alternative was `align::paired` / `align::unified`
+alongside `ui`'s side-by-side and inline: layout-free naming at the cost of two words for one
+concept. That is precisely what [D28](#d28) removed, one milestone earlier. A second name is
+a second thing to keep in step, and nothing keeps it.
+
+**What the split bought.** `row.rs` holds the vocabulary — `ViewLine`, `Slot`, `ViewLineType` — and one
+generic `blocks(rows)`; `side_by_side.rs` and `inline.rs` are peers that walk the changes.
+Their entire difference is one line:
+
+```rust
+let height = original.len().max(modified.len());   // side by side
+let height = original.len()  +  modified.len();    // inline
+```
+
+Everything else is shared verbatim, because an inline row *is* a `ViewLine`: a deleted line is
+`(Line, Filler)` and an inserted one is `(Filler, Line)`, shapes the paired space already
+emits. So `ViewLineType` is derived unchanged, inner-change spans are looked up unchanged, and
+the cursor, `]c` and the status line needed no branch at all.
+
+**The property that makes a second walk trustworthy.** Almost nothing about the two spaces is
+comparable — different row counts, and row *n* of one is not row *n* of the other. Exactly
+one thing must hold: **each version reads back as its own file, in order, in either space.**
+Checked over the twelve vendored pairs plus twelve edge shapes. Three sabotages — insertions
+indexed without subtracting the deletions, insertions emitted before deletions, and the sum
+written as a max — were each caught by three or more of these tests.
+
+**A position is not portable, a line is.** Switching spaces translates the cursor through
+`line_at` then `row_at`. Carrying the row number instead would silently land the reader
+somewhere else, which is the failure a review tool can least afford.
+
+### The shape of a buffer, and one wrong turn
+
+[D27](#d27) had settled that side by side and inline would be *different buffer kinds*, "not
+one buffer with a flag", because a flag would let "row 40" mean different things depending on
+a field stored elsewhere. That holds, and the built code honours it: `BufferType::SideBySide`
+and `BufferType::Inline` are separate variants, so **the variant is the layout** and there
+is no field for a row count to fall out of step with. Both the renderer and the keymap
+dispatch on it without reading one.
+
+I first built it the other way — one kind holding a `DiffLayout` field — on my own initiative,
+mid-build, against an agreed plan. It was wrong twice over: wrong as process, and wrong in
+substance, because it needed a name and the only one available was a synonym for "diff",
+which is the second-vocabulary bug [D28](#d28) had just removed. That a design cannot be
+named without inventing a synonym is usually the design talking.
+
+What was true in it was the complaint that produced it: everything except the divider was
+identical between the two kinds, so two kinds meant two copies of change navigation with one
+field's difference between them. Rust has no inheritance and traits cannot carry fields, so
+the answer is composition:
+
+```rust
+struct Buffer { rows, blocks, exhausted, buffer_type: BufferType }   // written once
+enum BufferType { SideBySide(…), Inline(…), SingleFile(…) }          // only what differs
+```
+
+`SideBySide` adds the column divider. **`Inline` adds nothing**, which is the finding rather
+than an oversight: reading a diff inline needs no state that reading it in two columns does
+not. `SingleFile` has no `Diff` at all — which is also why that field cannot be lifted to the
+parent, since an `Option<Diff>` there is the empty-model trap [D23](#d23) records.
+
+One consequence, accepted rather than worked around: **the divider does not survive a trip
+through inline.** It belongs to `SideBySide`, and inline has no columns to divide, so there is
+nowhere for it to wait. The alternatives were a field `Inline` never reads, or a percentage on
+the parent that is meaningless for a lone file.
+
+---
+
+## D32 — one word per idea, and a lint that keeps it
+
+**Decision.** A view line is a `ViewLine`, never a `Row`. A type that classifies uses the
+suffix `Type`, never `Kind`. `cargo xtask lint-arch` refuses `Kind`, `Data`, `Info`,
+`Manager`, `Helper` and `Handler` in any type **we declare**.
+
+**`ViewLine` over `Row`.** The distinction it protects is real and load-bearing: a **file
+line** is content, a **view line** is a position it can appear at. One file line can occupy
+two view lines — inline shows a modified line's old and new versions separately — and one
+view line can hold two file lines, side by side. The same file was 100 view lines in one
+layout and 147 in the other. VSCode names this exact pair `modelLineNumber` and
+`viewLineNumber`; Neovim calls it buffer-line versus screen-line.
+
+**The caveat, recorded rather than discovered later.** At **S10a** wrapping arrives, and then
+one `ViewLine` may occupy several *screen* lines. `ViewLine` survives that — a view line is a
+position in the laid-out document, not a row of the terminal — but `ScreenLine` would not
+have, which is why that candidate was rejected.
+
+**`Type` over `Kind`.** Not taste: `ChangeType` (63 uses) and `BufferType` (33) were already
+here, against one `RowKind` (44) that I wrote by importing `std::io::ErrorKind`'s convention.
+A second word for one idea is the failure [D28](#d28) removed, and it had come back within a
+milestone.
+
+**Why a lint and not a note.** The convention had already been broken once by someone who
+knew it — the same failure mode as the size cap, which is why that is a lint too. The check
+reads *declarations only*, so `std::io::ErrorKind` and crossterm's `KeyEventKind` pass
+untouched: other people's vocabulary arriving through a `use` is not ours to rename.
+Sabotage-checked in both directions.
+
+**What the banned words have in common** is that they classify without saying anything. The
+`enum` keyword already announces that a thing has variants; `Kind` repeats it. The word that
+carries meaning is the noun beside it.
+
+---
+
+## D33 — one definition of `SideBySide` and `Inline`
+
+**Decision.** `DiffLayout { SideBySide, Inline }` is defined once, in `align`. Everything
+else holds a *value* of it rather than restating the words.
+
+**What it was.** Four definitions of one idea:
+
+```text
+align::ViewSpace::{SideBySide, Inline}                picks a walk
+ui::input::Context::{SideBySide, Inline}              picks a keymap
+ui::view::buffer::BufferType::{SideBySide, Inline}    carries data
+ui::view::buffer::{SideBySide, Inline}                the data
+```
+
+**What it is.**
+
+```rust
+pub enum DiffLayout { SideBySide, Inline }        // align — the only definition
+
+pub enum BufferType { SideBySide(..), Inline(..), SingleFile(..) }   // selects a layout
+pub enum KeymapType { Diff(DiffLayout), SingleFile }                 // holds one
+```
+
+**Where a shared word lives.** *The lowest crate that every crate naming it can reach — and
+no lower.* `DiffLayout` is named by `align` and `ui`, and `ui → align`, so `align` is that
+crate. `DiffVersion` is also named by `vscode-diff`, which cannot see `align` in either
+direction, so it had to sink to `file-types`. A leaf crate exists for words shared by layers
+that *cannot* see each other; sinking this one would claim a sharing that does not exist.
+
+**Why not a crate called `types`.** It was proposed, and refused for the reason
+[D32](#d32) bans `Data` and `Info` in type names: a name describing a thing's Rust-ness
+rather than its subject has **no admission criterion**, so nothing can ever be refused from
+it. Every other crate here has one — `align` asks "does this say which line appears where",
+`file-types` asks "is this part of what a file under review is". `types` would ask "is this a
+type", which everything passes. That is how a junk drawer forms, and it is the crate-scale
+version of the flat structure this project exists to escape.
+
+**Why `KeymapType` is not `Option<DiffLayout>`.** Tempting — a diff has a layout, a lone file
+has none. But the explorer at S12 is a *third* answer, not an absent one, and under
+`Option` it would silently inherit the lone file's keys. The enum exists to name buffers that
+are not diffs.
+
+**What it does not mean.** Two buffer *types* naming `SideBySide` and `Inline` is not a second
+definition — they select which `DiffLayout` to walk with, and cannot disagree about what the
+words mean, because they hold no meaning of their own. [D35](#d35) settles that shape.
+
+**`Context` went with it.** VSCode jargon — "context" of what? It selects a keymap, so
+`KeymapType`, matching `BufferType`.
+
+---
+
+## D34 — a brick may not know the model
+
+**Decision.** `ui/src/render` puts characters and colour on a cell grid and **may not name
+`crate::view`**; `ui/src/draw` is what knows that a side-by-side diff is two of those columns
+with a divider between them. `cargo xtask lint-arch` enforces it.
+
+**What it was.** One `render/` folder holding two unrelated jobs, which its own imports gave
+away:
+
+```text
+cells · gutter · layout · column · line     names `view` 0 times
+screen · side_by_side · inline · single_file · status   names it 1–3 times
+```
+
+The first group can be handed a rectangle and some text by anything. The second cannot exist
+without knowing what a buffer is. Mixing them meant a brick could quietly grow a dependency
+on the model, and nothing would have noticed.
+
+**Why the words are not synonyms.** **Render** turns a value into marks; **draw** composes
+marks into what a buffer type looks like. `draw` names `render`, never the other way round,
+and the entry point reads `draw::render(...)` — the outer layer asking the inner one to put
+it on the screen.
+
+**What it protects.** A brick stays testable without a model, and reusable by a buffer type
+that does not exist yet — the explorer at S12 needs gutters and cells and knows nothing about
+diffs. It also keeps the drawing out of `view/`, which was the alternative considered: putting
+each buffer type's drawing beside its state would have given `view/buffer/inline.rs` real
+content, at the cost of a model that can no longer be tested without a terminal. Today
+`type_keys(&mut s, "]c]c")` needs no screen.
+
+**Checked as text**, because Rust cannot say "this module may not import that one" within a
+crate. Sabotage-checked both ways: a brick naming `crate::view` fails, and so does the
+directory going missing — the failure mode that silently disabled the clock-free rule when
+`display` was renamed to `ui`.
+
+---
+
+## D35 — the divider is what makes them two types
+
+**Decision.** `BufferType` has three variants, not two: `SideBySide { diff, divider }`,
+`Inline { diff }`, `SingleFile { file, lines }`. The divider does **not** survive a switch to
+inline and back.
+
+**The argument.** The divider is the *only* difference between the two layouts at the buffer
+level — everything else was already lifted to the `Buffer` parent. So there are exactly two
+consistent shapes, and no third:
+
+| the divider lives on | can they be two types? | survives a switch? |
+|---|---|---|
+| `SideBySide` only | **yes** | no |
+| both types, the parent, or the viewport | no — they would be identical | yes |
+
+An intermediate `DiffBuffer { diff, layout, divider }` was built first and rejected: it kept
+the divider, but at the price of an extra level nobody expected, dispatch on a field rather
+than a variant, and a type whose two halves — a layout selector and a column setting — have
+nothing to do with each other.
+
+**Why forgetting it is the right behaviour, not merely the cheap one.** Pressing `t` is a
+reader saying they do not want columns. Coming back to the default split answers that, and it
+is what an editor does with a panel you closed. The alternative is a field `Inline` carries
+and never reads.
+
+**What it buys.** `draw/screen.rs` and the keymap match a variant the compiler checks. A third
+buffer type — the explorer at S12 — cannot be silently absorbed into an existing arm, which is
+exactly what `Option<DiffLayout>` would have allowed.
+
 ## Open questions
 
 | # | question | needed by |
@@ -1532,4 +1772,4 @@ capability needs an error type and an error type is a layer's own.
 
 *Question 1 (explorer grouping) is settled in [04-milestones.md](04-milestones.md): one list, worktree vs HEAD, conflicts marked but not resolvable.
 Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).
-Question 3 (inline mode) is settled in [D19](#d19--the-container-owns-the-row-index-so-scroll-sync-cannot-exist): out of the MVP, no auto-switch.*
+Question 3 (inline mode) was put out of the MVP by [D19](#d19--the-container-owns-the-row-index-so-scroll-sync-cannot-exist); built at S10b anyway, in about the two days that answer estimated — see [D31](#d31--a-row-space-is-a-layout-and-align-owns-both-of-them). Still no auto-switch.*

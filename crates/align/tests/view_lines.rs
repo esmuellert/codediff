@@ -1,11 +1,11 @@
-//! Exact rows for hand-built diffs.
+//! Exact view lines for hand-built diffs.
 //!
 //! The fixture and property tests check that each column *reads back* as its
 //! file, which a wrong pairing can still satisfy: swapping the two fillers
 //! inside a changed block leaves both columns intact and every invariant true.
 //! These pin which line sits opposite which.
 
-use align::{Alignment, Malformed, RowKind, Slot};
+use align::{Alignment, DiffLayout, Malformed, Slot, ViewLineType};
 use vscode_diff::{DetailedLineRangeMapping, LineRange, LinesDiff, Options};
 
 fn split(text: &str) -> Vec<&str> {
@@ -17,15 +17,15 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
         .expect("these inputs are tiny")
 }
 
-/// `(original, modified, kind)` for every row, as a readable table.
-fn table(alignment: &Alignment) -> Vec<(Option<u32>, Option<u32>, RowKind)> {
+/// `(original, modified, kind)` for every line, as a readable table.
+fn table(alignment: &Alignment) -> Vec<(Option<u32>, Option<u32>, ViewLineType)> {
     alignment
-        .rows()
+        .view_lines(DiffLayout::SideBySide)
         .map(|r| (r.original.line(), r.modified.line(), r.kind))
         .collect()
 }
 
-use RowKind::{Deleted, Inserted, Modified, Unchanged};
+use ViewLineType::{Deleted, Inserted, Modified, Unchanged};
 
 #[test]
 fn a_deletion_and_an_insertion_land_on_the_right_rows() {
@@ -49,7 +49,7 @@ fn a_deletion_and_an_insertion_land_on_the_right_rows() {
 
 #[test]
 fn a_change_taller_on_one_side_puts_its_fillers_last() {
-    // Three original lines become one. The first row pairs, and the two extra
+    // Three original lines become one. The first line pairs, and the two extra
     // original lines fall opposite fillers *below* it, not interleaved.
     let original = split("a\nb\nc\nd\nz");
     let modified = split("a\nQ\nz");
@@ -96,7 +96,7 @@ fn a_change_reaching_the_last_line() {
 
 #[test]
 fn adjacent_changes_with_no_unchanged_run_between_them() {
-    // Two changes touching each other must not lose or repeat a row.
+    // Two changes touching each other must not lose or repeat a line.
     let diff = LinesDiff {
         changes: vec![
             DetailedLineRangeMapping {
@@ -138,7 +138,7 @@ fn adjacent_changes_with_no_unchanged_run_between_them() {
             (Some(3), Some(3), Unchanged),
         ]
     );
-    assert_eq!(alignment.row_count(), 4);
+    assert_eq!(alignment.view_line_count(DiffLayout::SideBySide), 4);
 }
 
 #[test]
@@ -162,8 +162,8 @@ fn an_empty_diff_pairs_every_line() {
 
 #[test]
 fn a_non_monotonic_diff_is_refused_rather_than_duplicating_rows() {
-    // Without this check, `rows()` walks backwards and emits lines 1 and 2
-    // twice while `row_count()` keeps reporting 3.
+    // Without this check, `lines()` walks backwards and emits lines 1 and 2
+    // twice while `view_line_count()` keeps reporting 3.
     let text = split("a\nb\nc");
     let backwards = LinesDiff {
         changes: vec![

@@ -1,5 +1,5 @@
 moved_with_edit
-14 lines -> 14 lines, 18 rows
+14 lines -> 14 lines, 18 view lines
 4 change(s), 1 move(s), 1 hunk(s)
 
         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     1 + function process(data)                         ↑ moved from original 10

@@ -48,7 +48,7 @@ fn a_one_sided_file_is_drawn_in_the_ordinary_colours() {
 
 #[test]
 fn a_one_sided_file_still_scrolls() {
-    // Motions are arithmetic over a row count, so every buffer kind gets them
+    // Motions are arithmetic over a line count, so every buffer kind gets them
     // without implementing one. If this ever needed its own code, the line
     // between generic motions and buffer-specific ones would be in the wrong
     // place.
@@ -65,7 +65,7 @@ fn a_one_sided_file_still_scrolls() {
 
 #[test]
 fn the_keys_a_one_sided_file_cannot_use_do_nothing() {
-    // `]c` and `>` are not bound in this context — there are no changes to
+    // `]c` and `>` are not bound in this keymap_type — there are no changes to
     // step through and no second column to resize. Pressing them must be inert
     // rather than an error or a stuck pending sequence.
     let mut s = Session::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
@@ -85,10 +85,10 @@ fn the_added_note_is_not_styled_as_though_it_were_the_path() {
     let mut s = Session::new(added("new.rs", "alpha"), Theme::DARK);
     let grid = cells(&mut s, 40, 3);
     let row = 2;
-    let line: String = (0..40).map(|x| grid[(x, row)].symbol()).collect();
+    let status: String = (0..40).map(|x| grid[(x, row)].symbol()).collect();
 
-    let name_at = line.find("new.rs").expect("the name is drawn") as u16;
-    let note_at = line.find("(added)").expect("the note is drawn") as u16;
+    let name_at = status.find("new.rs").expect("the name is drawn") as u16;
+    let note_at = status.find("(added)").expect("the note is drawn") as u16;
 
     assert_eq!(
         grid[(name_at, row)].style().add_modifier,

@@ -153,3 +153,108 @@ pub fn check_engine_confinement(root: &Path, failures: &mut Vec<String>) -> Resu
     }
     Ok(())
 }
+
+/// Refuses meta-names in types we declare.
+///
+/// Reads declarations only — `struct X`, `enum X`, `type X`, `trait X` — so a
+/// `use std::io::ErrorKind` is untouched. A banned word is matched as a whole
+/// word inside the name, so `Kind` and `RowKind` both fail while `Kindle`
+/// would not.
+pub fn check_type_names(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for dir in ["crates", "xtask"] {
+        let path = root.join(dir);
+        if !path.is_dir() {
+            continue;
+        }
+        for file in rust_files(&path)? {
+            let text = std::fs::read_to_string(&file)?;
+            for (n, line) in text.lines().enumerate() {
+                let Some(name) = declared_type(line) else {
+                    continue;
+                };
+                for (word, instead) in BANNED_TYPE_WORDS {
+                    if words_of(&name).any(|w| w == *word) {
+                        failures.push(format!(
+                            "{}:{} declares `{name}`; `{word}` says nothing — use {instead}",
+                            rel(root, &file),
+                            n + 1
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The name a line declares a type under, if it declares one.
+fn declared_type(line: &str) -> Option<String> {
+    let line = line.trim_start();
+    let rest = [
+        "pub struct ",
+        "pub enum ",
+        "pub trait ",
+        "pub type ",
+        "struct ",
+        "enum ",
+        "trait ",
+        "type ",
+    ]
+    .iter()
+    .find_map(|prefix| line.strip_prefix(*prefix))?;
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    (!name.is_empty()).then_some(name)
+}
+
+/// A CamelCase name split into its words.
+fn words_of(name: &str) -> impl Iterator<Item = String> + '_ {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    for c in name.chars() {
+        if c.is_uppercase() && !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+        if c == '_' {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        current.push(c);
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words.into_iter()
+}
+
+/// Refuses a module a directory is not allowed to know about.
+pub fn check_blind_dirs(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for (dir, forbidden, why) in BLIND_DIRS {
+        let path = root.join(dir);
+        if !path.is_dir() {
+            failures.push(format!("`{dir}` is missing, so its rule is dead"));
+            continue;
+        }
+        for file in rust_files(&path)? {
+            let text = std::fs::read_to_string(&file)?;
+            for (n, line) in text.lines().enumerate() {
+                let code = line.trim_start();
+                if code.starts_with("//") {
+                    continue;
+                }
+                if code.contains(forbidden) {
+                    failures.push(format!(
+                        "{}:{} names `{forbidden}` — {why}",
+                        rel(root, &file),
+                        n + 1
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}

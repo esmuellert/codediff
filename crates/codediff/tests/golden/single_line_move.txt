@@ -1,5 +1,5 @@
 single_line_move
-6 lines -> 6 lines, 7 rows
+6 lines -> 6 lines, 7 view lines
 2 change(s), 0 move(s), 1 hunk(s)
 
     1   aaa                                          │     1   aaa

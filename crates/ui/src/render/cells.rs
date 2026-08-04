@@ -4,7 +4,7 @@
 //! that straddles the left edge, a tab whose width depends on what precedes
 //! it, an escape sequence the file would like the terminal to obey, and a
 //! cluster that would hang off the right edge. Each is answered by drawing a
-//! space, which is always exactly one column, rather than by drawing half of
+//! layout, which is always exactly one column, rather than by drawing half of
 //! something.
 
 use line_index::{CellCol, LineIndex};

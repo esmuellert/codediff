@@ -19,7 +19,7 @@ use ui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ui::ratatui::Terminal;
 use ui::ratatui::backend::TestBackend;
 use ui::ratatui::buffer::Buffer as Cells;
-use ui::{Buffer, Diff, Session, SideBySide, SingleFile, Theme};
+use ui::{Buffer, Diff, DiffLayout, Session, Theme};
 
 /// A file under a fixed root, since these tests never touch a disk.
 pub fn file(path: &str) -> File {
@@ -46,12 +46,12 @@ pub fn with_diff(
     let original = vscode_diff::lines(before);
     let modified = vscode_diff::lines(after);
     let alignment = align::Alignment::new(computed, &original, &modified);
-    Buffer::SideBySide(SideBySide::new(Diff::new(file(label), alignment)))
+    Buffer::diff(Diff::new(file(label), alignment), DiffLayout::SideBySide)
 }
 
 /// A buffer for a file present on both sides, shown alone.
 pub fn single(label: &str, contents: &str) -> Buffer {
-    Buffer::SingleFile(SingleFile::new(file(label), &vscode_diff::lines(contents)))
+    Buffer::single_file(file(label), &vscode_diff::lines(contents))
 }
 
 /// A buffer for a file that exists only on the modified side.
@@ -60,7 +60,7 @@ pub fn single(label: &str, contents: &str) -> Buffer {
 /// point of `File` and the reason a test cannot fake it with a label.
 pub fn added(label: &str, contents: &str) -> Buffer {
     let file = File::added(RepoPath::new(label, std::path::Path::new("/repo")));
-    Buffer::SingleFile(SingleFile::new(file, &vscode_diff::lines(contents)))
+    Buffer::single_file(file, &vscode_diff::lines(contents))
 }
 
 /// A session over a side-by-side buffer, in the default dark theme.
@@ -75,7 +75,7 @@ pub fn cells(session: &mut Session, width: u16, height: u16) -> Cells {
     terminal.backend().buffer().clone()
 }
 
-/// The screen as text, one line per row.
+/// The screen as text, one line per line.
 pub fn screen(session: &mut Session, width: u16, height: u16) -> String {
     let cells = cells(session, width, height);
     (0..height)
@@ -124,7 +124,7 @@ pub fn measure(session: &mut Session) {
 /// The grid column a character sits in, rather than its byte offset.
 ///
 /// `╱` and `│` are three bytes each, so byte offsets would be wrong in exactly
-/// the rows these tests care about.
-pub fn column_of(row: &str, wanted: char) -> Option<usize> {
-    row.chars().position(|c| c == wanted)
+/// the lines these tests care about.
+pub fn column_of(line: &str, wanted: char) -> Option<usize> {
+    line.chars().position(|c| c == wanted)
 }

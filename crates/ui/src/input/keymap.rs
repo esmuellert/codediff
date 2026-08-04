@@ -27,24 +27,37 @@
 use crokey::KeyCombination;
 
 use crate::input::command::Action;
+use align::DiffLayout;
+
 use crate::input::{buffer, pane, program, tab, view};
 
 /// Which set of bindings is live.
 ///
-/// Passed in by the caller rather than read from anywhere, so this module
-/// depends on nothing — which is what lets the keymap be built before the
-/// thing that decides focus exists.
+/// Decided by the focused buffer, and passed in rather than read from
+/// anywhere, so this module depends on nothing — which is what lets the keymap
+/// be built before the thing that decides focus exists.
+///
+/// A diff carries its [`DiffLayout`] rather than restating `SideBySide` and
+/// `Inline`, because those are the same two things `align` already names and a
+/// second definition is one that can drift. What this enum adds is the
+/// buffers that are *not* diffs — which is exactly why it cannot simply be an
+/// `Option<DiffLayout>`: the explorer at S12 is a third answer, not an absent
+/// one. See D33.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Context {
-    /// Two files, in two columns.
-    #[default]
-    SideBySide,
+pub enum KeymapType {
+    /// Two versions, laid out one of the two ways.
+    Diff(DiffLayout),
     /// One version of a file, with nothing to compare it against.
+    #[default]
     SingleFile,
 }
 
-impl Context {
-    pub const ALL: &'static [Context] = &[Context::SideBySide, Context::SingleFile];
+impl KeymapType {
+    pub const ALL: &'static [KeymapType] = &[
+        KeymapType::Diff(DiffLayout::SideBySide),
+        KeymapType::Diff(DiffLayout::Inline),
+        KeymapType::SingleFile,
+    ];
 }
 
 /// One key sequence and what it does.
@@ -75,13 +88,13 @@ pub enum Match {
 ///
 /// A linear scan of a few short lists. A real trie would be faster and is not
 /// worth it: this runs once per keypress, not once per cell.
-pub fn lookup(context: Context, keys: &[KeyCombination]) -> Match {
-    for list in live(context) {
+pub fn lookup(keymap_type: KeymapType, keys: &[KeyCombination]) -> Match {
+    for list in live(keymap_type) {
         if let Some(binding) = list.iter().find(|b| b.keys == keys) {
             return Match::Exact(binding.action);
         }
     }
-    for list in live(context) {
+    for list in live(keymap_type) {
         if list.iter().any(|b| starts_with(b.keys, keys)) {
             return Match::Prefix;
         }
@@ -89,13 +102,13 @@ pub fn lookup(context: Context, keys: &[KeyCombination]) -> Match {
     Match::None
 }
 
-/// Every list live in `context`, from the innermost level outwards.
+/// Every list live in `keymap_type`, from the innermost level outwards.
 ///
 /// The containment order of the view model, written once. An inner level
 /// shadows an outer one, which is what lets a buffer kind claim a key that
 /// means something else elsewhere.
-fn live(context: Context) -> impl Iterator<Item = &'static [Binding]> {
-    buffer::bindings(context).iter().copied().chain([
+fn live(keymap_type: KeymapType) -> impl Iterator<Item = &'static [Binding]> {
+    buffer::bindings(keymap_type).iter().copied().chain([
         pane::BINDINGS,
         tab::BINDINGS,
         view::BINDINGS,
@@ -108,9 +121,9 @@ fn starts_with(binding: &[KeyCombination], keys: &[KeyCombination]) -> bool {
     binding.len() > keys.len() && binding[..keys.len()] == *keys
 }
 
-/// Every binding of every context, for tests and for a help screen.
-pub fn all() -> impl Iterator<Item = (Context, &'static Binding)> {
-    Context::ALL
+/// Every binding of every keymap_type, for tests and for a help screen.
+pub fn all() -> impl Iterator<Item = (KeymapType, &'static Binding)> {
+    KeymapType::ALL
         .iter()
         .flat_map(|&c| live(c).flat_map(move |list| list.iter().map(move |b| (c, b))))
 }
@@ -123,16 +136,22 @@ mod tests {
     #[test]
     fn a_single_key_resolves_to_its_action() {
         assert!(matches!(
-            lookup(Context::SideBySide, &[key!(j)]),
+            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!(j)]),
             Match::Exact(_)
         ));
     }
 
     #[test]
     fn the_first_key_of_a_sequence_asks_for_more() {
-        assert_eq!(lookup(Context::SideBySide, &[key!(g)]), Match::Prefix);
+        assert_eq!(
+            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!(g)]),
+            Match::Prefix
+        );
         assert!(matches!(
-            lookup(Context::SideBySide, &[key!(g), key!(g)]),
+            lookup(
+                KeymapType::Diff(DiffLayout::SideBySide),
+                &[key!(g), key!(g)]
+            ),
             Match::Exact(_)
         ));
     }
@@ -140,11 +159,17 @@ mod tests {
     #[test]
     fn an_unbound_key_matches_nothing() {
         assert_eq!(
-            lookup(Context::SideBySide, &[key!(ctrl - alt - x)]),
+            lookup(
+                KeymapType::Diff(DiffLayout::SideBySide),
+                &[key!(ctrl - alt - x)]
+            ),
             Match::None
         );
         assert_eq!(
-            lookup(Context::SideBySide, &[key!(g), key!(x)]),
+            lookup(
+                KeymapType::Diff(DiffLayout::SideBySide),
+                &[key!(g), key!(x)]
+            ),
             Match::None
         );
     }
@@ -152,7 +177,7 @@ mod tests {
     #[test]
     fn a_program_binding_works_from_any_context() {
         assert!(matches!(
-            lookup(Context::SideBySide, &[key!(q)]),
+            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!(q)]),
             Match::Exact(_)
         ));
     }
@@ -165,15 +190,15 @@ mod tests {
         // Checked across the *whole chain*, not per level: a `g` bound on a
         // buffer would make a `gg` bound on the tab unreachable in that
         // buffer, silently, and only there.
-        for &context in Context::ALL {
-            let every: Vec<_> = live(context)
+        for &keymap_type in KeymapType::ALL {
+            let every: Vec<_> = live(keymap_type)
                 .flat_map(|l| l.iter().map(|b| b.keys))
                 .collect();
             for outer in &every {
                 for inner in &every {
                     assert!(
                         !starts_with(outer, inner),
-                        "{context:?}: {inner:?} is a prefix of {outer:?}"
+                        "{keymap_type:?}: {inner:?} is a prefix of {outer:?}"
                     );
                 }
             }
@@ -190,13 +215,13 @@ mod tests {
         //
         // *Repeating* — the same keys twice within one level — is not: there
         // is no order between them, so the second is simply unreachable.
-        for &context in Context::ALL {
-            for list in live(context) {
+        for &keymap_type in KeymapType::ALL {
+            for list in live(keymap_type) {
                 let mut seen: Vec<&[KeyCombination]> = Vec::new();
                 for binding in list {
                     assert!(
                         !seen.contains(&binding.keys),
-                        "{context:?}: {:?} is bound twice in one level",
+                        "{keymap_type:?}: {:?} is bound twice in one level",
                         binding.keys
                     );
                     seen.push(binding.keys);
@@ -210,7 +235,7 @@ mod tests {
         // Not provable from the tables today — nothing is shadowed yet — so it
         // is proved of the mechanism instead. Without this ordering, the
         // explorer could not bind a key the diff already uses.
-        let arms: Vec<Action> = live(Context::SideBySide)
+        let arms: Vec<Action> = live(KeymapType::Diff(DiffLayout::SideBySide))
             .filter_map(|list| list.first().map(|b| b.action))
             .collect();
         assert!(
@@ -229,10 +254,10 @@ mod tests {
     fn every_context_can_move() {
         // A buffer kind that forgot the motions would be unscrollable. They
         // are a shared list precisely so this cannot happen by omission.
-        for &context in Context::ALL {
+        for &keymap_type in KeymapType::ALL {
             assert!(
-                matches!(lookup(context, &[key!(j)]), Match::Exact(_)),
-                "{context:?} cannot scroll"
+                matches!(lookup(keymap_type, &[key!(j)]), Match::Exact(_)),
+                "{keymap_type:?} cannot scroll"
             );
         }
     }
@@ -243,10 +268,10 @@ mod tests {
         // no second column, so the key is simply not live there — which is
         // what stops it being a silent no-op.
         assert!(matches!(
-            lookup(Context::SideBySide, &[key!('>')]),
+            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!('>')]),
             Match::Exact(_)
         ));
-        assert_eq!(lookup(Context::SingleFile, &[key!('>')]), Match::None);
+        assert_eq!(lookup(KeymapType::SingleFile, &[key!('>')]), Match::None);
     }
 
     #[test]
@@ -262,9 +287,9 @@ mod tests {
 
     #[test]
     fn every_binding_is_reachable_by_looking_it_up() {
-        for (context, binding) in all() {
+        for (keymap_type, binding) in all() {
             assert!(
-                matches!(lookup(context, binding.keys), Match::Exact(_)),
+                matches!(lookup(keymap_type, binding.keys), Match::Exact(_)),
                 "{:?} is in the table but cannot be reached",
                 binding.keys
             );

@@ -1,5 +1,5 @@
 multi_move
-20 lines -> 20 lines, 30 rows
+20 lines -> 20 lines, 30 view lines
 2 change(s), 1 move(s), 2 hunk(s)
 
     1 - -- Block A                                   │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 10

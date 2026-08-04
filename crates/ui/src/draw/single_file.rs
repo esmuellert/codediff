@@ -23,7 +23,7 @@ pub fn draw(
     view: &Viewport,
     theme: &Theme,
 ) -> bool {
-    let width = gutter_width(data.rows());
+    let width = gutter_width(data.lines());
     if area.width < width + 4 || area.height == 0 {
         return false;
     }
@@ -33,15 +33,15 @@ pub fn draw(
         ..area
     };
 
-    let visible = view.visible(data.rows());
-    for (offset, row) in visible.clone().enumerate() {
+    let visible = view.visible(data.lines());
+    for (offset, line) in visible.clone().enumerate() {
         let y = area.y + offset as u16;
-        let base = theme.normal.patch(if row == view.cursor() {
+        let base = theme.normal.patch(if line == view.cursor() {
             theme.cursor_line
         } else {
             Style::new()
         });
-        let numbers = base.patch(if row == view.cursor() {
+        let numbers = base.patch(if line == view.cursor() {
             theme.line_number_current
         } else {
             theme.line_number
@@ -54,7 +54,7 @@ pub fn draw(
                 width,
                 ..area
             },
-            row + 1,
+            line + 1,
             numbers,
         );
         cells::paint(
@@ -64,7 +64,7 @@ pub fn draw(
                 height: 1,
                 ..text
             },
-            data.line(row).unwrap_or(""),
+            data.line(line).unwrap_or(""),
             DEFAULT_TAB_WIDTH,
             view.left(),
             Ink {

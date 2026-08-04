@@ -4,7 +4,7 @@
 //! generated from a tiny alphabet so the engine finds real matches and produces
 //! genuinely mixed diffs rather than one big replacement.
 
-use align::{Alignment, DiffVersion, RowKind};
+use align::{Alignment, DiffLayout, DiffVersion, ViewLineType};
 use proptest::prelude::*;
 use vscode_diff::Options;
 
@@ -41,18 +41,18 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
     let mut right = Vec::new();
     let (mut last_original, mut last_modified) = (0, 0);
 
-    for row in alignment.rows() {
-        // 1. no row is blank on both sides
-        prop_assert!(!(row.original.is_filler() && row.modified.is_filler()));
+    for line in alignment.view_lines(DiffLayout::SideBySide) {
+        // 1. no line is blank on both sides
+        prop_assert!(!(line.original.is_filler() && line.modified.is_filler()));
 
         // 2. a filler appears exactly when the kind says one should
-        let has_filler = row.original.is_filler() || row.modified.is_filler();
+        let has_filler = line.original.is_filler() || line.modified.is_filler();
         prop_assert_eq!(
             has_filler,
-            matches!(row.kind, RowKind::Deleted | RowKind::Inserted)
+            matches!(line.kind, ViewLineType::Deleted | ViewLineType::Inserted)
         );
 
-        if let Some(n) = row.original.line() {
+        if let Some(n) = line.original.line() {
             // 3. line numbers advance by one and never repeat
             prop_assert_eq!(n, last_original + 1);
             last_original = n;
@@ -62,7 +62,7 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
                     .expect("line exists"),
             );
         }
-        if let Some(n) = row.modified.line() {
+        if let Some(n) = line.modified.line() {
             prop_assert_eq!(n, last_modified + 1);
             last_modified = n;
             right.push(
@@ -72,9 +72,9 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
             );
         }
 
-        // 4. an unchanged row really does hold the same text on both sides
-        if row.kind == RowKind::Unchanged {
-            let (o, m) = row.both().expect("an unchanged row has both sides");
+        // 4. an unchanged line really does hold the same text on both sides
+        if line.kind == ViewLineType::Unchanged {
+            let (o, m) = line.both().expect("an unchanged line has both sides");
             prop_assert_eq!(
                 alignment.line(DiffVersion::Original, o),
                 alignment.line(DiffVersion::Modified, m)
@@ -89,8 +89,11 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
     prop_assert_eq!(left.as_slice(), alignment.lines(DiffVersion::Original));
     prop_assert_eq!(right.as_slice(), alignment.lines(DiffVersion::Modified));
 
-    // 6. the advertised row count is the number of rows produced
-    prop_assert_eq!(alignment.row_count() as usize, alignment.rows().count());
+    // 6. the advertised line count is the number of lines produced
+    prop_assert_eq!(
+        alignment.view_line_count(DiffLayout::SideBySide) as usize,
+        alignment.view_lines(DiffLayout::SideBySide).count()
+    );
 
     Ok(())
 }
@@ -108,9 +111,9 @@ proptest! {
             .expect("comparing a file with itself cannot time out");
         let alignment = Alignment::new(diff.clone(), &text, &text);
 
-        prop_assert_eq!(alignment.row_count() as usize, alignment.lines(DiffVersion::Original).len());
-        for row in alignment.rows() {
-            prop_assert_eq!(row.kind, RowKind::Unchanged);
+        prop_assert_eq!(alignment.view_line_count(DiffLayout::SideBySide) as usize, alignment.lines(DiffVersion::Original).len());
+        for line in alignment.view_lines(DiffLayout::SideBySide) {
+            prop_assert_eq!(line.kind, ViewLineType::Unchanged);
         }
     }
 

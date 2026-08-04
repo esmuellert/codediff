@@ -259,7 +259,7 @@ pub const fn theme(flavour: Flavour) -> Theme {
     }
 }
 
-/// `Rgb` to `Color` in a const context, where `From` is unavailable.
+/// `Rgb` to `Color` in a const keymap_type, where `From` is unavailable.
 const fn colour(Rgb(r, g, b): Rgb) -> ratatui::style::Color {
     ratatui::style::Color::Rgb(r, g, b)
 }

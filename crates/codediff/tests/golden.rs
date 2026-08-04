@@ -115,27 +115,27 @@ fn both_rendered_columns_read_back_as_their_files() {
         let modified = std::fs::read_to_string(dir.join("modified.txt")).expect("fixture exists");
         let rendered = render(pair);
 
-        let rows: Vec<Row> = rendered.lines().filter_map(parse).collect();
-        assert!(!rows.is_empty(), "{pair}: nothing was rendered");
+        let lines: Vec<ViewLine> = rendered.lines().filter_map(parse).collect();
+        assert!(!lines.is_empty(), "{pair}: nothing was rendered");
 
         check_column(
             pair,
             "original",
-            &rows,
+            &lines,
             |r| (r.original_line, &r.original),
             &original,
         );
         check_column(
             pair,
             "modified",
-            &rows,
+            &lines,
             |r| (r.modified_line, &r.modified),
             &modified,
         );
     }
 }
 
-struct Row {
+struct ViewLine {
     original_line: Option<u32>,
     original: String,
     modified_line: Option<u32>,
@@ -147,7 +147,7 @@ struct Row {
 /// The gutters are fixed-width ASCII, so character positions are display
 /// columns there; the text runs to the end of its half, which avoids having to
 /// slice a column containing wide characters.
-fn parse(line: &str) -> Option<Row> {
+fn parse(line: &str) -> Option<ViewLine> {
     let (left, right) = line.split_once(" \u{2502} ")?;
     let number = |half: &str| -> Option<u32> {
         half.chars().take(5).collect::<String>().trim().parse().ok()
@@ -163,7 +163,7 @@ fn parse(line: &str) -> Option<Row> {
             None => body.trim_end().to_owned(),
         }
     };
-    Some(Row {
+    Some(ViewLine {
         original_line: number(left),
         original: text(left),
         modified_line: number(right),
@@ -174,8 +174,8 @@ fn parse(line: &str) -> Option<Row> {
 fn check_column(
     pair: &str,
     version: &str,
-    rows: &[Row],
-    pick: impl Fn(&Row) -> (Option<u32>, &String),
+    rows: &[ViewLine],
+    pick: impl Fn(&ViewLine) -> (Option<u32>, &String),
     file: &str,
 ) {
     let expected: Vec<&str> = file.split('\n').collect();

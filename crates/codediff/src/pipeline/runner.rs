@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use file_types::DiffVersion;
-use ui::{Buffer, Diff, SideBySide, SingleFile};
+use ui::{Buffer, Diff, DiffLayout};
 
 use crate::pipeline::contents::{self, Contents};
 use crate::pipeline::diff;
@@ -53,18 +53,18 @@ impl Runner {
         match file.only() {
             // Nothing to compare against, so neither two columns nor an
             // interleaving has anything to say. Both diff modes land here.
-            Some(version) => Ok(Buffer::SingleFile(SingleFile::new(
-                file,
-                &self.contents.version(version),
-            ))),
+            Some(version) => Ok(Buffer::single_file(file, &self.contents.version(version))),
             None => {
                 let original = self.contents.version(DiffVersion::Original);
                 let modified = self.contents.version(DiffVersion::Modified);
                 let changed = diff::compute(&original, &modified)?;
                 let alignment = diff::align(changed, &original, &modified)?;
-                Ok(Buffer::SideBySide(SideBySide::new(Diff::new(
-                    file, alignment,
-                ))))
+                // Side by side is where a reader starts; `t` reads the same
+                // diff inline without rebuilding any of it.
+                Ok(Buffer::diff(
+                    Diff::new(file, alignment),
+                    DiffLayout::SideBySide,
+                ))
             }
         }
     }

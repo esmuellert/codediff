@@ -26,7 +26,7 @@ fn a_changed_line_is_coloured_and_its_changed_characters_more_so() {
     let grid = cells(&mut s, 44, 8);
     let theme = Theme::DARK;
 
-    // Row 1 is `two` against `TWO`. The whole row carries the delete colour on
+    // View line 1 is `two` against `TWO`. The whole line carries the delete colour on
     // the left and the insert colour on the right; the letters that actually
     // differ carry the stronger pair.
     let left_text = 4;
@@ -45,14 +45,14 @@ fn a_changed_line_is_coloured_and_its_changed_characters_more_so() {
     assert_eq!(grid[(right_text, 1)].style().bg, theme.inserted_text.bg);
     assert_eq!(grid[(right_text + 3, 1)].style().bg, theme.inserted.bg);
 
-    // An unchanged row keeps the ordinary background.
+    // An unchanged line keeps the ordinary background.
     assert_eq!(grid[(left_text, 2)].style().bg, theme.normal.bg);
 }
 
 #[test]
 fn a_changed_line_is_coloured_to_the_edge_of_its_column() {
     // `hl_eol`: a highlight that stopped at the last character would make a
-    // short changed line read as a ragged stripe rather than a marked row.
+    // short changed line read as a ragged stripe rather than a marked line.
     let mut s = session("src/demo.rs", BEFORE, AFTER);
     let grid = cells(&mut s, 44, 8);
     assert_eq!(
@@ -79,7 +79,7 @@ fn every_theme_marks_the_changed_rows_differently_from_the_unchanged_ones() {
         let mut s = themed(name);
         let grid = cells(&mut s, 44, 8);
 
-        // Row 1 changed, row 2 did not; row 1's changed characters are
+        // View line 1 changed, view line 2 did not; line 1's changed characters are
         // stronger still. All three must be distinguishable on screen, or the
         // theme is decorative rather than useful.
         let changed = grid[(7, 1)].style().bg;

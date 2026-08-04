@@ -1,5 +1,5 @@
 comprehensive_move
-362 lines -> 405 lines, 506 rows
+362 lines -> 405 lines, 506 view lines
 7 change(s), 4 move(s), 7 hunk(s)
 
     1   -- Module: data_processor.lua                │     1   -- Module: data_processor.lua

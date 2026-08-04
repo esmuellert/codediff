@@ -5,8 +5,9 @@ pub use file_types::DiffVersion;
 
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
+use crate::layout::{self, DiffLayout, ViewLines};
 use crate::region::{UnchangedRegion, regions};
-use crate::row::{Row, Rows, is_well_formed, row_count, rows};
+use crate::view_line::{ViewLine, blocks, is_well_formed};
 
 /// A diff whose ranges do not describe a coherent pairing.
 ///
@@ -84,9 +85,9 @@ impl Alignment {
         original: &[&str],
         modified: &[&str],
         tab_width: u8,
-        context: u32,
+        keymap_type: u32,
     ) -> Self {
-        Self::try_with_options(diff, original, modified, tab_width, context)
+        Self::try_with_options(diff, original, modified, tab_width, keymap_type)
             .expect("the engine produces well-formed diffs")
     }
 
@@ -95,14 +96,14 @@ impl Alignment {
         original: &[&str],
         modified: &[&str],
         tab_width: u8,
-        context: u32,
+        keymap_type: u32,
     ) -> Result<Self, Malformed> {
         let original = normalise(original);
         let modified = normalise(modified);
         if !is_well_formed(&diff, original.len() as u32, modified.len() as u32) {
             return Err(Malformed);
         }
-        let hunks = hunks(&diff, &original, &modified, context);
+        let hunks = hunks(&diff, &original, &modified, keymap_type);
         Ok(Self {
             diff,
             original,
@@ -162,30 +163,67 @@ impl Alignment {
             .map(String::as_str)
     }
 
-    /// Every row, in order.
-    pub fn rows(&self) -> Rows<'_> {
-        rows(
-            &self.diff,
-            self.original.len() as u32,
-            self.modified.len() as u32,
-        )
+    /// Every view line, in order, laid out the way asked for.
+    pub fn view_lines(&self, layout: DiffLayout) -> ViewLines<'_> {
+        layout::view_lines(layout, &self.diff, self.originals(), self.modifieds())
     }
 
-    pub fn row_count(&self) -> u32 {
-        row_count(
-            &self.diff,
-            self.original.len() as u32,
-            self.modified.len() as u32,
-        )
+    pub fn view_line_count(&self, layout: DiffLayout) -> u32 {
+        layout::view_line_count(layout, &self.diff, self.originals(), self.modifieds())
     }
 
-    /// The rows a viewport covers, without walking the ones above it.
+    /// The view lines a viewport covers.
     ///
-    /// Still a walk — the rows before `first` are stepped over rather than
-    /// built. For the change counts real files produce this costs nothing, and
-    /// it keeps the alternative, a stored row index, out of the crate.
-    pub fn rows_from(&self, first: u32) -> impl Iterator<Item = Row> + '_ {
-        self.rows().skip(first as usize)
+    /// Still a walk: the view lines above `first` are built and dropped rather than
+    /// skipped over. They are twelve-byte `Copy` values that touch no text, so
+    /// for the view-line counts real files produce this costs nothing, and it keeps
+    /// the alternative — a stored view-line index per layout — out of the crate.
+    pub fn view_lines_from(
+        &self,
+        layout: DiffLayout,
+        first: u32,
+    ) -> impl Iterator<Item = ViewLine> + '_ {
+        self.view_lines(layout).skip(first as usize)
+    }
+
+    /// Runs of adjacent changed view lines, in the given view layout.
+    pub fn blocks(&self, layout: DiffLayout) -> Vec<std::ops::Range<u32>> {
+        blocks(self.view_lines(layout))
+    }
+
+    /// Which line of which version a view line shows.
+    ///
+    /// With [`view_line_at`](Self::view_line_at), how a reader keeps their place when the
+    /// layout changes: a view-line number means nothing in the other layout, but a
+    /// line means the same in both.
+    pub fn line_at(&self, layout: DiffLayout, view_line: u32) -> Option<(DiffVersion, u32)> {
+        layout::line_at(
+            layout,
+            &self.diff,
+            self.originals(),
+            self.modifieds(),
+            view_line,
+        )
+    }
+
+    /// Which line shows a given line, if any.
+    pub fn view_line_at(&self, layout: DiffLayout, version: DiffVersion, line: u32) -> Option<u32> {
+        layout::view_line_at(
+            layout,
+            &self.diff,
+            self.originals(),
+            self.modifieds(),
+            version,
+            line,
+        )
+    }
+
+    fn originals(&self) -> u32 {
+        self.original.len() as u32
+    }
+
+    fn modifieds(&self) -> u32 {
+        self.modified.len() as u32
     }
 
     pub fn hunks(&self) -> &[Hunk] {
@@ -236,7 +274,7 @@ impl Alignment {
 
     /// The move a line takes part in, if any.
     ///
-    /// A lookup rather than a field on the row: the engine's move ranges need
+    /// A lookup rather than a field on the line: the engine's move ranges need
     /// not agree with its change ranges — in the `comprehensive_move` fixture a
     /// move covers original 32..89 while a change covers 37..139 — so a move
     /// cannot be attached to a change without lying about one of them.

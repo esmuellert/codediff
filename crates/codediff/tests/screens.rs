@@ -14,7 +14,7 @@
 
 mod harness;
 
-use harness::{cells, column_of, key, screen, session, type_keys};
+use harness::{cells, column_of, key, screen, session, single, type_keys};
 use ui::crossterm::event::KeyCode;
 use ui::{Flow, Session, Theme};
 
@@ -183,7 +183,7 @@ fn quitting_is_the_only_way_the_loop_ends() {
 
 #[test]
 fn navigation_and_the_status_line_count_the_same_changes() {
-    // They used to disagree: the status line reported context-merged hunks
+    // They used to disagree: the status line reported keymap_type-merged hunks
     // while `]c` stepped through changed blocks, so a file could say "1" and
     // still stop twice.
     let mut s = demo();
@@ -258,4 +258,54 @@ fn a_diff_the_engine_abandoned_says_so_on_screen() {
         screen(&mut s, 60, 8).contains("PARTIAL"),
         "an abandoned diff was not announced"
     );
+}
+
+#[test]
+fn the_same_diff_read_inline() {
+    // The same six lines as `a_small_diff_side_by_side`, one version per row:
+    // what was there, then what replaced it. Two gutters, and the missing
+    // number is what says which version a row belongs to — no sign column,
+    // because it would only repeat them.
+    let mut s = demo();
+    type_keys(&mut s, "t");
+    assert_eq!(
+        screen(&mut s, 44, 10),
+        [
+            "  1   1 one                                 ",
+            "  2     two                                 ",
+            "      2 TWO                                 ",
+            "  3   3 three                               ",
+            "      4 inserted                            ",
+            "  4   5 four                                ",
+            "  5   6 five                                ",
+            "                                            ",
+            "                                            ",
+            " src/demo.rs                2 changes   1/7 ",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn reading_inline_gives_the_text_more_room_than_two_columns() {
+    // One text column instead of two, which is why long lines need less
+    // horizontal scrolling inline. The same 26-character line is cut off side
+    // by side and complete inline, at the same terminal width.
+    let line = "abcdefghijklmnopqrstuvwxyz";
+    let mut s = session("long.rs", line, "abcdefghijklmnopqrstuvwxyZ");
+    let columns = screen(&mut s, 44, 4);
+    assert!(!columns.contains(line), "it fitted after all: {columns:?}");
+    type_keys(&mut s, "t");
+    let inline = screen(&mut s, 44, 4);
+    assert!(inline.contains(line), "still cut off: {inline:?}");
+}
+
+#[test]
+fn a_file_with_no_second_version_has_only_one_way_to_be_read() {
+    // `t` is bound at the view level, so it reaches a single-file buffer too.
+    // Nothing to lay out two ways, so it must be inert rather than an error.
+    let mut s = Session::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
+    let before = screen(&mut s, 40, 4);
+    type_keys(&mut s, "t");
+    assert_eq!(screen(&mut s, 40, 4), before);
 }

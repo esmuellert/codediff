@@ -108,3 +108,44 @@ pub const UNSAFE_EXEMPT: &[&str] = &["vscode-diff-sys", "vscode-diff"];
 /// engines touches nothing else. See docs/plan/05-decisions.md D17.
 pub const ENGINE_CRATES: &[&str] = &["syntect", "tree_sitter"];
 pub const ENGINE_DIR: &str = "crates/syntax/src/engine";
+
+/// Words that may not appear in a type we declare, and what to use instead.
+///
+/// These are *meta-names*: they classify without saying anything. `RowKind`
+/// told a reader that a row has variants, which the `enum` already said; the
+/// word that carries meaning is the noun beside it. The house suffix is
+/// `Type` — `ChangeType`, `BufferType`, `ViewLineType` — chosen once so there
+/// is not a second word for one idea, which is the failure D28 removed.
+///
+/// Only names *we declare* are checked. `std::io::ErrorKind` and crossterm's
+/// `KeyEventKind` are other people's vocabulary arriving through a `use`, and
+/// renaming those is not ours to do.
+pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
+    (
+        "Kind",
+        "Type — the house suffix, as in ChangeType and BufferType",
+    ),
+    ("Data", "say what the data is"),
+    ("Info", "say what the information is"),
+    ("Manager", "a verb, or the thing being managed"),
+    ("Helper", "the job it does"),
+    ("Util", "the job it does"),
+    ("Handler", "the event it answers"),
+];
+
+/// Directories that may not name a module of their own crate, and why.
+///
+/// The boundary between a brick and a composition. `ui/src/render` draws onto
+/// a cell grid — rectangles, line numbers, one line of text — and is handed
+/// everything it needs; `ui/src/draw` is what knows that a side-by-side diff
+/// is two of those columns with a divider between them. If a brick could name
+/// a buffer it would stop being reusable by a buffer type that does not exist
+/// yet, and would stop being testable without a model.
+///
+/// Checked as text rather than by the compiler because Rust has no way to say
+/// "this module may not import that one" within a crate.
+pub const BLIND_DIRS: &[(&str, &str, &str)] = &[(
+    "crates/ui/src/render",
+    "crate::view",
+    "a brick is handed what it draws; `ui/src/draw` is what knows the model",
+)];

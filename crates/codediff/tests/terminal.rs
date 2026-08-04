@@ -180,6 +180,27 @@ fn a_change_key_with_nowhere_to_go_says_so_on_a_real_terminal() {
 }
 
 #[test]
+fn the_layout_key_is_delivered_by_a_real_terminal() {
+    // What only a pty can show: that `t` arrives as `t` and the program stays
+    // healthy after rebuilding its buffer. What is on screen afterwards is
+    // asserted against the exact grid in `screens.rs` instead — the capture
+    // here is cumulative and ratatui redraws only the cells that changed, so
+    // the first frame's two columns are still in the bytes, and the row total
+    // going from `1/4` to `1/5` emits one digit rather than a phrase.
+    let fixture = Fixture::new("inline");
+    let (columns, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"q");
+    assert!(ok);
+    assert!(columns.contains("1/4"), "not four view lines:\n{columns:?}");
+
+    let (toggled, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"tq");
+    assert!(ok, "toggling then quitting failed");
+    assert!(
+        toggled.len() > columns.len(),
+        "`t` redrew nothing, so it never arrived"
+    );
+}
+
+#[test]
 fn a_panic_still_gives_the_terminal_back() {
     let (output, ok) = on_a_terminal(&["--self-panic"], None, &[]);
 

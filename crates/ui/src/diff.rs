@@ -9,7 +9,7 @@
 //! would be a cycle.
 //!
 //! It is **data, not a projection.** How many rows there are is not a property
-//! of a diff: an [`align::Row`] is a *pair*, so a row count is already an
+//! of a diff: an [`align::ViewLine`] is a *pair*, so a row count is already an
 //! answer to "how would this look side by side". A buffer decides that, and
 //! caches the answer beside the decision. See [`SideBySide`].
 //!

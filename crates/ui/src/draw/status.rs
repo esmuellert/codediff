@@ -22,10 +22,11 @@ pub struct Status<'a> {
     /// one — `"old.rs → new.rs   (added)"` — and the `(added)` was rendered
     /// bold, as though it were part of the path. See D28.
     pub file: &'a File,
-    /// Cursor row and total rows, both 0-based internally, shown 1-based.
-    pub row: u32,
-    pub rows: u32,
-    /// Runs of changed rows in the whole file.
+    /// Cursor position and document height, in view lines. Both 0-based
+    /// internally, shown 1-based.
+    pub view_line: u32,
+    pub view_lines: u32,
+    /// Runs of changed view lines in the whole file.
     pub changes: usize,
     /// Which of them the cursor is in, if any, 0-based.
     pub change: Option<usize>,
@@ -72,7 +73,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
 /// Three independent parts, dropped in order of what a reviewer can most
 /// afford to lose:
 ///
-/// 1. the directory, dimmed — recoverable from the file name plus context
+/// 1. the directory, dimmed — recoverable from the file name plus keymap_type
 /// 2. `from → ` for a rename — useful, rarely essential
 /// 3. the file name and any `(added)`/`(deleted)` note — never dropped
 ///
@@ -127,7 +128,7 @@ fn name(
 }
 
 fn summary(status: &Status<'_>) -> String {
-    let position = format!("{}/{}", status.row + 1, status.rows.max(1));
+    let position = format!("{}/{}", status.view_line + 1, status.view_lines.max(1));
     if let Some(direction) = status.exhausted {
         let which = match direction {
             Direction::Next => "next",
@@ -159,8 +160,8 @@ mod tests {
     fn status() -> Status<'static> {
         Status {
             file: &MAIN,
-            row: 0,
-            rows: 100,
+            view_line: 0,
+            view_lines: 100,
             changes: 3,
             change: None,
             timed_out: false,

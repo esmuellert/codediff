@@ -10,14 +10,14 @@ use ratatui::layout::Rect;
 /// Where the columns of one pane go.
 ///
 /// Always two. A file that exists on only one side has nothing to compare
-/// against, so it is not a diff at all — it is a [`Text`] buffer, drawn by
-/// `render::text` in a single column. There is no such thing here as a diff
+/// against, so it is not a diff at all — it is a [`SingleFile`] buffer, drawn
+/// by `render::single_file` in one column. There is no such thing as a diff
 /// with one column, which is why neither field is optional. VSCode reached the
 /// same conclusion and stopped opening a diff editor at all for added,
 /// untracked and deleted files: an empty left-hand side "did not provide much
 /// value". See D23.
 ///
-/// [`Text`]: crate::view::buffer::Text
+/// [`SingleFile`]: crate::view::buffer::SingleFile
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame {
     pub original: Column,
@@ -141,6 +141,68 @@ pub fn columns(
     })
 }
 
+/// Where the two gutters and the one text column of an inline pane go.
+///
+/// Two gutters because every row belongs to one version, and **the missing
+/// number is what says which**: no modified number means the line was deleted,
+/// no original number means it was inserted. That is why there is no separate
+/// sign column — it would repeat what the gutters already say. GitHub and
+/// Azure DevOps both show the same two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InlineFrame {
+    pub original: Rect,
+    pub modified: Rect,
+    pub text: Rect,
+}
+
+impl InlineFrame {
+    /// The whole row, for filling its background edge to edge.
+    pub fn row(&self, y: u16) -> Rect {
+        Rect {
+            x: self.original.x,
+            y,
+            width: self.original.width + self.modified.width + self.text.width,
+            height: 1,
+        }
+    }
+
+    /// The gutter for each version, in the order they are drawn.
+    pub fn gutters(&self) -> [(DiffVersion, Rect); 2] {
+        [
+            (DiffVersion::Original, self.original),
+            (DiffVersion::Modified, self.modified),
+        ]
+    }
+}
+
+/// Divides one pane into two gutters and the text between them.
+///
+/// Returns `None` if the pane is too narrow, exactly as [`columns`] does.
+pub fn inline(area: Rect, original_lines: u32, modified_lines: u32) -> Option<InlineFrame> {
+    if area.height == 0 {
+        return None;
+    }
+    let original = gutter_width(original_lines);
+    let modified = gutter_width(modified_lines);
+    if area.width < original + modified + MIN_TEXT {
+        return None;
+    }
+    let at = |x: u16, width: u16| Rect {
+        x,
+        y: area.y,
+        width,
+        height: area.height,
+    };
+    Some(InlineFrame {
+        original: at(area.x, original),
+        modified: at(area.x + original, modified),
+        text: at(
+            area.x + original + modified,
+            area.width - original - modified,
+        ),
+    })
+}
+
 /// The narrowest text a column is worth drawing.
 const MIN_TEXT: u16 = 4;
 
@@ -241,5 +303,55 @@ mod tests {
             assert_eq!(column.text.height, pane.height, "{version:?}");
             assert_eq!(column.gutter.height, pane.height, "{version:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+
+    fn area(width: u16, height: u16) -> Rect {
+        Rect::new(0, 0, width, height)
+    }
+
+    #[test]
+    fn the_two_gutters_are_sized_to_their_own_files() {
+        // A change can make one version much longer than the other, and a
+        // gutter sized to the wrong one would either waste columns or truncate
+        // a number.
+        let frame = inline(area(80, 10), 9, 1200).expect("room");
+        assert_eq!(frame.original.width, 4, "three digits minimum plus a space");
+        assert_eq!(frame.modified.width, 5, "four digits plus a space");
+        assert_eq!(frame.text.x, 9, "text starts after both");
+        assert_eq!(frame.text.width, 71);
+    }
+
+    #[test]
+    fn the_gutters_and_the_text_tile_the_pane_exactly() {
+        for width in [12u16, 13, 40, 81, 200] {
+            let frame = inline(area(width, 5), 30, 30).expect("room");
+            assert_eq!(frame.original.x, 0);
+            assert_eq!(frame.modified.x, frame.original.width);
+            assert_eq!(frame.text.x, frame.original.width + frame.modified.width);
+            assert_eq!(frame.row(0).width, width, "width {width} leaves a gap");
+        }
+    }
+
+    #[test]
+    fn a_pane_too_narrow_for_both_gutters_draws_nothing() {
+        // Answered with `None` rather than a squeezed frame, so the caller can
+        // say so instead of drawing something unreadable.
+        assert!(inline(area(11, 5), 30, 30).is_none());
+        assert!(inline(area(12, 5), 30, 30).is_some());
+        assert!(inline(area(40, 0), 30, 30).is_none());
+    }
+
+    #[test]
+    fn inline_is_wider_for_text_than_two_columns_of_the_same_pane() {
+        // The point of the layout: one text column rather than two, so a long
+        // line needs less horizontal scrolling.
+        let both = columns(area(80, 10), 50, 30, 30).expect("room");
+        let one = inline(area(80, 10), 30, 30).expect("room");
+        assert!(one.text.width > both.original.text.width + both.modified.text.width);
     }
 }

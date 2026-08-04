@@ -11,18 +11,20 @@
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::render::{cells, layout, side_by_side, single_file, status};
+use crate::draw::{inline, side_by_side, single_file, status};
+use crate::render::{cells, layout};
 use crate::theme::Theme;
 use crate::view::Buffer;
+use crate::view::buffer::BufferType;
 use crate::view::{View, Viewport};
 
-/// Draws the whole interface.
+/// Renders the whole interface into the terminal's cell grid.
 ///
 /// `view` is taken by mutable reference for one reason: the frame is where a
 /// pane's height becomes known, and page motions need it. A terminal resize
 /// therefore needs no event of its own — the next frame simply has a different
 /// height, and the viewport re-examines itself when told.
-pub fn draw(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme) {
+pub fn render(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme) {
     let Some((body, status_area)) = layout::screen(area) else {
         return too_small(cells, area, theme);
     };
@@ -32,7 +34,7 @@ pub fn draw(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme) {
     let rect = body;
 
     let (buffer, viewport) = view.focused_mut();
-    viewport.set_height(u32::from(rect.height), buffer.rows());
+    viewport.set_height(u32::from(rect.height), buffer.view_lines());
     if !pane(cells, rect, buffer, viewport, theme) {
         return too_small(cells, area, theme);
     }
@@ -52,31 +54,31 @@ fn pane(
     viewport: &Viewport,
     theme: &Theme,
 ) -> bool {
-    match buffer {
-        Buffer::SideBySide(data) => side_by_side::draw(cells, area, data, viewport, theme),
-        Buffer::SingleFile(data) => single_file::draw(cells, area, data, viewport, theme),
+    // The one place a buffer kind decides which renderer runs. Side by side
+    // and inline are separate variants, so the layout needs no field of its
+    // own to be read here.
+    match buffer.buffer_type() {
+        BufferType::SideBySide(data) => {
+            side_by_side::draw(cells, area, buffer, data, viewport, theme)
+        }
+        BufferType::Inline(data) => inline::draw(cells, area, buffer, data, viewport, theme),
+        BufferType::SingleFile(data) => single_file::draw(cells, area, data, viewport, theme),
     }
 }
 
 /// What the status line says about the focused pane.
 fn summary<'a>(buffer: &'a Buffer, viewport: &Viewport) -> status::Status<'a> {
-    let (changes, change, timed_out, exhausted) = match buffer {
-        Buffer::SideBySide(data) => (
-            data.blocks().len(),
-            data.block_at(viewport.cursor()),
-            data.hit_timeout(),
-            data.exhausted(),
-        ),
-        Buffer::SingleFile(_) => (0, None, false, None),
-    };
+    // Every field comes off the parent, whatever kind it is: a lone file
+    // reports no changes because it has none, not because this asked a
+    // different question of it.
     status::Status {
         file: buffer.file(),
-        row: viewport.cursor(),
-        rows: buffer.rows(),
-        changes,
-        change,
-        timed_out,
-        exhausted,
+        view_line: viewport.cursor(),
+        view_lines: buffer.view_lines(),
+        changes: buffer.blocks().len(),
+        change: buffer.block_at(viewport.cursor()),
+        timed_out: buffer.hit_timeout(),
+        exhausted: buffer.exhausted(),
     }
 }
 

@@ -171,7 +171,10 @@ fn an_empty_file_is_still_compared_properly() {
         !out.contains("added") && !out.contains("deleted"),
         "an empty file was not added or deleted:\n{out}"
     );
-    assert!(out.contains("row(s)"), "a real alignment was built:\n{out}");
+    assert!(
+        out.contains("view line(s)"),
+        "a real alignment was built:\n{out}"
+    );
 }
 
 #[test]

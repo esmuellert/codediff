@@ -12,8 +12,8 @@
 
 use ratatui::backend::Backend;
 
-use crate::input::{Action, Command, ProgramAction, Resolution, Resolver};
-use crate::render;
+use crate::draw;
+use crate::input::{Action, Command, ProgramAction, Resolution, Resolver, ViewAction};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 use crate::view::Buffer;
@@ -64,7 +64,7 @@ impl Session {
     ) -> Result<(), B::Error> {
         terminal.draw(|frame| {
             let area = frame.area();
-            render::draw(frame.buffer_mut(), area, &mut self.view, &self.theme);
+            draw::render(frame.buffer_mut(), area, &mut self.view, &self.theme);
         })?;
         Ok(())
     }
@@ -79,7 +79,7 @@ impl Session {
         // Which keymap is live is the focused buffer's answer, not a constant.
         // That is the whole mechanism by which the explorer will get its own
         // keys without this function learning what an explorer is.
-        match self.resolver.key(key, self.view.context()) {
+        match self.resolver.key(key, self.view.keymap_type()) {
             Resolution::Run(command) => self.dispatch(command),
             Resolution::Pending | Resolution::Cancelled | Resolution::Unbound => Flow::Continue,
         }
@@ -99,13 +99,17 @@ impl Session {
                 buffer.act(action, count, viewport);
                 Flow::Continue
             }
-            // The three view levels above the buffer are uninhabited: nothing
-            // yet affects more than one buffer. Each is a level with an
-            // executor of its own, so when the explorer gives it a command the
-            // arm is already here and the compiler names what is missing.
+            // The two view levels between the buffer and the view are
+            // uninhabited: nothing yet affects more than one buffer within a
+            // tab. Each is a level with an executor of its own, so when the
+            // explorer gives it a command the arm is already here and the
+            // compiler names what is missing.
             Action::Pane(action) => match action {},
             Action::Tab(action) => match action {},
-            Action::View(action) => match action {},
+            Action::View(ViewAction::ToggleLayout) => {
+                self.view.toggle_layout();
+                Flow::Continue
+            }
             Action::Program(ProgramAction::Quit) => Flow::Quit,
             Action::Program(ProgramAction::Suspend) => Flow::Suspend,
             // Everything is redrawn after every event already; this exists so

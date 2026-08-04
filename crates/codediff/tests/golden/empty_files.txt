@@ -1,5 +1,5 @@
 empty_files
-2 lines -> 2 lines, 2 rows
+2 lines -> 2 lines, 2 view lines
 0 change(s), 0 move(s), 0 hunk(s)
 
     1                                                │     1

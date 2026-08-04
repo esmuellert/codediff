@@ -4,7 +4,7 @@
 //! the left column must read as exactly the original file and the right as
 //! exactly the modified one, which a human can confirm by looking.
 
-use ::align::{Alignment, DiffVersion, Row, RowKind, Slot};
+use ::align::{Alignment, DiffLayout, DiffVersion, Slot, ViewLine, ViewLineType};
 use anyhow::{Context, Result};
 
 use crate::text::{expand_str, fit, pad, visible};
@@ -35,13 +35,13 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
     Ok(())
 }
 
-/// The rows, and optionally everything the grid cannot show.
+/// The lines, and optionally everything the grid cannot show.
 ///
 /// Shared with `debug diff-file`, which finds its two sides through git rather
 /// than being handed them, but renders the result identically.
 pub fn print(alignment: &Alignment, verbose: bool) {
-    for row in alignment.rows() {
-        println!("{}", line(alignment, &row));
+    for line in alignment.view_lines(DiffLayout::SideBySide) {
+        println!("{}", rendered(alignment, &line));
     }
     if verbose {
         detail(alignment);
@@ -57,10 +57,10 @@ fn header(
 ) {
     println!("{}  ->  {}", visible(original_path), visible(modified_path));
     println!(
-        "{} lines -> {} lines, {} rows",
+        "{} lines -> {} lines, {} view lines",
         original.len(),
         modified.len(),
-        alignment.row_count()
+        alignment.view_line_count(DiffLayout::SideBySide)
     );
     println!(
         "{} change(s), {} move(s), {} hunk(s){}",
@@ -76,38 +76,38 @@ fn header(
     println!();
 }
 
-/// One row: line number, marker and text for each side.
-fn line(alignment: &Alignment, row: &Row) -> String {
-    let (left_mark, right_mark) = marks(row.kind);
+/// One view line, as text: line number, marker and content for each side.
+fn rendered(alignment: &Alignment, line: &ViewLine) -> String {
+    let (left_mark, right_mark) = marks(line.kind);
     let body = format!(
         "{} {} {} │ {} {} {}",
-        number(row.original),
+        number(line.original),
         left_mark,
-        cell(alignment, DiffVersion::Original, row.original),
-        number(row.modified),
+        cell(alignment, DiffVersion::Original, line.original),
+        number(line.modified),
         right_mark,
         pad(
-            &cell(alignment, DiffVersion::Modified, row.modified),
+            &cell(alignment, DiffVersion::Modified, line.modified),
             COLUMN
         ),
     );
-    format!("{body}{}", move_note(alignment, row))
+    format!("{body}{}", move_note(alignment, line))
         .trim_end()
         .to_owned()
 }
 
 /// Where a moved block begins, and where its other end is.
 ///
-/// Only on the row the block starts at. Repeating it down every line of a
+/// Only on the line the block starts at. Repeating it down every line of a
 /// forty-line move says nothing new and buries the text.
-fn move_note(alignment: &Alignment, row: &Row) -> String {
-    if let Some(n) = row.original.line()
+fn move_note(alignment: &Alignment, line: &ViewLine) -> String {
+    if let Some(n) = line.original.line()
         && let Some(moved) = alignment.moved(DiffVersion::Original, n)
         && moved.original.start_line == n
     {
         return format!("   ↓ moved to modified {}", moved.modified.start_line);
     }
-    if let Some(n) = row.modified.line()
+    if let Some(n) = line.modified.line()
         && let Some(moved) = alignment.moved(DiffVersion::Modified, n)
         && moved.modified.start_line == n
     {
@@ -116,12 +116,12 @@ fn move_note(alignment: &Alignment, row: &Row) -> String {
     String::new()
 }
 
-fn marks(kind: RowKind) -> (char, char) {
+fn marks(kind: ViewLineType) -> (char, char) {
     match kind {
-        RowKind::Unchanged => (' ', ' '),
-        RowKind::Modified => ('~', '~'),
-        RowKind::Deleted => ('-', ' '),
-        RowKind::Inserted => (' ', '+'),
+        ViewLineType::Unchanged => (' ', ' '),
+        ViewLineType::Modified => ('~', '~'),
+        ViewLineType::Deleted => ('-', ' '),
+        ViewLineType::Inserted => (' ', '+'),
     }
 }
 
@@ -132,7 +132,7 @@ fn number(slot: Slot) -> String {
     }
 }
 
-/// One version's cell on one row: its text, or fillers where it has no line.
+/// One version's cell on one line: its text, or fillers where it has no line.
 fn cell(alignment: &Alignment, version: DiffVersion, slot: Slot) -> String {
     match slot.line() {
         None => "╱".repeat(COLUMN as usize),
@@ -143,7 +143,7 @@ fn cell(alignment: &Alignment, version: DiffVersion, slot: Slot) -> String {
     }
 }
 
-/// Everything the row grid cannot show.
+/// Everything the line grid cannot show.
 fn detail(alignment: &Alignment) {
     println!();
     println!("hunks");
@@ -162,13 +162,13 @@ fn detail(alignment: &Alignment) {
     println!();
     println!("character changes");
     let mut any = false;
-    for row in alignment.rows() {
-        if row.kind != RowKind::Modified {
+    for line in alignment.view_lines(DiffLayout::SideBySide) {
+        if line.kind != ViewLineType::Modified {
             continue;
         }
         for (version, slot) in [
-            (DiffVersion::Original, row.original),
-            (DiffVersion::Modified, row.modified),
+            (DiffVersion::Original, line.original),
+            (DiffVersion::Modified, line.modified),
         ] {
             let Some(number) = slot.line() else { continue };
             for span in alignment.spans(version, number) {

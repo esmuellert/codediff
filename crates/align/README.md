@@ -5,24 +5,25 @@ Pairs up the two files, line by line, and says where the gaps go.
 For `one/two/three/four/five` → `one/three/four/NEW/five`:
 
 ```text
-row │ original │ modified │ kind
- 0  │ line 1   │ line 1   │ unchanged
- 1  │ line 2   │ filler   │ deleted
- 2  │ line 3   │ line 2   │ unchanged
- 3  │ line 4   │ line 3   │ unchanged
- 4  │ filler   │ line 4   │ inserted
- 5  │ line 5   │ line 5   │ unchanged
+view line │ original │ modified │ type
+    0     │ line 1   │ line 1   │ unchanged
+    1     │ line 2   │ filler   │ deleted
+    2     │ line 3   │ line 2   │ unchanged
+    3     │ line 4   │ line 3   │ unchanged
+    4     │ filler   │ line 4   │ inserted
+    5     │ line 5   │ line 5   │ unchanged
 ```
 
-It returns **line numbers, not text**. Row 1 says "original line 2"; the caller reads
-`"two"` from the file it already has.
+It returns **line numbers, not text**. View line 1 says "original line 2"; the caller reads
+`"two"` from the file it already has. A *file line* is content; a *view line* is a position
+it can appear at, and the two counts differ — one file line becomes two view lines inline.
 
 ## What it stores
 
 Nothing. It borrows the `LinesDiff` and the two files and computes every answer when asked.
 
 The information was already in the diff — a change of `original 2..3, modified 2..2` says
-"one original line, no modified line", which *is* the filler. Storing a row per line would
+"one original line, no modified line", which *is* the filler. Storing a view line per line would
 mean a 10,000-entry structure for a 10,000-line file, rebuilt on every save, that can
 disagree with the diff it came from. It grows with edits, not with file size: the
 `comprehensive_move` fixture is 404 lines and 7 changes.
@@ -35,11 +36,14 @@ wrapping and plugin-inserted boxes, neither of which a terminal has.
 
 | question | method |
 |---|---|
-| what is on row *n* | `rows()` |
-| how many rows | `row_count()` |
-| which characters changed on this line | `spans(side, line)` |
-| which hunk is this line in | `hunk_at(side, line)` |
-| did this line move | `moved(side, line)` |
+| what is on view line *n* | `view_lines(space)` |
+| how many view lines | `view_line_count(space)` |
+| which view lines changed | `blocks(space)` |
+| which file line is view line *n* | `line_at(space, view_line)` |
+| which view line is this file line on | `view_line_at(space, version, line)` |
+| which characters changed on this line | `spans(version, line)` |
+| which hunk is this line in | `hunk_at(version, line)` |
+| did this line move | `moved(version, line)` |
 | what can be collapsed | `unchanged()` |
 | what the engine reported | `changes()`, `moves()`, `hit_timeout()` |
 
@@ -51,10 +55,21 @@ the surface is now the same.
 
 ## Three things worth knowing
 
+**Two layouts, one vocabulary.** `DiffLayout::SideBySide` gives a change as many view lines as
+its taller side, pairing the two versions across each view line; `DiffLayout::Inline` gives it as
+many as both sides together, one version per view line. That single arithmetic difference is the
+whole of it — both yield the same `ViewLine`, so fillers, change kinds, inner-change spans and
+everything downstream work in either without a branch.
+
+They are *layouts*, not layouts: a layout is how panes are arranged on a screen, and this
+is settled long before anything knows how wide a pane is. View line 40 in one is not view line 40 in the
+other, which is why switching translates through `line_at` and `row_at` rather than keeping
+the number.
+
 **`Original` and `Modified`, never left and right.** Left and right are places on a screen.
 Inline view draws both on one side, so a model naming them cannot describe it.
 
-**A move is not a kind of row.** The engine reports a moved block as an ordinary deletion
+**A move is not a type of view line.** The engine reports a moved block as an ordinary deletion
 plus an ordinary insertion, and its move ranges need not agree with its change ranges — in
 `comprehensive_move` a move covers original 32..89 while a change covers 37..139. So moves
 are a lookup by line number. VSCode has `movedTo`/`movedFrom` fields on `DiffMapping`
@@ -65,7 +80,7 @@ inserting a function above a reviewed hunk does not mark it unread, while editin
 
 ## What it deliberately does not know
 
-Pane width. Once wrapping is on, a line is no longer one row and pairing depends on width, so
+Pane width. Once wrapping is on, a line is no longer one view line and pairing depends on width, so
 the wrap-aware alignment lives in `ui` — the same split VSCode makes, with `DiffState`
 width-independent and `computeRangeAlignment` in its view. See D19.
 

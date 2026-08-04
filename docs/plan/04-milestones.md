@@ -89,7 +89,7 @@ them goes unnoticed until a file contains a tab or an emoji.
 
 ### S4 — `align`, pairing the two files — **KEYSTONE** ✅
 
-**Build.** `Alignment` over a `LinesDiff` plus two texts: `Row`/`Slot`/`RowKind`, hunks with
+**Build.** `Alignment` over a `LinesDiff` plus two texts: `ViewLine`/`Slot`/`ViewLineType`, hunks with
 content-hash `HunkId`, inner-change spans resolved to byte ranges via `line-index`, unchanged
 regions, moves by line lookup. A **plain-text renderer** — no TUI in this milestone.
 
@@ -300,6 +300,67 @@ character, and end to end on a real screen.
 
 ---
 
+### S10b — Inline layout
+
+Not in the original plan. [Open question 3](05-decisions.md) had put inline outside the MVP
+as "a projection over the same model, roughly two days to add later"; brought forward
+because that turned out to be exactly right, and because doing it while the layers around it
+are still small kept it honest.
+
+**Build.** A second layout in `align`, a second renderer in `ui`, and `t` to move between
+them.
+
+**Check.**
+```
+codediff <path>      # then press t, ]c, t
+```
+
+**Pass when.**
+- [x] the same diff reads one version per row: what was there, then what replaced it
+- [x] **two gutters**, and the missing number is what says which version a row belongs to
+- [x] `t` switches either way and **keeps the reader on the same line**, not the same row
+- [x] both layouts read back as the same two files, over the twelve vendored pairs
+- [x] `]c` stops in the right places in both, and the status line agrees with it
+- [x] the divider keys are inert inline, where there is no divider
+- [x] one text column, so a long line needs less horizontal scrolling
+- [x] a file with only one version is unaffected
+
+**Two gutters, which Neovim cannot do.** Inline in the plugin shows the modified buffer with
+the deleted lines as `virt_lines` extmarks, because in an editor the modified side must be
+real text you can edit. Virtual lines get no `statuscolumn`, so a gutter on them can only be
+faked by prepending number-shaped text — and the plugin sets `virt_lines_overflow = "scroll"`,
+so that fake would slide off the left edge while the real gutter stayed put. It draws no
+numbers on deleted lines at all, which is the right call given the constraint. Here the
+gutter is cells we paint, so absence of a number is free and carries the meaning, and no
+sign column is needed. GitHub and Azure DevOps show the same two.
+
+**A parent, not a flag and not two copies.** Rust has no inheritance, so
+[`Buffer`](../../crates/ui/src/view/buffer/buffer.rs) holds everything true of any buffer —
+row count, changed blocks, change navigation — and `BufferType` holds only what differs.
+`SideBySide` adds the column divider; `Inline` adds nothing, which is the finding rather
+than an oversight. Change navigation is written once, so it cannot come to mean different
+things in the two layouts, and the *variant is the layout*, so there is no field for the
+row count to fall out of step with.
+
+What the buffer cannot own is the toggle: it changes what a row is, so the pane's cursor
+must move at the same moment — and the view is the lowest level holding both. That makes it
+the first inhabitant of `Action::View`.
+
+**One definition of the two layouts.** Which walk to take is `align::DiffLayout`, defined
+once there; the keymap holds a value of it and the buffer types select it. See
+[D33](05-decisions.md#d33--one-definition-of-sidebyside-and-inline) and
+[D35](05-decisions.md#d35--the-divider-is-what-makes-them-two-types).
+
+**The divider does not survive a switch to inline and back.** It belongs to `SideBySide`, and
+inline has no columns to keep it for. That is what makes the two separate types rather than
+one holding a layout field — see D35.
+
+**Found while building.** A layout is a layout, and pretending `align` had none was the
+fiction that made `view_lines()` mean side by side and nothing else. It is admitted now — which
+line lands on which row is `align`'s business; what a row *looks* like is not.
+
+---
+
 ### S10a — Optional line wrapping
 
 **Build.** Opt-in wrap. `line-index` gains "break this line into rows of width W". `ui`
@@ -489,6 +550,6 @@ Settle before the milestone noted.
 | # | question | needed by | recommendation |
 |---|---|---|---|
 | 1 | ~~three-state explorer or simple worktree-vs-HEAD?~~ | S5 | **settled: one list, worktree vs HEAD.** Staging cannot be acted on from a read-only tool, and git reports both status codes anyway, so the split is additive later. Conflicted files are listed and marked, never given a merge view — three-way is a different model, not a mode, and VSCode likewise keeps `mergeEditor` separate from `diffEditor` |
-| 3 | include inline (single-pane) mode in MVP? | S7 | **no** — it is a projection over the same model, roughly two days to add later |
+| 3 | include inline (single-pane) mode in MVP? | S7 | **no** — it is a projection over the same model, roughly two days to add later. Built at S10b, and it was |
 
 *Question 2 (syntax engine) is settled — see [D11](05-decisions.md#d11--syntax-highlighting-is-in-the-mvp-via-syntect).*

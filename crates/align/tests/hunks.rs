@@ -1,6 +1,6 @@
 //! Hunks: how changes group, and what keeps a hunk's identity across a refresh.
 
-use align::{Alignment, RowKind, Slot};
+use align::{Alignment, DiffLayout, Slot, ViewLineType};
 use vscode_diff::{LinesDiff, Options};
 
 fn split(text: &str) -> Vec<&str> {
@@ -110,12 +110,12 @@ fn a_file_with_no_changes_has_no_hunks_and_only_unchanged_rows() {
     let diff = compute(&text, &text);
     let alignment = Alignment::new(diff.clone(), &text, &text);
 
-    assert_eq!(alignment.row_count(), 3);
+    assert_eq!(alignment.view_line_count(DiffLayout::SideBySide), 3);
     assert!(alignment.hunks().is_empty());
-    for (i, row) in alignment.rows().enumerate() {
-        assert_eq!(row.kind, RowKind::Unchanged);
-        assert_eq!(row.original, Slot::Line(i as u32 + 1));
-        assert_eq!(row.modified, Slot::Line(i as u32 + 1));
+    for (i, line) in alignment.view_lines(DiffLayout::SideBySide).enumerate() {
+        assert_eq!(line.kind, ViewLineType::Unchanged);
+        assert_eq!(line.original, Slot::Line(i as u32 + 1));
+        assert_eq!(line.modified, Slot::Line(i as u32 + 1));
     }
 }
 
@@ -130,8 +130,8 @@ fn an_empty_file_is_one_empty_line() {
     let alignment = Alignment::new(diff.clone(), &empty, &added);
 
     assert_eq!(alignment.lines(align::DiffVersion::Original), &[""]);
-    assert_eq!(alignment.row_count(), 1);
-    assert_eq!(alignment.rows().count(), 1);
+    assert_eq!(alignment.view_line_count(DiffLayout::SideBySide), 1);
+    assert_eq!(alignment.view_lines(DiffLayout::SideBySide).count(), 1);
 }
 
 #[test]

@@ -1,93 +1,88 @@
 //! What a pane can show.
 //!
-//! A buffer is **a sequence of rows you can scroll through**, and that is the
-//! whole definition. DiffVersion-by-side and inline are therefore *different buffers*
-//! over the same diff, not one buffer with a flag: they emit different row
-//! sequences, so "row 40" would otherwise mean different things depending on a
-//! field stored somewhere else.
+//! [`Buffer`] is everything a buffer has whatever it holds — rows, changed
+//! blocks, change navigation. `BufferType` below is only what differs between
+//! the kinds. Rust has no inheritance, so a shared base is composition plus an
+//! enum naming the alternatives; the enum exists because the language needs
+//! them named, not because the kinds are more different than they are.
 //!
-//! Two things deliberately live elsewhere:
-//!
-//! - **Position.** `top`, `cursor` and `left` belong to the [`Viewport`] on
-//!   the pane, because two panes showing one buffer need independent
-//!   positions. A buffer is *lent* a viewport when it acts.
-//! - **Size.** A buffer never knows its own width; the layout tells it.
+//! Side by side and inline emit different row sequences over the same diff, so
+//! "row 40" means different things in each. That is why they are separate
+//! variants rather than one with a flag: the variant *is* the row layout, so
+//! there is no field for the row count to fall out of step with, and both the
+//! renderer and the keymap can dispatch on it without reading one.
 //!
 //! An enum rather than a trait: the kinds are a closed set, so an exhaustive
 //! `match` means adding one breaks the build until it is handled everywhere —
-//! the same property that stops the keymap growing dead commands. Zellij's
-//! `Box<dyn Pane>` is the counter-example; it forced `Rc<RefCell<_>>`
-//! throughout because two panes cannot be borrowed mutably through trait
-//! objects.
-//!
-//! [`Viewport`]: crate::view::Viewport
+//! the same property that stops the keymap growing dead commands. A trait
+//! could not carry the shared fields anyway. Zellij's `Box<dyn Pane>` is the
+//! counter-example; it forced `Rc<RefCell<_>>` throughout because two panes
+//! cannot be borrowed mutably through trait objects.
 
+#[allow(clippy::module_inception)]
+mod buffer;
+mod inline;
 mod side_by_side;
 mod single_file;
 
-pub use side_by_side::{Direction, SideBySide};
+pub use buffer::{Buffer, Direction};
+pub use inline::Inline;
+pub use side_by_side::SideBySide;
 pub use single_file::SingleFile;
 
-use crate::input::{BufferAction, Context};
+use align::{Alignment, DiffLayout};
 use file_types::File;
 
-use crate::view::Viewport;
-
-/// Something a pane can show.
+/// Which type of buffer this is, and what only that type holds.
+///
+/// The variant *is* the layout, so the renderer and the keymap dispatch on
+/// something the compiler checks rather than on a field. Which walk each one
+/// asks `align` for is [`DiffLayout`], defined once there — these variants
+/// select it, they do not redefine what it means.
 #[derive(Debug)]
-pub enum Buffer {
+pub enum BufferType {
     /// Two versions, in two columns.
     SideBySide(SideBySide),
+    /// Two versions, one per view line.
+    Inline(Inline),
     /// One version of a file, with nothing to compare it against.
     SingleFile(SingleFile),
 }
 
-impl Buffer {
-    /// How many rows this buffer has.
-    ///
-    /// The only thing a generic motion needs, which is why every motion works
-    /// on every buffer kind without any of them implementing one.
-    pub fn rows(&self) -> u32 {
+impl BufferType {
+    /// Which walk to ask `align` for, or `None` when there is nothing to lay
+    /// out against.
+    pub fn layout(&self) -> Option<DiffLayout> {
         match self {
-            Buffer::SideBySide(d) => d.rows(),
-            Buffer::SingleFile(f) => f.rows(),
+            BufferType::SideBySide(_) => Some(DiffLayout::SideBySide),
+            BufferType::Inline(_) => Some(DiffLayout::Inline),
+            BufferType::SingleFile(_) => None,
         }
     }
 
-    /// Which keymap is live while this buffer has focus.
-    ///
-    /// One context per kind by default. Sharing is possible — several
-    /// list-like buffers could use one — but it has to be chosen, because a
-    /// shared context means a key bound for one kind is delivered to the
-    /// other, and the receiver has to ignore it.
-    pub fn context(&self) -> Context {
+    /// The pairing to draw from, for the types that have one.
+    pub fn alignment(&self) -> Option<&Alignment> {
         match self {
-            Buffer::SideBySide(_) => Context::SideBySide,
-            Buffer::SingleFile(_) => Context::SingleFile,
+            BufferType::SideBySide(d) => Some(d.alignment()),
+            BufferType::Inline(d) => Some(d.alignment()),
+            BufferType::SingleFile(_) => None,
         }
     }
 
-    /// Which file this buffer is showing.
-    ///
-    /// Structured, not a formatted name: the status line styles the directory
-    /// differently from the file name and drops it first when the width runs
-    /// out, which a single string could not support. See D28.
     pub fn file(&self) -> &File {
         match self {
-            Buffer::SideBySide(d) => d.file(),
-            Buffer::SingleFile(f) => f.file(),
+            BufferType::SideBySide(d) => d.file(),
+            BufferType::Inline(d) => d.file(),
+            BufferType::SingleFile(f) => f.file(),
         }
     }
 
-    /// Applies a command aimed at what the reader is looking at.
-    ///
-    /// The viewport is lent, not owned: the buffer moves a position that
-    /// belongs to the pane. That is what lets a motion be generic while a
-    /// buffer kind can still specialise one.
-    pub fn act(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
+    /// How many lines the shown version has, for a kind with no pairing to
+    /// count view lines from.
+    fn lines(&self) -> u32 {
         match self {
-            Buffer::SideBySide(d) => d.act(action, count, view),
-            Buffer::SingleFile(f) => f.act(action, count, view),
+            BufferType::SingleFile(f) => f.lines(),
+            _ => 0,
         }
     }
 }

@@ -35,7 +35,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
         }
 
         println!("  line {:<3} \"{}\"", number + 1, expand(&line));
-        let rows: Vec<Grapheme<'_>> = if verbose {
+        let lines: Vec<Grapheme<'_>> = if verbose {
             line.graphemes().collect()
         } else {
             notable
@@ -43,15 +43,15 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
         // Size the label column to this line's widest character, so a lone
         // emoji does not sit eight columns from its numbers just because some
         // other line contains a joined sequence.
-        let label_width = rows
+        let label_width = lines
             .iter()
             .map(|g| display_width(&name(g)))
             .max()
             .unwrap_or(0)
             .max(2);
 
-        let last = rows.len().saturating_sub(1);
-        for (i, g) in rows.iter().enumerate() {
+        let last = lines.len().saturating_sub(1);
+        for (i, g) in lines.iter().enumerate() {
             let connector = if i == last { "└─" } else { "├─" };
             println!(
                 "    {connector} {}  byte {:>3}   utf16 {:>3}   column {:>3}   width {}",

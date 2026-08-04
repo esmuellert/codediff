@@ -29,13 +29,13 @@ pub struct Hunk {
 
 /// Groups the changes into hunks.
 ///
-/// Two changes separated by more than `context` unchanged lines are read as
+/// Two changes separated by more than `keymap_type` unchanged lines are read as
 /// separate edits and get separate hunks.
 pub fn hunks<S: AsRef<str>>(
     diff: &LinesDiff,
     original: &[S],
     modified: &[S],
-    context: u32,
+    keymap_type: u32,
 ) -> Vec<Hunk> {
     let mut out = Vec::new();
     // How many hunks with identical text have been seen already, so that two
@@ -44,7 +44,7 @@ pub fn hunks<S: AsRef<str>>(
     let mut start = 0usize;
 
     for i in 1..diff.changes.len() {
-        if gap(&diff.changes[i - 1], &diff.changes[i]) > context {
+        if gap(&diff.changes[i - 1], &diff.changes[i]) > keymap_type {
             out.push(build(diff, start..i, original, modified, &mut occurrences));
             start = i;
         }

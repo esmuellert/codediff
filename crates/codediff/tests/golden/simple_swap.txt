@@ -1,5 +1,5 @@
 simple_swap
-8 lines -> 8 lines, 12 rows
+8 lines -> 8 lines, 12 view lines
 2 change(s), 1 move(s), 1 hunk(s)
 
         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │     1 + function bar()                                 ↑ moved from original 4

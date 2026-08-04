@@ -1,5 +1,5 @@
 long_distance_move
-41 lines -> 41 lines, 47 rows
+41 lines -> 41 lines, 47 view lines
 2 change(s), 1 move(s), 2 hunk(s)
 
     1   line 1                                       │     1   line 1

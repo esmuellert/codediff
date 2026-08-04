@@ -1,5 +1,5 @@
 adjacent_move
-12 lines -> 12 lines, 16 rows
+12 lines -> 12 lines, 16 view lines
 2 change(s), 1 move(s), 1 hunk(s)
 
     1 - function first()                             │         ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱   ↓ moved to modified 4

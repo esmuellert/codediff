@@ -1,46 +1,31 @@
-//! Turning a view into a grid of cells.
+//! Putting characters and colour on a cell grid.
 //!
-//! Nothing here holds state. A frame is a pure function of the view and the
-//! theme, which is why the whole interface can be tested by rendering into a
-//! buffer and reading the text back out.
-//!
-//! **One file renders one thing**, and the files nest the way the things do:
-//!
-//! ```text
-//! screen          the screen: body and status line
-//! ├ side_by_side  one pane holding a diff in two columns
-//! │ └ column      one gutter-and-text column of a diff
-//! │   └ gutter    one line number
-//! ├ single_file   one pane holding one version of a file
-//! │ └ gutter
-//! └ status        the bottom row
-//! ```
-//!
-//! Two files are not renderers, and are used by all of them:
+//! The bricks. Each file here answers a question about **the terminal**, never
+//! about the model: where a rectangle goes, how a line number is written, how
+//! one line of text becomes cells when it contains a tab, a double-width
+//! character or an escape sequence.
 //!
 //! ```text
-//! layout          where things go — rectangles, and no drawing at all
-//! cells           writing characters, tabs and wide glyphs into a rect
+//! layout   where things go — rectangles, and no drawing at all
+//! cells    one line of text onto one row of the grid
+//! gutter   one line number
+//! column   one gutter-and-text column of a diff
+//! line     how a line of a diff is coloured
 //! ```
 //!
-//! The two pane renderers are named for the buffer kinds they draw, so the two
-//! folders line up one for one:
+//! **Nothing here may name [`crate::view`]**, and `cargo xtask lint-arch`
+//! refuses it. That is the whole distinction from [`draw`](crate::draw): a
+//! brick can be handed a rectangle and some text by anything, so it can be
+//! tested without a model and reused by a buffer type that does not exist yet.
+//! `draw` is what knows that *a side-by-side diff is two of these columns with
+//! a divider between them*.
 //!
-//! ```text
-//! view/buffer/side_by_side.rs  ←→  render/side_by_side.rs
-//! view/buffer/single_file.rs   ←→  render/single_file.rs
-//! ```
-//!
-//! A buffer kind is dispatched on exactly once, in [`screen`]. Adding one is a
-//! new arm and a new file, and the compiler names the arm that is missing.
+//! Not the same word twice: **render** turns a value into marks, **draw**
+//! composes those marks into what a buffer type looks like. `draw` names
+//! `render`, never the other way round.
 
-mod cells;
-mod column;
-mod gutter;
+pub mod cells;
+pub mod column;
+pub mod gutter;
 pub mod layout;
-mod screen;
-mod side_by_side;
-mod single_file;
-mod status;
-
-pub use screen::draw;
+pub mod line;

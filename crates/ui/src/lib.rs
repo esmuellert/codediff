@@ -32,15 +32,17 @@ pub use ratatui;
 
 mod app;
 mod diff;
+mod draw;
 pub mod input;
 mod render;
 mod terminal;
 mod theme;
 pub mod view;
 
+pub use align::DiffLayout;
 pub use app::{Flow, Session, run};
 pub use diff::Diff;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
-pub use view::buffer::{Buffer, SideBySide, SingleFile};
+pub use view::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};
 pub use view::{View, Viewport};

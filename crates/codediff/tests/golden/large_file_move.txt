@@ -1,5 +1,5 @@
 large_file_move
-64 lines -> 64 lines, 72 rows
+64 lines -> 64 lines, 72 view lines
 2 change(s), 1 move(s), 2 hunk(s)
 
     1   -- Utility functions module                  │     1   -- Utility functions module

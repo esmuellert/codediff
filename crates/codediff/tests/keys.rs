@@ -10,7 +10,7 @@ mod harness;
 use harness::{measure, session, type_keys};
 use ui::Flow;
 
-/// Ten rows: one unchanged block, a change, more unchanged, another change.
+/// Ten lines: one unchanged block, a change, more unchanged, another change.
 const BEFORE: &str = "a1\na2\na3\na4\na5\na6\na7\na8\na9\na10";
 const AFTER: &str = "a1\nCHANGED\na3\na4\na5\na6\na7\nALSO\na9\na10";
 
@@ -46,7 +46,7 @@ fn a_count_reaches_the_viewport() {
     assert_eq!(cursor_after("j"), 1);
     assert_eq!(cursor_after("jjj"), 3);
     assert_eq!(cursor_after("5j"), 5, "5j is five downs, not one");
-    assert_eq!(cursor_after("12j"), 9, "clamped to the last row");
+    assert_eq!(cursor_after("12j"), 9, "clamped to the last line");
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn zero_is_a_digit_mid_count_and_a_motion_otherwise() {
 #[test]
 fn a_count_on_g_names_a_row_rather_than_repeating() {
     assert_eq!(cursor_after("G"), 9);
-    assert_eq!(cursor_after("5G"), 4, "row five, 1-based on screen");
+    assert_eq!(cursor_after("5G"), 4, "line five, 1-based on screen");
 }
 
 #[test]
@@ -152,4 +152,98 @@ fn an_unbound_key_does_nothing_at_all() {
         assert_eq!(type_keys(&mut s, keys), Flow::Continue, "{keys:?} quit");
     }
     assert_eq!(cursor(&s), 0);
+}
+
+#[test]
+fn toggling_the_layout_keeps_the_reader_on_the_same_line() {
+    // The whole difficulty of the toggle: view line 40 side by side is a
+    // different file line inline, so the number cannot be carried across. The
+    // file line can.
+    let mut s = session("f.rs", BEFORE, AFTER);
+    measure(&mut s);
+    type_keys(&mut s, "]c]c");
+    let side_by_side = cursor(&s);
+    let line = line_under_cursor(&s);
+
+    type_keys(&mut s, "t");
+    assert_ne!(cursor(&s), side_by_side, "the line must have moved");
+    assert_eq!(line_under_cursor(&s), line, "but not to a different line");
+
+    type_keys(&mut s, "t");
+    assert_eq!(cursor(&s), side_by_side, "and back again");
+    assert_eq!(line_under_cursor(&s), line);
+}
+
+#[test]
+fn toggling_changes_how_many_view_lines_there_are() {
+    // Not a cosmetic switch: a change costs the sum of its sides inline and
+    // the taller of them side by side.
+    let mut s = session("f.rs", BEFORE, AFTER);
+    measure(&mut s);
+    let columns = lines(&s);
+    type_keys(&mut s, "t");
+    assert!(lines(&s) > columns, "{} vs {columns}", lines(&s));
+}
+#[test]
+fn the_divider_keys_do_nothing_inline() {
+    // `>` widens the original column, which inline does not have, so it is
+    // not bound there. Pressing it must be inert: no error, no stuck pending
+    // sequence, and nothing on screen moves.
+    let mut s = session("f.rs", BEFORE, AFTER);
+    measure(&mut s);
+    type_keys(&mut s, "t");
+    let before = screen_line(&mut s);
+    type_keys(&mut s, ">><<");
+    assert_eq!(screen_line(&mut s), before, "a divider key drew something");
+}
+
+#[test]
+fn the_divider_does_not_survive_a_trip_through_inline() {
+    // It belongs to `SideBySide`, and inline has no columns to divide, so
+    // there is nowhere for it to wait. Keeping it would mean a field `Inline`
+    // carries and never reads, at which point the two are one type and neither
+    // name means anything. Pressing `t` is a reader saying they do not want
+    // columns; coming back to the default split answers that. See D35.
+    let mut s = session("f.rs", BEFORE, AFTER);
+    measure(&mut s);
+    let default = screen_line(&mut s);
+    type_keys(&mut s, ">>");
+    assert_ne!(screen_line(&mut s), default, "`>` did nothing");
+    type_keys(&mut s, "tt");
+    assert_eq!(screen_line(&mut s), default);
+}
+
+#[test]
+fn change_navigation_works_the_same_in_both_layouts() {
+    // `]c` is bound once and shared, so the two cannot drift; the blocks it
+    // steps through are computed per line layout, so it stops in the right
+    // places in each.
+    let mut s = session("f.rs", BEFORE, AFTER);
+    measure(&mut s);
+    type_keys(&mut s, "t]c");
+    let first = line_under_cursor(&s);
+    type_keys(&mut s, "]c");
+    let second = line_under_cursor(&s);
+    assert_ne!(first, second, "the second `]c` went nowhere");
+    type_keys(&mut s, "]c");
+    assert_eq!(line_under_cursor(&s), second, "there is no third change");
+}
+
+/// The file line the cursor is on, as text, whichever layout is in use.
+fn line_under_cursor(session: &ui::Session) -> String {
+    let buffer = session.view().focused_buffer();
+    let alignment = buffer.alignment().expect("these tests build a diff");
+    let layout = buffer.layout().expect("these tests build a diff");
+    let (version, line) = alignment
+        .line_at(layout, cursor(session))
+        .expect("the cursor is on a line");
+    alignment.line(version, line).expect("it exists").to_owned()
+}
+
+fn lines(session: &ui::Session) -> u32 {
+    session.view().focused_buffer().view_lines()
+}
+
+fn screen_line(session: &mut ui::Session) -> String {
+    harness::screen(session, 44, 4)
 }

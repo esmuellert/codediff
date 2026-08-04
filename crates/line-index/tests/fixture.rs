@@ -11,7 +11,7 @@ const FIXTURE: &str = include_str!("../fixtures/nasty.txt");
 const EXPECTED: &str = include_str!("../fixtures/nasty.expected");
 
 #[derive(Debug, PartialEq, Eq)]
-struct Row {
+struct ViewLine {
     line: usize,
     bytes: u32,
     utf16: u32,
@@ -19,7 +19,7 @@ struct Row {
     graphemes: u32,
 }
 
-fn reference() -> Vec<Row> {
+fn reference() -> Vec<ViewLine> {
     EXPECTED
         .lines()
         .map(str::trim)
@@ -30,7 +30,7 @@ fn reference() -> Vec<Row> {
                 .map(|field| field.parse().expect("reference table holds numbers"))
                 .collect();
             assert_eq!(n.len(), 5, "expected 5 columns in {line:?}");
-            Row {
+            ViewLine {
                 line: n[0] as usize,
                 bytes: n[1],
                 utf16: n[2],
@@ -41,13 +41,13 @@ fn reference() -> Vec<Row> {
         .collect()
 }
 
-fn measured() -> Vec<Row> {
+fn measured() -> Vec<ViewLine> {
     FIXTURE
         .lines()
         .enumerate()
         .map(|(index, text)| {
             let line = LineIndex::new(text, DEFAULT_TAB_WIDTH);
-            Row {
+            ViewLine {
                 line: index + 1,
                 bytes: line.byte_len().get(),
                 utf16: line.utf16_len().get(),

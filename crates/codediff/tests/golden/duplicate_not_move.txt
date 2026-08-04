@@ -1,5 +1,5 @@
 duplicate_not_move
-8 lines -> 12 lines, 12 rows
+8 lines -> 12 lines, 12 view lines
 1 change(s), 0 move(s), 1 hunk(s)
 
     1   function shared()                            │     1   function shared()

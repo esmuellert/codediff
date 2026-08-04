@@ -5,10 +5,11 @@
 //! buffer kind claims a key without anyone else having to know — `<` narrows
 //! a diff's column divider here, and falls through to the tab elsewhere.
 
+use align::DiffLayout;
 use crokey::{KeyCombination, key};
 
 use crate::input::command::Action;
-use crate::input::keymap::{Binding, Context};
+use crate::input::keymap::{Binding, KeymapType};
 
 /// Something the focused buffer does, to itself or to the viewport it is lent.
 ///
@@ -19,12 +20,12 @@ use crate::input::keymap::{Binding, Context};
 /// [`Viewport`]: crate::view::Viewport
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferAction {
-    /// Generic movement, needing only a row count.
+    /// Generic movement, needing only a view-line count.
     Motion(Motion),
-    /// Move to the next or previous run of changed rows.
+    /// Move to the next or previous run of changed view lines.
     ///
     /// A motion that has to ask the buffer where to go, which is why it is not
-    /// a [`Motion`]: those need nothing but a row count.
+    /// a [`Motion`]: those need nothing but a view-line count.
     NextChange,
     PrevChange,
     /// Drag the divider between a side-by-side buffer's two columns.
@@ -46,7 +47,7 @@ pub enum Motion {
     Up,
     PageDown,
     PageUp,
-    /// First row, or the row a count names.
+    /// First view line, or the one a count names.
     Top,
     /// Last row, or the row a count names.
     Bottom,
@@ -70,10 +71,11 @@ pub const DIVIDER_STEP: u16 = 5;
 /// The only level whose bindings depend on anything: which keys a buffer
 /// understands is a property of what it holds. Every level above binds the
 /// same keys whatever has focus.
-pub const fn bindings(context: Context) -> &'static [&'static [Binding]] {
-    match context {
-        Context::SideBySide => &[MOTIONS, SIDE_BY_SIDE],
-        Context::SingleFile => &[MOTIONS],
+pub const fn bindings(keymap_type: KeymapType) -> &'static [&'static [Binding]] {
+    match keymap_type {
+        KeymapType::Diff(DiffLayout::SideBySide) => &[MOTIONS, CHANGES, TWO_COLUMNS],
+        KeymapType::Diff(DiffLayout::Inline) => &[MOTIONS, CHANGES],
+        KeymapType::SingleFile => &[MOTIONS],
     }
 }
 
@@ -120,13 +122,20 @@ pub const MOTIONS: &[Binding] = &[
     motion(&[key!('0')], Motion::ScrollHome),
 ];
 
-/// What a side-by-side diff adds to the motions.
-pub const SIDE_BY_SIDE: &[Binding] = &[
+/// What any diff adds to the motions, however it is laid out.
+///
+/// Shared by both layouts rather than listed twice, so `]c` cannot come to
+/// mean one thing side by side and another inline.
+pub const CHANGES: &[Binding] = &[
     // `]` and `[` are deliberately unbound on their own, like `g`: they are
     // internal nodes of the trie. Vim's own diff-change motions, which also
     // leaves `n` and `N` free for search — see D9.
     buffer(&[key!(']'), key!(c)], BufferAction::NextChange),
     buffer(&[key!('['), key!(c)], BufferAction::PrevChange),
+];
+
+/// What only two columns can offer: moving the divider between them.
+pub const TWO_COLUMNS: &[Binding] = &[
     buffer(&[key!('>')], BufferAction::WidenOriginal),
     buffer(&[key!('<')], BufferAction::NarrowOriginal),
 ];

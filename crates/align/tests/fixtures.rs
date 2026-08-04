@@ -8,7 +8,7 @@
 //! Content is pulled in with `include_str!`, so these tests do no IO and the
 //! crate stays provably pure.
 
-use align::{Alignment, DiffVersion, RowKind};
+use align::{Alignment, DiffLayout, DiffVersion, ViewLineType};
 use vscode_diff::{LinesDiff, Options};
 
 macro_rules! pairs {
@@ -67,15 +67,15 @@ fn each_column_reads_back_as_the_file_it_came_from() {
     for_each_pair(|name, alignment| {
         let mut left = Vec::new();
         let mut right = Vec::new();
-        for row in alignment.rows() {
-            if let Some(n) = row.original.line() {
+        for line in alignment.view_lines(DiffLayout::SideBySide) {
+            if let Some(n) = line.original.line() {
                 left.push(
                     alignment
                         .line(DiffVersion::Original, n)
                         .expect("line exists"),
                 );
             }
-            if let Some(n) = row.modified.line() {
+            if let Some(n) = line.modified.line() {
                 right.push(
                     alignment
                         .line(DiffVersion::Modified, n)
@@ -101,8 +101,8 @@ fn each_column_reads_back_as_the_file_it_came_from() {
 fn every_line_appears_exactly_once_and_in_order() {
     for_each_pair(|name, alignment| {
         let (mut last_original, mut last_modified) = (0, 0);
-        for row in alignment.rows() {
-            if let Some(n) = row.original.line() {
+        for line in alignment.view_lines(DiffLayout::SideBySide) {
+            if let Some(n) = line.original.line() {
                 assert_eq!(
                     n,
                     last_original + 1,
@@ -110,7 +110,7 @@ fn every_line_appears_exactly_once_and_in_order() {
                 );
                 last_original = n;
             }
-            if let Some(n) = row.modified.line() {
+            if let Some(n) = line.modified.line() {
                 assert_eq!(
                     n,
                     last_modified + 1,
@@ -135,10 +135,10 @@ fn every_line_appears_exactly_once_and_in_order() {
 #[test]
 fn no_row_is_blank_on_both_sides() {
     for_each_pair(|name, alignment| {
-        for (i, row) in alignment.rows().enumerate() {
+        for (i, line) in alignment.view_lines(DiffLayout::SideBySide).enumerate() {
             assert!(
-                !(row.original.is_filler() && row.modified.is_filler()),
-                "{name}: row {i} shows nothing on either version"
+                !(line.original.is_filler() && line.modified.is_filler()),
+                "{name}: line {i} shows nothing on either version"
             );
         }
     });
@@ -148,9 +148,9 @@ fn no_row_is_blank_on_both_sides() {
 fn the_row_count_matches_the_rows_produced() {
     for_each_pair(|name, alignment| {
         assert_eq!(
-            alignment.row_count() as usize,
-            alignment.rows().count(),
-            "{name}: row_count disagrees with the rows"
+            alignment.view_line_count(DiffLayout::SideBySide) as usize,
+            alignment.view_lines(DiffLayout::SideBySide).count(),
+            "{name}: view_line_count disagrees with the lines"
         );
     });
 }
@@ -158,15 +158,15 @@ fn the_row_count_matches_the_rows_produced() {
 #[test]
 fn unchanged_rows_hold_identical_text() {
     for_each_pair(|name, alignment| {
-        for row in alignment.rows() {
-            if row.kind != RowKind::Unchanged {
+        for line in alignment.view_lines(DiffLayout::SideBySide) {
+            if line.kind != ViewLineType::Unchanged {
                 continue;
             }
-            let (o, m) = row.both().expect("an unchanged row has both sides");
+            let (o, m) = line.both().expect("an unchanged line has both sides");
             assert_eq!(
                 alignment.line(DiffVersion::Original, o),
                 alignment.line(DiffVersion::Modified, m),
-                "{name}: rows {o}/{m} are called unchanged but differ"
+                "{name}: lines {o}/{m} are called unchanged but differ"
             );
         }
     });
@@ -175,12 +175,12 @@ fn unchanged_rows_hold_identical_text() {
 #[test]
 fn a_filler_never_sits_opposite_an_unchanged_line() {
     for_each_pair(|name, alignment| {
-        for row in alignment.rows() {
-            let has_filler = row.original.is_filler() || row.modified.is_filler();
+        for line in alignment.view_lines(DiffLayout::SideBySide) {
+            let has_filler = line.original.is_filler() || line.modified.is_filler();
             assert_eq!(
                 has_filler,
-                matches!(row.kind, RowKind::Deleted | RowKind::Inserted),
-                "{name}: {row:?} disagrees with its own kind"
+                matches!(line.kind, ViewLineType::Deleted | ViewLineType::Inserted),
+                "{name}: {line:?} disagrees with its own kind"
             );
         }
     });
@@ -275,7 +275,7 @@ fn moves_are_found_by_line_number() {
     );
 }
 
-/// The refusal in `rows.rs` only earns its place if the engine really does hold
+/// The refusal in `lines.rs` only earns its place if the engine really does hold
 /// to the shape it checks for.
 #[test]
 fn the_engine_never_produces_a_malformed_diff() {

@@ -33,29 +33,48 @@ independently.
 
 See [D27](../../docs/plan/05-decisions.md#d27).
 
-## A buffer is a sequence of rows you can scroll through
+## A buffer is a sequence of view lines you can scroll through
 
 That is the whole definition.
 
 ```text
-enum Buffer {
-    SideBySide(SideBySide),   // two versions, in two columns
-    Inline(Inline),           // two versions, interleaved      (later)
-    SingleFile(SingleFile),   // one version — from either mode
+struct Buffer {                  // what every buffer has
+    view_lines: u32,
+    blocks: Vec<Range<u32>>,     // empty when there is nothing to compare
+    exhausted: Option<Direction>,
+    buffer_type: BufferType,
+}
+
+enum BufferType {                // only what differs
+    SideBySide(SideBySide),      //   { diff, divider }
+    Inline(Inline),              //   { diff }
+    SingleFile(SingleFile),      //   { file, lines }
 }
 ```
 
 A buffer is a *projection*, not the data. `Diff` — what the pipeline delivers — is one
-file's two versions and the pairing between them, and says nothing about rows. How many
-rows there are is not a fact about a diff: an `align::Row` is already a **pair**, so a row
-count is an answer to "how would this look side by side". `SideBySide` is that answer, and
-caches it beside the decision that produced it.
+file's two versions and the pairing between them, and says nothing about view lines. How
+many there are is not a fact about a diff: it is an answer to *how would this be laid out*.
+`Buffer` holds that answer, computed in one place from the kind that decided it, so the two
+cannot describe different layouts.
 
-It settles what would otherwise be a flag: side-by-side and inline are *different buffers*
-over the same diff, not one buffer rendered two ways. They emit different row sequences, so
-with a flag "row 40" would mean different things depending on a field kept elsewhere.
+Rust has no inheritance, so a shared base is composition plus an enum naming the
+alternatives. Everything true of any buffer — the row count, the changed blocks, stepping
+between them, the note when a change key has nowhere left to go — is written **once**, on
+`Buffer`. `SideBySide` adds one field. `Inline` adds nothing, which is the finding rather
+than an oversight: reading a diff inline needs no state that reading it in columns does not.
 
-An `enum`, not a trait, so adding a kind breaks the build until it is handled everywhere.
+Side by side and inline are separate variants rather than one with a flag, so the **variant
+is the layout** — there is no field for the row count to fall out of step with, and both
+the renderer and the keymap dispatch on it without reading one.
+
+What `Buffer` cannot own is the switch. It changes what a row *is*, so the pane's cursor has
+to move at the same moment — and a row number does not survive the trip, since row 40 side
+by side is a different line inline. The *line* survives, so the view translates through it.
+See D31.
+
+An `enum`, not a trait: the kinds are a closed set, so adding one breaks the build until it
+is handled everywhere — and a trait could not carry the shared fields anyway.
 
 A `Diff` holds an `Alignment`, which **owns** both files and the engine's result. The
 pipeline builds it once, when the file is opened, and drawing a frame is pure reading.
@@ -78,7 +97,7 @@ Viewport { top, cursor, left }
 ```
 
 The two columns of a diff are not separate scrollable things kept in agreement. They are one
-position, drawn in the same call from the same slice of rows. There is nowhere for them to
+position, drawn in the same call from the same slice of view lines. There is nowhere for them to
 disagree, so there is no synchronisation code, so there is nothing to get wrong.
 
 The plugin needed 415 lines of `scrollsync.lua` for this and got it wrong twice. VSCode
@@ -87,7 +106,7 @@ write guards. See [D19](../../docs/plan/05-decisions.md#d19).
 
 A diff always has **two** columns, so neither field of `Frame` is optional. A file with one
 side is not compared against anything, so it is not a diff at all — it is a `SingleFile`
-buffer, drawn by `render/single_file.rs` in a single column. Both diff modes fall back to
+buffer, drawn by `draw/single_file.rs` in a single column. Both diff modes fall back to
 it, because with one version there is nothing to lay out against. Nothing on it changed *relative to* anything,
 so nothing is highlighted. Marking every line of a new file green says nothing the word "added" does
 not. VSCode arrived here from the same bug and stopped opening a diff editor for added,
@@ -106,21 +125,27 @@ view/                what is on screen, and where
 ├── pane.rs            Pane — one buffer, and one Viewport onto it
 ├── viewport.rs        Viewport — top, cursor, left
 └── buffer/            what a pane can show
-    ├── mod.rs           Buffer — the closed set of kinds
-    ├── side_by_side.rs  SideBySide — a diff in two columns, and its row space
+    ├── mod.rs           BufferType — the closed set of kinds
+    ├── buffer.rs        Buffer — view lines, changed blocks, change navigation
+    ├── side_by_side.rs  SideBySide — a diff, and its column divider
+    ├── inline.rs        Inline — a diff, one version per view line
     └── single_file.rs   SingleFile — one version, shown alone
-render/              turning that into cells
-├── mod.rs             the screen: body and status line
-├── side_by_side.rs    one pane holding a diff
+draw/                what each buffer type looks like
+├── screen.rs          the screen: body and status line
+├── side_by_side.rs    one pane holding a diff in two columns
+├── inline.rs          one pane holding a diff one version per view line
 ├── single_file.rs     one pane holding one version of a file
-├── layout.rs          where the columns go
-├── column.rs          one column's rows
-├── cells.rs           one line onto one row of cells
 └── status.rs          the bottom row
+render/              putting characters and colour on a cell grid
+├── layout.rs          where the columns and gutters go
+├── column.rs          one column's view lines
+├── gutter.rs          one line number
+├── line.rs            how a line of a diff is coloured
+└── cells.rs           one line onto one row of cells
 diff.rs              Diff — what the pipeline delivers
 input/               what does this key mean
 theme/               what colour is it
-app.rs               read a key, dispatch it, draw
+app.rs               read a key, dispatch it, draw a frame
 terminal.rs          who owns the screen, and how it is given back
 ```
 
@@ -276,8 +301,8 @@ beside the code that measures them — so the substitution and the measurement c
 codediff <path>
 ```
 
-`q` quits, `j`/`k` scroll, `]c`/`[c` step through changes, `>`/`<` drag the divider, `Ctrl-Z`
-suspends. The screen must match `codediff debug diff-file <path>` row for row.
+`q` quits, `j`/`k` scroll, `]c`/`[c` step through changes, `t` switches between side by
+side and inline, `>`/`<` drag the divider, `Ctrl-Z` suspends. The screen must match `codediff debug diff-file <path>` row for row.
 
 ```sh
 codediff <path> --theme basic-light

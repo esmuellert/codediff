@@ -1,5 +1,5 @@
 block_moved_down
-17 lines -> 17 lines, 23 rows
+17 lines -> 17 lines, 23 view lines
 2 change(s), 1 move(s), 2 hunk(s)
 
     1   -- Header comment                            │     1   -- Header comment

@@ -33,15 +33,15 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     // The same buffer the interface is given, read rather than drawn. Any
     // disagreement between this and the screen would have to come from
     // drawing, since there is only one source for both.
-    let ui::Buffer::SideBySide(data) = runner.run()? else {
+    let buffer = runner.run()?;
+    let Some(alignment) = buffer.alignment() else {
         unreachable!("two sides were read, so this is a diff");
     };
-    let alignment = data.alignment();
     println!(
-        "{} line(s) -> {} line(s), {} row(s), {} change(s)",
+        "{} line(s) -> {} line(s), {} view line(s), {} change(s)",
         alignment.lines(DiffVersion::Original).len(),
         alignment.lines(DiffVersion::Modified).len(),
-        alignment.row_count(),
+        alignment.view_line_count(::align::DiffLayout::SideBySide),
         alignment.changes().len()
     );
     println!();

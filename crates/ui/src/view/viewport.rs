@@ -25,9 +25,9 @@ use crate::input::{Motion, SCROLL_STEP};
 /// Where one pane is looking: scroll position and cursor.
 #[derive(Debug, Clone)]
 pub struct Viewport {
-    /// First visible row, 0-based.
+    /// First visible view line, 0-based.
     top: u32,
-    /// The row the cursor is on.
+    /// The view line the cursor is on.
     cursor: u32,
     /// Horizontal scroll in cells. Shared by every column, for the same
     /// reason as `top`.
@@ -37,7 +37,7 @@ pub struct Viewport {
     height: u32,
 }
 
-/// Rows kept between the cursor and the edge while scrolling.
+/// ViewLines kept between the cursor and the edge while scrolling.
 const SCROLLOFF: u32 = 3;
 
 impl Default for Viewport {
@@ -77,21 +77,21 @@ impl Viewport {
     /// Called by the renderer rather than set by the caller, so a terminal
     /// resize needs no event of its own: the next frame simply has a different
     /// height, and page motions immediately agree with what is on screen.
-    pub fn set_height(&mut self, height: u32, rows: u32) {
+    pub fn set_height(&mut self, height: u32, view_lines: u32) {
         self.height = height;
-        self.clamp(rows);
+        self.clamp(view_lines);
     }
 
-    /// The half-open range of rows the next frame will show.
-    pub fn visible(&self, rows: u32) -> std::ops::Range<u32> {
-        self.top..(self.top + self.height).min(rows)
+    /// The half-open range of view lines the next frame will show.
+    pub fn visible(&self, view_lines: u32) -> std::ops::Range<u32> {
+        self.top..(self.top + self.height).min(view_lines)
     }
 
     /// Applies a generic motion.
     ///
     /// The count means what it means in vim, which is not the same thing for
-    /// every motion: `5j` is five downs, while `5G` is row five.
-    pub fn motion(&mut self, motion: Motion, count: u32, rows: u32) {
+    /// every motion: `5j` is five downs, while `5G` is view line five.
+    pub fn motion(&mut self, motion: Motion, count: u32, view_lines: u32) {
         let page = self.height.saturating_sub(2).max(1);
         // A count naming a row is 1-based on screen and 0-based here. `count`
         // is 1 when none was typed, which is why `Top` and `Bottom` check.
@@ -107,12 +107,25 @@ impl Viewport {
                 self.cursor = self.cursor.saturating_sub(page.saturating_mul(count));
             }
             Motion::Top => self.cursor = named.unwrap_or(0),
-            Motion::Bottom => self.cursor = named.unwrap_or(rows.saturating_sub(1)),
+            Motion::Bottom => self.cursor = named.unwrap_or(view_lines.saturating_sub(1)),
             Motion::ScrollRight => self.left = self.left.saturating_add(count * SCROLL_STEP),
             Motion::ScrollLeft => self.left = self.left.saturating_sub(count * SCROLL_STEP),
             Motion::ScrollHome => self.left = 0,
         }
-        self.clamp(rows);
+        self.clamp(view_lines);
+    }
+
+    /// Puts the cursor on a given row and centres on it.
+    ///
+    /// For a jump whose target was worked out elsewhere — today, the row a
+    /// line moved to when the layout changed. Centring rather than
+    /// preserving the offset because after a change of layout the rows around
+    /// the cursor are not the rows that were there before, so there is no
+    /// offset worth preserving.
+    pub fn jump(&mut self, view_line: u32, view_lines: u32) {
+        self.cursor = view_line;
+        self.centre();
+        self.clamp(view_lines);
     }
 
     /// Moves `count` steps, asking `next` where each one lands.
@@ -125,12 +138,12 @@ impl Viewport {
     /// targets can say so rather than leaving the reader unsure whether the
     /// key was even bound. A partial step still counts as moving: `5]c` with
     /// two changes left takes both, which is what vim does.
-    pub fn step(&mut self, count: u32, rows: u32, next: impl Fn(u32) -> Option<u32>) -> bool {
+    pub fn step(&mut self, count: u32, view_lines: u32, next: impl Fn(u32) -> Option<u32>) -> bool {
         let mut moved = false;
         for _ in 0..count {
             match next(self.cursor) {
-                Some(row) => {
-                    self.cursor = row;
+                Some(line) => {
+                    self.cursor = line;
                     moved = true;
                 }
                 None => break,
@@ -139,14 +152,14 @@ impl Viewport {
         if moved {
             self.centre();
         }
-        self.clamp(rows);
+        self.clamp(view_lines);
         moved
     }
 
     /// Puts the cursor row in the middle of the screen.
     ///
     /// What the plugin does after change navigation: landing on a change with
-    /// no context above it reads as though the file starts there.
+    /// no keymap_type above it reads as though the file starts there.
     fn centre(&mut self) {
         self.top = self.cursor.saturating_sub(self.height / 2);
     }
@@ -155,8 +168,8 @@ impl Viewport {
     ///
     /// One place, called after every change, rather than each motion having to
     /// remember its own bounds.
-    fn clamp(&mut self, rows: u32) {
-        self.cursor = self.cursor.min(rows.saturating_sub(1));
+    fn clamp(&mut self, view_lines: u32) {
+        self.cursor = self.cursor.min(view_lines.saturating_sub(1));
 
         if self.height == 0 {
             self.top = 0;
@@ -165,7 +178,7 @@ impl Viewport {
 
         // Never scroll past the end, unless the document is shorter than the
         // screen, in which case the top is zero and there is nothing to do.
-        let last_top = rows.saturating_sub(self.height);
+        let last_top = view_lines.saturating_sub(self.height);
 
         // A margin, shrinking on a short screen so it cannot exceed half of it
         // and fight itself.

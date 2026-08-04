@@ -2,7 +2,7 @@
 //!
 //! Derived by inverting the changes, which is how VSCode builds the same thing
 //! (`UnchangedRegion.fromDiffs`). A long run of untouched lines can then be
-//! collapsed to a single "47 hidden lines" row, keeping a few lines of context
+//! collapsed to a single "47 hidden lines" row, keeping a few lines of keymap_type
 //! on each side of the edits that remain visible.
 
 use diff_types::{LineRange, LinesDiff};
@@ -23,21 +23,21 @@ impl UnchangedRegion {
         self.len() == 0
     }
 
-    /// The part still worth collapsing once `context` lines are kept visible at
+    /// The part still worth collapsing once `keymap_type` lines are kept visible at
     /// each end. `None` when the region is too short to be worth hiding.
-    pub fn hidden(&self, context: u32, minimum: u32) -> Option<UnchangedRegion> {
-        let trimmed = self.len().saturating_sub(context.saturating_mul(2));
+    pub fn hidden(&self, keymap_type: u32, minimum: u32) -> Option<UnchangedRegion> {
+        let trimmed = self.len().saturating_sub(keymap_type.saturating_mul(2));
         if trimmed < minimum.max(1) {
             return None;
         }
         Some(UnchangedRegion {
             original: LineRange {
-                start_line: self.original.start_line + context,
-                end_line: self.original.end_line - context,
+                start_line: self.original.start_line + keymap_type,
+                end_line: self.original.end_line - keymap_type,
             },
             modified: LineRange {
-                start_line: self.modified.start_line + context,
-                end_line: self.modified.end_line - context,
+                start_line: self.modified.start_line + keymap_type,
+                end_line: self.modified.end_line - keymap_type,
             },
         })
     }

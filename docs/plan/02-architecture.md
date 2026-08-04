@@ -133,7 +133,7 @@ milestone listed, even with a trivial body.
 | `ContentSource { Blob, Worktree, Snapshot, Memory }` | S5 | only `Blob` and `Worktree` used |
 | `hunk.review: Option<ReviewMark>` | S4 | always `None` |
 | `RequestId(u64)` on every command | S7 | always 0 until S14 |
-| `VisualRow` as an **enum** with room for non-diff rows | S7 | wraps `align::Row` — but the enum must exist, or agent annotations require surgery |
+| `VisualRow` as an **enum** with room for non-diff rows | S7 | wraps `align::ViewLine` — but the enum must exist, or agent annotations require surgery |
 | `AppState.docs: HashMap<DocId, Document>` | S7 | exactly one entry — but the map must exist, or multi-diff requires surgery |
 | `AppState` is `serde`-serializable | S7 | free crash dumps and session replay |
 | theme table, no hardcoded colors | S7 | one dark theme |
@@ -150,9 +150,9 @@ pub enum Side { Original, Modified }
 /// What one side shows on one row.
 pub enum Slot { Line(u32), Filler }
 
-pub enum RowKind { Unchanged, Modified, Deleted, Inserted }
+pub enum ViewLineType { Unchanged, Modified, Deleted, Inserted }
 
-pub struct Row { pub original: Slot, pub modified: Slot, pub kind: RowKind }
+pub struct Row { pub original: Slot, pub modified: Slot, pub kind: ViewLineType }
 
 /// Borrows the diff and both files. Stores no rows and no text.
 pub struct Alignment<'a> { /* LinesDiff, two line slices, hunks */ }
@@ -196,7 +196,7 @@ Consequences:
 - **Scrolling is one shared `scroll_offset`.** The plugin needed 536 lines
   (`scrollsync.lua` + `scroll.lua`) to fight Neovim's `topline`/`topfill` because fillers
   were virtual lines. Here a row index means the same thing on both sides.
-- **Side-by-side, inline and compact are *projections*** — different walks of `rows()`, not
+- **Side-by-side, inline and compact are *projections*** — different walks of `view_lines()`, not
   three subsystems. The plugin spent 2,035 lines on what is one model and three functions.
   This is why the model names `Original`/`Modified` and not left and right. In `ui`
   each projection is a distinct buffer kind rather than a flag, because they emit different
@@ -293,7 +293,7 @@ through one path because Neovim owned the loop.
 6  effect    → Event::DiffReady(R2, doc)
 7  runtime   if R2 != state.diff_req { drop }   ← stale results die structurally
 8  runtime   state.docs.insert(id, doc)
-9  ui        render: align::project::side_by_side(&doc, &ctx) → rows → cells
+9  ui        render: alignment.rows(DiffLayout::SideBySide) → rows → cells
 ```
 
 ### Refresh

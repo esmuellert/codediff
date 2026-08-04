@@ -17,7 +17,7 @@ use crokey::KeyCombination;
 use crokey::key;
 
 use crate::input::command::Command;
-use crate::input::keymap::{self, Context, Match};
+use crate::input::keymap::{self, KeymapType, Match};
 
 /// Counts above this are treated as this.
 ///
@@ -62,7 +62,7 @@ impl Resolver {
     }
 
     /// Feeds one key in.
-    pub fn key(&mut self, key: KeyCombination, context: Context) -> Resolution {
+    pub fn key(&mut self, key: KeyCombination, keymap_type: KeymapType) -> Resolution {
         // Terminals disagree about whether shift is reported as a modifier or
         // by the character's case; normalising both sides is what makes them
         // meet.
@@ -81,7 +81,7 @@ impl Resolver {
         }
 
         self.keys.push(key);
-        match keymap::lookup(context, &self.keys) {
+        match keymap::lookup(keymap_type, &self.keys) {
             Match::Exact(action) => {
                 let count = self.count();
                 self.reset();
@@ -125,6 +125,7 @@ mod tests {
     use crate::input::buffer::{BufferAction, Motion};
     use crate::input::command::Action;
     use crate::input::program::ProgramAction;
+    use align::DiffLayout;
 
     /// Feeds a line of keys in and returns what came out.
     ///
@@ -132,7 +133,7 @@ mod tests {
     fn run(keys: &[KeyCombination]) -> Vec<Resolution> {
         let mut input = Resolver::new();
         keys.iter()
-            .map(|k| input.key(*k, Context::SideBySide))
+            .map(|k| input.key(*k, KeymapType::Diff(DiffLayout::SideBySide)))
             .collect()
     }
 
@@ -274,9 +275,9 @@ mod tests {
     #[test]
     fn nothing_is_left_behind_after_a_command_runs() {
         let mut input = Resolver::new();
-        input.key(key!('5'), Context::SideBySide);
-        input.key(key!(g), Context::SideBySide);
-        input.key(key!(g), Context::SideBySide);
+        input.key(key!('5'), KeymapType::Diff(DiffLayout::SideBySide));
+        input.key(key!(g), KeymapType::Diff(DiffLayout::SideBySide));
+        input.key(key!(g), KeymapType::Diff(DiffLayout::SideBySide));
         assert!(input.pending().is_empty());
         assert_eq!(input.count(), None);
     }
@@ -284,9 +285,9 @@ mod tests {
     #[test]
     fn the_pending_keys_are_visible_while_waiting() {
         let mut input = Resolver::new();
-        input.key(key!('1'), Context::SideBySide);
+        input.key(key!('1'), KeymapType::Diff(DiffLayout::SideBySide));
         assert_eq!(input.count().map(NonZeroU32::get), Some(1));
-        input.key(key!(g), Context::SideBySide);
+        input.key(key!(g), KeymapType::Diff(DiffLayout::SideBySide));
         assert_eq!(input.pending(), [key!(g)]);
     }
 }
