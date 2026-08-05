@@ -10,11 +10,11 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 
-use crate::paint::Spans;
+use crate::draw::Look;
 use crate::render::cells::{self, Ink};
 use crate::render::gutter;
 use crate::render::layout::gutter_width;
-use crate::theme::Theme;
+use crate::syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::SingleFile;
 
@@ -23,9 +23,9 @@ pub fn draw(
     area: Rect,
     data: &SingleFile,
     view: &Viewport,
-    theme: &Theme,
-    syntax: bool,
+    look: Look<'_>,
 ) -> bool {
+    let Look { theme, syntax, .. } = look;
     let width = gutter_width(data.lines());
     if area.width < width + 4 || area.height == 0 {
         return false;
@@ -36,7 +36,11 @@ pub fn draw(
         ..area
     };
 
-    let spans = if syntax { data.spans() } else { Spans::Off };
+    let spans = if syntax {
+        data.spans(look.store)
+    } else {
+        Spans::Off
+    };
     let visible = view.visible(data.lines());
     for (offset, line) in visible.clone().enumerate() {
         let y = area.y + offset as u16;

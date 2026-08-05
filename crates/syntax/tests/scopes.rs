@@ -7,9 +7,9 @@
 //!
 //! **Deliberately asks the matcher**, whatever the seam would choose. Every
 //! selector here is a TextMate scope path, which only that engine matches; a
-//! reader opening one of these files gets the parser instead, and the parser's
-//! half of the theme is checked by `captures.rs`. Which engine a real file gets
-//! is `colours.rs`'s business, and it says nothing about it on purpose.
+//! reader opening one of these files gets the parser instead. Which engine a
+//! real file gets is `ui`'s `colours.rs` to say, and this says nothing about
+//! it on purpose.
 //!
 //! Two passes, because a rule can legitimately fail to win. `keyword` is
 //! outranked by `keyword.control` wherever both apply, so a whole-table pass
@@ -17,16 +17,14 @@
 //! for anything it did not see, a second pass with *only* that rule, where
 //! nothing can outrank it. Whatever still matches nothing is dead.
 
-use syntax::{Clues, Engine, Highlighted, Palette, Pen, Rule, Style};
-
-use ui::theme::code::Token;
-use ui::theme::scopes::SCOPES;
+use syntax::engine::scopes::SCOPES;
+use syntax::{Clues, Engine, Group, Highlighted, Palette, Pen, Rule, Style};
 
 mod corpus;
 
 /// Every pen that appears anywhere in the corpus, under the given rules.
 fn pens(engine: &Engine, rules: &[Rule]) -> Vec<Pen> {
-    let palette = Palette::new(rules, &[]);
+    let palette = Palette::from_tables(rules, &[]);
     let mut seen = Vec::new();
     for (path, source) in corpus::FILES {
         let lines: Vec<String> = source.lines().map(str::to_owned).collect();
@@ -35,9 +33,10 @@ fn pens(engine: &Engine, rules: &[Rule]) -> Vec<Pen> {
             panic!("no grammar claims {path}");
         };
         let mut read = Highlighted::new(engine, grammar, &palette, &lines);
-        read.reach(engine, &palette, lines.len() as u32, &lines);
-        for n in 0..lines.len() {
-            for span in read.line(n as u32) {
+        let mut spans = Vec::new();
+        read.reach(engine, &palette, lines.len() as u32, &lines, &mut spans);
+        for line in &spans {
+            for span in line {
                 if let Some(pen) = span.style.pen
                     && !seen.contains(&pen)
                 {
@@ -58,7 +57,7 @@ fn matches_alone(engine: &Engine, selector: &'static str) -> bool {
 #[test]
 fn every_scope_in_the_table_claims_something() {
     let engine = Engine::new();
-    let seen = pens(&engine, &ui::theme::scopes::rules());
+    let seen = pens(&engine, &syntax::rules());
 
     let mut dead = Vec::new();
     for (n, scope) in SCOPES.iter().enumerate() {
@@ -84,16 +83,16 @@ fn every_token_is_worn_by_something_in_the_corpus() {
     // if every language spells that construct some other way. A token nothing
     // wears is a colour the reader will never see.
     let engine = Engine::new();
-    let seen = pens(&engine, &ui::theme::scopes::rules());
-    let worn: Vec<Token> = seen
+    let seen = pens(&engine, &syntax::rules());
+    let worn: Vec<Group> = seen
         .iter()
-        .filter_map(|pen| SCOPES.get(pen.0 as usize).map(|s| s.token))
+        .filter_map(|pen| SCOPES.get(pen.0 as usize).map(|s| s.group))
         .collect();
 
-    let missing: Vec<&str> = Token::ALL
+    let missing: Vec<&str> = Group::ALL
         .into_iter()
         .filter(|token| !worn.contains(token))
-        .map(Token::name)
+        .map(Group::name)
         .collect();
     assert!(
         missing.is_empty(),

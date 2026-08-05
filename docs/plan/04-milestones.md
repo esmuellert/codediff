@@ -478,7 +478,7 @@ agree on one `Token` set, and the disagreements we know about are a named test. 
 
 ### S11c — Colouring moves off the drawing thread ✅
 
-**Build.** `ui::paint`: one thread, one queue each way. The interface asks for a file and
+**Build.** `ui::syntax`: one thread, one queue each way. The interface asks for a file and
 installs spans as they arrive; it never computes a colour and has no way to wait for one.
 
 **Why, after S11b worked.** Two engines, and the parser has no unit of work small enough to
@@ -508,6 +508,51 @@ five pieces. What replaces them is a queue. `lint-arch` now refuses a thread any
 painter. See [D41](05-decisions.md#d41--colouring-happens-on-a-thread-of-its-own).
 
 ---
+
+### S11d — The interface keeps every colour; the worker keeps only its place ✅
+
+**Build.** `ui::syntax`: `Store` (LRU over every file open) on the drawing side, memos on the
+worker side, and a request that carries `have` and `want`. `Highlighted` keeps a count instead
+of a corpus.
+
+**Why, after S11c worked.** Moving colouring to a thread quietly threw two things away. The
+cache went — `Highlighted` was where the drawer borrowed spans from, and once the worker owned
+it, its spans were copied out and never read again, so a long file held them twice. And the
+laziness went with it: `reach` called in a loop to the end of the file is not lazy, whatever
+its shape. Neither mattered with one buffer and no explorer. Both matter the moment there is a
+second file, which S12 is.
+
+**Pass when.**
+- [x] a screen already coloured sends no request at all
+- [x] a file longer than the read-ahead is not read to its end on open
+- [x] reaching further into a file continues rather than starting again
+- [x] scrolling back over coloured lines asks for nothing
+- [x] the least recently wanted file is dropped first, and the one on screen never
+- [x] a file whose content changed loses the colours describing the old text
+- [x] no engine type crosses the thread boundary — enforced by `Send`
+- [x] every request is answered, so no file can be left unable to ask again
+- [x] 20,000-line Perl: coloured on open in 0.91 s, worst keypress 10.2 ms (debug build)
+
+See [D42](05-decisions.md#d42--the-interface-keeps-every-colour-the-worker-keeps-only-its-place).
+
+### S11e — The engines' own words move into `syntax` ✅
+
+**Build.** `syntax::Group`, `syntax/src/engine/{scopes,captures}.rs`, and one function that
+numbers both tables. `ui/src/theme/` keeps only what a colour is.
+
+**Why.** Both tables held an engine's own vocabulary — TextMate scope paths, tree-sitter
+capture names — outside the one directory `lint-arch` confines an engine to. The rule looked
+for the words `syntect` and `tree_sitter` and so never saw them. And the pens were numbered in
+two files and read back in a third, an agreement held by a test rather than by structure.
+
+**Pass when.**
+- [x] replacing an engine touches only files under `syntax/src/engine/`
+- [x] one function assigns every pen; `BASE` no longer exists
+- [x] `ui` cannot name `syntax::engine` — new lint, sabotage-checked
+- [x] `syntax` still knows nothing about colour
+- [x] `theme/code.rs` is under the size cap it used to exceed
+
+See [D43](05-decisions.md#d43--the-engines-own-words-live-in-syntax-not-in-the-theme).
 
 ### S12 — Explorer
 

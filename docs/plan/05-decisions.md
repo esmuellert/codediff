@@ -2009,7 +2009,7 @@ unreachable, and the guard is written down as defensive rather than tested.
 
 ## D41 — colouring happens on a thread of its own
 
-**Decision.** A [`Painter`] thread colours; the interface asks and installs. `ui` never
+**Decision.** A worker thread colours; the interface asks and installs. `ui` never
 computes a colour, and there is no path by which it can wait for one. `std::thread` and
 `std::sync::mpsc`; no runtime, no locks, no shared state.
 
@@ -2057,9 +2057,14 @@ paces the answer to a key. With nothing being painted the loop blocks on `read()
 exactly as it did before any of this.
 
 **What crosses the boundary.** [`Highlighted`] holds a raw pointer from the regex engine
-underneath `syntect` and is **not `Send`** — so it never leaves the painter. Text goes in,
+underneath `syntect` and is **not `Send`** — so it never leaves the worker. Text goes in,
 spans come back, both plain data, and the compiler enforces it. That is why the model now
 holds `Colours` (spans) rather than a highlighter: not a preference, a requirement.
+
+> **Partly superseded by [D42](#d42--the-interface-keeps-every-colour-the-worker-keeps-only-its-place).**
+> The thread is right and stays. What this got wrong is that it made the worker read whole
+> files eagerly and left the interface with nowhere to keep a second file's colours. D42 puts
+> the cache back on this side and the laziness back in the worker, and stores nothing twice.
 
 **Deleted:** `Moment`, `limits::LEAP`, `limits::MAX_PARSED_LINES`, `SLICE`, `read_more`,
 `caught_up`, and `Highlighted`'s stored `reading`. **Kept:** `MAX_BYTES`, `MAX_LINES`,
@@ -2085,12 +2090,178 @@ arrived, using the same two calls the loop uses — so a test exercises the real
 than a shortcut past it, and waits exactly as long as the work takes.
 
 **One thread, and a lint that keeps it that way.** `cargo xtask lint-arch` refuses
-`thread::spawn` anywhere but `crates/ui/src/paint.rs`, so "which thread owns this?" keeps an
-obvious answer. Tests are exempt: proving two things do not block each other takes two things.
+`thread::spawn` anywhere but `crates/ui/src/syntax/mod.rs`, so "which thread owns this?" keeps
+an obvious answer. Tests are exempt: proving two things do not block each other takes two things.
 
-[`Painter`]: crate::paint::Painter
-[`Version`]: crate::paint::Version
+[`Version`]: crate::syntax::Version
 [`Highlighted`]: syntax::Highlighted
+
+## D42 — the interface keeps every colour; the worker keeps only its place
+
+**S11d.** [D41](#d41--colouring-happens-on-a-thread-of-its-own) moved colouring to a thread
+and, in doing so, quietly threw two things away. Both are back, and the model that brings them
+back is smaller than the one that lost them.
+
+**What was lost.** Before the thread, `Highlighted` was the cache: the drawer borrowed spans
+straight out of it, so scrolling back was free, and it read only as far as anyone had looked.
+After the thread it became neither. The worker read whole files eagerly — nothing else was
+possible with `reach` called in a loop to the end — and its stored spans were copied out and
+then never read again, so a 300,000-line file held roughly 24 MB twice. And with one buffer and
+no explorer there was nowhere for a *second* file's colours to live at all.
+
+**Where things live now, and why each has no choice.**
+
+| | interface thread | syntax worker |
+|---|---|---|
+| every span, for every file open | ✓ | |
+| the engine's position in an unfinished file | | ✓ |
+
+Drawing cannot wait: to draw line 100 the frame needs line 100's spans *now*, so the spans must
+be on this side. Resuming cannot cross: `Highlighted` holds a raw pointer from the C regex
+library underneath `syntect`, so the bookmark must be on that side. Neither placement is a
+preference. Both are forced, and together they mean **nothing is stored twice** — `Highlighted`
+now keeps a count and writes its spans into a buffer the worker hands straight on.
+
+**The worker has no session.** A request carries everything needed to answer it from scratch,
+so the memos it keeps are a cache in the strict sense: delete them and every answer is
+identical, only slower. That is what lets the interface evict whatever it likes without telling
+anyone.
+
+```rust
+struct SyntaxRequest  { key, version, text: Arc<Vec<String>>, have: u32, want: u32 }
+struct SyntaxResponse { key, version, from: u32, spans: Vec<Vec<Span>>, more: bool }
+```
+
+No engine type appears in either — checked by the compiler, since anything from those engines
+would fail to be `Send`. `have` is the field that makes eviction safe: it says how much the
+asker still holds, so a bookmark further down a file the asker has forgotten is recognised as
+answering a question nobody asked, and reading starts again.
+
+**Identity is the path plus the side, and the path is also the language.** One string doing
+both jobs is not a shortcut — the language must be read from the path on *that* side, because a
+`.py` renamed to a `.rs` is Python on the left and Rust on the right. This is enough while a
+review is one comparison, since then a path has exactly one original and one modified.
+Comparing arbitrary revisions will want git's object id instead, which is better still: an id
+*is* the content hash, so two files sharing one could share an entry.
+
+**Eviction is least-recently-used, capped by lines rather than files.** Files differ by three
+orders of magnitude, so counting them measures nothing; spans run about 80 bytes a line, so the
+800,000-line budget is roughly 64 MB. The file being read is never dropped — it is touched
+every frame, so it is never the least recent, and that falls out of the ordering rather than
+needing a rule.
+
+**Nothing is queued behind a request, and that is the interesting part.** The obvious design
+holds the newest request for a busy file and sends it when the current one finishes. It is
+wrong, and a test caught it: a request says how much the asker already has, and that number
+moves every time an answer lands — so a held request is answered from a starting point that has
+gone stale, and its lines are refused on arrival, and the file silently stops being coloured.
+Nothing is held. A second request for a busy file is dropped, and the interface re-asks after
+the next answer with a number that is current. Asking is a lookup, so asking again is free.
+
+**Only one engine is actually lazy.** The matcher stops where it is asked and carries on later;
+the parser has no range API and reads a whole file however little was wanted. `reach` says how
+far the caller would like to get and `done` says how far it got, which is the entire seam
+between them — and a parsed file is never remembered, because there is never anything left
+over. So laziness is real for the long tail and inert for the 25 parsed languages, which is a
+limit of the engine rather than of this design.
+
+**Read-ahead of 2,000 lines.** Asking only for the screen would mean a request every time a
+line scrolled into view, each waiting on the last. Two thousand lines is one chunk of the
+worker's work, so an ordinary scroll finds its colours already there. View lines are used
+rather than file lines: filler rows only ever make a view line number larger, so this
+over-asks slightly and can never under-ask.
+
+**Measured, on a 20,000-line Perl file in a debug build:** coloured on open in 0.91 s, worst
+keypress 10.2 ms while the worker was busy.
+
+**One thing this found by accident.** `Session::settle` could spin for ever if the store and
+the worker disagreed about how far a file had been read. It cannot happen while `have` is
+honest, but a sabotage test hung instead of failing, which is the worse failure. It now stops
+after eight answers in a row that install nothing.
+
+[`Store`]: crate::syntax::Store
+[`Syntax`]: crate::syntax::Syntax
+
+## D43 — the engines' own words live in `syntax`, not in the theme
+
+**S11e.** Two tables translate what an engine reports into what we call it: the matcher's
+`comment.line.double-slash.rust` and the parser's `comment` both become `Group::Comment`. Both
+tables lived in `ui/src/theme/`. Both have moved to `syntax/src/engine/`, beside the engine
+whose words they hold.
+
+**Why they were in the wrong place.** Three tests, all failed by the old position.
+
+*Replace tree-sitter with a different parser.* `captures.rs` is rewritten entirely — every row
+is a name from a grammar's `highlights.scm`. `Code`, `catppuccin.rs` and `basic.rs` do not
+change at all. A file that changes only when the engine changes belongs with the engine.
+
+*Read the lint.* `lint-arch` says a syntax engine "may only be named inside
+`crates/syntax/src/engine`, so that swapping engines touches nothing else". It looks for the
+words `syntect` and `tree_sitter`. `theme/captures.rs` never wrote `tree_sitter`; it wrote
+tree-sitter's *vocabulary*, several hundred lines of it. It passed the rule and defeated its
+purpose.
+
+*Ask what the crate is for.* `syntax` exists to make two engines look like one. Two engines
+look like one only if they answer in the same words. Those words are `Group` — so it is the
+crate's output vocabulary, not the theme's input vocabulary. Under the old arrangement the two
+engines agreed only because `ui` built two tables carefully; a word in one and not the other
+would have gone unreported.
+
+**The pens are now assigned once.** Before, `scopes.rs` numbered itself from zero,
+`captures.rs` numbered itself from `BASE = SCOPES.len()`, and `theme::token()` read both back
+with matching arithmetic — three files, one agreement, held by a test. Now `Palette::new`
+numbers both tables and `role()` reads them back ten lines away. The tables carry no `Pen` at
+all; they carry a selector, a role, and their emphasis. `BASE` is gone.
+
+**This does not weaken what `Pen` is for.** `style.rs` promises the crate never learns what a
+colour is, and it still does not: a role says a stretch of text is a keyword, not that it is
+mauve. All three reasons the indirection exists survive — a terminal without 24-bit colour
+still gets `Color::Indexed` from `ui`, changing theme still invalidates no span, and the table
+is still one shared constant rather than one per theme.
+
+**What `ui` is left with:**
+
+```
+theme/
+├── mod.rs          Theme
+├── code.rs         Code — Group → Color       ← taste, and nothing else
+├── colour.rs       Rgb, blend
+├── basic.rs        one theme
+└── catppuccin.rs   four themes
+```
+
+and two calls: `syntax::Palette::new()` and `syntax::group(pen)`.
+
+**A new lint keeps it there.** `crates/ui/src` may not name `syntax::engine`, so the interface
+cannot start assembling its own palette again. Sabotage-checked.
+
+**Also renamed: `Token` → `Group`, which is Vim's word for exactly this.** `:help group-name`:
+
+> *"A syntax group name is to be used for syntax items that match the same kind of thing.
+> These are then linked to a highlight group that specifies the color. **A syntax group name
+> doesn't specify any color or attributes itself.**"*
+
+That last sentence is the seam this decision draws, written by someone else thirty years ago.
+Our thirty-one are syntax groups; a `Code` is the highlight group they link to. Vim's own list
+is nearly ours — `Comment`, `Constant`, `String`, `Character`, `Keyword`, `Operator`, `Type`,
+`Function`, `Label`, `Tag`, `Error`.
+
+`Token` had real precedent — VS Code's semantic **token types**, and Pygments and chroma — but
+eight of the thirty-one are not tokens in any lexer's sense: `Heading`, `Link`, `List`,
+`Quote`, `Emphasis`, `Raw`, `Inserted`, `Deleted`. A heading is a structure and an inserted
+line is a patch. This project already refuses to use one word for two ideas (see `draw/mod.rs`:
+"render turns a value into marks, draw composes those marks"), and the plugin this descends
+from speaks Vim's vocabulary throughout — `hl_group`, `Comment`, `CodeDiffAdd`.
+
+The prefix is dropped because the crate is already called `syntax`: `syntax::Group`, not
+`syntax::SyntaxGroup`. `ui`'s other `role` — which diff row a line is — keeps its name, and is
+a different idea entirely.
+
+**One thing this costs.** `syntax` now decides there are thirty-one roles, where `ui` decided
+before. That is the same kind of decision as which twenty-five languages the parser knows, and
+it is the one that makes the two engines interchangeable rather than merely parallel.
+
+[`Group`]: syntax::Group
 
 ## Open questions
 

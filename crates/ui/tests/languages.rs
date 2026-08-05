@@ -12,16 +12,13 @@
 //! selector claims something; this proves the right one wins, in every
 //! language we claim to support.
 
+use syntax::Group;
 use syntax::{Clues, Engine, Highlighted, Palette};
-use ui::theme::Token;
 
 /// The token covering the first occurrence of `needle`, through the real seam.
-fn token_of(path: &str, source: &str, needle: &str) -> Option<Token> {
+fn token_of(path: &str, source: &str, needle: &str) -> Option<Group> {
     let engine = Engine::new();
-    let palette = Palette::new(
-        &ui::theme::scopes::rules(),
-        &ui::theme::captures::captures(),
-    );
+    let palette = Palette::new();
     let lines: Vec<String> = source.lines().map(str::to_owned).collect();
     let grammar = engine
         .find(
@@ -30,7 +27,8 @@ fn token_of(path: &str, source: &str, needle: &str) -> Option<Token> {
         )
         .unwrap_or_else(|| panic!("nothing claims {path}"));
     let mut read = Highlighted::new(&engine, grammar, &palette, &lines);
-    read.reach(&engine, &palette, lines.len() as u32, &lines);
+    let mut spans = Vec::new();
+    read.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
 
     let (n, byte) = lines
         .iter()
@@ -38,15 +36,17 @@ fn token_of(path: &str, source: &str, needle: &str) -> Option<Token> {
         .find_map(|(n, line)| line.find(needle).map(|b| (n, b as u32)))
         .unwrap_or_else(|| panic!("{path}: {needle:?} is not in the sample"));
 
-    read.line(n as u32)
-        .iter()
+    spans
+        .get(n)
+        .into_iter()
+        .flatten()
         .find(|span| span.bytes.contains(&byte))
         .and_then(|span| span.style.pen)
-        .and_then(ui::theme::token)
+        .and_then(syntax::group)
 }
 
 /// `(path, source, &[(word, token)])`.
-type Language = (&'static str, &'static str, &'static [(&'static str, Token)]);
+type Language = (&'static str, &'static str, &'static [(&'static str, Group)]);
 
 fn check(languages: &[Language]) {
     let mut wrong = Vec::new();
@@ -56,7 +56,7 @@ fn check(languages: &[Language]) {
             if got != Some(*want) {
                 wrong.push(format!(
                     "{path:<16} {needle:<22} is {:<12} but should be {}",
-                    got.map_or("nothing", Token::name),
+                    got.map_or("nothing", Group::name),
                     want.name(),
                 ));
             }
@@ -72,223 +72,223 @@ const PARSED: &[Language] = &[
         "a.rs",
         "// note\nstruct Widget { name: String }\nfn make(n: u32) -> Widget { let s = \"hi\"; }\n",
         &[
-            ("// note", Token::Comment),
-            ("struct", Token::Keyword),
-            ("Widget {", Token::Type),
-            ("make", Token::Function),
-            ("n: u32", Token::Parameter),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("struct", Group::Keyword),
+            ("Widget {", Group::Type),
+            ("make", Group::Function),
+            ("n: u32", Group::Parameter),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.py",
         "# note\nimport os\n\n\nclass Widget(Base):\n    def make(self, n: int) -> str:\n        return \"hi\"\n",
         &[
-            ("# note", Token::Comment),
-            ("import", Token::Keyword),
-            ("class", Token::Keyword),
-            ("Widget(", Token::Type),
-            ("make", Token::Function),
-            ("\"hi\"", Token::String),
+            ("# note", Group::Comment),
+            ("import", Group::Keyword),
+            ("class", Group::Keyword),
+            ("Widget(", Group::Type),
+            ("make", Group::Function),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.js",
         "// note\nclass Widget {\n  make(n) { return `hi ${n}`; }\n}\nconst x = 1;\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("Widget", Token::Type),
-            ("make", Token::Function),
-            ("const", Token::Keyword),
-            ("1;", Token::Constant),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("Widget", Group::Type),
+            ("make", Group::Function),
+            ("const", Group::Keyword),
+            ("1;", Group::Constant),
         ],
     ),
     (
         "a.ts",
         "// note\ninterface Shape { n: number }\nclass Widget implements Shape {\n  make(n: number): string { return \"hi\"; }\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("interface", Token::Keyword),
-            ("Shape {", Token::Type),
-            ("make", Token::Function),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("interface", Group::Keyword),
+            ("Shape {", Group::Type),
+            ("make", Group::Function),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.tsx",
         "// note\nconst App = () => <div className=\"page\">hi</div>;\n",
-        &[("// note", Token::Comment), ("const", Token::Keyword)],
+        &[("// note", Group::Comment), ("const", Group::Keyword)],
     ),
     (
         "a.go",
         "// note\npackage widget\n\ntype Widget struct { Name string }\n\nfunc (w *Widget) Make(n int) string { return \"hi\" }\n",
         &[
-            ("// note", Token::Comment),
-            ("package", Token::Keyword),
-            ("Widget struct", Token::Type),
-            ("Make", Token::Function),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("package", Group::Keyword),
+            ("Widget struct", Group::Type),
+            ("Make", Group::Function),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.java",
         "// note\npublic class Widget extends Base {\n  private String name;\n  public String make(int n) { return \"hi\"; }\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("Widget", Token::Type),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("Widget", Group::Type),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.c",
         "/* note */\n#include <stdio.h>\nstruct widget { char name[8]; };\nint make(int n) { return 0; }\n",
         &[
-            ("/* note */", Token::Comment),
-            ("struct", Token::Keyword),
-            ("make", Token::Function),
+            ("/* note */", Group::Comment),
+            ("struct", Group::Keyword),
+            ("make", Group::Function),
         ],
     ),
     (
         "a.cc",
         "// note\nnamespace w {\nclass Widget : public Base {\n public:\n  std::string make(int n) { return \"hi\"; }\n};\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.cs",
         "// note\nnamespace W {\n  public class Widget : Base {\n    public string Make(int n) => \"hi\";\n  }\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("Widget", Token::Type),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("Widget", Group::Type),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.rb",
         "# note\nmodule Greeting\n  class Widget < Base\n    def make(n)\n      \"hi\"\n    end\n  end\nend\n",
         &[
-            ("# note", Token::Comment),
-            ("module", Token::Keyword),
-            ("def", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("# note", Group::Comment),
+            ("module", Group::Keyword),
+            ("def", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.php",
         "<?php\n// note\nclass Widget extends Base {\n  public function make(int $n): string { return \"hi\"; }\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "build.sh",
         "#!/usr/bin/env bash\n# note\nname=\"widget\"\nmake() {\n  printf '%s\\n' \"$name\"\n}\nif [[ -n \"$name\" ]]; then make; fi\n",
         &[
-            ("# note", Token::Comment),
-            ("\"widget\"", Token::String),
-            ("if", Token::Keyword),
+            ("# note", Group::Comment),
+            ("\"widget\"", Group::String),
+            ("if", Group::Keyword),
         ],
     ),
     (
         "a.json",
         "{\n  \"name\": \"widget\",\n  \"count\": 3,\n  \"on\": true\n}\n",
         &[
-            ("\"name\"", Token::Property),
-            ("\"widget\"", Token::String),
-            ("3", Token::Constant),
-            ("true", Token::Constant),
+            ("\"name\"", Group::Property),
+            ("\"widget\"", Group::String),
+            ("3", Group::Constant),
+            ("true", Group::Constant),
         ],
     ),
     (
         "a.yaml",
         "# note\nname: widget\ncount: 3\nlist:\n  - one\n",
-        &[("# note", Token::Comment), ("count", Token::Property)],
+        &[("# note", Group::Comment), ("count", Group::Property)],
     ),
     (
         "a.toml",
         "# note\n[package]\nname = \"widget\"\ncount = 3\n",
         &[
-            ("# note", Token::Comment),
-            ("\"widget\"", Token::String),
-            ("3", Token::Constant),
+            ("# note", Group::Comment),
+            ("\"widget\"", Group::String),
+            ("3", Group::Constant),
         ],
     ),
     (
         "a.css",
         "/* note */\n.page > a:hover {\n  color: #cba6f7;\n  content: \"hi\";\n}\n",
-        &[("/* note */", Token::Comment), ("\"hi\"", Token::String)],
+        &[("/* note */", Group::Comment), ("\"hi\"", Group::String)],
     ),
     (
         "a.html",
         "<!-- note -->\n<div class=\"page\" id=\"main\">\n  <a href=\"http://x\">text</a>\n</div>\n",
         &[
-            ("<!-- note -->", Token::Comment),
-            ("div", Token::Tag),
-            ("class", Token::Attribute),
-            ("page", Token::String),
+            ("<!-- note -->", Group::Comment),
+            ("div", Group::Tag),
+            ("class", Group::Attribute),
+            ("page", Group::String),
         ],
     ),
     (
         "a.lua",
         "-- note\nlocal Widget = {}\nfunction Widget.make(n)\n  return \"hi\"\nend\n",
         &[
-            ("-- note", Token::Comment),
-            ("local", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("-- note", Group::Comment),
+            ("local", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.scala",
         "// note\nclass Widget(name: String) extends Base {\n  def make(n: Int): String = \"hi\"\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.swift",
         "// note\nclass Widget: Base {\n  func make(n: Int) -> String { return \"hi\" }\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.hs",
         "-- note\nmodule Widget where\n\nmake :: Int -> String\nmake n = \"hi\"\n",
-        &[("-- note", Token::Comment), ("\"hi\"", Token::String)],
+        &[("-- note", Group::Comment), ("\"hi\"", Group::String)],
     ),
     (
         "a.ex",
         "# note\ndefmodule Widget do\n  def make(n) do\n    \"hi\"\n  end\nend\n",
         &[
-            ("# note", Token::Comment),
-            ("def make", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("# note", Group::Comment),
+            ("def make", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.nix",
         "# note\n{ pkgs }:\nrec {\n  name = \"widget\";\n  count = 3;\n}\n",
-        &[("# note", Token::Comment), ("\"widget\"", Token::String)],
+        &[("# note", Group::Comment), ("\"widget\"", Group::String)],
     ),
     (
         "a.sql",
         "-- note\nSELECT name, COUNT(*) AS total\nFROM widgets\nWHERE name LIKE 'a%';\n",
         &[
-            ("-- note", Token::Comment),
-            ("SELECT", Token::Keyword),
-            ("'a%'", Token::String),
+            ("-- note", Group::Comment),
+            ("SELECT", Group::Keyword),
+            ("'a%'", Group::String),
         ],
     ),
 ];
@@ -300,41 +300,41 @@ const MATCHED: &[Language] = &[
         "a.md",
         "# Heading\n\nSome **bold** and `code` and a [label](http://x).\n\n- item\n",
         &[
-            ("# Heading", Token::Heading),
-            ("**bold**", Token::Emphasis),
-            ("`code`", Token::Raw),
-            ("http://x", Token::Link),
-            ("- item", Token::List),
+            ("# Heading", Group::Heading),
+            ("**bold**", Group::Emphasis),
+            ("`code`", Group::Raw),
+            ("http://x", Group::Link),
+            ("- item", Group::List),
         ],
     ),
     (
         "a.kt",
         "// note\nclass Widget(val name: String) {\n  fun make(n: Int): String = \"hi\"\n}\n",
         &[
-            ("// note", Token::Comment),
-            ("class", Token::Keyword),
-            ("\"hi\"", Token::String),
+            ("// note", Group::Comment),
+            ("class", Group::Keyword),
+            ("\"hi\"", Group::String),
         ],
     ),
     (
         "a.dart",
         "// note\nclass Widget {\n  String make(int n) => \"hi\";\n}\n",
-        &[("// note", Token::Comment), ("\"hi\"", Token::String)],
+        &[("// note", Group::Comment), ("\"hi\"", Group::String)],
     ),
     (
         "a.pl",
         "# note\nsub make {\n  my $n = shift;\n  return \"hi\";\n}\n",
-        &[("# note", Token::Comment), ("\"hi\"", Token::String)],
+        &[("# note", Group::Comment), ("\"hi\"", Group::String)],
     ),
     (
         "Makefile",
         "# note\nall: build\n\nbuild:\n\techo hi\n",
-        &[("# note", Token::Comment)],
+        &[("# note", Group::Comment)],
     ),
     (
         "a.diff",
         "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n",
-        &[("+new", Token::Inserted), ("-old", Token::Deleted)],
+        &[("+new", Group::Inserted), ("-old", Group::Deleted)],
     ),
 ];
 
@@ -404,7 +404,7 @@ fn every_language_names_a_comment_a_comment() {
         let needle = line.trim_start();
         assert_eq!(
             token_of(path, source, needle),
-            Some(Token::Comment),
+            Some(Group::Comment),
             "{path}: {needle:?}"
         );
     }

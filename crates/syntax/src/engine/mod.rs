@@ -24,13 +24,16 @@
 //! fills the rest. Ours is dense and strictly better, so there is nothing left
 //! for a lower layer to fill. See D39.
 
+pub mod captures;
+pub mod scopes;
 mod syntect;
 mod treesitter;
 
 use std::ops::Range;
 
 use crate::detect::Clues;
-use crate::style::{Capture, Rule, Span};
+use crate::group::Group;
+use crate::style::{Capture, Pen, Rule, Span, Style};
 
 /// Every grammar we have, of either kind.
 pub struct Engine {
@@ -58,6 +61,59 @@ pub enum Reading {
     TextMate(Box<syntect::Reading>),
 }
 
+/// Which syntax group a pen names, whichever engine produced it.
+///
+/// The inverse of the numbering in [`Palette::new`], and deliberately beside
+/// it. Everything above asks this one question and gets one answer, which is
+/// what "two engines look like one" actually means.
+pub fn group(pen: Pen) -> Option<Group> {
+    let n = pen.0 as usize;
+    match scopes::SCOPES.get(n) {
+        Some(scope) => Some(scope.group),
+        None => captures::NAMES
+            .get(n - scopes::SCOPES.len())
+            .map(|c| c.group),
+    }
+}
+
+/// The matcher's half, numbered from zero.
+///
+/// Public because a test may want to give the matcher its rules and nothing
+/// else, to prove every selector claims something real.
+pub fn rules() -> Vec<Rule> {
+    scopes::SCOPES
+        .iter()
+        .enumerate()
+        .map(|(n, scope)| {
+            Rule::new(
+                scope.selector,
+                Style {
+                    pen: Some(Pen(n as u16)),
+                    ..scope.emphasis()
+                },
+            )
+        })
+        .collect()
+}
+
+/// The parser's half, numbered from where the matcher's stops.
+fn captures() -> Vec<Capture> {
+    let base = scopes::SCOPES.len() as u16;
+    captures::NAMES
+        .iter()
+        .enumerate()
+        .map(|(n, entry)| {
+            Capture::new(
+                entry.name,
+                Style {
+                    pen: Some(Pen(base + n as u16)),
+                    ..entry.emphasis()
+                },
+            )
+        })
+        .collect()
+}
+
 /// The caller's colours, in the form each engine matches against.
 ///
 /// Both halves, because which engine reads a file is not known when the
@@ -69,10 +125,25 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// `rules` are TextMate scope selectors; `captures` are tree-sitter
-    /// capture names. Two lists rather than one because they are matched by
-    /// different machinery and a mistake between them would be silent.
-    pub fn new(rules: &[Rule], captures: &[Capture]) -> Self {
+    /// The colours both engines answer in.
+    ///
+    /// **The only place a pen is given a number.** Both tables are numbered
+    /// here, one after the other, and [`group`] reads them back with the same
+    /// arithmetic ten lines away. Numbering assigned in two files is an
+    /// agreement two files have to keep; numbered here it is one function that
+    /// cannot disagree with itself.
+    pub fn new() -> Self {
+        Self {
+            textmate: syntect::Palette::new(&rules()),
+            trees: treesitter::Palette::new(&captures()),
+        }
+    }
+
+    /// Built from tables a caller supplies rather than our own.
+    ///
+    /// For tests that want a palette of two rules, so a failure names the rule
+    /// that failed instead of one of three hundred.
+    pub fn from_tables(rules: &[Rule], captures: &[Capture]) -> Self {
         Self {
             textmate: syntect::Palette::new(rules),
             trees: treesitter::Palette::new(captures),
@@ -176,13 +247,85 @@ impl Default for Engine {
     }
 }
 
+impl Default for Palette {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::style::{Pen, Style};
 
+    // --- the numbering ---------------------------------------------------
+    //
+    // Both tables are numbered by one function above, so these cannot fail
+    // the way they once could, when each table numbered itself and a third
+    // file read them back. They stay because the arithmetic is still
+    // arithmetic, and because a reader wants to see it stated.
+
+    #[test]
+    fn every_rule_carries_its_own_position() {
+        for (n, rule) in rules().iter().enumerate() {
+            assert_eq!(rule.style.pen, Some(Pen(n as u16)), "{}", rule.selector);
+            assert_eq!(rule.selector, scopes::SCOPES[n].selector);
+        }
+    }
+
+    #[test]
+    fn every_capture_is_numbered_after_the_last_rule() {
+        let base = scopes::SCOPES.len() as u16;
+        for (n, capture) in captures().iter().enumerate() {
+            assert_eq!(
+                capture.style.pen,
+                Some(Pen(base + n as u16)),
+                "{}",
+                capture.name
+            );
+        }
+    }
+
+    #[test]
+    fn the_two_tables_do_not_share_a_pen() {
+        // The whole reason one function numbers both. A shared pen would mean
+        // a word coloured as whatever the other engine calls that number.
+        let mut seen = std::collections::HashSet::new();
+        for pen in rules()
+            .iter()
+            .filter_map(|r| r.style.pen)
+            .chain(captures().iter().filter_map(|c| c.style.pen))
+        {
+            assert!(seen.insert(pen.0), "{pen:?} is used twice");
+        }
+    }
+
+    #[test]
+    fn every_pen_either_table_hands_out_names_a_group() {
+        for (pen, want) in rules()
+            .iter()
+            .filter_map(|r| r.style.pen)
+            .zip(scopes::SCOPES.iter().map(|s| s.group))
+            .chain(
+                captures()
+                    .iter()
+                    .filter_map(|c| c.style.pen)
+                    .zip(captures::NAMES.iter().map(|c| c.group)),
+            )
+        {
+            assert_eq!(group(pen), Some(want), "{pen:?}");
+        }
+    }
+
+    #[test]
+    fn a_pen_from_no_table_names_nothing() {
+        assert_eq!(group(Pen(9_999)), None);
+    }
+
+    // --- the seam --------------------------------------------------------
+
     fn palette() -> Palette {
-        Palette::new(
+        Palette::from_tables(
             &[
                 Rule::new("keyword", Style::pen(Pen(0))),
                 Rule::new("storage", Style::pen(Pen(0))),

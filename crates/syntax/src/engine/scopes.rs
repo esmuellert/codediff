@@ -1,10 +1,14 @@
-//! Which scope path wears which pen.
+//! Which TextMate scope path is which [`Group`].
 //!
 //! ---
 //!
 //! One table, shared by every theme, because which scopes are keywords is a
 //! fact about TextMate rather than a choice a theme makes. What a keyword
-//! *looks like* is in [`code`](super::code); this file only says what is one.
+//! *looks like* is the caller's business, and this crate never learns it.
+//!
+//! **The pens are not here.** [`engine::palette`](super::palette) numbers both
+//! tables, because a number assigned in two files is a number two files have
+//! to keep in step.
 //!
 //! **Every selector here has to claim something real.** The engine accepts a
 //! selector it can never use — `"keywrod"` parses happily and then matches
@@ -20,29 +24,45 @@
 //! expression's slashes stop being green. The order below is for a reader:
 //! general first, then the exceptions.
 
-use syntax::{Pen, Rule, Style};
-
-use super::code::Token;
+use crate::group::Group;
+use crate::style::Style;
 
 /// One entry of the scope table.
 ///
-/// The flags are here rather than in a [`Code`] because they are structural: a
+/// The flags are here rather than in the caller's theme because they are
+/// structural: a
 /// heading is bold and a comment is italic in every theme worth shipping, and
 /// they are the only way a rule with no colour of its own — `markup.bold` —
 /// can say anything at all.
 #[derive(Debug, Clone, Copy)]
 pub struct Scope {
     pub selector: &'static str,
-    pub token: Token,
+    pub group: Group,
     bold: bool,
     italic: bool,
     underline: bool,
 }
 
-const fn scope(selector: &'static str, token: Token) -> Scope {
+impl Scope {
+    /// The emphasis this entry carries, with no pen in it yet.
+    ///
+    /// The pen is added by [`palette`](super::palette), which is the only
+    /// place that knows what number this entry has.
+    pub(super) const fn emphasis(&self) -> Style {
+        Style {
+            pen: None,
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            strikethrough: false,
+        }
+    }
+}
+
+const fn scope(selector: &'static str, group: Group) -> Scope {
     Scope {
         selector,
-        token,
+        group,
         bold: false,
         italic: false,
         underline: false,
@@ -80,7 +100,7 @@ impl Scope {
 /// may be added or edited but the table is read by position at runtime — which
 /// is fine, because the same build produces both ends.
 pub const SCOPES: &[Scope] = {
-    use Token as T;
+    use Group as T;
     &[
         // --- comments ---
         scope("comment", T::Comment).italic(),
@@ -246,46 +266,9 @@ pub const SCOPES: &[Scope] = {
     ]
 };
 
-/// The scope table, as `syntax` wants it.
-///
-/// Each rule carries its own position as a [`Pen`], which is what lets a span
-/// be traced back to the entry that produced it — used by [`Code::pen`] to
-/// find the colour, and by the tests to prove that every entry matches
-/// something real.
-pub fn rules() -> Vec<Rule> {
-    SCOPES
-        .iter()
-        .enumerate()
-        .map(|(n, s)| Rule::new(s.selector, style(s, n)))
-        .collect()
-}
-
-const fn style(scope: &Scope, n: usize) -> Style {
-    Style {
-        pen: Some(Pen(n as u16)),
-        bold: scope.bold,
-        italic: scope.italic,
-        underline: scope.underline,
-        strikethrough: false,
-    }
-}
-
-/// Which token a pen names, or nothing if it came from another palette.
-pub fn token(pen: Pen) -> Option<Token> {
-    SCOPES.get(pen.0 as usize).map(|scope| scope.token)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_scope_carries_its_own_position() {
-        for (n, rule) in rules().iter().enumerate() {
-            assert_eq!(rule.style.pen, Some(Pen(n as u16)), "{}", rule.selector);
-            assert_eq!(rule.selector, SCOPES[n].selector);
-        }
-    }
 
     #[test]
     fn no_two_scopes_name_the_same_selector() {
@@ -303,20 +286,15 @@ mod tests {
     }
 
     #[test]
-    fn every_token_is_claimed_by_some_scope() {
-        // A token nothing reaches is a colour nobody can ever see. The
-        // compiler cannot say so, because an unused struct field is legal.
-        for want in Token::ALL {
+    fn every_group_is_claimed_by_some_scope() {
+        // A group nothing reaches is a colour nobody can ever see. The compiler
+        // cannot say so, because an unused struct field is legal.
+        for want in Group::ALL {
             assert!(
-                SCOPES.iter().any(|s| s.token == want),
+                SCOPES.iter().any(|s| s.group == want),
                 "no scope produces {}",
                 want.name()
             );
         }
-    }
-
-    #[test]
-    fn a_pen_from_another_palette_names_nothing() {
-        assert_eq!(token(Pen(9999)), None);
     }
 }

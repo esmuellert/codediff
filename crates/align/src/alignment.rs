@@ -1,5 +1,7 @@
 //! The layer's one public entry point.
 
+use std::sync::Arc;
+
 use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff, MovedText};
 pub use file_types::DiffVersion;
 
@@ -46,8 +48,12 @@ impl std::error::Error for Malformed {}
 #[derive(Debug, Clone)]
 pub struct Alignment {
     diff: LinesDiff,
-    original: Vec<String>,
-    modified: Vec<String>,
+    /// Shared rather than owned outright, so the thread that colours can
+    /// be handed the text without copying it. A file's text never changes
+    /// once read — a diff is a snapshot — so there is nothing to keep in
+    /// step.
+    original: Arc<Vec<String>>,
+    modified: Arc<Vec<String>>,
     tab_width: u8,
     hunks: Vec<Hunk>,
 }
@@ -106,8 +112,8 @@ impl Alignment {
         let hunks = hunks(&diff, &original, &modified, keymap_type);
         Ok(Self {
             diff,
-            original,
-            modified,
+            original: Arc::new(original),
+            modified: Arc::new(modified),
             tab_width,
             hunks,
         })
@@ -153,6 +159,18 @@ impl Alignment {
         match version {
             DiffVersion::Original => &self.original,
             DiffVersion::Modified => &self.modified,
+        }
+    }
+
+    /// The text of one version, to hand to another thread.
+    ///
+    /// A cheap clone of a shared pointer, not of the text. Colouring happens
+    /// elsewhere and needs the lines; copying a large file per request would
+    /// cost more than the colouring.
+    pub fn text(&self, version: DiffVersion) -> Arc<Vec<String>> {
+        match version {
+            DiffVersion::Original => Arc::clone(&self.original),
+            DiffVersion::Modified => Arc::clone(&self.modified),
         }
     }
 

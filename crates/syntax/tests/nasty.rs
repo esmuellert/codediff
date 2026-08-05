@@ -14,7 +14,7 @@
 use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style, limits};
 
 fn palette() -> Palette {
-    Palette::new(
+    Palette::from_tables(
         &[
             Rule::new("string", Style::pen(Pen(1))),
             Rule::new("comment", Style::pen(Pen(2))),
@@ -37,10 +37,9 @@ fn read(path: &str, lines: &[&str]) -> Vec<Vec<Span>> {
         .find(Clues::new(path, None), lines.len())
         .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &owned);
-    highlighted.reach(&engine, &palette, owned.len() as u32, &owned);
-    (0..owned.len())
-        .map(|n| highlighted.line(n as u32).to_vec())
-        .collect()
+    let mut spans = Vec::new();
+    highlighted.reach(&engine, &palette, owned.len() as u32, &owned, &mut spans);
+    spans
 }
 
 /// Every span of a line lies inside it and on character boundaries.
@@ -101,9 +100,10 @@ fn a_file_too_big_to_read_is_left_plain_rather_than_refused() {
         .find(Clues::new("a.rs", None), huge.len())
         .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &huge);
-    highlighted.reach(&engine, &palette, 10, &huge);
+    let mut spans = Vec::new();
+    highlighted.reach(&engine, &palette, 10, &huge, &mut spans);
     assert!(highlighted.finished(), "there is nothing to do");
-    assert!(highlighted.line(0).is_empty());
+    assert!(spans.is_empty(), "and nothing was handed back");
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn a_selector_that_matches_nothing_is_silent_and_must_be_tested_by_use() {
     // and then never matches. `rules()` therefore cannot catch a typo, and a
     // theme's guard has to be a test that each of its rules colours something
     // real — which is what `languages.rs` and `ui`'s theme tests do.
-    let palette = Palette::new(
+    let palette = Palette::from_tables(
         &[
             Rule::new("keyword", Style::pen(Pen(1))),
             Rule::new("keywrod", Style::pen(Pen(2))),

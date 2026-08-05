@@ -22,16 +22,20 @@
 use align::DiffVersion;
 use file_types::File;
 
-use crate::paint::{Colours, Job, Painted, Painter, Spans, Version, path_of};
+use std::sync::Arc;
+
+use crate::syntax::{Key, Spans, Store, Syntax, SyntaxRequest, Version, key_of};
 
 /// One version of a file, and its lines.
 #[derive(Debug)]
 pub struct SingleFile {
     file: File,
-    lines: Vec<String>,
-    /// The colours the painter has sent back. One set, not two: there is only
-    /// one version here, which is the whole difference from a diff.
-    colours: Colours,
+    /// Shared, so the thread that colours can be handed the text rather than
+    /// a copy of it.
+    lines: Arc<Vec<String>>,
+    /// Which store entry holds this file's colours. One, not two: there is
+    /// only one version here, which is the whole difference from a diff.
+    key: Option<Key>,
     version: Version,
 }
 
@@ -41,47 +45,47 @@ impl SingleFile {
     ///
     /// [`Alignment::new`]: align::Alignment::new
     pub fn new(file: File, lines: &[&str]) -> Self {
+        // Whichever side exists: a lone file is one or the other, and the side
+        // it is not has no path and so no language.
+        let side = file.only().unwrap_or(DiffVersion::Modified);
         Self {
+            key: key_of(&file, side),
             file,
-            lines: lines.iter().map(|line| (*line).to_owned()).collect(),
-            colours: Colours::default(),
+            lines: Arc::new(lines.iter().map(|line| (*line).to_owned()).collect()),
             version: Version(0),
         }
     }
 
     /// The colouring, for a frame.
-    pub fn spans(&self) -> Spans<'_> {
-        Spans::One(&self.colours)
+    pub fn spans<'a>(&self, store: &'a Store) -> Spans<'a> {
+        match self.key.as_ref().and_then(|key| store.get(key)) {
+            Some(colours) => Spans::One(colours),
+            None => Spans::Off,
+        }
     }
 
-    /// Asks the painter for this file.
-    pub fn start_painting(&mut self, painter: &Painter, version: Version) {
+    /// Asks for everything up to `want`.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
         self.version = version;
-        // Whichever side exists: a lone file is one or the other, and asking
-        // for the side it is not would find no path and colour nothing.
-        let side = self.file.only().unwrap_or(DiffVersion::Modified);
-        let Some(path) = path_of(&self.file, side) else {
+        let Some(key) = self.key.clone() else {
             return;
         };
-        painter.paint(Job {
-            version,
-            path,
-            lines: self.lines.clone(),
-        });
-    }
-
-    /// Whether the file is still waiting for colours.
-    pub fn painting(&self) -> bool {
-        self.colours.lines() < self.lines.len() as u32
-    }
-
-    /// Installs a piece the painter finished, if it is still wanted.
-    pub fn install(&mut self, painted: Painted) -> bool {
-        if painted.version != self.version {
-            return false;
+        if self.lines.is_empty() || syntax.busy(&key) {
+            return;
         }
-        self.colours.install(painted);
-        true
+        let want = want.min(self.lines.len() as u32 - 1);
+        store.want(&key, version);
+        let have = store.have(&key);
+        if have > want {
+            return;
+        }
+        syntax.send(SyntaxRequest {
+            key,
+            version,
+            text: Arc::clone(&self.lines),
+            have,
+            want,
+        });
     }
 
     /// Which file this is — structured, so a status line can style and shorten

@@ -2,7 +2,7 @@
 //!
 //! ---
 //!
-//! A [`Theme`] is a table of `Style`s, one per role, and nothing else. It has
+//! A [`Theme`] is a table of `Style`s, one per group, and nothing else. It has
 //! no idea what a hunk is, and the renderer has no idea what Catppuccin is;
 //! the two meet at the field names below.
 //!
@@ -17,26 +17,15 @@
 //! each use rather than encoded in a table nobody can read.
 
 pub mod basic;
-pub mod captures;
 pub mod catppuccin;
 pub mod code;
 mod colour;
-pub mod scopes;
 
 use ratatui::style::Style;
 
 pub use catppuccin::Flavour;
-pub use code::{Code, Token};
+pub use code::Code;
 pub use colour::{Rgb, blend};
-
-/// What a pen names, whichever engine produced it.
-///
-/// The two tables share one numbering — [`scopes`] first, [`captures`] after —
-/// so this is the only place that has to know there are two. Everything else
-/// asks a question about a [`Token`] and gets the same answer either way.
-pub fn token(pen: syntax::Pen) -> Option<Token> {
-    scopes::token(pen).or_else(|| captures::token(pen))
-}
 
 /// Every style the interface draws with.
 #[derive(Debug, Clone, Copy)]

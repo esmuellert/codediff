@@ -11,8 +11,9 @@
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::draw::{inline, side_by_side, single_file, status};
+use crate::draw::{Look, inline, side_by_side, single_file, status};
 use crate::render::{cells, layout};
+use crate::syntax::Store;
 use crate::theme::Theme;
 use crate::view::Buffer;
 use crate::view::buffer::BufferType;
@@ -24,7 +25,12 @@ use crate::view::{View, Viewport};
 /// pane's height becomes known, and page motions need it. A terminal resize
 /// therefore needs no event of its own — the next frame simply has a different
 /// height, and the viewport re-examines itself when told.
-pub fn render(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme) {
+pub fn render(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme, store: &Store) {
+    let look = Look {
+        theme,
+        syntax: view.syntax(),
+        store,
+    };
     let Some((body, status_area)) = layout::screen(area) else {
         return too_small(cells, area, theme);
     };
@@ -33,10 +39,9 @@ pub fn render(cells: &mut Cells, area: Rect, view: &mut View, theme: &Theme) {
     // walk of the tab's rectangles, and nothing below it changes.
     let rect = body;
 
-    let syntax = view.syntax();
     let (buffer, viewport) = view.focused_mut();
     viewport.set_height(u32::from(rect.height), buffer.view_lines());
-    if !pane(cells, rect, buffer, viewport, theme, syntax) {
+    if !pane(cells, rect, buffer, viewport, look) {
         return too_small(cells, area, theme);
     }
 
@@ -53,22 +58,17 @@ fn pane(
     area: Rect,
     buffer: &Buffer,
     viewport: &Viewport,
-    theme: &Theme,
-    syntax: bool,
+    look: Look<'_>,
 ) -> bool {
     // The one place a buffer kind decides which renderer runs. Side by side
     // and inline are separate variants, so the layout needs no field of its
     // own to be read here.
     match buffer.buffer_type() {
         BufferType::SideBySide(data) => {
-            side_by_side::draw(cells, area, buffer, data, viewport, theme, syntax)
+            side_by_side::draw(cells, area, buffer, data, viewport, look)
         }
-        BufferType::Inline(data) => {
-            inline::draw(cells, area, buffer, data, viewport, theme, syntax)
-        }
-        BufferType::SingleFile(data) => {
-            single_file::draw(cells, area, data, viewport, theme, syntax)
-        }
+        BufferType::Inline(data) => inline::draw(cells, area, buffer, data, viewport, look),
+        BufferType::SingleFile(data) => single_file::draw(cells, area, data, viewport, look),
     }
 }
 

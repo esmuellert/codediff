@@ -1,17 +1,16 @@
-//! What a piece of code is, and what colour a theme gives it.
+//! What colour a theme gives each part of a piece of code.
 //!
 //! ---
 //!
-//! Two halves that must not be confused. [`scopes`] says *what* a stretch of
-//! text is — that `keyword.control` is a keyword — which is a fact about
-//! TextMate and is therefore one table shared by every theme. [`Code`] says
-//! what a keyword *looks like*, which is taste, and every theme fills it in.
+//! Taste, and only taste. What a stretch of text *is* — that `keyword.control`
+//! is a keyword — is a fact about an engine, so [`syntax::Group`] and the two
+//! tables that produce it live in that crate. This file says what a keyword
+//! *looks like*, which every theme answers differently.
 //!
-//! Between them sits [`syntax::Pen`], a number. `syntax` is handed the scopes
-//! and hands back "bytes 4..9 are pen 12"; only this file knows that pen 12 is
-//! a keyword, and only a [`Code`] knows that a keyword is mauve. That is why a
-//! terminal with no 24-bit colour can still be highlighted, and why changing
-//! theme does not re-read a single line.
+//! Between them sits [`syntax::Pen`], a number. `syntax` hands back "bytes
+//! 4..9 are pen 12" and answers which group pen 12 is; only a [`Code`] knows
+//! that a keyword is mauve. That is why a terminal with no 24-bit colour can
+//! still be highlighted, and why changing theme does not re-read a line.
 //!
 //! **A [`Code`] holds `Color`, not `Style`.** Not a detail: syntax may only
 //! tint the letters, because a diff owns the background of every line it
@@ -19,164 +18,12 @@
 //! colour rather than a style means a theme *cannot* express the mistake.
 
 use ratatui::style::Color;
-use syntax::Pen;
+use syntax::{Group, Pen};
 
 use super::catppuccin::Palette;
 use super::colour::Rgb;
 
-/// What a stretch of text is, for the purpose of colouring it.
-///
-/// The roles Catppuccin parts, which is a superset of the ones VS Code's
-/// `dark_plus` parts. Fewer would be simpler and wrong: a theme that cannot
-/// tell a parameter from a field, or a regular expression from a string, is
-/// not the theme people installed.
-///
-/// Source: `catppuccin/nvim`, `lua/catppuccin/groups/{syntax,treesitter}.lua`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Token {
-    /// A comment or a docstring.
-    Comment,
-    /// Text between quotes.
-    String,
-    /// A single-character literal: `'c'`.
-    Character,
-    /// `\n` inside a string, which is not the string.
-    Escape,
-    /// A regular expression, which is not an ordinary string either.
-    Regexp,
-    /// A number, a boolean, `nil`, an enum member.
-    Constant,
-    /// `if`, `return`, `pub` — the words the language reserves.
-    Keyword,
-    /// `+`, `=>`, `&&`.
-    Operator,
-    /// `#include`, `#[cfg]`, a shebang.
-    Preprocessor,
-    /// A type, class, struct or trait.
-    Type,
-    /// A function or method, defined or called.
-    Function,
-    /// One the runtime provides: `println!`, `console.log`, `printf`.
-    Library,
-    /// An ordinary variable.
-    Variable,
-    /// One the language defines for you: `self`, `this`, `super`.
-    Builtin,
-    /// A parameter of a function, where the grammar says so.
-    Parameter,
-    /// A field, a member, a key in a data format.
-    Property,
-    /// A module or namespace.
-    Namespace,
-    /// A `goto` label, a `case`, a YAML anchor.
-    Label,
-    /// Brackets, commas, semicolons.
-    Punctuation,
-    /// A tag in markup: `<div>`.
-    Tag,
-    /// An attribute, decorator or annotation.
-    Attribute,
-    /// Something the grammar believes is wrong.
-    Invalid,
-
-    // --- markup, because a reviewer reads a great deal of it ---
-    /// `# Heading`.
-    Heading,
-    /// A URL.
-    Link,
-    /// The visible text of a link, and a footnote reference.
-    Reference,
-    /// Inline code, and a fenced block.
-    Raw,
-    /// A bullet or a number starting a list item.
-    List,
-    /// A block quote.
-    Quote,
-    /// Bold or italic text. Carries a colour as well as the flag, because
-    /// Catppuccin gives emphasis one.
-    Emphasis,
-    /// A line a `.patch` file adds, read as content rather than as our own
-    /// diff — reviewing a patch is reviewing a file like any other.
-    Inserted,
-    /// A line it removes.
-    Deleted,
-}
-
-impl Token {
-    /// Every token, once. Order is not meaningful; completeness is.
-    pub const ALL: [Token; 31] = [
-        Token::Comment,
-        Token::String,
-        Token::Character,
-        Token::Escape,
-        Token::Regexp,
-        Token::Constant,
-        Token::Keyword,
-        Token::Operator,
-        Token::Preprocessor,
-        Token::Type,
-        Token::Function,
-        Token::Library,
-        Token::Variable,
-        Token::Builtin,
-        Token::Parameter,
-        Token::Property,
-        Token::Namespace,
-        Token::Label,
-        Token::Punctuation,
-        Token::Tag,
-        Token::Attribute,
-        Token::Invalid,
-        Token::Heading,
-        Token::Link,
-        Token::Reference,
-        Token::Raw,
-        Token::List,
-        Token::Quote,
-        Token::Emphasis,
-        Token::Inserted,
-        Token::Deleted,
-    ];
-
-    /// What to call it in a message.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Token::Comment => "comment",
-            Token::String => "string",
-            Token::Character => "character",
-            Token::Escape => "escape",
-            Token::Regexp => "regexp",
-            Token::Constant => "constant",
-            Token::Keyword => "keyword",
-            Token::Operator => "operator",
-            Token::Preprocessor => "preprocessor",
-            Token::Type => "type",
-            Token::Function => "function",
-            Token::Library => "library",
-            Token::Variable => "variable",
-            Token::Builtin => "builtin",
-            Token::Parameter => "parameter",
-            Token::Property => "property",
-            Token::Namespace => "namespace",
-            Token::Label => "label",
-            Token::Punctuation => "punctuation",
-            Token::Tag => "tag",
-            Token::Attribute => "attribute",
-            Token::Invalid => "invalid",
-            Token::Heading => "heading",
-            Token::Link => "link",
-            Token::Reference => "reference",
-            Token::Raw => "raw",
-            Token::List => "list",
-            Token::Quote => "quote",
-            Token::Emphasis => "emphasis",
-            Token::Inserted => "inserted",
-            Token::Deleted => "deleted",
-        }
-    }
-}
-
-/// The colour a theme gives each [`Token`].
+/// The colour a theme gives each [`Group`].
 ///
 /// Colours, not styles — see the module note. Bold and italic arrive from the
 /// scope table instead, because they are structural: a heading is bold in
@@ -220,41 +67,41 @@ pub struct Code {
 impl Code {
     /// The colour of one token.
     ///
-    /// An exhaustive match rather than an array, so adding a [`Token`] fails
+    /// An exhaustive match rather than an array, so adding a [`Group`] fails
     /// to compile until every theme has said what it looks like.
-    pub const fn colour(&self, token: Token) -> Color {
+    pub const fn colour(&self, token: Group) -> Color {
         match token {
-            Token::Comment => self.comment,
-            Token::String => self.string,
-            Token::Character => self.character,
-            Token::Escape => self.escape,
-            Token::Regexp => self.regexp,
-            Token::Constant => self.constant,
-            Token::Keyword => self.keyword,
-            Token::Operator => self.operator,
-            Token::Preprocessor => self.preprocessor,
-            Token::Type => self.kind,
-            Token::Function => self.function,
-            Token::Library => self.library,
-            Token::Variable => self.variable,
-            Token::Builtin => self.builtin,
-            Token::Parameter => self.parameter,
-            Token::Property => self.property,
-            Token::Namespace => self.namespace,
-            Token::Label => self.label,
-            Token::Punctuation => self.punctuation,
-            Token::Tag => self.tag,
-            Token::Attribute => self.attribute,
-            Token::Invalid => self.invalid,
-            Token::Heading => self.heading,
-            Token::Link => self.link,
-            Token::Reference => self.reference,
-            Token::Raw => self.raw,
-            Token::List => self.list,
-            Token::Quote => self.quote,
-            Token::Emphasis => self.emphasis,
-            Token::Inserted => self.inserted,
-            Token::Deleted => self.deleted,
+            Group::Comment => self.comment,
+            Group::String => self.string,
+            Group::Character => self.character,
+            Group::Escape => self.escape,
+            Group::Regexp => self.regexp,
+            Group::Constant => self.constant,
+            Group::Keyword => self.keyword,
+            Group::Operator => self.operator,
+            Group::Preprocessor => self.preprocessor,
+            Group::Type => self.kind,
+            Group::Function => self.function,
+            Group::Library => self.library,
+            Group::Variable => self.variable,
+            Group::Builtin => self.builtin,
+            Group::Parameter => self.parameter,
+            Group::Property => self.property,
+            Group::Namespace => self.namespace,
+            Group::Label => self.label,
+            Group::Punctuation => self.punctuation,
+            Group::Tag => self.tag,
+            Group::Attribute => self.attribute,
+            Group::Invalid => self.invalid,
+            Group::Heading => self.heading,
+            Group::Link => self.link,
+            Group::Reference => self.reference,
+            Group::Raw => self.raw,
+            Group::List => self.list,
+            Group::Quote => self.quote,
+            Group::Emphasis => self.emphasis,
+            Group::Inserted => self.inserted,
+            Group::Deleted => self.deleted,
         }
     }
 
@@ -269,7 +116,7 @@ impl Code {
     /// only mean spans outlived the palette that made them — so it draws
     /// plainly, which is what an unhighlighted line does anyway.
     pub fn pen(&self, pen: Option<Pen>) -> Option<Color> {
-        Some(self.colour(super::token(pen?)?))
+        Some(self.colour(syntax::group(pen?)?))
     }
 }
 
@@ -321,17 +168,21 @@ pub const fn catppuccin(p: Palette) -> Code {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::{Theme, scopes};
+    use crate::theme::Theme;
 
     #[test]
-    fn a_pen_resolves_to_the_colour_its_scope_asked_for() {
+    fn a_pen_resolves_to_the_colour_its_group_asked_for() {
+        // Which pen is which group is `syntax`'s to say; this only checks that
+        // a theme answers for whatever it says.
         let code = Theme::DARK.code;
-        for (n, token) in scopes::SCOPES.iter().map(|s| s.token).enumerate() {
+        for rule in syntax::rules() {
+            let pen = rule.style.pen.expect("every rule carries its pen");
+            let group = syntax::group(pen).expect("and every pen names a group");
             assert_eq!(
-                code.pen(Some(Pen(n as u16))),
-                Some(code.colour(token)),
+                code.pen(Some(pen)),
+                Some(code.colour(group)),
                 "{}",
-                scopes::SCOPES[n].selector
+                rule.selector
             );
         }
         assert_eq!(code.pen(None), None);
@@ -343,7 +194,7 @@ mod tests {
         // A theme that resolved a token to its own background would have
         // written a rule that erases text.
         for theme in Theme::ALL {
-            for token in Token::ALL {
+            for token in Group::ALL {
                 let colour = theme.code.colour(token);
                 if colour == Color::Reset {
                     // Not a colour: "whatever this terminal uses for text".

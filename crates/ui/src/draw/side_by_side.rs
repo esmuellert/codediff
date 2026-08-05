@@ -10,11 +10,11 @@ use align::{DiffLayout, DiffVersion};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::paint::Spans;
+use crate::draw::Look;
 use crate::render::layout;
 use crate::render::line::Painter;
 use crate::render::{cells, column};
-use crate::theme::Theme;
+use crate::syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::SideBySide;
@@ -29,9 +29,9 @@ pub fn draw(
     buffer: &Buffer,
     data: &SideBySide,
     view: &Viewport,
-    theme: &Theme,
-    syntax: bool,
+    look: Look<'_>,
 ) -> bool {
+    let Look { theme, syntax, .. } = look;
     let alignment = data.alignment();
     let Some(frame) = layout::columns(
         area,
@@ -54,7 +54,11 @@ pub fn draw(
     let painter = Painter {
         alignment,
         theme,
-        syntax: if syntax { data.spans() } else { Spans::Off },
+        syntax: if syntax {
+            data.spans(look.store)
+        } else {
+            Spans::Off
+        },
         top: visible.start,
         cursor: view.cursor(),
         left: view.left(),

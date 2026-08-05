@@ -18,7 +18,7 @@ const COMMENT: Pen = Pen(2);
 const KEYWORD: Pen = Pen(3);
 
 fn palette() -> Palette {
-    Palette::new(
+    Palette::from_tables(
         &[
             Rule::new("string", Style::pen(STRING)),
             Rule::new("comment", Style::pen(COMMENT)),
@@ -41,10 +41,9 @@ fn read(path: &str, source: &str) -> Vec<Vec<Span>> {
         .find(Clues::new(path, None), lines.len())
         .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &lines);
-    highlighted.reach(&engine, &palette, lines.len() as u32, &lines);
-    (0..lines.len())
-        .map(|n| highlighted.line(n as u32).to_vec())
-        .collect()
+    let mut spans = Vec::new();
+    highlighted.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
+    spans
 }
 
 /// The colour covering the first non-space character of a line.
@@ -129,14 +128,19 @@ fn reading_lazily_gives_the_same_answer_as_reading_it_all() {
         .expect("a grammar");
 
     let mut piecemeal = Highlighted::new(&engine, grammar, &palette, &lines);
-    // Reached in three goes, as a reader scrolling would.
+    // Reached in three goes, as a reader scrolling would. Each call appends
+    // only what it newly read, so the buffer is what the caller would have
+    // installed — which makes this a check on the joins as well as the
+    // colours.
+    let mut spans = Vec::new();
     for line in [0, 2, 5] {
-        piecemeal.reach(&engine, &palette, line, &lines);
+        piecemeal.reach(&engine, &palette, line, &lines, &mut spans);
     }
 
     let whole = read("a.rs", source);
+    assert_eq!(spans.len(), whole.len(), "no line read twice or missed");
     for (n, expected) in whole.iter().enumerate() {
-        assert_eq!(piecemeal.line(n as u32), expected, "line {n}");
+        assert_eq!(&spans[n], expected, "line {n}");
     }
 }
 

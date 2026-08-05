@@ -54,11 +54,11 @@ const fn ink(colour: Color) -> Style {
 
 /// Syntax colours from the sixteen every terminal has.
 ///
-/// The same roles Catppuccin parts, resolved onto a palette a quarter the
+/// The same groups Catppuccin parts, resolved onto a palette a quarter the
 /// size, so several of them necessarily land together — `constant` and
 /// `library` share a colour here because Catppuccin gives both peach, and
 /// `character` and `operator` share one because teal and sky are neighbours.
-/// The roles stay apart in the table so a richer theme can part them; only
+/// The groups stay apart in the table so a richer theme can part them; only
 /// this rendering of them collapses.
 ///
 /// The bright half on a dark background and the plain half on a light one:
@@ -99,7 +99,7 @@ const DARK_CODE: Code = Code {
     deleted: Color::LightRed,
 };
 
-/// The same roles for a light terminal. See [`DARK_CODE`].
+/// The same groups for a light terminal. See [`DARK_CODE`].
 const LIGHT_CODE: Code = Code {
     comment: Color::DarkGray,
     string: Color::Green,
@@ -215,7 +215,7 @@ mod tests {
             }
             // Syntax colours too: they are the largest table here, and the
             // one most easily filled in by copying a 24-bit theme.
-            for token in crate::theme::Token::ALL {
+            for token in syntax::Group::ALL {
                 assert!(
                     !matches!(theme.code.colour(token), Color::Rgb(..)),
                     "{}: {}",

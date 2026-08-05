@@ -9,8 +9,8 @@
 //! Snippets are small and self-contained so the expected answer is visible
 //! next to the source.
 
+use syntax::Group;
 use syntax::{Clues, Engine, Highlighted, Palette};
-use ui::theme::Token;
 
 /// The token covering the first occurrence of `needle`.
 ///
@@ -23,16 +23,13 @@ use ui::theme::Token;
 ///
 /// `None` means no rule claimed it, which for these cases is a failure — the
 /// point of each is that something specific claims it.
-fn token_of(path: &str, source: &str, needle: &str) -> Option<Token> {
+fn token_of(path: &str, source: &str, needle: &str) -> Option<Group> {
     read(path, source, needle)
 }
 
-fn read(path: &str, source: &str, needle: &str) -> Option<Token> {
+fn read(path: &str, source: &str, needle: &str) -> Option<Group> {
     let engine = Engine::new();
-    let palette = Palette::new(
-        &ui::theme::scopes::rules(),
-        &ui::theme::captures::captures(),
-    );
+    let palette = Palette::new();
     let lines: Vec<String> = source.lines().map(str::to_owned).collect();
     let grammar = engine
         .find(
@@ -41,7 +38,8 @@ fn read(path: &str, source: &str, needle: &str) -> Option<Token> {
         )
         .unwrap_or_else(|| panic!("no grammar claims {path}"));
     let mut read = Highlighted::new(&engine, grammar, &palette, &lines);
-    read.reach(&engine, &palette, lines.len() as u32, &lines);
+    let mut spans = Vec::new();
+    read.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
 
     let (n, byte) = lines
         .iter()
@@ -49,21 +47,23 @@ fn read(path: &str, source: &str, needle: &str) -> Option<Token> {
         .find_map(|(n, line)| line.find(needle).map(|b| (n, b as u32)))
         .unwrap_or_else(|| panic!("{needle:?} is not in the snippet"));
 
-    read.line(n as u32)
-        .iter()
+    spans
+        .get(n)
+        .into_iter()
+        .flatten()
         .find(|span| span.bytes.contains(&byte))
         .and_then(|span| span.style.pen)
-        .and_then(ui::theme::token)
+        .and_then(syntax::group)
 }
 
-fn check(cases: &[(&str, &str, &str, Token)]) {
+fn check(cases: &[(&str, &str, &str, Group)]) {
     let mut wrong = Vec::new();
     for (path, source, needle, want) in cases {
         let got = token_of(path, source, needle);
         if got != Some(*want) {
             wrong.push(format!(
                 "{path}: {needle:?} is {} but should be {}",
-                got.map_or("nothing", Token::name),
+                got.map_or("nothing", Group::name),
                 want.name(),
             ));
         }
@@ -91,22 +91,22 @@ impl Widget {
 #[test]
 fn rust() {
     check(&[
-        ("a.rs", RUST, "//! A doc", Token::Comment),
+        ("a.rs", RUST, "//! A doc", Group::Comment),
         // `fn` is `storage.type.function`, not a keyword. A table with only
         // `keyword` in it misses this, which is why the table is scope paths.
-        ("a.rs", RUST, "fn ", Token::Keyword),
-        ("a.rs", RUST, "pub", Token::Keyword),
-        ("a.rs", RUST, "let ", Token::Keyword),
-        ("a.rs", RUST, "u32", Token::Keyword),
-        ("a.rs", RUST, "use ", Token::Keyword),
-        ("a.rs", RUST, "Widget", Token::Type),
-        ("a.rs", RUST, "render", Token::Function),
-        ("a.rs", RUST, "self.label", Token::Builtin),
-        ("a.rs", RUST, "times", Token::Parameter),
-        ("a.rs", RUST, "derive", Token::Attribute),
-        ("a.rs", RUST, "'\\t'", Token::Character),
-        ("a.rs", RUST, "println", Token::Library),
-        ("a.rs", RUST, "1", Token::Constant),
+        ("a.rs", RUST, "fn ", Group::Keyword),
+        ("a.rs", RUST, "pub", Group::Keyword),
+        ("a.rs", RUST, "let ", Group::Keyword),
+        ("a.rs", RUST, "u32", Group::Keyword),
+        ("a.rs", RUST, "use ", Group::Keyword),
+        ("a.rs", RUST, "Widget", Group::Type),
+        ("a.rs", RUST, "render", Group::Function),
+        ("a.rs", RUST, "self.label", Group::Builtin),
+        ("a.rs", RUST, "times", Group::Parameter),
+        ("a.rs", RUST, "derive", Group::Attribute),
+        ("a.rs", RUST, "'\\t'", Group::Character),
+        ("a.rs", RUST, "println", Group::Library),
+        ("a.rs", RUST, "1", Group::Constant),
     ]);
 }
 
@@ -126,17 +126,17 @@ export class Widget implements Shape {
 #[test]
 fn typescript() {
     check(&[
-        ("a.ts", TYPESCRIPT, "// A comment", Token::Comment),
-        ("a.ts", TYPESCRIPT, "import", Token::Keyword),
-        ("a.ts", TYPESCRIPT, "class", Token::Keyword),
-        ("a.ts", TYPESCRIPT, "Widget", Token::Type),
-        ("a.ts", TYPESCRIPT, "sealed", Token::Attribute),
-        ("a.ts", TYPESCRIPT, "/^", Token::Regexp),
-        ("a.ts", TYPESCRIPT, "node:fs", Token::String),
-        ("a.ts", TYPESCRIPT, "this", Token::Builtin),
+        ("a.ts", TYPESCRIPT, "// A comment", Group::Comment),
+        ("a.ts", TYPESCRIPT, "import", Group::Keyword),
+        ("a.ts", TYPESCRIPT, "class", Group::Keyword),
+        ("a.ts", TYPESCRIPT, "Widget", Group::Type),
+        ("a.ts", TYPESCRIPT, "sealed", Group::Attribute),
+        ("a.ts", TYPESCRIPT, "/^", Group::Regexp),
+        ("a.ts", TYPESCRIPT, "node:fs", Group::String),
+        ("a.ts", TYPESCRIPT, "this", Group::Builtin),
         // The reason `meta.template.expression` is in the table: without it
         // the whole template literal is one shade of green.
-        ("a.ts", TYPESCRIPT, "${", Token::Escape),
+        ("a.ts", TYPESCRIPT, "${", Group::Escape),
     ]);
 }
 
@@ -156,15 +156,15 @@ class Widget(Shape):
 #[test]
 fn python() {
     check(&[
-        ("a.py", PYTHON, "# A comment", Token::Comment),
-        ("a.py", PYTHON, "import", Token::Keyword),
-        ("a.py", PYTHON, "class Widget", Token::Keyword),
-        ("a.py", PYTHON, "Widget", Token::Type),
-        ("a.py", PYTHON, "Shape", Token::Type),
-        ("a.py", PYTHON, "dataclass", Token::Attribute),
-        ("a.py", PYTHON, "render", Token::Function),
-        ("a.py", PYTHON, "self.label", Token::Builtin),
-        ("a.py", PYTHON, "\"x\"", Token::String),
+        ("a.py", PYTHON, "# A comment", Group::Comment),
+        ("a.py", PYTHON, "import", Group::Keyword),
+        ("a.py", PYTHON, "class Widget", Group::Keyword),
+        ("a.py", PYTHON, "Widget", Group::Type),
+        ("a.py", PYTHON, "Shape", Group::Type),
+        ("a.py", PYTHON, "dataclass", Group::Attribute),
+        ("a.py", PYTHON, "render", Group::Function),
+        ("a.py", PYTHON, "self.label", Group::Builtin),
+        ("a.py", PYTHON, "\"x\"", Group::String),
     ]);
 }
 
@@ -185,13 +185,13 @@ func (w *Widget) Render(times int) string {
 #[test]
 fn go() {
     check(&[
-        ("a.go", GO, "// A comment", Token::Comment),
-        ("a.go", GO, "package", Token::Keyword),
-        ("a.go", GO, "type", Token::Keyword),
-        ("a.go", GO, "Widget struct", Token::Type),
-        ("a.go", GO, "struct {", Token::Keyword),
-        ("a.go", GO, "Render", Token::Function),
-        ("a.go", GO, "\"%s %d\"", Token::String),
+        ("a.go", GO, "// A comment", Group::Comment),
+        ("a.go", GO, "package", Group::Keyword),
+        ("a.go", GO, "type", Group::Keyword),
+        ("a.go", GO, "Widget struct", Group::Type),
+        ("a.go", GO, "struct {", Group::Keyword),
+        ("a.go", GO, "Render", Group::Function),
+        ("a.go", GO, "\"%s %d\"", Group::String),
     ]);
 }
 
@@ -212,21 +212,21 @@ int render(int times) {
 #[test]
 fn c() {
     check(&[
-        ("a.c", C, "/* A comment", Token::Comment),
-        ("a.c", C, "include", Token::Keyword),
-        ("a.c", C, "<stdio.h>", Token::String),
-        ("a.c", C, "struct", Token::Keyword),
+        ("a.c", C, "/* A comment", Group::Comment),
+        ("a.c", C, "include", Group::Keyword),
+        ("a.c", C, "<stdio.h>", Group::String),
+        ("a.c", C, "struct", Group::Keyword),
         // C's grammar calls `int` a type rather than a built-in type, so it
         // wears the type colour. Neovim shows exactly the same, for the same
         // reason: this is the grammar's judgement and we do not overrule it.
         // The matcher disagrees — see `the_two_engines_differ_where_the_grammars_do`.
-        ("a.c", C, "int render", Token::Type),
-        ("a.c", C, "render", Token::Function),
-        ("a.c", C, "'\\t'", Token::Character),
+        ("a.c", C, "int render", Group::Type),
+        ("a.c", C, "render", Group::Function),
+        ("a.c", C, "'\\t'", Group::Character),
         // Not `Escape`: nothing in C's grammar picks a format specifier out
         // of a string, where the matcher's `constant.other.placeholder` does.
         // A small, real loss, kept visible here rather than in a comment.
-        ("a.c", C, "%d", Token::String),
+        ("a.c", C, "%d", Group::String),
     ]);
 }
 
@@ -243,13 +243,13 @@ Some **bold** and *slanted* words, `inline code`, and
 #[test]
 fn markdown() {
     check(&[
-        ("a.md", MARKDOWN, "# A heading", Token::Heading),
-        ("a.md", MARKDOWN, "**bold**", Token::Emphasis),
-        ("a.md", MARKDOWN, "*slanted*", Token::Emphasis),
-        ("a.md", MARKDOWN, "`inline", Token::Raw),
-        ("a.md", MARKDOWN, "https://", Token::Link),
-        ("a.md", MARKDOWN, "> A quotation", Token::Quote),
-        ("a.md", MARKDOWN, "- a bullet", Token::List),
+        ("a.md", MARKDOWN, "# A heading", Group::Heading),
+        ("a.md", MARKDOWN, "**bold**", Group::Emphasis),
+        ("a.md", MARKDOWN, "*slanted*", Group::Emphasis),
+        ("a.md", MARKDOWN, "`inline", Group::Raw),
+        ("a.md", MARKDOWN, "https://", Group::Link),
+        ("a.md", MARKDOWN, "> A quotation", Group::Quote),
+        ("a.md", MARKDOWN, "- a bullet", Group::List),
     ]);
 }
 
@@ -263,10 +263,10 @@ const JSON: &str = r#"{
 #[test]
 fn json() {
     check(&[
-        ("a.json", JSON, "\"label\"", Token::Property),
-        ("a.json", JSON, "\"widget\"", Token::String),
-        ("a.json", JSON, "3", Token::Constant),
-        ("a.json", JSON, "true", Token::Constant),
+        ("a.json", JSON, "\"label\"", Group::Property),
+        ("a.json", JSON, "\"widget\"", Group::String),
+        ("a.json", JSON, "3", Group::Constant),
+        ("a.json", JSON, "true", Group::Constant),
     ]);
 }
 
@@ -281,10 +281,10 @@ widget:
 #[test]
 fn yaml() {
     check(&[
-        ("a.yaml", YAML, "# A comment", Token::Comment),
-        ("a.yaml", YAML, "defaults", Token::Property),
-        ("a.yaml", YAML, "3", Token::Constant),
-        ("a.yaml", YAML, "\"x\"", Token::String),
+        ("a.yaml", YAML, "# A comment", Group::Comment),
+        ("a.yaml", YAML, "defaults", Group::Property),
+        ("a.yaml", YAML, "3", Group::Constant),
+        ("a.yaml", YAML, "\"x\"", Group::String),
     ]);
 }
 
@@ -297,12 +297,12 @@ const HTML: &str = r#"<!-- A comment. -->
 #[test]
 fn html() {
     check(&[
-        ("a.html", HTML, "<!-- A comment", Token::Comment),
-        ("a.html", HTML, "div", Token::Tag),
-        ("a.html", HTML, "class", Token::Attribute),
+        ("a.html", HTML, "<!-- A comment", Group::Comment),
+        ("a.html", HTML, "div", Group::Tag),
+        ("a.html", HTML, "class", Group::Attribute),
         // The quotes are not part of the value node, so the needle is the
         // value itself.
-        ("a.html", HTML, "page", Token::String),
+        ("a.html", HTML, "page", Group::String),
     ]);
 }
 
@@ -318,12 +318,12 @@ render() {
 #[test]
 fn shell() {
     check(&[
-        ("build.sh", SHELL, "# A comment", Token::Comment),
-        ("build.sh", SHELL, "\"widget\"", Token::String),
-        ("build.sh", SHELL, "render", Token::Function),
+        ("build.sh", SHELL, "# A comment", Group::Comment),
+        ("build.sh", SHELL, "\"widget\"", Group::String),
+        ("build.sh", SHELL, "render", Group::Function),
         // Every command is a function to the shell's grammar; it has no
         // notion of a builtin. The matcher calls it `support.function`.
-        ("build.sh", SHELL, "printf", Token::Function),
+        ("build.sh", SHELL, "printf", Group::Function),
     ]);
 }
 
@@ -333,7 +333,7 @@ fn a_shebang_alone_is_enough_to_pick_a_grammar() {
     // ordinary case for a script in `bin/`.
     assert_eq!(
         token_of("bin/release", SHELL, "# A comment"),
-        Some(Token::Comment)
+        Some(Group::Comment)
     );
 }
 
@@ -350,7 +350,7 @@ fn a_language_with_a_parser_is_answered_by_the_parser() {
     // This pins the *consequence* rather than the mechanism: `int` here is C's
     // grammar's judgement, and if the file ever fell back to the matcher it
     // would say `Keyword` instead. See D39 and D41.
-    assert_eq!(token_of("a.c", C, "int render"), Some(Token::Type));
+    assert_eq!(token_of("a.c", C, "int render"), Some(Group::Type));
 }
 
 #[test]
@@ -359,6 +359,6 @@ fn a_language_with_no_parser_still_reaches_the_matcher() {
     // it is coloured anyway.
     assert_eq!(
         token_of("Makefile", "# a comment\nall:\n\techo hi\n", "# a comment"),
-        Some(Token::Comment)
+        Some(Group::Comment)
     );
 }

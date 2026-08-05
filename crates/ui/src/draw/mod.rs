@@ -40,3 +40,24 @@ mod single_file;
 mod status;
 
 pub use screen::render;
+
+use crate::syntax::Store;
+use crate::theme::Theme;
+
+/// What every pane of a frame is drawn *with*, as opposed to what it draws.
+///
+/// Gathered for the same reason [`render::line::Painter`] is one level down:
+/// these three travel together through every renderer here, and passing them
+/// individually made each take eight arguments in an order nothing checked.
+///
+/// [`render::line::Painter`]: crate::render::line::Painter
+#[derive(Clone, Copy)]
+pub struct Look<'a> {
+    pub theme: &'a Theme,
+    /// Whether code is coloured by its language.
+    pub syntax: bool,
+    /// Every colour that has arrived, for any file. A renderer looks up the
+    /// one it is drawing and takes what is there, which before the answers
+    /// arrive is nothing.
+    pub store: &'a Store,
+}

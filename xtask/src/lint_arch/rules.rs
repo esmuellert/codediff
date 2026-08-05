@@ -147,19 +147,31 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 /// The one file allowed to start a thread, and why nowhere else may.
 ///
 /// Concurrency is the easiest thing in this program to get wrong and the
-/// hardest to test, so there is exactly one place it exists: the painter, which
-/// colours text off the drawing thread. Everything else is single-threaded and
-/// can be reasoned about as such.
+/// hardest to test, so there is exactly one place it exists: the syntax
+/// worker, which colours text off the drawing thread. Everything else is
+/// single-threaded and can be reasoned about as such.
 ///
 /// A second `spawn` anywhere would mean two things sharing the view, and the
 /// question "which thread owns this?" would stop having an obvious answer. If
-/// another background job is ever wanted, it belongs beside the painter or
-/// behind the same channel — not in a new corner. See D41.
-pub const THREAD_FILE: &str = "crates/ui/src/paint.rs";
+/// another background job is ever wanted, it belongs beside this one or behind
+/// the same channel — not in a new corner. See D41.
+pub const THREAD_FILE: &str = "crates/ui/src/syntax/mod.rs";
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 
-pub const BLIND_DIRS: &[(&str, &str, &str)] = &[(
-    "crates/ui/src/render",
-    "crate::view",
-    "a brick is handed what it draws; `ui/src/draw` is what knows the model",
-)];
+pub const BLIND_DIRS: &[(&str, &str, &str)] = &[
+    (
+        "crates/ui/src/render",
+        "crate::view",
+        "a brick is handed what it draws; `ui/src/draw` is what knows the model",
+    ),
+    // The interface used to build the scope and capture tables itself and hand
+    // them in, which meant it held both engines' vocabulary — `@type.builtin`,
+    // `punctuation.definition.string` — outside the directory that is supposed
+    // to be the only place either engine is known. The words moved to
+    // `syntax::engine`; this stops them coming back. See D43.
+    (
+        "crates/ui/src",
+        "syntax::engine",
+        "the engines' own words live in `syntax`; `ui` asks for a palette and a role",
+    ),
+];

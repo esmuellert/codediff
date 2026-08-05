@@ -24,7 +24,7 @@ const MARKUP: Pen = Pen(4);
 /// both the same pens is what lets one test hold either way, and it is also
 /// how a language that changes engines is caught: the answer must not move.
 fn palette() -> Palette {
-    Palette::new(
+    Palette::from_tables(
         &[
             Rule::new("keyword", Style::pen(KEYWORD)),
             Rule::new("storage", Style::pen(KEYWORD)),
@@ -56,10 +56,9 @@ fn read(path: &str, source: &str) -> Vec<Vec<Span>> {
         .find(Clues::new(path, first), lines.len())
         .unwrap_or_else(|| panic!("no grammar claims {path}"));
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &lines);
-    highlighted.reach(&engine, &palette, lines.len() as u32, &lines);
-    (0..lines.len())
-        .map(|n| highlighted.line(n as u32).to_vec())
-        .collect()
+    let mut spans = Vec::new();
+    highlighted.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
+    spans
 }
 
 /// Whether any span of the file uses the given pen.
@@ -259,7 +258,7 @@ fn an_unrecognised_file_is_plain_rather_than_a_failure() {
     );
     // And the caller's answer for such a file is "no spans", not a panic.
     let nothing = Highlighted::none();
-    assert!(nothing.line(0).is_empty());
+    assert_eq!(nothing.done(), 0);
     assert!(nothing.finished());
 }
 

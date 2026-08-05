@@ -41,7 +41,7 @@ pub use tab::{Layout, PaneId, Tab};
 pub use viewport::Viewport;
 
 use crate::input::KeymapType;
-use crate::paint::{Painted, Painter, Version};
+use crate::syntax::{Store, Syntax, Version};
 
 /// A buffer's place in [`View::buffers`].
 ///
@@ -67,11 +67,14 @@ pub struct View {
     /// One switch for the session rather than one per buffer: see
     /// [`ViewAction::ToggleSyntax`](crate::input::ViewAction::ToggleSyntax).
     syntax: bool,
-    /// Counts paint requests, so an answer can be matched to its question.
+    /// Which content the open files are at.
     ///
-    /// A file watcher will re-ask for a file that changed, and the answer to
-    /// the previous ask must not be mistaken for the new one.
-    painted: u64,
+    /// One number for all of them while nothing can change under us: a diff
+    /// is a snapshot, so every file is at its first and only version. A file
+    /// watcher will make this per file, and that is the point of carrying it
+    /// at all — an answer for text that has been replaced must be told apart
+    /// from a current one rather than drawn over the new lines.
+    version: Version,
 }
 
 /// A floating layer over the tabs.
@@ -90,7 +93,7 @@ impl View {
             active: 0,
             overlays: Vec::new(),
             syntax: true,
-            painted: 0,
+            version: Version(1),
         }
     }
 
@@ -103,43 +106,26 @@ impl View {
         self.syntax = !self.syntax;
     }
 
-    /// Asks the painter for everything on screen.
+    /// Asks for the colours of everything on screen, and a little beyond.
     ///
-    /// Called when a buffer is opened, and after a layout toggle rebuilds one.
-    /// Cheap: it hands over the lines and returns.
-    pub fn start_painting(&mut self, painter: &Painter) {
-        let version = self.next_version();
-        let (buffer, _) = self.focused_mut();
-        buffer.start_painting(painter, version);
-    }
-
-    /// Installs a piece the painter finished, and says whether anything on
-    /// screen changed.
-    pub fn install(&mut self, painted: Painted) -> bool {
-        let mut changed = false;
-        for buffer in &mut self.buffers {
-            // Cloning is not possible — a piece owns its spans — so this asks
-            // each buffer in turn and stops at the one that wanted it.
-            if buffer.install(Painted {
-                version: painted.version,
-                from: painted.from,
-                spans: painted.spans.clone(),
-            }) {
-                changed = true;
-                break;
-            }
-        }
-        changed
-    }
-
-    /// Whether any buffer is still waiting for colours.
-    pub fn painting(&self) -> bool {
-        self.buffers.iter().any(Buffer::painting)
-    }
-
-    fn next_version(&mut self) -> Version {
-        self.painted += 1;
-        Version(self.painted)
+    /// Called after anything that can change what is visible — opening a
+    /// buffer, scrolling, toggling the layout. Cheap and usually silent: the
+    /// store answers most of the time, and a request goes out only when the
+    /// reader has moved past what has been coloured.
+    ///
+    /// **The margin is what keeps scrolling smooth.** Asking only for the
+    /// screen would mean a request every time a line came into view, each
+    /// waiting on the one before. Two thousand lines is one chunk of the
+    /// worker's work, so an ordinary scroll finds its colours already there.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store) {
+        const MARGIN: u32 = 2_000;
+        let version = self.version;
+        let (buffer, viewport) = self.focused_mut();
+        // View lines, not file lines. Filler rows make a view line number at
+        // least its file line number, so this over-asks slightly and never
+        // under-asks; the buffer clamps it to the length of each side.
+        let visible = viewport.visible(buffer.view_lines());
+        buffer.request(syntax, store, version, visible.end + MARGIN);
     }
 
     pub fn buffer(&self, id: BufferId) -> &Buffer {

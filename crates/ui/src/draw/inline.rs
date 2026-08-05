@@ -15,11 +15,11 @@ use align::{DiffLayout, DiffVersion, Slot, ViewLine};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::paint::Spans;
+use crate::draw::Look;
 use crate::render::layout::{self, InlineFrame};
 use crate::render::line::{self, Painter};
 use crate::render::{cells, gutter};
-use crate::theme::Theme;
+use crate::syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::Inline;
@@ -34,9 +34,9 @@ pub fn draw(
     buffer: &Buffer,
     data: &Inline,
     view: &Viewport,
-    theme: &Theme,
-    syntax: bool,
+    look: Look<'_>,
 ) -> bool {
+    let Look { theme, syntax, .. } = look;
     let alignment = data.alignment();
     let Some(frame) = layout::inline(
         area,
@@ -50,7 +50,11 @@ pub fn draw(
     let painter = Painter {
         alignment,
         theme,
-        syntax: if syntax { data.spans() } else { Spans::Off },
+        syntax: if syntax {
+            data.spans(look.store)
+        } else {
+            Spans::Off
+        },
         top: visible.start,
         cursor: view.cursor(),
         left: view.left(),

@@ -26,7 +26,7 @@ use file_types::File;
 use super::{BufferType, Inline, SideBySide, SingleFile};
 use crate::diff::Diff;
 use crate::input::{BufferAction, KeymapType};
-use crate::paint::{Painted, Painter, Version};
+use crate::syntax::{Store, Syntax, Version};
 use crate::view::Viewport;
 
 /// A sequence of view lines you can scroll through.
@@ -117,34 +117,19 @@ impl Buffer {
         &self.buffer_type
     }
 
-    /// Asks the painter for whatever this buffer is showing.
+    /// Asks for everything up to `want`, whatever this buffer is showing.
     ///
     /// Returns at once. The colours arrive over the following frames, and the
-    /// buffer draws plainly until they do — which is the whole point of the
-    /// painter having a thread: nothing here can be made to wait.
-    pub fn start_painting(&mut self, painter: &Painter, version: Version) {
+    /// buffer draws plainly until they do — which is the whole point of
+    /// colouring having a thread: nothing here can be made to wait.
+    ///
+    /// Sends nothing when the store already has enough, which after the first
+    /// screen is the ordinary case.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
         match &mut self.buffer_type {
-            BufferType::SideBySide(d) => d.start_painting(painter, version),
-            BufferType::Inline(d) => d.start_painting(painter, version),
-            BufferType::SingleFile(f) => f.start_painting(painter, version),
-        }
-    }
-
-    /// Whether this buffer is still waiting for colours.
-    pub fn painting(&self) -> bool {
-        match &self.buffer_type {
-            BufferType::SideBySide(d) => d.painting(),
-            BufferType::Inline(d) => d.painting(),
-            BufferType::SingleFile(f) => f.painting(),
-        }
-    }
-
-    /// Installs a piece the painter finished, and says whether it was wanted.
-    pub fn install(&mut self, painted: Painted) -> bool {
-        match &mut self.buffer_type {
-            BufferType::SideBySide(d) => d.install(painted),
-            BufferType::Inline(d) => d.install(painted),
-            BufferType::SingleFile(f) => f.install(painted),
+            BufferType::SideBySide(d) => d.request(syntax, store, version, want),
+            BufferType::Inline(d) => d.request(syntax, store, version, want),
+            BufferType::SingleFile(f) => f.request(syntax, store, version, want),
         }
     }
 

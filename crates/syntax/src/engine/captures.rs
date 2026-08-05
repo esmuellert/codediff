@@ -1,11 +1,11 @@
-//! Which tree-sitter capture wears which pen.
+//! Which tree-sitter capture is which [`Group`].
 //!
 //! ---
 //!
-//! The parser's half of the theme, and the exact twin of [`scopes`]: that file
-//! maps TextMate scope paths, this one maps the capture names a grammar's own
-//! `highlights.scm` uses. Both land on the same [`Token`]s, which is what lets
-//! one theme serve two engines and a file look the same whichever read it.
+//! The exact twin of [`scopes`]: that file maps TextMate scope paths, this one
+//! maps the capture names a grammar's own `highlights.scm` uses. Both land on
+//! the same [`Group`]s, which is what lets one theme serve two engines and a
+//! file look the same whichever read it.
 //!
 //! **Shorter than [`scopes`], and that is the point.** A capture is what the
 //! grammar's author already decided; there is no precedence to arrange, no
@@ -20,26 +20,39 @@
 //!
 //! [`scopes`]: super::scopes
 
-use syntax::{Capture, Pen, Style};
-
-use super::code::Token;
+use crate::group::Group;
+use crate::style::Style;
 
 /// One entry, before it is given a pen.
 pub struct Name {
     pub name: &'static str,
-    pub token: Token,
+    pub group: Group,
     italic: bool,
 }
 
-const fn name(name: &'static str, token: Token) -> Name {
+const fn name(name: &'static str, group: Group) -> Name {
     Name {
         name,
-        token,
+        group,
         italic: false,
     }
 }
 
 impl Name {
+    /// The emphasis this entry carries, with no pen in it yet.
+    ///
+    /// The pen is added by [`palette`](super::palette), which is the only
+    /// place that knows what number this entry has.
+    pub(super) const fn emphasis(&self) -> Style {
+        Style {
+            pen: None,
+            bold: false,
+            italic: self.italic,
+            underline: false,
+            strikethrough: false,
+        }
+    }
+
     const fn italic(self) -> Self {
         Self {
             italic: true,
@@ -47,13 +60,6 @@ impl Name {
         }
     }
 }
-
-/// The first pen this table uses.
-///
-/// Pens are one space shared by both engines, so the parser's names start
-/// where the matcher's selectors stop. That is what lets `Code` resolve a pen
-/// without knowing which engine produced it.
-pub const BASE: u16 = super::scopes::SCOPES.len() as u16;
 
 /// Every capture we recognise.
 ///
@@ -63,7 +69,7 @@ pub const BASE: u16 = super::scopes::SCOPES.len() as u16;
 /// (`@parameter`, `@field`, `@method`, `@conditional`), so both spellings are
 /// here. A name nothing uses costs nothing.
 pub const NAMES: &[Name] = {
-    use Token as T;
+    use Group as T;
     &[
         // --- the shape every language has ---
         name("comment", T::Comment).italic(),
@@ -140,64 +146,16 @@ pub const NAMES: &[Name] = {
     ]
 };
 
-/// Which token a pen from this table names, if it is one.
-pub fn token(pen: Pen) -> Option<Token> {
-    let at = pen.0.checked_sub(BASE)? as usize;
-    NAMES.get(at).map(|n| n.token)
-}
-
-/// The table, as `syntax` wants it.
-pub fn captures() -> Vec<Capture> {
-    NAMES
-        .iter()
-        .enumerate()
-        .map(|(n, entry)| {
-            let mut style = Style::pen(Pen(BASE + n as u16));
-            if entry.italic {
-                style = style.italic();
-            }
-            Capture::new(entry.name, style)
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::Theme;
-
-    #[test]
-    fn every_capture_carries_its_own_position() {
-        for (n, capture) in captures().iter().enumerate() {
-            assert_eq!(
-                capture.style.pen,
-                Some(Pen(BASE + n as u16)),
-                "{}",
-                capture.name
-            );
-            assert_eq!(capture.name, NAMES[n].name);
-        }
-    }
-
-    #[test]
-    fn the_two_tables_do_not_share_a_pen() {
-        // One pen space across both engines, so the ranges must not overlap or
-        // a parsed file would be coloured by the matcher's table.
-        for (n, _) in NAMES.iter().enumerate() {
-            let pen = Pen(BASE + n as u16);
-            assert!(super::super::scopes::token(pen).is_none(), "{pen:?}");
-            assert!(token(pen).is_some());
-        }
-        for (n, _) in super::super::scopes::SCOPES.iter().enumerate() {
-            assert!(token(Pen(n as u16)).is_none());
-        }
-    }
 
     #[test]
     fn no_two_captures_name_the_same_thing() {
+        // Two entries for one name means the later silently wins.
         for (n, entry) in NAMES.iter().enumerate() {
             assert!(
-                !NAMES[..n].iter().any(|e| e.name == entry.name),
+                !NAMES[..n].iter().any(|earlier| earlier.name == entry.name),
                 "{} appears twice",
                 entry.name
             );
@@ -205,13 +163,14 @@ mod tests {
     }
 
     #[test]
-    fn a_pen_resolves_to_the_colour_its_capture_asked_for() {
-        let code = Theme::DARK.code;
-        for (n, entry) in NAMES.iter().enumerate() {
+    fn only_comments_are_italic() {
+        // The parser's half carries no emphasis of its own beyond this one,
+        // and a stray italic would be visible on every line of a language.
+        for entry in NAMES {
             assert_eq!(
-                code.pen(Some(Pen(BASE + n as u16))),
-                Some(code.colour(entry.token)),
-                "{}",
+                entry.emphasis().italic,
+                entry.group == Group::Comment,
+                "{} is italic and is not a comment",
                 entry.name
             );
         }

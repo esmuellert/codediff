@@ -25,7 +25,7 @@ use file_types::File;
 
 use crate::diff::Diff;
 use crate::input::{BufferAction, DIVIDER_STEP};
-use crate::paint::{Painted, Painter, Spans, Version};
+use crate::syntax::{Spans, Store, Syntax, Version};
 
 /// The narrowest either column may be squeezed to, in percent.
 const MIN_DIVIDER: u16 = 15;
@@ -69,23 +69,13 @@ impl SideBySide {
     }
 
     /// How each version is coloured, for a frame.
-    pub fn spans(&self) -> Spans<'_> {
-        self.diff.spans()
+    pub fn spans<'a>(&self, store: &'a Store) -> Spans<'a> {
+        self.diff.spans(store)
     }
 
-    /// Asks the painter for both versions.
-    pub fn start_painting(&mut self, painter: &Painter, version: Version) {
-        self.diff.start_painting(painter, version);
-    }
-
-    /// Whether either side is still waiting for colours.
-    pub fn painting(&self) -> bool {
-        self.diff.painting()
-    }
-
-    /// Installs a piece the painter finished.
-    pub fn install(&mut self, painted: Painted) -> bool {
-        self.diff.install(painted)
+    /// Asks for everything up to `want`, on both versions.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
+        self.diff.request(syntax, store, version, want);
     }
 
     /// Where the divider sits: the share of the width given to the original,

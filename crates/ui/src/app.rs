@@ -1,9 +1,10 @@
 //! Reading keys, drawing frames, and stopping.
 //!
-//! One loop: take whatever the painter has finished, wait for a key, dispatch
-//! it, draw. Nothing here computes a diff, touches a repository, **or colours a
-//! line** — so this loop cannot be made slow by any of them, which is the whole
-//! point of separating it from the work.
+//! One loop: take whatever the worker has finished, ask for anything newly on
+//! screen, wait for a key, dispatch it, draw. Nothing here computes a diff,
+//! touches a repository, **or colours a line** — so this loop cannot be made
+//! slow by any of them, which is the whole point of separating it from the
+//! work.
 //!
 //! The wait is where the thread sleeps, and it has two speeds. With a file
 //! being coloured it wakes at most once a frame to collect what has arrived;
@@ -21,11 +22,17 @@ use ratatui::backend::Backend;
 
 use crate::draw;
 use crate::input::{Action, Command, ProgramAction, Resolution, Resolver, ViewAction};
-use crate::paint::Painter;
+use crate::syntax::{Store, Syntax};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 use crate::view::Buffer;
 use crate::view::View;
+
+/// Answers in a row that install nothing before [`Session::settle`] gives up.
+///
+/// Generous: every ordinary reason for an answer to install nothing happens
+/// once, not eight times running.
+const IDLE_ANSWERS: u32 = 8;
 
 /// What the loop should do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +48,11 @@ pub struct Session {
     view: View,
     theme: Theme,
     resolver: Resolver,
-    /// The thread that colours, and the queue back from it.
-    painter: Painter,
+    /// The thread that colours, and the queues to it.
+    syntax: Syntax,
+    /// Every colour anything open has. Owned here rather than by a buffer, so
+    /// a file keeps its colours when the reader moves away and comes back.
+    store: Store,
 }
 
 impl Session {
@@ -51,16 +61,18 @@ impl Session {
     /// One constructor, because how a buffer is drawn follows from its kind
     /// rather than from which function the caller chose.
     pub fn new(buffer: Buffer, theme: Theme) -> Self {
-        let painter = Painter::start();
+        let mut syntax = Syntax::start();
+        let mut store = Store::new();
         let mut view = View::single(buffer);
         // Asked for before the first frame, so the colours are already on
         // their way while the terminal is still being set up.
-        view.start_painting(&painter);
+        view.request(&mut syntax, &mut store);
         Self {
             view,
             theme,
             resolver: Resolver::new(),
-            painter,
+            syntax,
+            store,
         }
     }
 
@@ -76,14 +88,30 @@ impl Session {
     /// Returns whether anything arrived, so a caller can tell "settled" from
     /// "there was nothing to settle".
     pub fn settle(&mut self) -> bool {
+        // Progress is lines installed. An answer that installs none is
+        // ordinary on its own — a stale piece is refused, and a file no
+        // language claims answers with nothing — but a run of them means the
+        // store and the worker disagree about how far the file has been read
+        // and neither will give way. Stopping is better than a test that
+        // hangs, which is how that showed up.
         let mut changed = false;
-        while self.painting() {
-            match self.painter.next() {
-                Some(painted) => changed |= self.view.install(painted),
-                // The painter stopped, which can only mean it panicked. The
+        let mut idle = 0;
+        while self.painting() && idle < IDLE_ANSWERS {
+            let held = self.store.held();
+            match self.syntax.next() {
+                Some(answer) => changed |= self.store.install(answer),
+                // The worker stopped, which can only mean it panicked. The
                 // review continues in plain text rather than hanging.
                 None => break,
             }
+            idle = if self.store.held() > held {
+                0
+            } else {
+                idle + 1
+            };
+            // As the loop does, and for the same reason: what was wanted
+            // while that request was running was dropped, not queued.
+            self.request();
         }
         changed
     }
@@ -94,7 +122,7 @@ impl Session {
     /// almost always, since a file is coloured within a few frames of being
     /// opened and then stays coloured.
     pub fn painting(&self) -> bool {
-        self.view.painting()
+        self.syntax.working()
     }
 
     /// Installs whatever the painter has finished, and says whether the screen
@@ -103,10 +131,19 @@ impl Session {
     /// Never waits. Costs a few nanoseconds when there is nothing.
     pub fn collect(&mut self) -> bool {
         let mut changed = false;
-        for painted in self.painter.take() {
-            changed |= self.view.install(painted);
+        for answer in self.syntax.take() {
+            changed |= self.store.install(answer);
         }
         changed
+    }
+
+    /// Asks for the colours of anything newly on screen.
+    ///
+    /// Called after every event, because a motion is what brings new lines
+    /// into view. Silent when the store already has them, which after the
+    /// first screen it usually does.
+    pub fn request(&mut self) {
+        self.view.request(&mut self.syntax, &mut self.store);
     }
 
     pub fn view(&self) -> &View {
@@ -125,7 +162,13 @@ impl Session {
     ) -> Result<(), B::Error> {
         terminal.draw(|frame| {
             let area = frame.area();
-            draw::render(frame.buffer_mut(), area, &mut self.view, &self.theme);
+            draw::render(
+                frame.buffer_mut(),
+                area,
+                &mut self.view,
+                &self.theme,
+                &self.store,
+            );
         })?;
         Ok(())
     }
@@ -198,8 +241,13 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
     session.draw(screen.terminal())?;
 
     loop {
-        // Whatever the painter finished since the last frame. Never waits.
+        // Whatever the worker finished since the last frame. Never waits.
         if session.collect() {
+            // A file only ever has one request out at a time, so anything
+            // wanted while that one was running was dropped rather than
+            // queued. This is where it is asked for again, with a starting
+            // point that is now current.
+            session.request();
             session.draw(screen.terminal())?;
         }
 
@@ -215,6 +263,8 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
             Flow::Suspend => screen.suspend()?,
             Flow::Continue => {}
         }
+        // A motion may have brought lines into view that nothing has coloured.
+        session.request();
         session.draw(screen.terminal())?;
     }
 }

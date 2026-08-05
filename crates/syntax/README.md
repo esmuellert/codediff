@@ -127,7 +127,7 @@ the difference is that a scope is a path, not one of ten names.
 
 **As built:** 31 roles over 78 scope selectors, from Catppuccin's own
 `groups/{syntax,treesitter}.lua`. Every one of the 78 is proved to claim something real in
-`crates/ui/tests/scopes.rs`, against a corpus of seventeen languages — the engine accepts a
+`crates/syntax/tests/scopes.rs`, against a corpus of seventeen languages — the engine accepts a
 selector it can never match, so a typo costs a colour and says nothing otherwise.
 
 ## What a span carries: a pen, not a colour
@@ -165,11 +165,18 @@ and `ts_query_new` is the only constructor
 ([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942), open since 2022).
 It is indivisible, too, so it cannot be spread across frames.
 
-**So none of this happens on the drawing thread.** `ui` runs a painter thread, asks it for a
-file, and installs the spans when they arrive; the interface never computes a colour and
-cannot wait for one. On the real binary that is **12–18 ms to text, 46–62 ms to colour**, and
-a keypress during painting answered in **0–13 ms** — against 186 ms when this was scheduled
-against frames. See D41.
+**So none of this happens on the drawing thread.** `ui` runs a syntax worker, asks it for the
+lines it needs, and installs the spans when they arrive; the interface never computes a colour
+and cannot wait for one. On the real binary that is **12–18 ms to text, 46–62 ms to colour**,
+and a keypress during colouring answered in **0–13 ms** — against 186 ms when this was
+scheduled against frames. See D41.
+
+**What that thread hands back is all `ui` keeps.** `Highlighted` keeps a count and the engine's
+position; the spans go straight into the caller's buffer and are cached on the drawing side,
+where the frame that needs them is. This is why [`reach`] takes a `&mut Vec<Vec<Span>>` rather
+than answering per line: nothing here would ever read those spans back. See D42.
+
+[`reach`]: Highlighted::reach
 
 **The matcher**, same conditions:
 
@@ -199,36 +206,42 @@ crates/syntax/
 │   ├── lib.rs          what a caller sees
 │   ├── style.rs        Pen, Style, Rule, Capture, Span, and coalescing
 │   ├── detect.rs       which language: name, then extension, then shebang
-│   ├── highlighted.rs  one file, coloured as far as anyone has looked; Moment
+│   ├── highlighted.rs  one file, read as far as it has been asked for
+│   ├── group.rs         Group — the words both engines answer in
 │   ├── limits.rs       every threshold, in one place
 │   └── engine/
-│       ├── mod.rs      the seam, and the choice between the two engines
+│       ├── mod.rs      the seam, the choice of engine, and the one place a pen
+│       │               is given a number
 │       ├── syntect.rs  the matcher: 183 languages, resumable line by line
+│       ├── scopes.rs   which TextMate scope path is which Group
+│       ├── captures.rs which tree-sitter capture is which Group
 │       └── treesitter/
 │           ├── mod.rs        the parser: whole-file, ten times faster
-│           └── languages.rs  the 25 languages, and query overrides
+│           ├── languages.rs  the 25 languages, and query overrides
+│           └── queries.rs    compiling a query, once per language
 └── tests/
     ├── languages.rs    fourteen languages, by the pen that reaches the caller
+    ├── scopes.rs       every selector claims something; every role is worn
     ├── multiline.rs    block comments and multi-line strings — delta's bug, as a test
-    └── nasty.rs        tabs, bidi, invisible characters, 20 000-character lines
+    ├── nasty.rs        tabs, bidi, invisible characters, 20 000-character lines
+    └── corpus/         real source in seventeen languages, for `scopes.rs`
 ```
 
-The other half is in `ui`, because it is about colour:
+The other half is in `ui`, because it is about colour and nothing else:
 
 ```text
 crates/ui/
 ├── src/
-│   ├── highlight.rs        the join: the process-wide engine and both tables
+│   ├── syntax/             the worker thread, and every colour it has answered
 │   └── theme/
-│       ├── code.rs         Token — what a piece of code is — and each theme's colours
-│       ├── scopes.rs       which TextMate scope path wears which pen
-│       └── captures.rs     which tree-sitter capture wears which pen
+│       └── code.rs         Code — what colour each Group is, per theme
 └── tests/
-    ├── scopes.rs           every selector claims something; every token is worn
     ├── colours.rs          the right one wins, word by word, in eleven languages
-    ├── languages.rs        every language, through the real seam, either engine
-    └── corpus/             the source those are run against
+    └── languages.rs        every language, through the real seam, either engine
 ```
+
+The line between them is taste. A `Group` says a stretch of text is a keyword, which is a fact
+about what an engine reported; that a keyword is mauve is a theme's opinion. See D43.
 
 `cargo xtask lint-arch` refuses the name of a syntax engine anywhere outside
 `crates/syntax/src/engine`, and refuses IO anywhere in this crate.
