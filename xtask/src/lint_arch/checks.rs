@@ -232,6 +232,52 @@ fn words_of(name: &str) -> impl Iterator<Item = String> + '_ {
 }
 
 /// Refuses a module a directory is not allowed to know about.
+/// Refuses a thread anywhere but the painter.
+pub fn check_threads(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    let allowed = root.join(THREAD_FILE);
+    if !allowed.is_file() {
+        failures.push(format!("`{THREAD_FILE}` is missing, so its rule is dead"));
+        return Ok(());
+    }
+    for dir in ["crates", "xtask"] {
+        let base = root.join(dir);
+        if !base.is_dir() {
+            continue;
+        }
+        for file in rust_files(&base)? {
+            // Tests may start one: proving that two things do not block each
+            // other takes two things. And the rule may name what it forbids.
+            let is_test = file
+                .components()
+                .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "benches");
+            if file == allowed || is_test || file.ends_with("lint_arch/rules.rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&file)?;
+            let Some(code) = text.split("#[cfg(test)]").next() else {
+                continue;
+            };
+            for (n, line) in code.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                for marker in THREAD_MARKERS {
+                    if trimmed.contains(marker) {
+                        failures.push(format!(
+                            "{}:{} starts a thread — only {THREAD_FILE} may, so that \
+                             \"which thread owns this?\" keeps an obvious answer",
+                            rel(root, &file),
+                            n + 1
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn check_blind_dirs(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     for (dir, forbidden, why) in BLIND_DIRS {
         let path = root.join(dir);

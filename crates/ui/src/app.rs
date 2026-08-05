@@ -1,9 +1,16 @@
 //! Reading keys, drawing frames, and stopping.
 //!
-//! One loop, entirely synchronous: block for an event, resolve it to a
-//! command, dispatch, draw. Nothing here computes a diff or touches a
-//! repository, so this loop cannot be made slow by anything except drawing —
-//! which is the whole point of separating it from the work that reads files.
+//! One loop: take whatever the painter has finished, wait for a key, dispatch
+//! it, draw. Nothing here computes a diff, touches a repository, **or colours a
+//! line** — so this loop cannot be made slow by any of them, which is the whole
+//! point of separating it from the work.
+//!
+//! The wait is where the thread sleeps, and it has two speeds. With a file
+//! being coloured it wakes at most once a frame to collect what has arrived;
+//! with nothing outstanding it blocks until a key is pressed, at no cost at
+//! all. Neither is a poll for *work* — the work is on another thread — and
+//! there is nothing to tune: sixteen milliseconds is one frame at sixty hertz,
+//! past which nobody can see the difference.
 //!
 //! [`Session::dispatch`] is where the three kinds of command diverge, and it
 //! is the only place that can see all three of their executors. That is why
@@ -14,6 +21,7 @@ use ratatui::backend::Backend;
 
 use crate::draw;
 use crate::input::{Action, Command, ProgramAction, Resolution, Resolver, ViewAction};
+use crate::paint::Painter;
 use crate::terminal::Screen;
 use crate::theme::Theme;
 use crate::view::Buffer;
@@ -33,6 +41,8 @@ pub struct Session {
     view: View,
     theme: Theme,
     resolver: Resolver,
+    /// The thread that colours, and the queue back from it.
+    painter: Painter,
 }
 
 impl Session {
@@ -41,11 +51,62 @@ impl Session {
     /// One constructor, because how a buffer is drawn follows from its kind
     /// rather than from which function the caller chose.
     pub fn new(buffer: Buffer, theme: Theme) -> Self {
+        let painter = Painter::start();
+        let mut view = View::single(buffer);
+        // Asked for before the first frame, so the colours are already on
+        // their way while the terminal is still being set up.
+        view.start_painting(&painter);
         Self {
-            view: View::single(buffer),
+            view,
             theme,
             resolver: Resolver::new(),
+            painter,
         }
+    }
+
+    /// Waits until everything on screen has been coloured.
+    ///
+    /// **For tests, and for nothing else.** The interface must never wait for
+    /// a colour — that is the whole reason the painter has a thread — but a
+    /// test asserting *about* colour has to know when to look. It uses the
+    /// same two calls the loop does, so what it exercises is the real path
+    /// rather than a shortcut past it, and it blocks on the channel rather
+    /// than sleeping, so it is exactly as fast as the work and no slower.
+    ///
+    /// Returns whether anything arrived, so a caller can tell "settled" from
+    /// "there was nothing to settle".
+    pub fn settle(&mut self) -> bool {
+        let mut changed = false;
+        while self.painting() {
+            match self.painter.next() {
+                Some(painted) => changed |= self.view.install(painted),
+                // The painter stopped, which can only mean it panicked. The
+                // review continues in plain text rather than hanging.
+                None => break,
+            }
+        }
+        changed
+    }
+
+    /// Whether anything on screen is still waiting to be coloured.
+    ///
+    /// What decides whether the loop waits for a frame or for a key. False
+    /// almost always, since a file is coloured within a few frames of being
+    /// opened and then stays coloured.
+    pub fn painting(&self) -> bool {
+        self.view.painting()
+    }
+
+    /// Installs whatever the painter has finished, and says whether the screen
+    /// changed.
+    ///
+    /// Never waits. Costs a few nanoseconds when there is nothing.
+    pub fn collect(&mut self) -> bool {
+        let mut changed = false;
+        for painted in self.painter.take() {
+            changed |= self.view.install(painted);
+        }
+        changed
     }
 
     pub fn view(&self) -> &View {
@@ -62,35 +123,11 @@ impl Session {
         &mut self,
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
-        // Colouring happens here, outside the frame, because `draw` holds no
-        // state and how far a file has been read is state. The height is the
-        // body's, one row short of the terminal's, which is the same
-        // arithmetic the layout does — a row out either way would colour one
-        // line too many or too few, and neither is visible.
-        let height = terminal.size()?.height;
-        self.view.reach(u32::from(height.saturating_sub(1)));
         terminal.draw(|frame| {
             let area = frame.area();
             draw::render(frame.buffer_mut(), area, &mut self.view, &self.theme);
         })?;
         Ok(())
-    }
-
-    /// Colours a little more of the file, and says whether anything changed.
-    ///
-    /// What an idle moment calls. A redraw is only worth it if this returns
-    /// true, which it stops doing once the file is fully read — so an idle
-    /// session settles down to doing nothing at all rather than spinning.
-    pub fn read_more(&mut self) -> bool {
-        self.view.read_more()
-    }
-
-    /// Whether what is on screen has been coloured yet.
-    ///
-    /// False only just after a leap through a very long file, where the frame
-    /// drew what it had and left the rest plain.
-    pub fn caught_up(&self) -> bool {
-        self.view.caught_up()
     }
 
     /// Applies one terminal event.
@@ -160,44 +197,17 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
     session.draw(screen.terminal())?;
 
-    // Whether it is worth interrupting the wait for a key to colour a little
-    // more. Set again after every keypress because a key can move to a part
-    // of the file, or a buffer, that has not been read.
-    let mut reading = true;
-
     loop {
-        let event = if reading {
-            // Colour a little more while the reader is deciding what to press.
-            // This is VS Code's background tokenizer without a thread, a
-            // channel or a clock: an idle terminal is idle for whole seconds,
-            // which is hundreds of thousands of lines, so by the time anyone
-            // scrolls to the end of a long file it has usually already been
-            // read.
-            //
-            // **No redraw.** Every frame colours what it is about to show
-            // before it shows it, so this is always work on lines that are not
-            // on screen — redrawing would repaint an identical screen at five
-            // hundred frames a second.
-            match screen.next_event_or_idle()? {
-                Some(event) => event,
-                None => {
-                    // Redraw only when the reader is looking at something that
-                    // has not been coloured yet — which happens after a leap
-                    // through a very long file and at no other time. Ordinary
-                    // background reading is always below the screen, so this
-                    // is the difference between one extra frame and five
-                    // hundred a second.
-                    let behind = !session.caught_up();
-                    reading = session.read_more();
-                    if behind {
-                        session.draw(screen.terminal())?;
-                    }
-                    continue;
-                }
-            }
-        } else {
-            // Nothing left to colour, so wait properly rather than spin.
-            screen.next_event()?
+        // Whatever the painter finished since the last frame. Never waits.
+        if session.collect() {
+            session.draw(screen.terminal())?;
+        }
+
+        // Where the thread sleeps. With colouring outstanding it gives up
+        // after a frame's worth of time so the next piece can be collected;
+        // otherwise it waits for a key and costs nothing until one arrives.
+        let Some(event) = screen.next_event(session.painting())? else {
+            continue;
         };
 
         match session.handle(&event) {
@@ -205,7 +215,6 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
             Flow::Suspend => screen.suspend()?,
             Flow::Continue => {}
         }
-        reading = true;
         session.draw(screen.terminal())?;
     }
 }

@@ -8,6 +8,12 @@
 //! highlighting for a whole file, we simply stop — the lines already coloured
 //! stay coloured, because we colour from the top and a reader is usually
 //! there.
+//!
+//! Every threshold here says *"this file is not worth colouring"*. None of
+//! them is about scheduling: colouring happens on a thread of its own and may
+//! take as long as it takes, so there is nothing to slice and no frame to
+//! protect. The two limits that did that were deleted with the machinery they
+//! belonged to — see D41.
 
 /// Bytes above which a file is not highlighted at all.
 ///
@@ -31,24 +37,6 @@ pub const MAX_LINES: usize = 300_000;
 /// `delta`'s. Truncating the text would corrupt the state for every line
 /// after it.
 pub const MAX_LINE_CHARS: usize = 20_000;
-
-/// Lines one frame may colour before giving the frame back.
-///
-/// Jumping to the end of a file means colouring everything before it, because
-/// the answer for a line depends on every line above. Uncapped, `G` in a
-/// 300 000-line file — which [`MAX_LINES`] permits — would freeze the
-/// interface for sixteen seconds at the 18 500 lines a second this engine
-/// measures.
-///
-/// So a frame does what it can and draws the rest plainly, and the idle pass
-/// finishes the job a few milliseconds later. That is exactly what VS Code
-/// does, for exactly this reason; it budgets in milliseconds because it has a
-/// clock, and this budgets in lines because it must not.
-///
-/// Two thousand is about a ninth of a second, and is above the length of
-/// almost every file anyone reviews — so in the ordinary case nothing is ever
-/// deferred, and the cap costs nothing at all.
-pub const LEAP: usize = 2_000;
 
 /// Whether a file is worth highlighting at all.
 pub fn worth_highlighting(bytes: usize, lines: usize) -> bool {

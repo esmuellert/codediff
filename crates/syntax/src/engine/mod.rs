@@ -1,14 +1,254 @@
-//! The seam.
+//! The seam, and the choice between two engines.
 //!
 //! Everything above this module is written against [`Span`](crate::Span),
-//! [`Style`](crate::Style) and [`Rule`](crate::Rule); everything below it
-//! knows what a TextMate grammar is. `cargo xtask lint-arch` refuses the name
+//! [`Style`](crate::Style), [`Rule`](crate::Rule) and [`Capture`]; everything
+//! below it knows what a grammar is. `cargo xtask lint-arch` refuses the name
 //! of a syntax engine anywhere outside this directory, which is what makes the
 //! claim checkable rather than merely stated.
 //!
-//! One engine today. A second would be a sibling file and a choice here, and
-//! nothing above would move — see D17.
+//! ---
+//!
+//! **Two engines, one file each, and one per file.**
+//!
+//! [`treesitter`] parses, so it knows that `Rect` in `area: Rect` is a type.
+//! [`syntect`] matches regular expressions against lines, so it does not — but
+//! it knows 183 languages against the parser's twenty-five, and it can colour
+//! *part* of a file, which the parser cannot.
+//!
+//! So: parse where we have a grammar, match where we do not. Never both. That
+//! was measured rather than assumed — running both and layering the parser
+//! over the matcher, as VS Code layers semantic tokens over TextMate, colours
+//! 93% of identifiers against the parser's 92%, and buys that one point at the
+//! price of the slower engine's whole pass. VS Code layers because its upper
+//! layer is *sparse*: a language server resolves what it can and the grammar
+//! fills the rest. Ours is dense and strictly better, so there is nothing left
+//! for a lower layer to fill. See D39.
 
 mod syntect;
+mod treesitter;
 
-pub use syntect::{Engine, Grammar, Palette, Reading};
+use std::ops::Range;
+
+use crate::detect::Clues;
+use crate::style::{Capture, Rule, Span};
+
+/// Every grammar we have, of either kind.
+pub struct Engine {
+    textmate: syntect::Engine,
+    trees: treesitter::Engine,
+}
+
+/// Which grammar reads a file, and therefore which engine.
+///
+/// An index either way, so it can be stored beside the buffer that needs it
+/// without borrowing the engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grammar {
+    Tree(treesitter::Grammar),
+    TextMate(syntect::Grammar),
+}
+
+/// How far through a file an engine has read.
+///
+/// The parser carries nothing between calls — it does the whole file at once —
+/// so its variant is only the grammar it has yet to use. The matcher's state
+/// is the reason it can stop and resume at all.
+pub enum Reading {
+    Tree(treesitter::Grammar),
+    TextMate(Box<syntect::Reading>),
+}
+
+/// The caller's colours, in the form each engine matches against.
+///
+/// Both halves, because which engine reads a file is not known when the
+/// palette is built, and because a [`Pen`](crate::Pen) means the same thing
+/// whichever engine produced it — that is what lets the two share one theme.
+pub struct Palette {
+    textmate: syntect::Palette,
+    trees: treesitter::Palette,
+}
+
+impl Palette {
+    /// `rules` are TextMate scope selectors; `captures` are tree-sitter
+    /// capture names. Two lists rather than one because they are matched by
+    /// different machinery and a mistake between them would be silent.
+    pub fn new(rules: &[Rule], captures: &[Capture]) -> Self {
+        Self {
+            textmate: syntect::Palette::new(rules),
+            trees: treesitter::Palette::new(captures),
+        }
+    }
+
+    /// How many TextMate rules the engine accepted.
+    pub fn rules(&self) -> usize {
+        self.textmate.rules()
+    }
+
+    /// How many languages compiled their query.
+    pub fn compiled(&self) -> usize {
+        self.trees.compiled()
+    }
+}
+
+impl Engine {
+    pub fn new() -> Self {
+        Self {
+            textmate: syntect::Engine::new(),
+            trees: treesitter::Engine::new(),
+        }
+    }
+
+    /// Which grammar reads this file, if any does.
+    ///
+    /// A parser is preferred wherever one exists: it answers a question the
+    /// matcher cannot, and on a long file it is the faster of the two by an
+    /// order of magnitude. It once was not preferred above a size, because a
+    /// whole-file parse would have held a frame — colouring happens on its own
+    /// thread now, so there is no frame to hold. See D41.
+    ///
+    /// `lines` is unused today and kept because the choice is the seam's to
+    /// make: a future engine may well have an opinion about size.
+    pub fn find(&self, clues: Clues<'_>, _lines: usize) -> Option<Grammar> {
+        if let Some(grammar) = self.trees.find(clues) {
+            return Some(Grammar::Tree(grammar));
+        }
+        self.textmate.find(clues).map(Grammar::TextMate)
+    }
+
+    /// Which TextMate grammar reads this file, ignoring the parser.
+    ///
+    /// For the tests that are about *scope selectors* — which only that engine
+    /// matches — and for nothing else. A reader always gets the seam's answer;
+    /// this exists so `ui`'s scope table can be checked against the engine
+    /// that uses it, on languages the parser also happens to know.
+    pub fn find_textmate(&self, clues: Clues<'_>) -> Option<Grammar> {
+        self.textmate.find(clues).map(Grammar::TextMate)
+    }
+
+    /// What the engine calls this grammar, for tests and for a status line.
+    pub fn name(&self, grammar: Grammar) -> &str {
+        match grammar {
+            Grammar::Tree(g) => self.trees.name(g),
+            Grammar::TextMate(g) => self.textmate.name(g),
+        }
+    }
+
+    /// Begins reading a file from its first line.
+    pub fn start(&self, grammar: Grammar, palette: &Palette) -> Reading {
+        match grammar {
+            Grammar::Tree(g) => Reading::Tree(g),
+            Grammar::TextMate(g) => {
+                Reading::TextMate(Box::new(self.textmate.start(g, &palette.textmate)))
+            }
+        }
+    }
+
+    /// Reads the lines in `want`, appending the spans for each.
+    ///
+    /// **The range is a request, not a promise.** The matcher honours it, which
+    /// is what lets a frame stop halfway through a long file. The parser has no
+    /// range API at all, so it reads everything and the caller gets more than
+    /// it asked for — which is why [`Highlighted`] checks how far it actually
+    /// got rather than assuming.
+    ///
+    /// [`Highlighted`]: crate::Highlighted
+    pub fn read(
+        &self,
+        reading: &mut Reading,
+        palette: &Palette,
+        lines: &[String],
+        want: Range<usize>,
+        into: &mut Vec<Vec<Span>>,
+    ) {
+        match reading {
+            Reading::Tree(grammar) => self.trees.read(*grammar, &palette.trees, lines, into),
+            Reading::TextMate(state) => {
+                self.textmate
+                    .read(state, &palette.textmate, &lines[want], into);
+            }
+        }
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::style::{Pen, Style};
+
+    fn palette() -> Palette {
+        Palette::new(
+            &[
+                Rule::new("keyword", Style::pen(Pen(0))),
+                Rule::new("storage", Style::pen(Pen(0))),
+            ],
+            &[Capture::new("keyword", Style::pen(Pen(0)))],
+        )
+    }
+
+    #[test]
+    fn a_language_with_a_parser_is_parsed() {
+        let engine = Engine::new();
+        let grammar = engine.find(Clues::new("a.rs", None), 10).expect("rust");
+        assert!(matches!(grammar, Grammar::Tree(_)));
+    }
+
+    #[test]
+    fn a_language_without_one_falls_back_to_the_matcher() {
+        // Neither is wrong; the point is that the file is still coloured.
+        let engine = Engine::new();
+        let grammar = engine
+            .find(Clues::new("Makefile", None), 10)
+            .expect("two-face knows make");
+        assert!(matches!(grammar, Grammar::TextMate(_)));
+    }
+
+    #[test]
+    fn a_very_long_file_is_parsed_too() {
+        // It once was not: a whole-file parse would have held a frame, so
+        // above a size the matcher was used because it could stop halfway.
+        // Colouring is on its own thread now, so the faster engine wins
+        // outright — and on a file this long the parser is ten times faster,
+        // which is precisely where that matters most. See D41.
+        let engine = Engine::new();
+        let long = engine.find(Clues::new("a.rs", None), 500_000).unwrap();
+        assert!(matches!(long, Grammar::Tree(_)));
+    }
+
+    #[test]
+    fn a_language_neither_engine_knows_is_refused() {
+        let engine = Engine::new();
+        assert!(engine.find(Clues::new("notes.qqzz", None), 10).is_none());
+    }
+
+    #[test]
+    fn both_engines_answer_in_the_same_currency() {
+        // The property the whole hybrid rests on: a `Pen` means the same thing
+        // whichever engine produced it, so one theme serves both.
+        let engine = Engine::new();
+        let palette = palette();
+        let lines = vec!["fn a() {}".to_owned()];
+        let read = |grammar: Grammar| {
+            let mut reading = engine.start(grammar, &palette);
+            let mut out = Vec::new();
+            engine.read(&mut reading, &palette, &lines, 0..1, &mut out);
+            out
+        };
+
+        let parsed = read(engine.find(Clues::new("a.rs", None), 1).unwrap());
+        let matched = read(Grammar::TextMate(
+            engine.textmate.find(Clues::new("a.rs", None)).unwrap(),
+        ));
+        for out in [&parsed, &matched] {
+            assert!(
+                out[0].iter().any(|s| s.style.pen == Some(Pen(0))),
+                "both call `fn` a keyword"
+            );
+        }
+    }
+}

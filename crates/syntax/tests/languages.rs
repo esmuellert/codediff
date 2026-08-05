@@ -9,24 +9,41 @@
 //! Four pens, deliberately distinct, so a mix-up is a failure rather than a
 //! coincidence.
 
-use syntax::{Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style};
+use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style};
 
 const KEYWORD: Pen = Pen(1);
 const STRING: Pen = Pen(2);
 const COMMENT: Pen = Pen(3);
 const MARKUP: Pen = Pen(4);
 
-/// The smallest theme that can tell the three apart.
+/// The smallest theme that can tell the four apart.
+///
+/// **Both tables, with the same pens.** Which engine reads a file is the
+/// seam's business — a parser where we have a grammar, the matcher where we do
+/// not — and these assertions are about the language, not the engine. Giving
+/// both the same pens is what lets one test hold either way, and it is also
+/// how a language that changes engines is caught: the answer must not move.
 fn palette() -> Palette {
-    Palette::new(&[
-        Rule::new("keyword", Style::pen(KEYWORD)),
-        Rule::new("storage", Style::pen(KEYWORD)),
-        Rule::new("string", Style::pen(STRING)),
-        Rule::new("comment", Style::pen(COMMENT).italic()),
-        // Markup, so the two prose formats have something to claim.
-        Rule::new("markup", Style::pen(MARKUP)),
-        Rule::new("entity.name", Style::pen(MARKUP)),
-    ])
+    Palette::new(
+        &[
+            Rule::new("keyword", Style::pen(KEYWORD)),
+            Rule::new("storage", Style::pen(KEYWORD)),
+            Rule::new("string", Style::pen(STRING)),
+            Rule::new("comment", Style::pen(COMMENT).italic()),
+            // Markup, so the two prose formats have something to claim.
+            Rule::new("markup", Style::pen(MARKUP)),
+            Rule::new("entity.name", Style::pen(MARKUP)),
+        ],
+        &[
+            Capture::new("keyword", Style::pen(KEYWORD)),
+            Capture::new("type.builtin", Style::pen(KEYWORD)),
+            Capture::new("string", Style::pen(STRING)),
+            Capture::new("comment", Style::pen(COMMENT).italic()),
+            Capture::new("type", Style::pen(MARKUP)),
+            Capture::new("function", Style::pen(MARKUP)),
+            Capture::new("property", Style::pen(MARKUP)),
+        ],
+    )
 }
 
 /// Every line of a file, coloured.
@@ -36,7 +53,7 @@ fn read(path: &str, source: &str) -> Vec<Vec<Span>> {
     let lines: Vec<String> = source.lines().map(str::to_owned).collect();
     let first = lines.first().map(String::as_str);
     let grammar = engine
-        .find(Clues::new(path, first))
+        .find(Clues::new(path, first), lines.len())
         .unwrap_or_else(|| panic!("no grammar claims {path}"));
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &lines);
     highlighted.reach(&engine, &palette, lines.len() as u32, &lines);
@@ -143,7 +160,7 @@ fn every_language_is_recognised() {
     for (name, path, source) in LANGUAGES {
         let first = source.lines().next();
         let grammar = engine
-            .find(Clues::new(path, first))
+            .find(Clues::new(path, first), source.lines().count())
             .unwrap_or_else(|| panic!("{name}: nothing claims {path}"));
         // Not asserting the exact grammar name — engines spell them
         // differently — only that something answered.
@@ -234,7 +251,10 @@ fn an_unrecognised_file_is_plain_rather_than_a_failure() {
     let engine = Engine::new();
     assert!(
         engine
-            .find(Clues::new("mystery.qqqqq", Some("nothing recognises this")))
+            .find(
+                Clues::new("mystery.qqqqq", Some("nothing recognises this")),
+                1
+            )
             .is_none()
     );
     // And the caller's answer for such a file is "no spans", not a panic.
@@ -248,7 +268,7 @@ fn a_shebang_names_a_language_when_the_name_cannot() {
     // The commonest case a diff viewer meets: an executable with no extension.
     let engine = Engine::new();
     let grammar = engine
-        .find(Clues::new("scripts/deploy", Some("#!/usr/bin/env bash")))
+        .find(Clues::new("scripts/deploy", Some("#!/usr/bin/env bash")), 1)
         .expect("a shebang is enough");
     assert!(
         engine.name(grammar).to_lowercase().contains("bash")

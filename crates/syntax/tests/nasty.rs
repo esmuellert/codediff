@@ -11,22 +11,31 @@
 //! expand tabs before highlighting because it works in text, and gets column
 //! alignment wrong as a result.
 
-use syntax::{Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style, limits};
+use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style, limits};
 
 fn palette() -> Palette {
-    Palette::new(&[
-        Rule::new("string", Style::pen(Pen(1))),
-        Rule::new("comment", Style::pen(Pen(2))),
-        Rule::new("keyword", Style::pen(Pen(3))),
-        Rule::new("storage", Style::pen(Pen(3))),
-    ])
+    Palette::new(
+        &[
+            Rule::new("string", Style::pen(Pen(1))),
+            Rule::new("comment", Style::pen(Pen(2))),
+            Rule::new("keyword", Style::pen(Pen(3))),
+            Rule::new("storage", Style::pen(Pen(3))),
+        ],
+        &[
+            Capture::new("string", Style::pen(Pen(1))),
+            Capture::new("comment", Style::pen(Pen(2))),
+            Capture::new("keyword", Style::pen(Pen(3))),
+        ],
+    )
 }
 
 fn read(path: &str, lines: &[&str]) -> Vec<Vec<Span>> {
     let engine = Engine::new();
     let palette = palette();
     let owned: Vec<String> = lines.iter().map(|l| (*l).to_owned()).collect();
-    let grammar = engine.find(Clues::new(path, None)).expect("a grammar");
+    let grammar = engine
+        .find(Clues::new(path, None), lines.len())
+        .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &owned);
     highlighted.reach(&engine, &palette, owned.len() as u32, &owned);
     (0..owned.len())
@@ -88,7 +97,9 @@ fn a_file_too_big_to_read_is_left_plain_rather_than_refused() {
     let engine = Engine::new();
     let palette = palette();
     let huge: Vec<String> = std::iter::repeat_n("x".to_owned(), limits::MAX_LINES + 1).collect();
-    let grammar = engine.find(Clues::new("a.rs", None)).expect("a grammar");
+    let grammar = engine
+        .find(Clues::new("a.rs", None), huge.len())
+        .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &huge);
     highlighted.reach(&engine, &palette, 10, &huge);
     assert!(highlighted.finished(), "there is nothing to do");
@@ -149,10 +160,13 @@ fn a_selector_that_matches_nothing_is_silent_and_must_be_tested_by_use() {
     // and then never matches. `rules()` therefore cannot catch a typo, and a
     // theme's guard has to be a test that each of its rules colours something
     // real — which is what `languages.rs` and `ui`'s theme tests do.
-    let palette = Palette::new(&[
-        Rule::new("keyword", Style::pen(Pen(1))),
-        Rule::new("keywrod", Style::pen(Pen(2))),
-    ]);
+    let palette = Palette::new(
+        &[
+            Rule::new("keyword", Style::pen(Pen(1))),
+            Rule::new("keywrod", Style::pen(Pen(2))),
+        ],
+        &[],
+    );
     assert_eq!(palette.rules(), 2, "both were accepted");
 
     let spans = read("a.rs", &["fn a() {}"]);

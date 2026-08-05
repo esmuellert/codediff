@@ -9,6 +9,18 @@
 //! What remains is that the answer for line 500 depends on lines 1 to 499, so
 //! reading can only ever go **forwards**. Scrolling back is free; jumping
 //! ahead costs the gap, once.
+//!
+//! **Both engines fit here, and only one of them is lazy.** The matcher stops
+//! where it is asked and resumes later; the parser has no way to read part of
+//! a file and returns the whole thing on the first ask. Nothing in this file
+//! branches on which: [`reach`](Self::reach) says how far it would like to get
+//! and [`done`](Self::done) says how far it actually got.
+//!
+//! **Nothing here is scheduled against frames.** It once was — a frame read
+//! what it could and an idle moment read a little more — and that could not
+//! survive an engine whose smallest unit of work is an indivisible quarter of
+//! a second. Colouring now happens on a thread of its own, so this may take as
+//! long as it takes. See D41.
 
 use crate::engine::{Engine, Grammar, Palette, Reading};
 use crate::limits;
@@ -83,52 +95,17 @@ impl Highlighted {
         self.reading.is_none()
     }
 
-    /// Reads until `line` has been coloured, or until this frame has done
-    /// enough.
+    /// Reads until `line` has been coloured.
     ///
-    /// What a frame calls before drawing, with the last line it is about to
-    /// show. Cheap when the answer is already known, which after the first
-    /// frame it usually is.
+    /// Cheap when the answer is already known, which after the first ask it
+    /// usually is: results are kept, so reading further extends them and
+    /// reading back costs nothing.
     ///
-    /// Stops after [`limits::LEAP`] lines and returns rather than holding the
-    /// frame: a reader who jumps to the end of a very long file sees the text
-    /// at once and its colour a moment later, which is the trade VS Code
-    /// makes. [`caught_up`](Self::caught_up) is how a caller finds out that it
-    /// happened.
+    /// May read **further** than asked. The parser has no range API, so it
+    /// answers with the whole file however little was wanted;
+    /// [`done`](Self::done) says what actually happened.
     pub fn reach(&mut self, engine: &Engine, palette: &Palette, line: u32, lines: &[String]) {
-        let want = line as usize + 1;
-        self.read_to(
-            engine,
-            palette,
-            want.min(self.read.len() + limits::LEAP),
-            lines,
-        );
-    }
-
-    /// Whether the given line has been coloured yet.
-    ///
-    /// False only just after a leap through a very long file. A caller that
-    /// draws frames uses it to know that one more is worth drawing once the
-    /// idle pass has caught up.
-    pub fn caught_up(&self, line: u32) -> bool {
-        self.finished() || self.read.len() > line as usize
-    }
-
-    /// Reads a little more, and says whether that changed anything.
-    ///
-    /// What an idle moment calls. The slice is small enough that a keypress
-    /// arriving mid-file is answered promptly, and large enough that a file
-    /// finishes in a handful of them — VS Code budgets by milliseconds because
-    /// its engine is four times slower and it must not block a browser; a
-    /// fixed count is enough here and needs no clock, which matters because
-    /// the crate has none.
-    pub fn read_more(&mut self, engine: &Engine, palette: &Palette, lines: &[String]) -> bool {
-        if self.finished() {
-            return false;
-        }
-        let target = self.read.len() + SLICE;
-        self.read_to(engine, palette, target, lines);
-        true
+        self.read_to(engine, palette, line as usize + 1, lines);
     }
 
     fn read_to(&mut self, engine: &Engine, palette: &Palette, target: usize, lines: &[String]) {
@@ -139,13 +116,12 @@ impl Highlighted {
         let Some(reading) = self.reading.as_mut() else {
             return;
         };
-        engine.read(
-            reading,
-            palette,
-            &lines[self.read.len()..target],
-            &mut self.read,
-        );
-        if self.read.len() == lines.len() {
+        // The range is what we *want*. One engine parses whole files and has
+        // no way to do less, so it may come back having read everything —
+        // which is why the check below is `>=` and not `==`.
+        let from = self.read.len();
+        engine.read(reading, palette, lines, from..target, &mut self.read);
+        if self.read.len() >= lines.len() {
             // Nothing left to carry forward. Dropping it returns the grammar's
             // context stack, which for a deeply nested file is not nothing.
             self.reading = None;
@@ -153,40 +129,32 @@ impl Highlighted {
     }
 }
 
-/// Lines read per idle slice.
-///
-/// A slice happens between a `poll` and the keypress that ends it, so its cost
-/// is added to the latency of whatever the reader presses next. At the 18 500
-/// lines a second this engine measures with a real theme, VS Code's 200 lines
-/// would be **13 ms** — a whole frame of delay, which is exactly the sort of
-/// thing that makes a terminal program feel sticky.
-///
-/// Sixty-four is about three and a half milliseconds, which is not noticeable,
-/// and still colours some eleven thousand lines for every second the reader
-/// spends deciding what to press. Finishing sooner is not the goal; the goal
-/// is that nothing waits for it.
-const SLICE: usize = 64;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::detect::Clues;
-    use crate::style::{Pen, Rule, Style};
+    use crate::style::{Capture, Pen, Rule, Style};
 
     fn palette() -> Palette {
         // `storage` as well as `keyword`, because Rust's `fn` is
         // `storage.type.function` — the kind of thing a scope path knows and a
         // fixed list of token names does not.
         let word = Style::pen(Pen(0));
-        Palette::new(&[Rule::new("keyword", word), Rule::new("storage", word)])
+        Palette::new(
+            &[Rule::new("keyword", word), Rule::new("storage", word)],
+            &[Capture::new("keyword", word)],
+        )
     }
 
     fn rust(lines: &[&str]) -> (Engine, Palette, Vec<String>, Highlighted) {
         let engine = Engine::new();
         let palette = palette();
         let owned: Vec<String> = lines.iter().map(|l| (*l).to_owned()).collect();
+        // Whichever engine the seam picks. These tests are about *this* file
+        // — what it caches and how far it reads — and both engines go through
+        // it, so naming one would be testing the seam instead.
         let grammar = engine
-            .find(Clues::new("a.rs", None))
+            .find(Clues::new("a.rs", None), lines.len())
             .expect("rust is a language");
         let highlighted = Highlighted::new(&engine, grammar, &palette, &owned);
         (engine, palette, owned, highlighted)
@@ -200,12 +168,11 @@ mod tests {
     }
 
     #[test]
-    fn reaching_a_line_reads_everything_up_to_it() {
+    fn reaching_a_line_reads_at_least_up_to_it() {
         let (engine, palette, lines, mut h) = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
         h.reach(&engine, &palette, 1, &lines);
-        assert_eq!(h.done(), 2);
+        assert!(h.done() >= 2, "at least what was asked for");
         assert!(!h.line(0).is_empty(), "`fn` is a keyword");
-        assert!(h.line(2).is_empty(), "not reached");
     }
 
     #[test]
@@ -224,41 +191,17 @@ mod tests {
         assert!(!h.finished());
         h.reach(&engine, &palette, 0, &lines);
         assert!(h.finished(), "nothing left to carry forward");
-        assert!(!h.read_more(&engine, &palette, &lines));
     }
 
     #[test]
-    fn idle_reading_gets_there_in_slices() {
-        let long: Vec<&str> = std::iter::repeat_n("fn a() {}", SLICE + 10).collect();
-        let (engine, palette, lines, mut h) = rust(&long);
-        assert!(h.read_more(&engine, &palette, &lines));
-        assert_eq!(h.done() as usize, SLICE);
-        assert!(h.read_more(&engine, &palette, &lines));
-        assert_eq!(h.done() as usize, lines.len());
-        assert!(h.finished());
-    }
-
-    #[test]
-    fn one_frame_does_not_colour_a_whole_enormous_file() {
-        // The freeze this cap exists to prevent. Asking for the last line of
-        // a file far longer than a leap must come back having done a leap's
-        // worth of work, not all of it.
-        let long: Vec<&str> = std::iter::repeat_n("fn a() {}", limits::LEAP * 2).collect();
-        let (engine, palette, lines, mut h) = rust(&long);
-        h.reach(&engine, &palette, lines.len() as u32 - 1, &lines);
-        assert_eq!(h.done() as usize, limits::LEAP, "did what it could");
-        assert!(!h.caught_up(lines.len() as u32 - 1), "and says so");
-
-        // The idle pass finishes it, and then the answer is there.
-        while h.read_more(&engine, &palette, &lines) {}
-        assert!(h.caught_up(lines.len() as u32 - 1));
-    }
-
-    #[test]
-    fn an_ordinary_file_is_never_deferred() {
-        let (engine, palette, lines, mut h) = rust(&["fn a() {}", "fn b() {}"]);
-        h.reach(&engine, &palette, 1, &lines);
-        assert!(h.caught_up(1));
+    fn reading_may_go_further_than_asked_but_never_less() {
+        // The parser has no range API and answers with the whole file however
+        // little was wanted, so a caller must look at `done` rather than
+        // assume it got what it asked for.
+        let (engine, palette, lines, mut h) = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
+        h.reach(&engine, &palette, 0, &lines);
+        assert!(h.done() >= 1, "at least the line asked for");
+        assert!(h.done() <= lines.len() as u32, "and never past the file");
     }
 
     #[test]

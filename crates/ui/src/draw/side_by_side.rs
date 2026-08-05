@@ -10,7 +10,7 @@ use align::{DiffLayout, DiffVersion};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::highlight::Spans;
+use crate::paint::Spans;
 use crate::render::layout;
 use crate::render::line::Painter;
 use crate::render::{cells, column};

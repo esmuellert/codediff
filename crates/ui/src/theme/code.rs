@@ -23,7 +23,6 @@ use syntax::Pen;
 
 use super::catppuccin::Palette;
 use super::colour::Rgb;
-use super::scopes;
 
 /// What a stretch of text is, for the purpose of colouring it.
 ///
@@ -261,11 +260,16 @@ impl Code {
 
     /// The colour a span asks for, or nothing if no rule claimed it.
     ///
+    /// **Either engine's pen.** The two tables share one numbering — scope
+    /// selectors first, capture names after — so this resolves a span without
+    /// knowing which engine produced it, which is the whole reason a diff of a
+    /// parsed file and a matched file can wear one theme.
+    ///
     /// A pen out of range is not an error worth failing a frame over — it can
     /// only mean spans outlived the palette that made them — so it draws
     /// plainly, which is what an unhighlighted line does anyway.
     pub fn pen(&self, pen: Option<Pen>) -> Option<Color> {
-        Some(self.colour(scopes::token(pen?)?))
+        Some(self.colour(super::token(pen?)?))
     }
 }
 
@@ -317,7 +321,7 @@ pub const fn catppuccin(p: Palette) -> Code {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::Theme;
+    use crate::theme::{Theme, scopes};
 
     #[test]
     fn a_pen_resolves_to_the_colour_its_scope_asked_for() {

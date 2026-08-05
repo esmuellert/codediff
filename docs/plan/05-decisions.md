@@ -1863,6 +1863,12 @@ uncoloured character rather than a panic.
 
 ## D38 — a frame colours at most a leap of lines
 
+> **Superseded by [D41](#d41--colouring-happens-on-a-thread-of-its-own).** The problem was
+> real and the reasoning below still explains why; the answer was wrong. Slicing work against
+> frames cannot survive an engine whose smallest unit is indivisible, and `tree_sitter` has
+> two of those. `LEAP` and the idle pass are gone.
+
+
 **Decision.** `Highlighted::reach` stops after `limits::LEAP` (2 000) lines and returns. What
 it could not reach is drawn plainly and finished by the idle pass, which redraws once when it
 catches up.
@@ -1885,6 +1891,206 @@ whole seconds, and a slice is 64 lines. It redraws **only** when what is on scre
 coloured yet, which happens after a leap and at no other time — otherwise it would repaint an
 identical screen five hundred times a second. Once the file is read the loop blocks properly
 rather than spinning.
+
+## D39 — two engines, one file each
+
+**Decision.** `syntax` carries **both** a parser (`tree-sitter`, 25 languages) and the matcher
+(`syntect` + `two-face`, 183). The seam picks **one per file**: parse where we have a grammar,
+match where we do not. Never both on the same file.
+
+**What forced it.** A TextMate grammar recognises *shapes*, not *references*. Measured on this
+repository's own source, Sublime's Rust grammar leaves **35% of identifiers with no scope at
+all** — `Rect`, `Cells`, `DiffVersion`, `Painter` all come back as bare `source.rust
+meta.block.rust`. `bat` on the same files leaves exactly the same words uncoloured, which is
+how we know it is the grammar's ceiling and not our theme's. A parser knows `Rect` is a
+`type_identifier`; the same measurement is **21%**, and what remains is plain locals, which
+Catppuccin draws in the ordinary text colour anyway.
+
+**Why not layer them, as VS Code does.** VS Code runs TextMate *and* a language server and
+paints the server's tokens on top. Measured here, the union of both engines colours **93%** of
+identifiers against the parser's **92%** — one point, for 34 junk words (`range`, `_`, `h`,
+`n`), at the price of the slower engine's whole pass. The two disagree on ~370 words and the
+parser is systematically right (`.len()` is a method, not a builtin; `self` is a language
+builtin). **VS Code layers because its upper layer is sparse** — a language server resolves
+what it can and the grammar fills the gaps. Ours is dense and strictly better, so there is
+nothing left for a lower layer to fill.
+
+**Why the matcher stays.** 183 languages against 40 maintained grammars. Dropping it would
+lose Dockerfile, Makefile, `.patch`, Kotlin, Dart, Perl, INI, LaTeX and the rest of the long
+tail — for a tool whose job is "show me whatever the agent touched", that is the wrong trade.
+It is a permanent half of the design, not a transition.
+
+**What makes it cheap.** [D37](#d37--a-span-carries-a-pen-not-a-colour)'s pen. Both engines
+emit `Span { bytes, style: Style { pen } }`, and the pen space is shared — scope selectors
+first, capture names after — so `Code::pen` resolves a span without knowing which engine
+produced it. The indirection was added for `basic-dark`; that it also makes two engines
+interchangeable was luck.
+
+**What it costs, honestly.**
+
+- **The binary is 3.6 MB → 40 MB.** 36 MB of it is `.rodata`: generated parse tables. Four
+  grammars are more than half (C# 11 MB, Scala 10, Haskell 8, Swift 8). It is memory-mapped,
+  so a session reviewing Rust pages in Rust's 2 MB and never touches Scala's — measured
+  resident memory after startup is **5 MB**, and 9 MB after colouring a file.
+- **Two tables that must agree.** A TextMate selector and a capture name must land on the same
+  `Token`, or one file looks different from another. Dispatch makes this a per-language
+  property rather than a per-byte one, and `ui/tests/languages.rs` checks every language
+  through the real seam without naming an engine.
+- **Known disagreements are written down**, in `the_two_engines_differ_where_the_grammars_do`.
+  C's grammar calls `int` a type where TextMate calls it storage; the matcher picks format
+  specifiers out of a string where no grammar does. Neither is a bug, and a difference nobody
+  recorded is a difference nobody notices.
+
+**Three traps found while building, all silent.**
+
+1. **A query can be an *increment*, not a whole query.** TypeScript ships five captures and C++
+   six, because upstream expects them composed with JavaScript's and C's. Nothing in the crate
+   says so; the symptom is a language that comes back entirely plain.
+2. **An unrecognised capture still wins.** Three grammars write `(comment) @comment @spell`.
+   `@spell` is Neovim metadata, resolves to nothing here, and *suppresses* the `@comment` next
+   to it — so Swift, Haskell and SQL had no comments at all. `without_metadata` strips them.
+3. **The later pattern wins**, which is the opposite of TextMate. JSON captures keys and then
+   captures every string, so its own key rule never fires. Overrides are therefore *appended*,
+   which is the same thing Helix and nvim-treesitter do by forking the whole file.
+
+**Why not nvim-treesitter's queries.** The only thing they add over the crates' own is
+`(identifier) @variable`, which Catppuccin paints in the ordinary text colour — no visible
+difference — and they use Neovim-only predicates (`#lua-match?`) that `tree-sitter-highlight`
+**silently ignores**, turning `((identifier) @type (#lua-match? @type "^[A-Z]"))` into an
+unconditional `(identifier) @type` and painting every word as a type. All cost, no benefit.
+
+---
+
+## D40 — a frame never prepares a language
+
+> **Superseded by [D41](#d41--colouring-happens-on-a-thread-of-its-own).** This bought
+> ten-millisecond text at the price of a 186 ms keypress, which is the same bug moved rather
+> than fixed. Kept because it is the measurement that forced the thread.
+
+
+**Decision.** `Moment::Frame` may colour only with a language already prepared;
+`Moment::Idle` prepares. A file in a language not yet seen draws plainly for one frame and
+colours a moment later.
+
+**Why.** `tree_sitter` builds an index from a query's text against the grammar, and it is not
+free: **16 ms for Rust, 90 ms for Swift, 100 ms for Scala, 180 ms for Haskell** — measured on
+0.26, once per language for the life of the process. Doing that while a frame waits is a
+visible stall on the first file of a session.
+
+**Why it cannot be done at build time.** A compiled query is an opaque C structure full of
+pointers; there is no serialisation API, and `ts_query_new` is the only constructor. Upstream
+tracks this as [tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942),
+open since November 2022 with a 1.0 milestone. **Nothing is compiled on the reader's machine** —
+the C grammars are compiled when *we* build, and the shipped binary links only libc — but the
+index cannot be prebuilt and shipped.
+
+**Why this is the same bargain as [D38](#d38--a-frame-colours-at-most-a-leap-of-lines).** Both
+say: a frame does what is cheap, draws the text regardless, and the idle pass finishes.
+`caught_up` already existed to say when that had happened, and `read_more` already existed to
+do it. The change is one enum through the seam.
+
+**Measured on the real binary**, cold start, release:
+
+| | first text | first colour |
+|---|---|---|
+| Rust | 9 ms | 30 ms |
+| Haskell | 12 ms | 226 ms |
+
+The text appears in about ten milliseconds whatever the language, which is the property worth
+having. What remains is that the idle pass itself blocks for the length of one preparation, so
+a keypress in the first 200 ms of a Haskell file can wait — one time, per language, per
+session. Moving it to a thread would fix that and cost a thread; it is not worth it yet.
+
+**A latent bug this exposed.** `read_more` returned `true` unconditionally when unfinished. If
+an engine ever appends nothing — a query that cannot be built — the idle loop would spin
+forever, redrawing at full speed. It now ends the file when an idle pass achieves nothing.
+`every_language_in_the_table_compiles_its_query` proves the condition is currently
+unreachable, and the guard is written down as defensive rather than tested.
+
+## D41 — colouring happens on a thread of its own
+
+**Decision.** A [`Painter`] thread colours; the interface asks and installs. `ui` never
+computes a colour, and there is no path by which it can wait for one. `std::thread` and
+`std::sync::mpsc`; no runtime, no locks, no shared state.
+
+**What forced it.** Two engines, and the parser has no unit of work small enough to hide
+between keystrokes:
+
+- **`Query::new` is indivisible** — 16 ms for Rust, 247 ms for Haskell, once per language per
+  process. There is no serialisation API, so it cannot be prebuilt and shipped
+  ([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942), open since
+  2022 with a 1.0 milestone). We use 119 of Haskell's 120 patterns, so there is nothing to
+  trim either.
+- **`highlight` has no range API** — the whole document, every call.
+
+[D38](#d38--a-frame-colours-at-most-a-leap-of-lines) and
+[D40](#d40--a-frame-never-prepares-a-language) were both attempts to schedule that against
+frames, and both were workarounds for the same fact. D40's measured result was the tell: text
+in 12 ms, and a keypress during the first Haskell file answered in **186 ms**. The text was
+never the problem.
+
+**Measured, before and after**, on the real binary, cold start:
+
+| | text | colour | keypress during painting |
+|---|---|---|---|
+| D40 (idle pass) | 9–12 ms | 30 / 226 ms | 10 ms … **186 ms** |
+| D41 (thread) | 12–18 ms | 46–62 ms | **0–13 ms** |
+
+**Why threads and not `async`.** One job, and it is processor-bound. A runtime would add a
+scheduler with nothing to schedule, and ~100 crates. `mpsc` is multi-producer,
+single-consumer, which is the shape.
+
+**The loop, and why "poll" no longer means what it did.**
+
+```text
+loop {
+    collect()                  // whatever the painter finished; never waits
+    wait for a key             // 16 ms while painting, for ever otherwise
+    handle, draw
+}
+```
+
+The old `poll(2ms)` was a *work* interval — the loop did 64 lines in the gaps, so it had to
+stay small. The new 16 ms is a *collection* interval: one frame at sixty hertz, past which
+nobody can see the difference. A keypress ends the wait immediately either way, so it never
+paces the answer to a key. With nothing being painted the loop blocks on `read()` at no cost,
+exactly as it did before any of this.
+
+**What crosses the boundary.** [`Highlighted`] holds a raw pointer from the regex engine
+underneath `syntect` and is **not `Send`** — so it never leaves the painter. Text goes in,
+spans come back, both plain data, and the compiler enforces it. That is why the model now
+holds `Colours` (spans) rather than a highlighter: not a preference, a requirement.
+
+**Deleted:** `Moment`, `limits::LEAP`, `limits::MAX_PARSED_LINES`, `SLICE`, `read_more`,
+`caught_up`, and `Highlighted`'s stored `reading`. **Kept:** `MAX_BYTES`, `MAX_LINES`,
+`MAX_LINE_CHARS` — those say "this file is not worth colouring", which has nothing to do with
+scheduling.
+
+**Two things that fell out.**
+
+- `MAX_PARSED_LINES` sent long files to the matcher because a whole-file parse would hold a
+  frame. There is no frame to hold now, and on a long file the parser is ten times faster — so
+  the cap was not merely unnecessary, it was backwards.
+- A **layout toggle keeps its colours**. Spans are keyed by file line and `flipped` carries
+  the whole diff across, so toggling does not repaint. Pinned by a test, because it is exactly
+  the sort of thing that would regress silently.
+
+**Staleness, built in before it is needed.** A [`Version`] rides on every request and returns
+on every answer. Nothing today can invalidate a file mid-paint — but the file watcher at S13
+can, and the explorer at S12 can outrun one. Retrofitting that after the first wrong-colours
+bug is how you get a heisenbug.
+
+**Tests stay deterministic.** `Session::settle` blocks until everything outstanding has
+arrived, using the same two calls the loop uses — so a test exercises the real path rather
+than a shortcut past it, and waits exactly as long as the work takes.
+
+**One thread, and a lint that keeps it that way.** `cargo xtask lint-arch` refuses
+`thread::spawn` anywhere but `crates/ui/src/paint.rs`, so "which thread owns this?" keeps an
+obvious answer. Tests are exempt: proving two things do not block each other takes two things.
+
+[`Painter`]: crate::paint::Painter
+[`Version`]: crate::paint::Version
+[`Highlighted`]: syntax::Highlighted
 
 ## Open questions
 

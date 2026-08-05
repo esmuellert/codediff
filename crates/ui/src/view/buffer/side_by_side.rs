@@ -24,8 +24,8 @@ use align::Alignment;
 use file_types::File;
 
 use crate::diff::Diff;
-use crate::highlight::Spans;
 use crate::input::{BufferAction, DIVIDER_STEP};
+use crate::paint::{Painted, Painter, Spans, Version};
 
 /// The narrowest either column may be squeezed to, in percent.
 const MIN_DIVIDER: u16 = 15;
@@ -73,19 +73,19 @@ impl SideBySide {
         self.diff.spans()
     }
 
-    /// Colours up to the given line of each version.
-    pub fn reach(&mut self, original: u32, modified: u32) {
-        self.diff.reach(original, modified);
+    /// Asks the painter for both versions.
+    pub fn start_painting(&mut self, painter: &Painter, version: Version) {
+        self.diff.start_painting(painter, version);
     }
 
-    /// Whether both versions are coloured as far as the given lines.
-    pub fn caught_up(&self, original: u32, modified: u32) -> bool {
-        self.diff.caught_up(original, modified)
+    /// Whether either side is still waiting for colours.
+    pub fn painting(&self) -> bool {
+        self.diff.painting()
     }
 
-    /// Colours a little more, and says whether there was anything to do.
-    pub fn read_more(&mut self) -> bool {
-        self.diff.read_more()
+    /// Installs a piece the painter finished.
+    pub fn install(&mut self, painted: Painted) -> bool {
+        self.diff.install(painted)
     }
 
     /// Where the divider sits: the share of the width given to the original,

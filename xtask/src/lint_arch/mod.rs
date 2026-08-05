@@ -20,7 +20,7 @@ use anyhow::{Result, bail};
 
 use checks::{
     check_blind_dirs, check_clock_free, check_edges, check_engine_confinement, check_purity,
-    check_type_names, check_unsafe_policy, pending_names,
+    check_threads, check_type_names, check_unsafe_policy, pending_names,
 };
 
 pub fn run() -> Result<()> {
@@ -34,6 +34,7 @@ pub fn run() -> Result<()> {
     check_engine_confinement(&root, &mut failures)?;
     check_type_names(&root, &mut failures)?;
     check_blind_dirs(&root, &mut failures)?;
+    check_threads(&root, &mut failures)?;
 
     if !failures.is_empty() {
         let mut msg = format!("{} architecture violation(s):\n", failures.len());
@@ -44,7 +45,7 @@ pub fn run() -> Result<()> {
     }
 
     println!(
-        "lint-arch: purity, clocks, unsafe policy, engine confinement, type names\n            and module boundaries clean"
+        "lint-arch: purity, clocks, threads, unsafe policy, engine confinement,\n            type names and module boundaries clean"
     );
     println!("  edge rules: {applied} applied, {pending} awaiting their crate");
     if !pending_names(&root)?.is_empty() {

@@ -54,6 +54,44 @@ ui = { path = "crates/ui" }
 syntect = { version = "5", default-features = false, features = ["default-onig"] }
 two-face = { version = "0.4", default-features = false, features = ["syntect-onig"] }
 
+# The parsing engine, for the languages that have one. A grammar knows that
+# `Rect` in `area: Rect` is a type, which a regex over lines cannot; measured
+# on our own source it colours 92% of identifiers where TextMate reaches 81%,
+# and it does so ten times faster. It does not replace `syntect`: there are
+# ~40 maintained grammars against two-face's 183 languages, so the TextMate
+# engine remains the fallback for everything else. See D39.
+tree-sitter = "0.26"
+tree-sitter-highlight = "0.26"
+
+# One crate per language. Each ships its own `highlights.scm`, which is why
+# this is a dependency list rather than a body of work. Version numbers  wildly
+# because every grammar is versioned by its own repository; they agree on the
+# `tree-sitter-language` ABI shim rather than on the core crate.
+tree-sitter-bash = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-cpp = "0.23"
+tree-sitter-css = "0.25"
+tree-sitter-elixir = "0.3"
+tree-sitter-go = "0.25"
+tree-sitter-haskell = "0.23"
+tree-sitter-html = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-json = "0.24"
+tree-sitter-lua = "0.5"
+tree-sitter-nix = "0.3"
+tree-sitter-php = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-ruby = "0.23"
+tree-sitter-rust = "0.24"
+tree-sitter-scala = "0.26"
+tree-sitter-sequel = "0.3"
+tree-sitter-swift = "0.7"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-typescript = "0.23"
+tree-sitter-yaml = "0.7"
+
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 ratatui = "0.30"
@@ -71,4 +109,8 @@ portable-pty = { version = "0.9", default-features = false }
 
 [profile.release]
 lto = "thin"
-strip = "debuginfo"
+# Symbols, not just debug info. Twenty-five parsers are generated C with a
+# symbol per state table, which is 39 MB of names nobody reads: `strip =
+# "debuginfo"` left a 42 MB binary whose actual code and data is 2.9 MB. A
+# panic still reports its file and line, which is what a bug report needs.
+strip = "symbols"

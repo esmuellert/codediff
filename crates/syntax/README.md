@@ -1,5 +1,16 @@
 # syntax
 
+> **Two engines since S11b.** A parser (`tree-sitter`, 25 languages) and a matcher (`syntect` +
+> `two-face`, 183), and the seam picks **one per file** — parse where we have a grammar, match
+> where we do not. Most of what follows describes the matcher, which is still how the long tail
+> of languages is coloured; see [D39](../../docs/plan/05-decisions.md#d39--two-engines-one-file-each)
+> for why both, and why never both on one file.
+>
+> The short version: a TextMate grammar leaves **35% of identifiers with no scope at all**
+> (`Rect`, `Cells`, `DiffVersion` in type position), because a regular expression sees shapes
+> and not references. `bat` leaves the same words uncoloured. A parser reaches **21%**, and
+> what remains is plain locals, which Catppuccin draws in the ordinary text colour anyway.
+
 Says what a piece of text *is* — a keyword, a string, a comment — and how much of it, so
 `ui` can colour it.
 
@@ -138,7 +149,29 @@ VS Code does exactly this: its token metadata packs an index into a `ColorMap`.
 
 ## Measured
 
-Release build, this palette, real Rust source:
+**The parser**, release, on this repository's own source:
+
+| | |
+|---|---|
+| `Engine::new` — all 25 grammars plus syntect | 2.1 ms |
+| resident memory after startup | 5 MB |
+| ...after colouring a file | 9 MB |
+| preparing one language, once per process | 16 ms (Rust) — 180 ms (Haskell) |
+| throughput | ~190 000 lines/sec |
+| identifiers coloured | 92% (matcher: 81%) |
+
+Preparing a language cannot be done at build time — a compiled query is an opaque C structure,
+and `ts_query_new` is the only constructor
+([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942), open since 2022).
+It is indivisible, too, so it cannot be spread across frames.
+
+**So none of this happens on the drawing thread.** `ui` runs a painter thread, asks it for a
+file, and installs the spans when they arrive; the interface never computes a colour and
+cannot wait for one. On the real binary that is **12–18 ms to text, 46–62 ms to colour**, and
+a keypress during painting answered in **0–13 ms** — against 186 ms when this was scheduled
+against frames. See D41.
+
+**The matcher**, same conditions:
 
 | | |
 |---|---|
@@ -164,13 +197,16 @@ are in the code rather than in a comment:
 crates/syntax/
 ├── src/
 │   ├── lib.rs          what a caller sees
-│   ├── style.rs        Pen, Style, Rule, Span, and coalescing
+│   ├── style.rs        Pen, Style, Rule, Capture, Span, and coalescing
 │   ├── detect.rs       which language: name, then extension, then shebang
-│   ├── highlighted.rs  one file, coloured as far as anyone has looked
+│   ├── highlighted.rs  one file, coloured as far as anyone has looked; Moment
 │   ├── limits.rs       every threshold, in one place
 │   └── engine/
-│       ├── mod.rs      the seam: everything above is engine-free
-│       └── syntect.rs  the only file allowed to name syntect
+│       ├── mod.rs      the seam, and the choice between the two engines
+│       ├── syntect.rs  the matcher: 183 languages, resumable line by line
+│       └── treesitter/
+│           ├── mod.rs        the parser: whole-file, ten times faster
+│           └── languages.rs  the 25 languages, and query overrides
 └── tests/
     ├── languages.rs    fourteen languages, by the pen that reaches the caller
     ├── multiline.rs    block comments and multi-line strings — delta's bug, as a test
@@ -182,14 +218,16 @@ The other half is in `ui`, because it is about colour:
 ```text
 crates/ui/
 ├── src/
-│   ├── highlight.rs        the join: the process-wide engine and scope table
+│   ├── highlight.rs        the join: the process-wide engine and both tables
 │   └── theme/
 │       ├── code.rs         Token — what a piece of code is — and each theme's colours
-│       └── scopes.rs       which scope path wears which pen
+│       ├── scopes.rs       which TextMate scope path wears which pen
+│       └── captures.rs     which tree-sitter capture wears which pen
 └── tests/
     ├── scopes.rs           every selector claims something; every token is worn
     ├── colours.rs          the right one wins, word by word, in eleven languages
-    └── corpus/             the source those two are run against
+    ├── languages.rs        every language, through the real seam, either engine
+    └── corpus/             the source those are run against
 ```
 
 `cargo xtask lint-arch` refuses the name of a syntax engine anywhere outside

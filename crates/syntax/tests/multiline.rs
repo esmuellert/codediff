@@ -11,26 +11,35 @@
 //! they are the ones that would fail if anybody made the highlighter stateless
 //! per line, or started it anywhere but line 1.
 
-use syntax::{Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style};
+use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style};
 
 const STRING: Pen = Pen(1);
 const COMMENT: Pen = Pen(2);
 const KEYWORD: Pen = Pen(3);
 
 fn palette() -> Palette {
-    Palette::new(&[
-        Rule::new("string", Style::pen(STRING)),
-        Rule::new("comment", Style::pen(COMMENT)),
-        Rule::new("keyword", Style::pen(KEYWORD)),
-        Rule::new("storage", Style::pen(KEYWORD)),
-    ])
+    Palette::new(
+        &[
+            Rule::new("string", Style::pen(STRING)),
+            Rule::new("comment", Style::pen(COMMENT)),
+            Rule::new("keyword", Style::pen(KEYWORD)),
+            Rule::new("storage", Style::pen(KEYWORD)),
+        ],
+        &[
+            Capture::new("string", Style::pen(STRING)),
+            Capture::new("comment", Style::pen(COMMENT)),
+            Capture::new("keyword", Style::pen(KEYWORD)),
+        ],
+    )
 }
 
 fn read(path: &str, source: &str) -> Vec<Vec<Span>> {
     let engine = Engine::new();
     let palette = palette();
     let lines: Vec<String> = source.lines().map(str::to_owned).collect();
-    let grammar = engine.find(Clues::new(path, None)).expect("a grammar");
+    let grammar = engine
+        .find(Clues::new(path, None), lines.len())
+        .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &lines);
     highlighted.reach(&engine, &palette, lines.len() as u32, &lines);
     (0..lines.len())
@@ -115,12 +124,15 @@ fn reading_lazily_gives_the_same_answer_as_reading_it_all() {
     let engine = Engine::new();
     let palette = palette();
     let lines: Vec<String> = source.lines().map(str::to_owned).collect();
-    let grammar = engine.find(Clues::new("a.rs", None)).expect("a grammar");
+    let grammar = engine
+        .find(Clues::new("a.rs", None), lines.len())
+        .expect("a grammar");
 
     let mut piecemeal = Highlighted::new(&engine, grammar, &palette, &lines);
-    piecemeal.reach(&engine, &palette, 0, &lines);
-    piecemeal.reach(&engine, &palette, 2, &lines);
-    piecemeal.reach(&engine, &palette, 5, &lines);
+    // Reached in three goes, as a reader scrolling would.
+    for line in [0, 2, 5] {
+        piecemeal.reach(&engine, &palette, line, &lines);
+    }
 
     let whole = read("a.rs", source);
     for (n, expected) in whole.iter().enumerate() {

@@ -144,6 +144,20 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 ///
 /// Checked as text rather than by the compiler because Rust has no way to say
 /// "this module may not import that one" within a crate.
+/// The one file allowed to start a thread, and why nowhere else may.
+///
+/// Concurrency is the easiest thing in this program to get wrong and the
+/// hardest to test, so there is exactly one place it exists: the painter, which
+/// colours text off the drawing thread. Everything else is single-threaded and
+/// can be reasoned about as such.
+///
+/// A second `spawn` anywhere would mean two things sharing the view, and the
+/// question "which thread owns this?" would stop having an obvious answer. If
+/// another background job is ever wanted, it belongs beside the painter or
+/// behind the same channel — not in a new corner. See D41.
+pub const THREAD_FILE: &str = "crates/ui/src/paint.rs";
+pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
+
 pub const BLIND_DIRS: &[(&str, &str, &str)] = &[(
     "crates/ui/src/render",
     "crate::view",

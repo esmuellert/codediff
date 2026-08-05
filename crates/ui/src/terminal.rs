@@ -17,11 +17,16 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 /// The terminal, restored when this is dropped.
-/// How long to wait for a key before doing something else.
+/// How long to wait for a key while a file is still being coloured.
 ///
-/// Two milliseconds: shorter than a frame, so nothing perceptible is added to
-/// the latency of a keypress, and long enough that the loop is not a spin.
-const IDLE: std::time::Duration = std::time::Duration::from_millis(2);
+/// One frame at sixty hertz. The loop does no work between waits — the work is
+/// on the painter's thread — so this is only how stale the screen may be, and
+/// past a frame nobody can see the difference. It costs sixty wake-ups a
+/// second while a file is being coloured, and none at all otherwise.
+///
+/// A keypress ends the wait immediately whatever this is, so it has no bearing
+/// on how quickly a key is answered.
+const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 
 pub struct Screen {
     terminal: Terminal<CrosstermBackend<Stdout>>,
@@ -45,22 +50,20 @@ impl Screen {
         &mut self.terminal
     }
 
-    /// Blocks until something happens.
-    pub fn next_event(&self) -> io::Result<event::Event> {
-        event::read()
-    }
-
-    /// The next event, or `None` if the reader paused long enough to be worth
-    /// doing background work in.
+    /// Waits for the next terminal event.
     ///
-    /// The whole of our idle scheduling. A terminal program spends nearly all
-    /// its time waiting for a keypress, and this is how that time is offered
-    /// to whoever wants it without a thread, a channel or a clock. The wait is
-    /// short enough that a key pressed during it is answered in the same
-    /// frame, and long enough that a reader who is not typing yields
-    /// immediately.
-    pub fn next_event_or_idle(&self) -> io::Result<Option<event::Event>> {
-        if event::poll(IDLE)? {
+    /// `waiting` says whether anything is still being coloured. If it is, the
+    /// wait gives up after [`FRAME`] and answers `None`, so the caller can
+    /// collect what the painter has finished; if it is not, this blocks until
+    /// a key is pressed and the thread costs nothing at all.
+    ///
+    /// Either way a keypress ends the wait at once — the timeout paces
+    /// *collection*, never the answer to a key.
+    pub fn next_event(&self, waiting: bool) -> io::Result<Option<event::Event>> {
+        if !waiting {
+            return event::read().map(Some);
+        }
+        if event::poll(FRAME)? {
             return event::read().map(Some);
         }
         Ok(None)

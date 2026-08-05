@@ -435,6 +435,80 @@ JSON, YAML, Markdown, Bash. Toggle syntax on and off with `s` to A/B compare.
 
 ---
 
+### S11b — A parser for the languages that have one ✅
+
+**Build.** `tree-sitter` as a second engine in `crates/syntax/src/engine/`, 25 languages,
+behind the same seam. The scope table gains a sibling, `ui::theme::captures`. One engine per
+file: parse where we have a grammar, match where we do not.
+
+**Why, after S11 was done.** A TextMate grammar cannot tell `Rect` in `area: Rect` from
+`frame` in `frame.text` — to a regular expression they are both words. Measured on our own
+source, 35% of identifiers got no scope at all, and `bat` leaves exactly the same words
+uncoloured, so it was the grammar's ceiling rather than our theme's. A parser reaches 21%,
+and the remainder is plain locals, which Catppuccin draws in the ordinary text colour anyway.
+
+**Pass when.**
+- [x] every one of the 25 parsed languages colours keywords, types, functions, strings and
+      comments, asserted word by word
+- [x] the six checked matcher languages still do, unchanged
+- [x] a language with no grammar falls through and is coloured exactly as before
+- [x] both engines resolve through one `Token` table, so a file looks the same either way
+- [x] the text of a file is never withheld while a language is prepared
+
+**Found while building** — every one of these fails silently, and each cost a language its
+colour until a test caught it:
+
+- **A shipped query can be an increment, not a whole query.** TypeScript ships five captures
+  and C++ six, expecting composition with JavaScript's and C's. The symptom is a language
+  that comes back entirely plain.
+- **An unrecognised capture still wins and suppresses its neighbour.** `(comment) @comment
+  @spell` left Swift, Haskell and SQL with no comments, because `@spell` is Neovim metadata.
+- **The later pattern wins**, the opposite of TextMate — so JSON's own key rule never fired,
+  and overrides have to be appended.
+- **Preparing a language costs 16–180 ms** and cannot be done at build time. See
+  [D40](05-decisions.md#d40--a-frame-never-prepares-a-language).
+- **`read_more` could spin forever** if an engine ever appended nothing.
+
+**Costs, recorded rather than hidden.** The binary goes 3.6 MB → 40 MB, 36 MB of it parse
+tables; it is memory-mapped, so resident memory after startup is 5 MB. Two tables must now
+agree on one `Token` set, and the disagreements we know about are a named test. See
+[D39](05-decisions.md#d39--two-engines-one-file-each).
+
+---
+
+### S11c — Colouring moves off the drawing thread ✅
+
+**Build.** `ui::paint`: one thread, one queue each way. The interface asks for a file and
+installs spans as they arrive; it never computes a colour and has no way to wait for one.
+
+**Why, after S11b worked.** Two engines, and the parser has no unit of work small enough to
+hide between keystrokes: `Query::new` is an indivisible 16–247 ms, and `highlight` has no
+range API. S11b scheduled that against frames anyway, and the measurement was damning — text
+in 12 ms, but a keypress during the first Haskell file answered in **186 ms**. The text was
+never the problem.
+
+**Pass when.**
+- [x] a keypress during painting is answered in under 30 ms, whatever the language
+- [x] the text of a file is on screen before any colour, always
+- [x] colour arrives within ~60 ms for a file of ordinary size
+- [x] a layout toggle keeps the colours it already has
+- [x] tests stay deterministic, using the same path the loop uses
+- [x] the terminal is still handed back on quit, panic and suspend
+
+**Measured**, real binary, cold start:
+
+| | text | colour | keypress while painting |
+|---|---|---|---|
+| before | 9–12 ms | 30 / 226 ms | 10 – **186 ms** |
+| after | 12–18 ms | 46–62 ms | **0–13 ms** |
+
+**A net deletion.** `Moment`, `LEAP`, `MAX_PARSED_LINES`, `SLICE`, `read_more`, `caught_up`
+and `Highlighted`'s stored state all go — they were one idea, *schedule against frames*, in
+five pieces. What replaces them is a queue. `lint-arch` now refuses a thread anywhere but the
+painter. See [D41](05-decisions.md#d41--colouring-happens-on-a-thread-of-its-own).
+
+---
+
 ### S12 — Explorer
 
 **Build.** `explorer` crate: entries → grouped tree, path collapsing, filter. `ui`:

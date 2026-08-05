@@ -21,18 +21,18 @@
 
 use align::DiffVersion;
 use file_types::File;
-use syntax::Highlighted;
 
-use crate::highlight::{self, Spans};
+use crate::paint::{Colours, Job, Painted, Painter, Spans, Version, path_of};
 
 /// One version of a file, and its lines.
 #[derive(Debug)]
 pub struct SingleFile {
     file: File,
     lines: Vec<String>,
-    /// How far the file has been coloured. One, not two: there is only one
-    /// version here, which is the whole difference from a diff.
-    syntax: Highlighted,
+    /// The colours the painter has sent back. One set, not two: there is only
+    /// one version here, which is the whole difference from a diff.
+    colours: Colours,
+    version: Version,
 }
 
 impl SingleFile {
@@ -41,36 +41,47 @@ impl SingleFile {
     ///
     /// [`Alignment::new`]: align::Alignment::new
     pub fn new(file: File, lines: &[&str]) -> Self {
-        let lines: Vec<String> = lines.iter().map(|line| (*line).to_owned()).collect();
-        // Whichever side exists: a lone file is one or the other, and asking
-        // for the side it is not would find no path and colour nothing.
-        let version = file.only().unwrap_or(DiffVersion::Modified);
-        let syntax = highlight::begin(&file, version, &lines);
         Self {
             file,
-            lines,
-            syntax,
+            lines: lines.iter().map(|line| (*line).to_owned()).collect(),
+            colours: Colours::default(),
+            version: Version(0),
         }
     }
 
     /// The colouring, for a frame.
     pub fn spans(&self) -> Spans<'_> {
-        Spans::One(&self.syntax)
+        Spans::One(&self.colours)
     }
 
-    /// Colours up to the given line, numbered from 1.
-    pub fn reach(&mut self, number: u32) {
-        highlight::reach(&mut self.syntax, number, &self.lines);
+    /// Asks the painter for this file.
+    pub fn start_painting(&mut self, painter: &Painter, version: Version) {
+        self.version = version;
+        // Whichever side exists: a lone file is one or the other, and asking
+        // for the side it is not would find no path and colour nothing.
+        let side = self.file.only().unwrap_or(DiffVersion::Modified);
+        let Some(path) = path_of(&self.file, side) else {
+            return;
+        };
+        painter.paint(Job {
+            version,
+            path,
+            lines: self.lines.clone(),
+        });
     }
 
-    /// Whether the file has been coloured as far as the given line.
-    pub fn caught_up(&self, number: u32) -> bool {
-        highlight::caught_up(&self.syntax, number)
+    /// Whether the file is still waiting for colours.
+    pub fn painting(&self) -> bool {
+        self.colours.lines() < self.lines.len() as u32
     }
 
-    /// Colours a little more, and says whether there was anything to do.
-    pub fn read_more(&mut self) -> bool {
-        highlight::read_more(&mut self.syntax, &self.lines)
+    /// Installs a piece the painter finished, if it is still wanted.
+    pub fn install(&mut self, painted: Painted) -> bool {
+        if painted.version != self.version {
+            return false;
+        }
+        self.colours.install(painted);
+        true
     }
 
     /// Which file this is — structured, so a status line can style and shorten

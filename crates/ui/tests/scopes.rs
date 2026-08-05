@@ -5,6 +5,12 @@
 //! cannot catch it, and neither can the compiler. The only guard is to run
 //! every selector against real source and insist it claims something.
 //!
+//! **Deliberately asks the matcher**, whatever the seam would choose. Every
+//! selector here is a TextMate scope path, which only that engine matches; a
+//! reader opening one of these files gets the parser instead, and the parser's
+//! half of the theme is checked by `captures.rs`. Which engine a real file gets
+//! is `colours.rs`'s business, and it says nothing about it on purpose.
+//!
 //! Two passes, because a rule can legitimately fail to win. `keyword` is
 //! outranked by `keyword.control` wherever both apply, so a whole-table pass
 //! would accuse a correct rule. So: one pass with the whole table, and then,
@@ -12,6 +18,7 @@
 //! nothing can outrank it. Whatever still matches nothing is dead.
 
 use syntax::{Clues, Engine, Highlighted, Palette, Pen, Rule, Style};
+
 use ui::theme::code::Token;
 use ui::theme::scopes::SCOPES;
 
@@ -19,12 +26,12 @@ mod corpus;
 
 /// Every pen that appears anywhere in the corpus, under the given rules.
 fn pens(engine: &Engine, rules: &[Rule]) -> Vec<Pen> {
-    let palette = Palette::new(rules);
+    let palette = Palette::new(rules, &[]);
     let mut seen = Vec::new();
     for (path, source) in corpus::FILES {
         let lines: Vec<String> = source.lines().map(str::to_owned).collect();
         let first = lines.first().map(String::as_str);
-        let Some(grammar) = engine.find(Clues::new(path, first)) else {
+        let Some(grammar) = engine.find_textmate(Clues::new(path, first)) else {
             panic!("no grammar claims {path}");
         };
         let mut read = Highlighted::new(engine, grammar, &palette, &lines);

@@ -29,6 +29,31 @@ fn foregrounds(cells: &Cells, y: u16) -> Vec<Color> {
     out
 }
 
+/// The screen once the painter has finished: what a reader sees a few frames
+/// after opening a file.
+///
+/// The first frame is deliberately plain — colouring happens on another thread
+/// and the interface never waits for it — so every test below that asks about
+/// colour asks about the settled screen.
+/// `the_first_frame_shows_the_text_before_any_colour` is the one that asks
+/// about the other.
+fn settled(session: &mut Session, width: u16, height: u16) -> Cells {
+    session.settle();
+    cells(session, width, height)
+}
+
+/// Everything the screen says, as one string.
+fn text_of(cells: &Cells) -> String {
+    (0..cells.area.height)
+        .map(|y| {
+            (0..cells.area.width)
+                .map(|x| cells[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The background of the cell under the first occurrence of `needle`.
 fn background_at(cells: &Cells, y: u16, needle: char) -> Option<Color> {
     (0..cells.area.width)
@@ -49,7 +74,7 @@ fn a_keyword_a_comment_and_a_string_are_three_different_colours() {
         "fn main() {\n    let s = \"hi\";\n}\n",
         "fn main() {\n    let s = \"there\";\n}\n",
     );
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
     let code = Theme::DARK.code;
 
     let first = foregrounds(&cells, 0);
@@ -71,7 +96,7 @@ fn a_changed_line_keeps_its_background_and_gains_syntax_colour() {
     // diff's background; the words on it are still coloured by the language.
     // Either half missing is a bug the other half hides.
     let mut session = rust_session(BEFORE, AFTER);
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
 
     let changed = (0..cells.area.height)
         .find(|y| foregrounds(&cells, *y).contains(&Theme::DARK.code.constant))
@@ -94,7 +119,7 @@ fn syntax_never_sets_a_background() {
     // guards the wiring rather than the table: it would catch a renderer that
     // patched a whole `Style` where it should have patched a foreground.
     let mut session = rust_session(BEFORE, AFTER);
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
 
     let theme = Theme::DARK;
     let allowed = [
@@ -126,7 +151,7 @@ fn the_inner_change_highlight_still_wins_over_syntax() {
     // is a background and the syntax is a foreground, so the character that
     // changed is both legible and unmistakable.
     let mut session = rust_session(BEFORE, AFTER);
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
 
     let found = (0..cells.area.height).any(|y| {
         (0..cells.area.width).any(|x| {
@@ -142,10 +167,10 @@ fn the_inner_change_highlight_still_wins_over_syntax() {
 #[test]
 fn pressing_s_takes_the_colour_away_and_gives_it_back() {
     let mut session = rust_session(BEFORE, AFTER);
-    let coloured = cells(&mut session, 80, 10);
+    let coloured = settled(&mut session, 80, 10);
 
     harness::type_keys(&mut session, "s");
-    let plain = cells(&mut session, 80, 10);
+    let plain = settled(&mut session, 80, 10);
     assert_ne!(
         foregrounds(&coloured, 0),
         foregrounds(&plain, 0),
@@ -154,7 +179,7 @@ fn pressing_s_takes_the_colour_away_and_gives_it_back() {
     assert!(!foregrounds(&plain, 0).contains(&Theme::DARK.code.keyword));
 
     harness::type_keys(&mut session, "s");
-    let again = cells(&mut session, 80, 10);
+    let again = settled(&mut session, 80, 10);
     assert_eq!(
         foregrounds(&coloured, 0),
         foregrounds(&again, 0),
@@ -168,7 +193,7 @@ fn a_file_read_inline_is_coloured_the_same_way() {
     // whether the spans reached the shared path rather than one of the two.
     let mut session = rust_session(BEFORE, AFTER);
     harness::type_keys(&mut session, "t");
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
     assert!(
         (0..cells.area.height).any(|y| foregrounds(&cells, y).contains(&Theme::DARK.code.keyword)),
         "inline has keywords too"
@@ -179,7 +204,7 @@ fn a_file_read_inline_is_coloured_the_same_way() {
 fn a_lone_file_is_coloured_too() {
     let buffer = harness::added("src/main.rs", "fn main() {\n    let x = 1;\n}\n");
     let mut session = Session::new(buffer, Theme::DARK);
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
     assert!(foregrounds(&cells, 0).contains(&Theme::DARK.code.keyword));
 }
 
@@ -189,7 +214,7 @@ fn a_language_nothing_claims_is_drawn_plainly_rather_than_refused() {
         diff("notes.qqzz", "one line\n", "another line\n"),
         Theme::DARK,
     );
-    let cells = cells(&mut session, 80, 10);
+    let cells = settled(&mut session, 80, 10);
     // It still draws, and the text is still there — it simply has no colour
     // of its own beyond the diff's.
     assert!(harness::screen(&mut session, 80, 10).contains("another line"));
@@ -209,7 +234,7 @@ fn a_rename_is_coloured_as_each_side_is_named() {
         alignment("def f():\n    pass\n", "fn f() {}\n"),
     );
     let mut session = Session::new(Buffer::diff(file, DiffLayout::SideBySide), Theme::DARK);
-    let cells = cells(&mut session, 100, 10);
+    let cells = settled(&mut session, 100, 10);
     let code = Theme::DARK.code;
     assert!(
         foregrounds(&cells, 0).contains(&code.keyword),
@@ -226,13 +251,12 @@ fn alignment(before: &str, after: &str) -> align::Alignment {
 }
 
 #[test]
-fn jumping_to_the_end_of_a_long_file_shows_it_at_once_and_colours_it_shortly_after() {
-    // The freeze `limits::LEAP` exists to prevent. Colouring line 5000 means
-    // parsing the 4999 above it, because the answer for a line depends on
-    // every line before — so a frame does what it can, draws the rest, and
-    // the idle pass finishes.
-    let long: String = (0..5_000)
-        .map(|n| format!("fn f{n}() {{ let s = \"x{n}\"; }}\n"))
+fn a_very_long_file_shows_at_once_and_colours_as_it_goes() {
+    // What `LEAP` used to protect, now protected by the work being elsewhere.
+    // Three thousand lines is more than a frame's worth of colouring for
+    // either engine, and none of it delays the text.
+    let long: String = (0..3_000)
+        .map(|n| format!("fn f{n}() -> u32 {{ let s = \"x{n}\"; {n} }}\n"))
         .collect();
     let mut before = long.clone();
     before.push_str("fn last() {}\n");
@@ -240,38 +264,85 @@ fn jumping_to_the_end_of_a_long_file_shows_it_at_once_and_colours_it_shortly_aft
     after.push_str("fn changed() {}\n");
 
     let mut session = Session::new(diff("src/big.rs", &before, &after), Theme::DARK);
-    cells(&mut session, 80, 24);
+    let first = cells(&mut session, 80, 24);
+    assert!(text_of(&first).contains("f0"), "the text is there at once");
+
     harness::type_keys(&mut session, "G");
-
-    let leapt = cells(&mut session, 80, 24);
+    let jumped = cells(&mut session, 80, 24);
     assert!(
-        harness::screen(&mut session, 80, 24).contains("changed"),
-        "the text is on screen straight away"
-    );
-    assert!(
-        !session.caught_up(),
-        "and the frame stopped rather than colouring five thousand lines"
-    );
-    assert!(
-        !(0..leapt.area.height).any(|y| foregrounds(&leapt, y).contains(&Theme::DARK.code.keyword)),
-        "so it is not coloured yet"
+        text_of(&jumped).contains("changed"),
+        "and jumping to the end shows it, coloured or not"
     );
 
-    // Whatever the frame could not reach, the idle pass finishes. It says when
-    // it is done, so this terminates rather than guessing a number of rounds.
-    let mut rounds = 0;
-    while session.read_more() {
-        rounds += 1;
-        assert!(rounds < 1_000, "the idle pass has to finish");
+    session.settle();
+    let settled = cells(&mut session, 80, 24);
+    assert!(
+        (0..settled.area.height)
+            .any(|y| foregrounds(&settled, y).contains(&Theme::DARK.code.keyword)),
+        "the end of the file is coloured too"
+    );
+}
+
+#[test]
+fn the_first_frame_shows_the_text_before_any_colour() {
+    // The property the painter's thread exists to guarantee: the text is on
+    // screen immediately, whatever the language costs to colour. Nothing here
+    // waits, and nothing can be made to.
+    let mut session = rust_session(BEFORE, AFTER);
+
+    let first = cells(&mut session, 80, 10);
+    assert!(
+        text_of(&first).contains("main"),
+        "the text is there straight away"
+    );
+    assert!(session.painting(), "and the colours are still on their way");
+
+    session.settle();
+    let warm = cells(&mut session, 80, 10);
+    assert!(
+        (0..warm.area.height).any(|y| foregrounds(&warm, y).contains(&Theme::DARK.code.keyword)),
+        "a moment later, `fn` is a keyword"
+    );
+    assert!(!session.painting());
+}
+
+#[test]
+fn toggling_the_layout_keeps_the_colours_it_already_has() {
+    // The colours belong to the file, not to how it is laid out — spans are
+    // keyed by file line, and `flipped` carries the whole diff across. So a
+    // toggle must not send the reader back to plain text while it is all
+    // painted again.
+    let mut session = rust_session(BEFORE, AFTER);
+    session.settle();
+    assert!(!session.painting());
+
+    harness::type_keys(&mut session, "t");
+    assert!(!session.painting(), "nothing was thrown away");
+
+    let inline = cells(&mut session, 80, 10);
+    assert!(
+        (0..inline.area.height)
+            .any(|y| foregrounds(&inline, y).contains(&Theme::DARK.code.keyword)),
+        "and it is still coloured, without waiting"
+    );
+}
+
+#[test]
+fn a_second_file_in_the_same_language_is_coloured_too() {
+    // The painter is asked once per file, so a second session must get its own
+    // answer rather than the first one's — which is what the version on every
+    // request is for.
+    for (before, after) in [
+        ("fn a() {}\n", "fn b() {}\n"),
+        ("fn c() {}\n", "fn d() {}\n"),
+    ] {
+        let mut session = rust_session(before, after);
+        session.settle();
+        let cells = cells(&mut session, 80, 10);
+        assert!(
+            (0..cells.area.height)
+                .any(|y| foregrounds(&cells, y).contains(&Theme::DARK.code.keyword)),
+            "`fn` is a keyword in both"
+        );
     }
-    let filled = cells(&mut session, 80, 24);
-
-    let coloured = |c: &ui::ratatui::buffer::Buffer| {
-        (0..c.area.height).any(|y| foregrounds(c, y).contains(&Theme::DARK.code.keyword))
-    };
-    assert!(
-        coloured(&filled),
-        "and then the end of the file is coloured"
-    );
-    let _ = leapt;
 }

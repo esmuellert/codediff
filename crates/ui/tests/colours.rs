@@ -10,19 +10,35 @@
 //! next to the source.
 
 use syntax::{Clues, Engine, Highlighted, Palette};
-use ui::theme::code::Token;
-use ui::theme::scopes::SCOPES;
+use ui::theme::Token;
 
 /// The token covering the first occurrence of `needle`.
+///
+/// **Deliberately does not say which engine.** These assertions are about the
+/// language — in Rust, `fn` is a keyword — and a reader does not care which
+/// machinery reached that answer. Asking through the seam means each case is
+/// checked against whatever actually runs, and that a language moving from one
+/// engine to the other is caught by the answer changing rather than by nothing
+/// at all.
 ///
 /// `None` means no rule claimed it, which for these cases is a failure — the
 /// point of each is that something specific claims it.
 fn token_of(path: &str, source: &str, needle: &str) -> Option<Token> {
+    read(path, source, needle)
+}
+
+fn read(path: &str, source: &str, needle: &str) -> Option<Token> {
     let engine = Engine::new();
-    let palette = Palette::new(&ui::theme::scopes::rules());
+    let palette = Palette::new(
+        &ui::theme::scopes::rules(),
+        &ui::theme::captures::captures(),
+    );
     let lines: Vec<String> = source.lines().map(str::to_owned).collect();
     let grammar = engine
-        .find(Clues::new(path, lines.first().map(String::as_str)))
+        .find(
+            Clues::new(path, lines.first().map(String::as_str)),
+            lines.len(),
+        )
         .unwrap_or_else(|| panic!("no grammar claims {path}"));
     let mut read = Highlighted::new(&engine, grammar, &palette, &lines);
     read.reach(&engine, &palette, lines.len() as u32, &lines);
@@ -37,8 +53,7 @@ fn token_of(path: &str, source: &str, needle: &str) -> Option<Token> {
         .iter()
         .find(|span| span.bytes.contains(&byte))
         .and_then(|span| span.style.pen)
-        .and_then(|pen| SCOPES.get(pen.0 as usize))
-        .map(|scope| scope.token)
+        .and_then(ui::theme::token)
 }
 
 fn check(cases: &[(&str, &str, &str, Token)]) {
@@ -201,13 +216,17 @@ fn c() {
         ("a.c", C, "include", Token::Keyword),
         ("a.c", C, "<stdio.h>", Token::String),
         ("a.c", C, "struct", Token::Keyword),
-        // `int` is a keyword too, and `widget` — the name — is the type. That
-        // is VS Code's split and Catppuccin's, and it is the reason the table
-        // has one `storage` rule rather than one per grammar.
-        ("a.c", C, "int render", Token::Keyword),
+        // C's grammar calls `int` a type rather than a built-in type, so it
+        // wears the type colour. Neovim shows exactly the same, for the same
+        // reason: this is the grammar's judgement and we do not overrule it.
+        // The matcher disagrees — see `the_two_engines_differ_where_the_grammars_do`.
+        ("a.c", C, "int render", Token::Type),
         ("a.c", C, "render", Token::Function),
         ("a.c", C, "'\\t'", Token::Character),
-        ("a.c", C, "%d", Token::Escape),
+        // Not `Escape`: nothing in C's grammar picks a format specifier out
+        // of a string, where the matcher's `constant.other.placeholder` does.
+        // A small, real loss, kept visible here rather than in a comment.
+        ("a.c", C, "%d", Token::String),
     ]);
 }
 
@@ -281,7 +300,9 @@ fn html() {
         ("a.html", HTML, "<!-- A comment", Token::Comment),
         ("a.html", HTML, "div", Token::Tag),
         ("a.html", HTML, "class", Token::Attribute),
-        ("a.html", HTML, "\"page\"", Token::String),
+        // The quotes are not part of the value node, so the needle is the
+        // value itself.
+        ("a.html", HTML, "page", Token::String),
     ]);
 }
 
@@ -300,7 +321,9 @@ fn shell() {
         ("build.sh", SHELL, "# A comment", Token::Comment),
         ("build.sh", SHELL, "\"widget\"", Token::String),
         ("build.sh", SHELL, "render", Token::Function),
-        ("build.sh", SHELL, "printf", Token::Library),
+        // Every command is a function to the shell's grammar; it has no
+        // notion of a builtin. The matcher calls it `support.function`.
+        ("build.sh", SHELL, "printf", Token::Function),
     ]);
 }
 
@@ -317,5 +340,25 @@ fn a_shebang_alone_is_enough_to_pick_a_grammar() {
 #[test]
 fn a_language_we_do_not_know_is_left_plain_rather_than_guessed() {
     let engine = Engine::new();
-    assert!(engine.find(Clues::new("notes.qqzz", None)).is_none());
+    assert!(engine.find(Clues::new("notes.qqzz", None), 1).is_none());
+}
+
+#[test]
+fn a_language_with_a_parser_is_answered_by_the_parser() {
+    // Which engine reads a file is the seam's decision and there is no way to
+    // ask for the other one — a parser is preferred wherever there is one.
+    // This pins the *consequence* rather than the mechanism: `int` here is C's
+    // grammar's judgement, and if the file ever fell back to the matcher it
+    // would say `Keyword` instead. See D39 and D41.
+    assert_eq!(token_of("a.c", C, "int render"), Some(Token::Type));
+}
+
+#[test]
+fn a_language_with_no_parser_still_reaches_the_matcher() {
+    // The fallback, end to end: nothing here has a tree-sitter grammar, and
+    // it is coloured anyway.
+    assert_eq!(
+        token_of("Makefile", "# a comment\nall:\n\techo hi\n", "# a comment"),
+        Some(Token::Comment)
+    );
 }

@@ -41,6 +41,7 @@ pub use tab::{Layout, PaneId, Tab};
 pub use viewport::Viewport;
 
 use crate::input::KeymapType;
+use crate::paint::{Painted, Painter, Version};
 
 /// A buffer's place in [`View::buffers`].
 ///
@@ -66,6 +67,11 @@ pub struct View {
     /// One switch for the session rather than one per buffer: see
     /// [`ViewAction::ToggleSyntax`](crate::input::ViewAction::ToggleSyntax).
     syntax: bool,
+    /// Counts paint requests, so an answer can be matched to its question.
+    ///
+    /// A file watcher will re-ask for a file that changed, and the answer to
+    /// the previous ask must not be mistaken for the new one.
+    painted: u64,
 }
 
 /// A floating layer over the tabs.
@@ -84,6 +90,7 @@ impl View {
             active: 0,
             overlays: Vec::new(),
             syntax: true,
+            painted: 0,
         }
     }
 
@@ -96,33 +103,43 @@ impl View {
         self.syntax = !self.syntax;
     }
 
-    /// Colours at least what the focused pane is about to draw.
+    /// Asks the painter for everything on screen.
     ///
-    /// Called with the height the frame will have, from outside the frame:
-    /// drawing holds no state, and how far a file has been read is state. See
-    /// [`Buffer::reach`].
-    pub fn reach(&mut self, height: u32) {
-        let (buffer, viewport) = self.focused_mut();
-        let top = viewport.top();
-        buffer.reach(top, height);
-    }
-
-    /// Whether what the focused pane is showing has been coloured yet.
-    ///
-    /// Uses the height the last frame set, so it answers about what is
-    /// actually on screen. Before the first frame there is no height and
-    /// nothing is shown, so it is trivially true.
-    pub fn caught_up(&self) -> bool {
-        let viewport = &self.focused().viewport;
-        self.focused_buffer()
-            .caught_up(viewport.top(), viewport.height())
-    }
-
-    /// Colours a little more while nothing else is happening, and says whether
-    /// there is more still to do.
-    pub fn read_more(&mut self) -> bool {
+    /// Called when a buffer is opened, and after a layout toggle rebuilds one.
+    /// Cheap: it hands over the lines and returns.
+    pub fn start_painting(&mut self, painter: &Painter) {
+        let version = self.next_version();
         let (buffer, _) = self.focused_mut();
-        buffer.read_more()
+        buffer.start_painting(painter, version);
+    }
+
+    /// Installs a piece the painter finished, and says whether anything on
+    /// screen changed.
+    pub fn install(&mut self, painted: Painted) -> bool {
+        let mut changed = false;
+        for buffer in &mut self.buffers {
+            // Cloning is not possible — a piece owns its spans — so this asks
+            // each buffer in turn and stops at the one that wanted it.
+            if buffer.install(Painted {
+                version: painted.version,
+                from: painted.from,
+                spans: painted.spans.clone(),
+            }) {
+                changed = true;
+                break;
+            }
+        }
+        changed
+    }
+
+    /// Whether any buffer is still waiting for colours.
+    pub fn painting(&self) -> bool {
+        self.buffers.iter().any(Buffer::painting)
+    }
+
+    fn next_version(&mut self) -> Version {
+        self.painted += 1;
+        Version(self.painted)
     }
 
     pub fn buffer(&self, id: BufferId) -> &Buffer {

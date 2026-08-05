@@ -20,12 +20,13 @@
 
 use std::ops::Range;
 
-use align::{Alignment, DiffLayout, Slot};
+use align::{Alignment, DiffLayout};
 use file_types::File;
 
 use super::{BufferType, Inline, SideBySide, SingleFile};
 use crate::diff::Diff;
 use crate::input::{BufferAction, KeymapType};
+use crate::paint::{Painted, Painter, Version};
 use crate::view::Viewport;
 
 /// A sequence of view lines you can scroll through.
@@ -116,71 +117,34 @@ impl Buffer {
         &self.buffer_type
     }
 
-    /// Colours at least the view lines a frame is about to draw.
+    /// Asks the painter for whatever this buffer is showing.
     ///
-    /// Called before the frame rather than during it, because drawing holds no
-    /// state and colouring is state. What it costs depends entirely on where
-    /// the reader went: scrolling down a line is one line of work, scrolling
-    /// back is none at all, and jumping to the end of a long file pays for the
-    /// gap once and then never again.
-    ///
-    /// The range is in **view** lines and the engine reads **file** lines, so
-    /// the last file line each version reaches within the range is what is
-    /// asked for. That is not `top + height`: a run of insertions puts fillers
-    /// opposite them, and the original side has not moved at all.
-    pub fn reach(&mut self, top: u32, height: u32) {
-        let last = self.last_lines(top, height);
+    /// Returns at once. The colours arrive over the following frames, and the
+    /// buffer draws plainly until they do — which is the whole point of the
+    /// painter having a thread: nothing here can be made to wait.
+    pub fn start_painting(&mut self, painter: &Painter, version: Version) {
         match &mut self.buffer_type {
-            BufferType::SideBySide(d) => d.reach(last.0, last.1),
-            BufferType::Inline(d) => d.reach(last.0, last.1),
-            BufferType::SingleFile(f) => f.reach(last.1),
+            BufferType::SideBySide(d) => d.start_painting(painter, version),
+            BufferType::Inline(d) => d.start_painting(painter, version),
+            BufferType::SingleFile(f) => f.start_painting(painter, version),
         }
     }
 
-    /// The last file line of each version within the visible range, numbered
-    /// from 1 as [`Slot::Line`] and the gutter are.
-    fn last_lines(&self, top: u32, height: u32) -> (u32, u32) {
-        let Some(layout) = self.layout() else {
-            return (0, top.saturating_add(height));
-        };
-        let Some(alignment) = self.alignment() else {
-            return (0, 0);
-        };
-        let (mut original, mut modified) = (0, 0);
-        for line in alignment.view_lines_from(layout, top).take(height as usize) {
-            if let Slot::Line(n) = line.original {
-                original = original.max(n);
-            }
-            if let Slot::Line(n) = line.modified {
-                modified = modified.max(n);
-            }
-        }
-        (original, modified)
-    }
-
-    /// Whether what is on screen has been coloured yet.
-    ///
-    /// False only just after a leap through a very long file, and it is what
-    /// tells the loop that one more frame is worth drawing when the idle pass
-    /// has caught up. See [`syntax::limits::LEAP`].
-    pub fn caught_up(&self, top: u32, height: u32) -> bool {
-        let last = self.last_lines(top, height);
+    /// Whether this buffer is still waiting for colours.
+    pub fn painting(&self) -> bool {
         match &self.buffer_type {
-            BufferType::SideBySide(d) => d.caught_up(last.0, last.1),
-            BufferType::Inline(d) => d.caught_up(last.0, last.1),
-            BufferType::SingleFile(f) => f.caught_up(last.1),
+            BufferType::SideBySide(d) => d.painting(),
+            BufferType::Inline(d) => d.painting(),
+            BufferType::SingleFile(f) => f.painting(),
         }
     }
 
-    /// Colours a little more while nothing else is happening.
-    ///
-    /// Returns whether there was anything left to do, so the caller knows
-    /// whether another idle moment is worth spending.
-    pub fn read_more(&mut self) -> bool {
+    /// Installs a piece the painter finished, and says whether it was wanted.
+    pub fn install(&mut self, painted: Painted) -> bool {
         match &mut self.buffer_type {
-            BufferType::SideBySide(d) => d.read_more(),
-            BufferType::Inline(d) => d.read_more(),
-            BufferType::SingleFile(f) => f.read_more(),
+            BufferType::SideBySide(d) => d.install(painted),
+            BufferType::Inline(d) => d.install(painted),
+            BufferType::SingleFile(f) => f.install(painted),
         }
     }
 

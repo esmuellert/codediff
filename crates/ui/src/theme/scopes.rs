@@ -236,6 +236,10 @@ pub const SCOPES: &[Scope] = {
         scope("meta.link", T::Reference),
         scope("markup.inserted", T::Inserted),
         scope("markup.deleted", T::Deleted),
+        // The `+` and `-` belong to the line they mark, and are scoped as
+        // punctuation inside it — the same shape as a comment's `//`.
+        scope("markup.inserted punctuation", T::Inserted),
+        scope("markup.deleted punctuation", T::Deleted),
         // --- what the grammar thinks is broken ---
         scope("invalid", T::Invalid),
         scope("invalid.deprecated", T::Invalid).italic(),

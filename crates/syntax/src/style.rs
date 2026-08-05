@@ -109,6 +109,26 @@ impl Rule {
     }
 }
 
+/// One tree-sitter rule: which capture it claims, and how it looks.
+///
+/// The twin of [`Rule`], and a separate type rather than a reuse of it because
+/// the two strings are matched by completely different machinery. A `Rule`'s
+/// selector is a *path* resolved with TextMate precedence; a `Capture`'s name
+/// is what a grammar's own `highlights.scm` wrote down, matched by
+/// longest-dotted-prefix. Sharing one type would invite writing a scope
+/// selector where a capture name belongs, which nothing would catch.
+#[derive(Debug, Clone, Copy)]
+pub struct Capture {
+    pub name: &'static str,
+    pub style: Style,
+}
+
+impl Capture {
+    pub const fn new(name: &'static str, style: Style) -> Self {
+        Self { name, style }
+    }
+}
+
 /// A run of one line that shares a style.
 ///
 /// Byte offsets into that line, half-open, so the range slices the line

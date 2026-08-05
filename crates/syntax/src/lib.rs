@@ -18,4 +18,4 @@ mod style;
 pub use detect::Clues;
 pub use engine::{Engine, Grammar, Palette};
 pub use highlighted::Highlighted;
-pub use style::{Pen, Rule, Span, Style, coalesce};
+pub use style::{Capture, Pen, Rule, Span, Style, coalesce};

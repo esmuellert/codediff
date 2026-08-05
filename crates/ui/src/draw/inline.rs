@@ -15,7 +15,7 @@ use align::{DiffLayout, DiffVersion, Slot, ViewLine};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::highlight::Spans;
+use crate::paint::Spans;
 use crate::render::layout::{self, InlineFrame};
 use crate::render::line::{self, Painter};
 use crate::render::{cells, gutter};
