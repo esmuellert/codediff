@@ -145,7 +145,8 @@ render/              putting characters and colour on a cell grid
 syntax/              colouring, on a thread that is not the one drawing
 ├── mod.rs             Syntax — the worker, and one request in flight per file
 ├── message.rs         SyntaxRequest / SyntaxResponse — all that crosses
-├── store.rs           Store — every colour, dropped least recently used
+├── store.rs           Store — every colour, keyed by git's name for it,
+│                     dropped least recently used
 └── worker.rs          the loop, and where it left off in unfinished files
 diff.rs              Diff — what the pipeline delivers
 input/               what does this key mean

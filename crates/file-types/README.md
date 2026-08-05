@@ -34,21 +34,37 @@ converted and never flattened.
 ```text
 RepoPath      where a file lives — both spellings, one constructor
 File          which file this is: a version on each side, either absent
+Rev           which version one side is — the working tree, the index, a
+              merge stage, or a commit
+Stage         which side of an unresolved merge: base, ours, theirs
+Revs          the pair a whole review shares: what is compared against what
+Oid           a content hash, so two files sharing one hold the same bytes
 ChangeType    what happened to it — four derived, two only a backend knows
 ChangedFile   a File, plus what a backend had to tell us about it
 FileContent   what one version holds — text, a binary blob, or nothing
-DiffVersion   which of the two: Original or Modified
+DiffVersion   which of the two columns: Original or Modified
 ```
 
-Six types, no dependencies, no build script.
+Ten types, no dependencies, no build script.
 
 ## This is also the backend contract
 
 `ChangedFile` is what a version control backend must produce, and therefore what
 everything downstream receives — whether the backend is git, jj, or something not written
-yet. Nothing here names a version control concept: **no index, no `HEAD`, no blob and no
-object id**, because a system need not have any of them. jj has no staging area at all.
-What "before" means is decided when a backend is constructed, not here.
+yet.
+
+**Some of this vocabulary is git's, and that is deliberate.** `Rev::Index` and
+`Rev::Conflict` name things jj does not have, and `ChangeType::Untracked` and `Conflicted`
+are answers only a version control system can give. They are here because every layer above
+must be able to say *which version of a file it is looking at* — that is what tells the
+staged copy from the one on disk, and a store that could not tell them apart would answer
+for one with the other. Putting `Rev` in `vcs` instead would mean `ui` depending on `vcs`,
+which is the edge this crate exists to make unnecessary.
+
+A second backend widens the enum; it does not need its own. Which is the same bargain
+`ChangeType` already struck, and this crate's rule is that a trait is earned by two real
+implementations rather than guessed at before the first. What `Rev::Commit` resolves to —
+what "before" means — is still decided when a backend is constructed, not here.
 
 There is deliberately **no trait**. `vcs` had one, with a single implementor, no generic
 use, and every call site importing it as `Changes as _` — so it was an inherent `impl`
@@ -65,7 +81,6 @@ extracted from two real implementations. See [D30](../../docs/plan/05-decisions.
 
 | | belongs to | because |
 |---|---|---|
-| `ChangeType`, `similarity` | `vcs` | `Untracked` and `Conflicted` are git's answers, not a file's |
 | `Alignment`, `Row`, `Hunk` | `align` | facts about the *relationship* between two files |
 | `Column`, `Frame` | `ui` | rectangles. Naming one `Column` was a mistake about names, not about layers |
 | `SideBySide`, `SingleFile` | `ui` | ways of *showing* a file; each holds a [`File`] |

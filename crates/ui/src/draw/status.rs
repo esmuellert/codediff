@@ -155,7 +155,13 @@ mod tests {
         RepoPath::new(relative, Path::new("/repo"))
     }
 
-    static MAIN: LazyLock<File> = LazyLock::new(|| File::unchanged_path(at("src/main.rs")));
+    /// The ordinary comparison. The status line says nothing about which
+    /// revisions it is showing, so no test here is about them.
+    fn revs() -> file_types::Revs {
+        file_types::Revs::worktree_against(file_types::Oid::new("b87b24c"))
+    }
+
+    static MAIN: LazyLock<File> = LazyLock::new(|| File::unchanged_path(at("src/main.rs"), revs()));
 
     fn status() -> Status<'static> {
         Status {
@@ -255,7 +261,7 @@ mod tests {
         // The whole point of holding a `File` rather than a formatted string.
         // A reviewer who loses the directory can still tell which file this
         // is; one who loses the name cannot.
-        let deep = File::unchanged_path(at("crates/ui/src/render/status.rs"));
+        let deep = File::unchanged_path(at("crates/ui/src/render/status.rs"), revs());
         let wide = render(
             &Status {
                 file: &deep,
@@ -285,7 +291,7 @@ mod tests {
 
     #[test]
     fn a_one_sided_file_says_which_it_is() {
-        let added = File::added(at("new.rs"));
+        let added = File::added(at("new.rs"), revs());
         let line = render(
             &Status {
                 file: &added,
@@ -296,7 +302,7 @@ mod tests {
         assert!(line.contains("new.rs"), "{line:?}");
         assert!(line.contains("(added)"), "{line:?}");
 
-        let gone = File::deleted(at("old.rs"));
+        let gone = File::deleted(at("old.rs"), revs());
         let line = render(
             &Status {
                 file: &gone,
@@ -309,7 +315,7 @@ mod tests {
 
     #[test]
     fn a_rename_shows_both_names_when_there_is_room() {
-        let moved = File::renamed(at("old.rs"), at("new.rs"));
+        let moved = File::renamed(at("old.rs"), at("new.rs"), revs());
         let wide = render(
             &Status {
                 file: &moved,

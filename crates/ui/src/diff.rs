@@ -18,21 +18,13 @@
 use align::{Alignment, DiffVersion};
 use file_types::File;
 
-use crate::syntax::{Key, Spans, Store, Syntax, SyntaxRequest, Version, key_of};
+use crate::syntax::{Spans, Store, Syntax, SyntaxRequest, Version, path_of};
 
 /// One file's two versions, paired up.
 #[derive(Debug)]
 pub struct Diff {
     file: File,
     alignment: Alignment,
-    /// Which store entries hold this file's colours, one side each.
-    ///
-    /// Keys rather than spans: the colours belong to the store, which is
-    /// what lets a file keep them when the buffer showing it closes. `None`
-    /// is a side the file does not exist on, which has no text and so no
-    /// language.
-    original: Option<Key>,
-    modified: Option<Key>,
     /// Which content those keys are for, so a late answer for a file that
     /// has since changed can be told apart and dropped.
     version: Version,
@@ -47,8 +39,6 @@ impl Diff {
     /// collects from it.
     pub fn new(file: File, alignment: Alignment) -> Self {
         Self {
-            original: key_of(&file, DiffVersion::Original),
-            modified: key_of(&file, DiffVersion::Modified),
             file,
             alignment,
             version: Version(0),
@@ -63,7 +53,7 @@ impl Diff {
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
         self.version = version;
         for side in [DiffVersion::Original, DiffVersion::Modified] {
-            let Some(key) = self.key(side).cloned() else {
+            let (Some(key), Some(path)) = (self.key(side), path_of(&self.file, side)) else {
                 continue;
             };
             let lines = self.alignment.lines(side).len() as u32;
@@ -78,6 +68,7 @@ impl Diff {
             }
             syntax.send(SyntaxRequest {
                 key,
+                path,
                 version,
                 text: self.alignment.text(side),
                 have,
@@ -86,11 +77,13 @@ impl Diff {
         }
     }
 
-    fn key(&self, side: DiffVersion) -> Option<&Key> {
-        match side {
-            DiffVersion::Original => self.original.as_ref(),
-            DiffVersion::Modified => self.modified.as_ref(),
-        }
+    /// What names one side's content, if the file is on that side.
+    ///
+    /// Asked of the file each time rather than held, because it is derived —
+    /// storing it beside the file is how a copy comes to disagree with what
+    /// it was copied from.
+    fn key(&self, side: DiffVersion) -> Option<String> {
+        self.file.name(side)
     }
 
     /// The colouring of both versions, for a frame.
@@ -99,8 +92,12 @@ impl Diff {
     /// diff holds. A side with nothing yet draws plainly.
     pub fn spans<'a>(&self, store: &'a Store) -> Spans<'a> {
         Spans::Both {
-            original: self.original.as_ref().and_then(|key| store.get(key)),
-            modified: self.modified.as_ref().and_then(|key| store.get(key)),
+            original: self
+                .key(DiffVersion::Original)
+                .and_then(|key| store.get(&key)),
+            modified: self
+                .key(DiffVersion::Modified)
+                .and_then(|key| store.get(&key)),
         }
     }
 
@@ -125,5 +122,72 @@ impl Diff {
     /// warrant. The reader has to be told.
     pub fn hit_timeout(&self) -> bool {
         self.alignment.hit_timeout()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use file_types::{Oid, RepoPath, Rev, Revs};
+
+    use super::*;
+    use crate::syntax::Syntax;
+
+    fn at(path: &str) -> RepoPath {
+        RepoPath::new(path, std::path::Path::new("/repo"))
+    }
+
+    /// A file against itself. No engine is run — `ui` may not name one — and
+    /// none is needed: what these check is which entries a request makes, not
+    /// what the pairing says.
+    fn alignment(lines: &[&str]) -> Alignment {
+        Alignment::new(
+            diff_types::LinesDiff {
+                changes: Vec::new(),
+                moves: Vec::new(),
+                hit_timeout: false,
+            },
+            lines,
+            lines,
+        )
+    }
+
+    /// One diff of one path, read against `HEAD`, with the after side named.
+    fn diff(after: Rev) -> Diff {
+        let revs = Revs::new(Rev::Commit(Oid::new("b87b24c")), after);
+        Diff::new(
+            File::unchanged_path(at("src/main.rs"), revs),
+            alignment(&["fn main() {}"]),
+        )
+    }
+
+    #[test]
+    fn the_staged_and_the_working_copy_of_one_path_do_not_share_a_cache_entry() {
+        // The old key said which column a version was drawn in, so both of
+        // these were one name over two different sets of bytes.
+        let mut syntax = Syntax::start();
+        let mut store = Store::new();
+
+        for after in [Rev::Worktree, Rev::Index] {
+            diff(after).request(&mut syntax, &mut store, Version(1), 0);
+        }
+
+        assert_eq!(
+            store.entries(),
+            3,
+            "one entry for the shared before side, and one for each after side"
+        );
+    }
+
+    #[test]
+    fn two_files_read_against_one_commit_share_that_side() {
+        // The other half, and free: a commit is named by its id, so the before
+        // side of every file in a review that happens to be the same blob is
+        // the same entry.
+        let mut syntax = Syntax::start();
+        let mut store = Store::new();
+        diff(Rev::Worktree).request(&mut syntax, &mut store, Version(1), 0);
+        let before = store.entries();
+        diff(Rev::Worktree).request(&mut syntax, &mut store, Version(1), 0);
+        assert_eq!(store.entries(), before, "asking twice made no new entry");
     }
 }

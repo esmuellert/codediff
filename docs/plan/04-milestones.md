@@ -554,6 +554,28 @@ two files and read back in a third, an agreement held by a test rather than by s
 
 See [D43](05-decisions.md#d43--the-engines-own-words-live-in-syntax-not-in-the-theme).
 
+### S11f — Which version of a file, named the way git names it ✅
+
+**Build.** `file_types::Rev` (`Worktree`, `Index`, `Conflict(Stage)`, `Commit(Oid)`), `Revs`,
+and `Oid` moved down from `vcs`. `File` gains a revision per side and `name(side)`.
+`ui::syntax::Key` deleted; the store is keyed by git's own spelling.
+
+**Why.** The store keyed on `(path, DiffVersion)`, and `DiffVersion` says which *column* a
+version is drawn in. The staged and the on-disk copy of one path would therefore have shared
+one name and one cache entry. That is unreachable today only because a second file cannot be
+opened, and S12 opens one.
+
+**Pass when.**
+- [x] the staged and the working copy of one path make two store entries — sabotage-checked
+- [x] two files read against one commit share that side
+- [x] merge stages 1, 2 and 3 are nameable, since the conflict view needs them
+- [x] `HEAD` is resolved once, so a commit mid-review cannot split it
+- [x] one function reads either side, choosing by the file's own revision
+- [x] a side the file is not on reads as absent without a round trip
+- [x] `debug status -v` prints what is being compared against what
+
+See [D44](05-decisions.md#d44--a-files-content-is-named-by-which-version-it-is-not-which-column).
+
 ### S12 — Explorer
 
 **Build.** `explorer` crate: entries → grouped tree, path collapsing, filter. `ui`:

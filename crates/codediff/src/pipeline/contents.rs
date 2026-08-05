@@ -20,8 +20,12 @@ pub struct Contents {
 /// Answers stage two: get the two texts.
 pub fn read(resolved: Resolved) -> Result<Contents> {
     let Resolved { mut git, file } = resolved;
-    let original = git.before(&file).context("reading the before side")?;
-    let modified = git.after(&file).context("reading the after side")?;
+    let original = git
+        .read(&file, DiffVersion::Original)
+        .context("reading the before side")?;
+    let modified = git
+        .read(&file, DiffVersion::Modified)
+        .context("reading the after side")?;
     Ok(Contents {
         diff: file,
         original,

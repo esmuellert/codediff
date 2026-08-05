@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use file_types::{ChangeType, ChangedFile, FileContent, RepoPath};
+use file_types::{ChangeType, ChangedFile, DiffVersion, FileContent, RepoPath};
 use vcs::Git;
 use vcs::git::Untracked;
 
@@ -198,11 +198,15 @@ fn the_two_sides_of_a_change_come_back_byte_for_byte() {
     let modified = file(&entries, "modified.txt");
 
     assert_eq!(
-        git.before(&modified).expect("reads").text(),
+        git.read(&modified, DiffVersion::Original)
+            .expect("reads")
+            .text(),
         Some("one\ntwo\nthree\n")
     );
     assert_eq!(
-        git.after(&modified).expect("reads").text(),
+        git.read(&modified, DiffVersion::Modified)
+            .expect("reads")
+            .text(),
         Some("one\nTWO\nthree\n")
     );
 }
@@ -217,15 +221,25 @@ fn a_one_sided_change_has_only_the_side_it_has() {
 
     let untracked = file(&entries, "untracked.txt");
     assert!(matches!(
-        git.before(&untracked).expect("reads"),
+        git.read(&untracked, DiffVersion::Original).expect("reads"),
         FileContent::Absent
     ));
-    assert!(git.after(&untracked).expect("reads").text().is_some());
+    assert!(
+        git.read(&untracked, DiffVersion::Modified)
+            .expect("reads")
+            .text()
+            .is_some()
+    );
 
     let deleted = file(&entries, "deleted.txt");
-    assert!(git.before(&deleted).expect("reads").text().is_some());
+    assert!(
+        git.read(&deleted, DiffVersion::Original)
+            .expect("reads")
+            .text()
+            .is_some()
+    );
     assert!(matches!(
-        git.after(&deleted).expect("reads"),
+        git.read(&deleted, DiffVersion::Modified).expect("reads"),
         FileContent::Absent
     ));
 }
@@ -239,14 +253,27 @@ fn a_picture_comes_back_classified_rather_than_as_bytes() {
     let entries = git.files().expect("status runs");
     let picture = file(&entries, "picture.png");
 
-    assert!(git.before(&picture).expect("reads").is_binary());
-    assert!(git.after(&picture).expect("reads").is_binary());
-    assert_eq!(git.after(&picture).expect("reads").text(), None);
+    assert!(
+        git.read(&picture, DiffVersion::Original)
+            .expect("reads")
+            .is_binary()
+    );
+    assert!(
+        git.read(&picture, DiffVersion::Modified)
+            .expect("reads")
+            .is_binary()
+    );
+    assert_eq!(
+        git.read(&picture, DiffVersion::Modified)
+            .expect("reads")
+            .text(),
+        None
+    );
 }
 
 #[test]
 fn a_moved_file_reads_its_old_path_on_the_before_side() {
-    // The caller does not have to know that rule, which is why `before` takes
+    // The caller does not have to know that rule, which is why `read` takes
     // the whole change rather than a path.
     let fixture = Fixture::new("moved");
     let mut git = fixture.git();
@@ -254,9 +281,15 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
     let moved = file(&entries, "renamed-to.txt");
 
     assert_eq!(moved.change(), ChangeType::Moved);
-    assert_eq!(moved.before_path().as_str(), "renamed-from.txt");
+    assert_eq!(
+        moved.file.on(DiffVersion::Original).map(RepoPath::as_str),
+        Some("renamed-from.txt")
+    );
     assert!(
-        git.before(&moved).expect("reads").text().is_some(),
+        git.read(&moved, DiffVersion::Original)
+            .expect("reads")
+            .text()
+            .is_some(),
         "the before side must be read from the path the file used to have"
     );
 }

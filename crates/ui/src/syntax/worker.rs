@@ -40,7 +40,7 @@ const MEMOS: usize = 4;
 
 /// Where a file was left off.
 struct Memo {
-    key: super::message::Key,
+    key: String,
     version: super::message::Version,
     /// What the asker held when this was made. A memo is only usable by
     /// someone who still has everything read so far; anyone else needs the
@@ -152,7 +152,7 @@ fn resume(request: &SyntaxRequest, memos: &mut Vec<Memo>) -> Option<Memo> {
     // a question nobody asked. Begin again.
     memos.retain(|memo| memo.key != request.key);
 
-    let clues = Clues::new(&request.key.path, request.text.first().map(String::as_str));
+    let clues = Clues::new(&request.path, request.text.first().map(String::as_str));
     let grammar = engine().find(clues, request.text.len())?;
     Some(Memo {
         key: request.key.clone(),

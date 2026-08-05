@@ -7,7 +7,7 @@
 //! staging area at all. What "before" means is decided when a backend is
 //! constructed, not here. See D30.
 
-use crate::{ChangeType, DiffVersion, File, RepoPath};
+use crate::{ChangeType, File, RepoPath};
 
 /// One file that differs between the two sides.
 ///
@@ -69,13 +69,6 @@ impl ChangedFile {
         self.file.path()
     }
 
-    /// The path to read on the before side, which is the old one for a move.
-    pub fn before_path(&self) -> &RepoPath {
-        self.file
-            .on(DiffVersion::Original)
-            .unwrap_or_else(|| self.file.path())
-    }
-
     pub fn is_conflicted(&self) -> bool {
         self.change() == ChangeType::Conflicted
     }
@@ -94,21 +87,28 @@ mod tests {
         RepoPath::new(relative, Path::new("/repo"))
     }
 
+    /// The ordinary comparison. Which revisions these are is not what any
+    /// test below is about, so it is said once.
+    fn revs() -> crate::Revs {
+        crate::Revs::worktree_against(crate::Oid::new("b87b24c"))
+    }
+
     #[test]
     fn the_ordinary_cases_come_from_the_paths() {
         assert_eq!(
-            ChangedFile::new(File::added(at("new.rs")), None).change(),
+            ChangedFile::new(File::added(at("new.rs"), revs()), None).change(),
             ChangeType::Added
         );
         assert_eq!(
-            ChangedFile::new(File::renamed(at("o.rs"), at("n.rs")), Some(90)).change(),
+            ChangedFile::new(File::renamed(at("o.rs"), at("n.rs"), revs()), Some(90)).change(),
             ChangeType::Moved
         );
     }
 
     #[test]
     fn the_backend_supplies_only_what_the_paths_cannot_say() {
-        let untracked = ChangedFile::reported(File::added(at("new.rs")), ChangeType::Untracked);
+        let untracked =
+            ChangedFile::reported(File::added(at("new.rs"), revs()), ChangeType::Untracked);
         assert_eq!(untracked.change(), ChangeType::Untracked);
         assert_eq!(
             untracked.file.change(),
@@ -122,6 +122,6 @@ mod tests {
     fn storing_a_derivable_change_is_refused() {
         // The whole point: a stored `Added` could disagree with a `File` that
         // has both versions, and nothing would catch it.
-        ChangedFile::reported(File::added(at("new.rs")), ChangeType::Added);
+        ChangedFile::reported(File::added(at("new.rs"), revs()), ChangeType::Added);
     }
 }

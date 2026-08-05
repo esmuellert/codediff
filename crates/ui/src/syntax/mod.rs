@@ -58,7 +58,7 @@ use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
-pub use message::{Key, SyntaxRequest, SyntaxResponse, Version, key_of};
+pub use message::{SyntaxRequest, SyntaxResponse, Version, path_of};
 pub use store::{Spans, Store};
 
 /// The worker, the two queues to it, and what is outstanding.
@@ -79,7 +79,7 @@ pub struct Syntax {
     /// from a starting point that has since gone stale, and its lines are
     /// refused on arrival. Nothing is held. The asker re-asks on the next
     /// frame with a number that is current, and asking is a lookup.
-    outstanding: HashSet<Key>,
+    outstanding: HashSet<String>,
 }
 
 impl Syntax {
@@ -114,7 +114,7 @@ impl Syntax {
     }
 
     /// Whether a file is waiting on an answer.
-    pub fn busy(&self, key: &Key) -> bool {
+    pub fn busy(&self, key: &str) -> bool {
         self.outstanding.contains(key)
     }
 
@@ -175,8 +175,6 @@ impl Default for Syntax {
 mod tests {
     use std::sync::Arc;
 
-    use align::DiffVersion;
-
     use super::*;
 
     fn text(lines: usize) -> Arc<Vec<String>> {
@@ -185,7 +183,8 @@ mod tests {
 
     fn request(path: &str, text: &Arc<Vec<String>>, have: u32, want: u32) -> SyntaxRequest {
         SyntaxRequest {
-            key: Key::new(path, DiffVersion::Modified),
+            key: format!("worktree:{path}"),
+            path: path.to_owned(),
             version: Version(1),
             text: Arc::clone(text),
             have,
@@ -236,7 +235,7 @@ mod tests {
     fn a_file_can_be_asked_about_again_once_its_answer_has_arrived() {
         let mut syntax = Syntax::start();
         let text = text(50);
-        let key = Key::new("a.pl", DiffVersion::Modified);
+        let key = "worktree:a.pl".to_owned();
 
         syntax.send(request("a.pl", &text, 0, 9));
         assert!(syntax.busy(&key));

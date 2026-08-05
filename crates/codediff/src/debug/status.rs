@@ -4,14 +4,14 @@
 //! reading the two side by side.
 
 use anyhow::{Context, Result};
-use file_types::{ChangeType, ChangedFile};
+use file_types::{ChangeType, ChangedFile, Revs};
 use vcs::Git;
 use vcs::git::Entry;
 
 use crate::text::{pad, visible};
 
 pub fn run(dir: &str, verbose: bool) -> Result<()> {
-    let git = Git::open(std::path::Path::new(dir))
+    let mut git = Git::open(std::path::Path::new(dir))
         .with_context(|| format!("opening a repository at {dir}"))?;
 
     let repo = git.repo().clone();
@@ -39,7 +39,8 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     }
 
     if verbose {
-        detail(&sorted, &repo.root);
+        let revs = git.revs().context("resolving what is being compared")?;
+        detail(&sorted, &repo.root, &revs);
     }
     Ok(())
 }
@@ -60,11 +61,14 @@ fn line(entry: &Entry) -> String {
 
 /// The same entries as the reviewer sees them, after the one translation from
 /// git's model to ours.
-fn detail(entries: &[&Entry], root: &std::path::Path) {
+fn detail(entries: &[&Entry], root: &std::path::Path, revs: &Revs) {
     println!();
-    println!("as the reviewer sees them");
+    println!(
+        "as the reviewer sees them — {} against {}",
+        revs.before, revs.after
+    );
     for entry in entries {
-        let file: ChangedFile = vcs::git::to_file_diff((*entry).clone(), root);
+        let file: ChangedFile = vcs::git::to_file_diff((*entry).clone(), root, revs.clone());
         let note = match file.change() {
             ChangeType::Conflicted => "unresolved merge — listed, not diffable as two sides",
             ChangeType::Moved => "moved; both paths kept, not an add plus a delete",

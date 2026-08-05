@@ -1,6 +1,6 @@
 //! Which file this is.
 
-use crate::{DiffVersion, RepoPath};
+use crate::{DiffVersion, RepoPath, Rev};
 
 /// What happened to a file between the two versions being compared.
 ///
@@ -67,6 +67,38 @@ impl ChangeType {
 pub struct File {
     original: Option<RepoPath>,
     modified: Option<RepoPath>,
+    /// Which version each side was read from. Beside the paths rather than
+    /// inside them, because an added file has no original path and was still
+    /// looked for at a commit.
+    before: Rev,
+    after: Rev,
+}
+
+/// What a file's two sides were read from.
+///
+/// One value rather than two arguments, because every file of one review
+/// shares it: a `:CodeDiff` compares the working tree against one commit, and
+/// each file is another row of that same comparison. Two arguments of one type
+/// would also be two arguments nothing could check the order of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Revs {
+    pub before: Rev,
+    pub after: Rev,
+}
+
+impl Revs {
+    pub fn new(before: Rev, after: Rev) -> Self {
+        Self { before, after }
+    }
+
+    /// The comparison `:CodeDiff` makes with no arguments: a commit against
+    /// the file on disk.
+    ///
+    /// The commit is an id rather than `HEAD`, because a name that moves
+    /// cannot say which bytes were read — see [`Rev::Commit`].
+    pub fn worktree_against(commit: crate::Oid) -> Self {
+        Self::new(Rev::Commit(commit), Rev::Worktree)
+    }
 }
 
 /// Neither side exists, which is not a file.
@@ -83,34 +115,42 @@ impl std::error::Error for Nowhere {}
 
 impl File {
     /// A file present on both sides, under one path.
-    pub fn unchanged_path(path: RepoPath) -> Self {
+    pub fn unchanged_path(path: RepoPath, revs: Revs) -> Self {
         Self {
             original: Some(path.clone()),
             modified: Some(path),
+            before: revs.before,
+            after: revs.after,
         }
     }
 
     /// A file that moved, or whose content changed under a new name.
-    pub fn renamed(original: RepoPath, modified: RepoPath) -> Self {
+    pub fn renamed(original: RepoPath, modified: RepoPath, revs: Revs) -> Self {
         Self {
             original: Some(original),
             modified: Some(modified),
+            before: revs.before,
+            after: revs.after,
         }
     }
 
     /// A file that does not exist on the original side.
-    pub fn added(path: RepoPath) -> Self {
+    pub fn added(path: RepoPath, revs: Revs) -> Self {
         Self {
             original: None,
             modified: Some(path),
+            before: revs.before,
+            after: revs.after,
         }
     }
 
     /// A file that does not exist on the modified side.
-    pub fn deleted(path: RepoPath) -> Self {
+    pub fn deleted(path: RepoPath, revs: Revs) -> Self {
         Self {
             original: Some(path),
             modified: None,
+            before: revs.before,
+            after: revs.after,
         }
     }
 
@@ -118,11 +158,20 @@ impl File {
     ///
     /// The named constructors above are clearer at a call site that knows
     /// which case it has; this is for one that does not.
-    pub fn new(original: Option<RepoPath>, modified: Option<RepoPath>) -> Result<Self, Nowhere> {
+    pub fn new(
+        original: Option<RepoPath>,
+        modified: Option<RepoPath>,
+        revs: Revs,
+    ) -> Result<Self, Nowhere> {
         if original.is_none() && modified.is_none() {
             return Err(Nowhere);
         }
-        Ok(Self { original, modified })
+        Ok(Self {
+            original,
+            modified,
+            before: revs.before,
+            after: revs.after,
+        })
     }
 
     /// Where the file is on one side, or `None` if it is not there.
@@ -131,6 +180,30 @@ impl File {
             DiffVersion::Original => self.original.as_ref(),
             DiffVersion::Modified => self.modified.as_ref(),
         }
+    }
+
+    /// Which version one side was read from.
+    ///
+    /// Answered even for a side the file is not on, because "we looked at
+    /// `HEAD` and it was not there" is what an added file is.
+    pub fn rev(&self, version: DiffVersion) -> &Rev {
+        match version {
+            DiffVersion::Original => &self.before,
+            DiffVersion::Modified => &self.after,
+        }
+    }
+
+    /// How git names one side's content, if the file is on that side.
+    ///
+    /// Git's own spelling, except for the working tree, which git cannot name.
+    /// An identity and not a path: nothing can read the file name back out of
+    /// it, so whatever needs the language asks [`on`](Self::on) instead.
+    pub fn name(&self, version: DiffVersion) -> Option<String> {
+        let path = self.on(version)?;
+        Some(match self.rev(version).stored() {
+            Some(rev) => format!("{rev}:{path}"),
+            None => format!("worktree:{path}"),
+        })
     }
 
     /// The one side this file exists on, or `None` when it exists on both.
@@ -200,9 +273,15 @@ mod tests {
         RepoPath::new(relative, Path::new("/repo"))
     }
 
+    /// The ordinary comparison. Which revisions these are is not what any
+    /// test below is about, so it is said once.
+    fn revs() -> Revs {
+        Revs::worktree_against(crate::Oid::new("b87b24c"))
+    }
+
     #[test]
     fn an_added_file_exists_only_on_the_modified_side() {
-        let file = File::added(at("new.rs"));
+        let file = File::added(at("new.rs"), revs());
         assert_eq!(file.only(), Some(DiffVersion::Modified));
         assert_eq!(file.on(DiffVersion::Original), None);
         assert_eq!(file.path().as_str(), "new.rs");
@@ -210,7 +289,7 @@ mod tests {
 
     #[test]
     fn a_deleted_file_exists_only_on_the_original_side() {
-        let file = File::deleted(at("gone.rs"));
+        let file = File::deleted(at("gone.rs"), revs());
         assert_eq!(file.only(), Some(DiffVersion::Original));
         assert_eq!(file.on(DiffVersion::Modified), None);
         assert_eq!(file.path().as_str(), "gone.rs", "still has a name");
@@ -220,7 +299,7 @@ mod tests {
     fn a_rename_is_read_from_the_paths_rather_than_stored() {
         // No `kind` field to disagree with the paths. VSCode's multi-diff
         // renderer derives the same fact the same way, at paint time.
-        let file = File::renamed(at("old.rs"), at("new.rs"));
+        let file = File::renamed(at("old.rs"), at("new.rs"), revs());
         assert!(file.is_renamed());
         assert_eq!(file.path().as_str(), "new.rs");
         assert_eq!(file.previous_path().map(RepoPath::as_str), Some("old.rs"));
@@ -229,7 +308,7 @@ mod tests {
 
     #[test]
     fn a_file_at_one_path_on_both_sides_is_not_a_rename() {
-        let file = File::unchanged_path(at("src/main.rs"));
+        let file = File::unchanged_path(at("src/main.rs"), revs());
         assert!(!file.is_renamed());
         assert_eq!(file.previous_path(), None);
     }
@@ -238,21 +317,27 @@ mod tests {
     fn a_one_sided_file_is_not_a_rename() {
         // The trap: `previous_path` reading `original` unconditionally would
         // make every deleted file look renamed from itself.
-        assert!(!File::added(at("new.rs")).is_renamed());
-        assert!(!File::deleted(at("gone.rs")).is_renamed());
-        assert_eq!(File::deleted(at("gone.rs")).previous_path(), None);
+        assert!(!File::added(at("new.rs"), revs()).is_renamed());
+        assert!(!File::deleted(at("gone.rs"), revs()).is_renamed());
+        assert_eq!(File::deleted(at("gone.rs"), revs()).previous_path(), None);
     }
 
     #[test]
     fn the_paths_say_what_happened() {
-        assert_eq!(File::added(at("new.rs")).change(), ChangeType::Added);
-        assert_eq!(File::deleted(at("gone.rs")).change(), ChangeType::Deleted);
         assert_eq!(
-            File::renamed(at("old.rs"), at("new.rs")).change(),
+            File::added(at("new.rs"), revs()).change(),
+            ChangeType::Added
+        );
+        assert_eq!(
+            File::deleted(at("gone.rs"), revs()).change(),
+            ChangeType::Deleted
+        );
+        assert_eq!(
+            File::renamed(at("old.rs"), at("new.rs"), revs()).change(),
             ChangeType::Moved
         );
         assert_eq!(
-            File::unchanged_path(at("same.rs")).change(),
+            File::unchanged_path(at("same.rs"), revs()).change(),
             ChangeType::Modified
         );
     }
@@ -263,10 +348,10 @@ mod tests {
         // which is why a backend has to supply the distinction and why these
         // four can be derived rather than stored.
         for file in [
-            File::added(at("a.rs")),
-            File::deleted(at("d.rs")),
-            File::renamed(at("o.rs"), at("n.rs")),
-            File::unchanged_path(at("m.rs")),
+            File::added(at("a.rs"), revs()),
+            File::deleted(at("d.rs"), revs()),
+            File::renamed(at("o.rs"), at("n.rs"), revs()),
+            File::unchanged_path(at("m.rs"), revs()),
         ] {
             assert!(!file.change().needs_a_backend(), "{:?}", file.change());
         }
@@ -276,7 +361,92 @@ mod tests {
 
     #[test]
     fn a_file_on_neither_side_cannot_be_built() {
-        assert_eq!(File::new(None, None), Err(Nowhere));
-        assert!(File::new(Some(at("a.rs")), None).is_ok());
+        assert_eq!(File::new(None, None, revs()), Err(Nowhere));
+        assert!(File::new(Some(at("a.rs")), None, revs()).is_ok());
+    }
+
+    #[test]
+    fn a_side_is_named_the_way_git_names_it() {
+        // These strings are what tells one version of a file from another, so
+        // they have to be git's spelling rather than one of ours.
+        let file = File::unchanged_path(at("src/main.rs"), revs());
+        assert_eq!(
+            file.name(DiffVersion::Original).as_deref(),
+            Some("b87b24c:src/main.rs")
+        );
+        assert_eq!(
+            file.name(DiffVersion::Modified).as_deref(),
+            Some("worktree:src/main.rs")
+        );
+    }
+
+    #[test]
+    fn two_versions_of_one_path_are_named_differently() {
+        // The whole point. Reviewing the staged copy and the working copy of
+        // one file must not land on one name, or whatever caches by it hands
+        // back the wrong answer.
+        let staged = File::unchanged_path(
+            at("src/main.rs"),
+            Revs::new(Rev::Commit(crate::Oid::new("b87b24c")), Rev::Index),
+        );
+        let working = File::unchanged_path(at("src/main.rs"), revs());
+        assert_ne!(
+            staged.name(DiffVersion::Modified),
+            working.name(DiffVersion::Modified)
+        );
+    }
+
+    #[test]
+    fn a_conflict_side_is_named_by_its_stage() {
+        let file = File::unchanged_path(
+            at("src/main.rs"),
+            Revs::new(
+                Rev::Conflict(crate::Stage::Ours),
+                Rev::Conflict(crate::Stage::Theirs),
+            ),
+        );
+        assert_eq!(
+            file.name(DiffVersion::Original).as_deref(),
+            Some(":2:src/main.rs")
+        );
+        assert_eq!(
+            file.name(DiffVersion::Modified).as_deref(),
+            Some(":3:src/main.rs")
+        );
+    }
+
+    #[test]
+    fn a_side_the_file_is_not_on_has_no_name() {
+        let added = File::added(at("new.rs"), revs());
+        assert_eq!(added.name(DiffVersion::Original), None);
+        assert!(added.name(DiffVersion::Modified).is_some());
+    }
+
+    #[test]
+    fn a_missing_side_still_says_where_it_looked() {
+        // "We read HEAD and the file was not there" is what an added file is,
+        // and it is two facts rather than one. Folding the revision into the
+        // path would lose the half that says where.
+        let added = File::added(at("new.rs"), revs());
+        assert_eq!(added.on(DiffVersion::Original), None);
+        assert_eq!(
+            added.rev(DiffVersion::Original),
+            &Rev::Commit(crate::Oid::new("b87b24c"))
+        );
+    }
+
+    #[test]
+    fn a_rename_is_named_under_each_side_own_path() {
+        // Which is also what decides the language of each side: a `.py`
+        // renamed to a `.rs` is Python on the left and Rust on the right.
+        let moved = File::renamed(at("old.py"), at("new.rs"), revs());
+        assert_eq!(
+            moved.name(DiffVersion::Original).as_deref(),
+            Some("b87b24c:old.py")
+        );
+        assert_eq!(
+            moved.name(DiffVersion::Modified).as_deref(),
+            Some("worktree:new.rs")
+        );
     }
 }

@@ -2263,6 +2263,84 @@ it is the one that makes the two engines interchangeable rather than merely para
 
 [`Group`]: syntax::Group
 
+## D44 — a file's content is named by which version it is, not which column
+
+**S11f.** Every version of a file a reviewer can look at is now named the way git names it,
+and that name is what the colour store keys on.
+
+**The bug this closes before it can happen.** The store's key was `(path, DiffVersion)`, and
+`DiffVersion` is `Original | Modified` — which **column** a version is drawn in. The moment an
+explorer lets one path be viewed two ways, that is one name over two different sets of bytes:
+
+| viewing | old key | bytes |
+|---|---|---|
+| working tree vs `HEAD`, right column | `("src/main.rs", Modified)` | unsaved edits |
+| staged vs `HEAD`, right column | `("src/main.rs", Modified)` | what `git add` stored |
+
+Whichever was coloured first would have answered for the other. It cannot happen today only
+because a second file cannot be opened. It is pinned by a test, and by sabotage: naming a side
+by its path alone makes three store entries collapse into one.
+
+**What git can name, and the one thing it cannot.** `gitrevisions(7)` gives five spellings,
+and a reviewer needs a sixth:
+
+```text
+<rev>:<path>   a blob in a commit          :2:<path>   merge stage 2, ours
+:0:<path>      the index                   :3:<path>   merge stage 3, theirs
+:1:<path>      merge stage 1, the ancestor  (the file)  on disk — git has never hashed it
+```
+
+Merge stages were the ones easy to forget, and `codediff.nvim` already needs them: its
+conflict view is `:2:` against `:3:`.
+
+**A name, not a hash — and worktree is not the odd one.** The expectation is that the working
+tree is special because it changes under a reader. It is not: `Index` changes on `git add` and
+`Conflict` changes when the merge is resolved. **Three of the four are mutable**, and only
+`Commit` is not. So none of them carries a timestamp: stamping one and not the others would be
+arbitrary, and stamping all of them would make this a hash rather than a name, which is what a
+status line prints and an explorer groups by. Staleness stays a separate question with a
+separate answer, and `Rev::can_change` is where the two meet.
+
+Git itself stores mtime, size and inode to spot a changed working file. Three reasons not to
+copy that: `file-types` does no IO, mtime races (git has the bug and works around it), and a
+file watcher is a better signal and is coming.
+
+**Revisions sit beside the paths, not inside them.** `File` keeps `Option<RepoPath>` per side
+and adds `before`/`after`. That looks like it allows nonsense — a revision for a side the file
+is not on — and does not: for an added file, `original: None` with `before: Commit(…)` says
+*we looked at that commit and it was not there*, which is exactly what an added file is. Two
+facts, both true, and folding them into one would lose the half that says where.
+
+**The key is a string, and it is git's string.** `File::name(side)` gives
+`b87b24c…:src/main.rs`, `:0:src/main.rs`, `:2:src/main.rs`, or `worktree:src/main.rs` for the
+one version git has no name for — safe, because a resolved id is forty hex characters and
+cannot collide with a word. `ui::syntax::Key` is deleted; the store is keyed by `String`.
+
+Two files reviewed against the same commit now **share** their before entry, which the old key
+could not express.
+
+The path travels beside the key rather than inside it, because a key cannot be read back:
+`b87b24c…:Makefile` has no `/`, so anything looking for the last path component takes the whole
+string and `Makefile` stops being a language.
+
+**The before side is resolved once.** `HEAD` becomes an id when the review opens, so a commit
+made while it is open cannot leave half the files named against one `HEAD` and half against
+another.
+
+**Two functions became one.** `Git::before` and `Git::after` each had the answer written into
+them — `after` could not be anything but the working tree. Now `read(file, side)` asks
+`Rev::stored()`, and a side the file is not on returns nothing without a round trip. That
+deleted a `ChangeType` check on each: an added file has no original path, which is the same
+fact the paths already stated.
+
+**`Oid` moved down** from `vcs` into `file-types` — a `String` in a wrapper, no dependencies,
+and a content hash is a fact about a file. `file-types` now names things jj does not have,
+which its README used to promise it would not. That promise is the one that gave way, and the
+reasoning is written down beside it: every layer above must be able to say which version it is
+looking at, and putting `Rev` in `vcs` would mean `ui` depending on `vcs` — the edge this crate
+exists to make unnecessary. A second backend widens the enum. It is the same bargain
+`ChangeType` already struck.
+
 ## Open questions
 
 | # | question | needed by |

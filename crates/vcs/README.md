@@ -29,14 +29,20 @@ lint, not from the trait itself. What actually checks a backend is the pipeline 
 methods needed and that their results compose. A second backend earns a trait extracted from
 two real implementations. See [D30](../../docs/plan/05-decisions.md#d30).
 
-**`git diff` is never run.** `files()` is `git status`; `before`/`after` are `git cat-file`
-and `std::fs`. Computing the difference is the engine's job, two stages later — which is why
-nothing here is called `Diff` ([D29](../../docs/plan/05-decisions.md#d29)).
+**`git diff` is never run.** `files()` is `git status`; `read()` is `git cat-file` or
+`std::fs`, chosen by the file's own `Rev`. Computing the difference is the engine's job,
+two stages later — which is why nothing here is called `Diff`
+([D29](../../docs/plan/05-decisions.md#d29)).
 
-Underneath, `git/` keeps every git word it needs: `XY` codes, `Oid`, the index. Its modules
-are named for the commands they run, so the file tree says which command before you open
-anything. `git::to_file_diff` is the single place the two vocabularies meet, and the only
-thing a second backend would write its own version of.
+**One function reads either side**, because which side it is says nothing about where to
+look: `Rev::stored()` gives git's spelling for anything in the object store and nothing for
+the file on disk, so the choice is data rather than a branch written into the function. It
+was two functions once, and the after side could not be anything but the working tree.
+
+Underneath, `git/` keeps every git word it needs: `XY` codes, the index, the stage numbers.
+Its modules are named for the commands they run, so the file tree says which command before
+you open anything. `git::to_file_diff` is the single place the two vocabularies meet, and
+the only thing a second backend would write its own version of.
 
 ## Why it runs `git` rather than linking a library
 

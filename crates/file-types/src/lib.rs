@@ -13,11 +13,15 @@
 mod changed;
 mod content;
 mod file;
+mod oid;
 mod path;
+mod rev;
 mod version;
 
 pub use changed::ChangedFile;
 pub use content::FileContent;
-pub use file::{ChangeType, File, Nowhere};
+pub use file::{ChangeType, File, Nowhere, Revs};
+pub use oid::Oid;
 pub use path::RepoPath;
+pub use rev::{Rev, Stage};
 pub use version::DiffVersion;

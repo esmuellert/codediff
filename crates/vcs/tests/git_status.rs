@@ -17,6 +17,11 @@ fn stream(fields: &[&str]) -> Vec<u8> {
     out
 }
 
+/// The ordinary comparison. No test here is about which revisions these are.
+fn revs() -> file_types::Revs {
+    file_types::Revs::worktree_against(file_types::Oid::new("b87b24c"))
+}
+
 #[test]
 fn an_ordinary_change_carries_both_codes() {
     let bytes = stream(&["1 .M N... 100644 100644 100644 4cb29ea 4cb29ea modified.txt"]);
@@ -59,7 +64,7 @@ fn a_rename_spans_two_fields() {
     assert_eq!(entries[0].xy.index, Code::Renamed);
     assert_eq!(entries[0].score, Some(100));
     assert_eq!(
-        to_file_diff(entries[0].clone(), std::path::Path::new("/repo")).change(),
+        to_file_diff(entries[0].clone(), std::path::Path::new("/repo"), revs()).change(),
         ChangeType::Moved
     );
     // The record after a rename must still be read correctly.
@@ -86,7 +91,7 @@ fn an_unmerged_record_has_three_stages() {
     let entries = status::parse(&bytes).expect("parses");
     assert_eq!(entries[0].path.as_str(), "conflict.txt");
     assert_eq!(
-        to_file_diff(entries[0].clone(), std::path::Path::new("/repo")).change(),
+        to_file_diff(entries[0].clone(), std::path::Path::new("/repo"), revs()).change(),
         ChangeType::Conflicted
     );
     assert_eq!(entries[0].xy.index, Code::Unmerged);
@@ -99,7 +104,7 @@ fn untracked_and_ignored_are_worktree_only() {
     assert_eq!(entries[0].xy.worktree, Code::Untracked);
     assert_eq!(entries[0].xy.index, Code::Unmodified);
     assert_eq!(
-        to_file_diff(entries[0].clone(), std::path::Path::new("/repo")).change(),
+        to_file_diff(entries[0].clone(), std::path::Path::new("/repo"), revs()).change(),
         ChangeType::Untracked
     );
     assert_eq!(entries[1].xy.worktree, Code::Ignored);

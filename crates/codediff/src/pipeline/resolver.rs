@@ -41,6 +41,7 @@ pub fn resolve(request: &Request<'_>) -> Result<Resolved> {
 /// By path as given, then relative to the repository root, so it works from a
 /// subdirectory the way git's own commands do.
 fn find(git: &mut Git, path: &str) -> Result<ChangedFile> {
+    let revs = git.revs().context("resolving what to compare")?;
     let files = git.files().context("listing changed files")?;
     let wanted = RepoPath::new(path, &git.repo().root);
 
@@ -57,7 +58,7 @@ fn find(git: &mut Git, path: &str) -> Result<ChangedFile> {
     if wanted.as_path().exists() {
         // Both versions exist under one path, so the paths say "modified" and
         // nothing needs to be stored to say it again.
-        return Ok(ChangedFile::new(File::unchanged_path(wanted), None));
+        return Ok(ChangedFile::new(File::unchanged_path(wanted, revs), None));
     }
 
     bail!(

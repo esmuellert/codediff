@@ -26,37 +26,21 @@ use syntax::Span;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Version(pub u64);
 
-/// Which file, and which of its two sides.
-///
-/// **The path is the identity, and also the language.** One string doing both
-/// jobs is not a shortcut: the language is decided from the path on *this*
-/// side, because a `.py` renamed to a `.rs` is Python on the left and Rust on
-/// the right, and showing either as the other would be a lie the reader can
-/// see.
-///
-/// This is enough while a review is one comparison — worktree against `HEAD` —
-/// because then a path has exactly one original and one modified. Comparing
-/// arbitrary revisions will need git's object id instead, which is better
-/// still: an id *is* the content hash, so two files sharing one could share a
-/// cache entry.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Key {
-    pub path: String,
-    pub side: DiffVersion,
-}
-
-impl Key {
-    pub fn new(path: impl Into<String>, side: DiffVersion) -> Self {
-        Self {
-            path: path.into(),
-            side,
-        }
-    }
-}
-
 /// Colour these lines.
 pub struct SyntaxRequest {
-    pub key: Key,
+    /// What names this content, from [`File::name`].
+    ///
+    /// Compared, never read. It once was `(path, side)`, which said where a
+    /// version was drawn rather than which bytes it was, so the staged and
+    /// the on-disk copy of one file shared a name.
+    pub key: String,
+    /// The path on *this* side, which is what decides the language.
+    ///
+    /// Beside the key rather than read out of it: a key has no path in it to
+    /// find. `b87b24c…:Makefile` has no `/`, so anything looking for the last
+    /// path component would take the whole string and `Makefile` would stop
+    /// being a language.
+    pub path: String,
     pub version: Version,
     /// Shared, not copied. A request per scroll would otherwise copy a whole
     /// file each time.
@@ -79,7 +63,8 @@ pub struct SyntaxRequest {
 /// with the slower engine. `from` is the line the piece starts at, so the
 /// asker appends without needing to know how many pieces there will be.
 pub struct SyntaxResponse {
-    pub key: Key,
+    /// The request's key, handed back untouched.
+    pub key: String,
     pub version: Version,
     pub from: u32,
     pub spans: Vec<Vec<Span>>,
@@ -99,31 +84,44 @@ pub fn path_of(file: &File, version: DiffVersion) -> Option<String> {
     file.on(version).map(|path| path.as_str().to_owned())
 }
 
-/// The key for one side of a file, if that side exists.
-pub fn key_of(file: &File, version: DiffVersion) -> Option<Key> {
-    path_of(file, version).map(|path| Key::new(path, version))
-}
-
 #[cfg(test)]
 mod tests {
+    use file_types::{Oid, RepoPath, Revs};
+
     use super::*;
 
+    fn at(path: &str) -> RepoPath {
+        RepoPath::new(path, std::path::Path::new("/repo"))
+    }
+
+    fn revs() -> Revs {
+        Revs::worktree_against(Oid::new("b87b24c"))
+    }
+
     #[test]
-    fn the_two_sides_of_one_file_are_different_keys() {
+    fn the_two_sides_of_one_file_have_different_keys() {
         // Same path, different content: an unchanged path still has two
         // versions, and colouring one is not colouring the other.
-        let left = Key::new("src/main.rs", DiffVersion::Original);
-        let right = Key::new("src/main.rs", DiffVersion::Modified);
-        assert_ne!(left, right);
+        let file = File::unchanged_path(at("src/main.rs"), revs());
+        assert_ne!(
+            file.name(DiffVersion::Original),
+            file.name(DiffVersion::Modified)
+        );
     }
 
     #[test]
     fn a_renamed_file_keeps_each_side_under_its_own_name() {
-        // Which is what lets the language be read off the key.
-        let left = Key::new("old.py", DiffVersion::Original);
-        let right = Key::new("new.rs", DiffVersion::Modified);
-        assert_ne!(left, right);
-        assert!(left.path.ends_with(".py"));
-        assert!(right.path.ends_with(".rs"));
+        // Which is what lets the language be read off the path.
+        let file = File::renamed(at("old.py"), at("new.rs"), revs());
+        assert!(
+            path_of(&file, DiffVersion::Original)
+                .unwrap()
+                .ends_with(".py")
+        );
+        assert!(
+            path_of(&file, DiffVersion::Modified)
+                .unwrap()
+                .ends_with(".rs")
+        );
     }
 }

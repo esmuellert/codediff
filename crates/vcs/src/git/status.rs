@@ -24,6 +24,8 @@
 //! a quote or a non-ASCII byte, and a path containing a newline breaks the
 //! format outright.
 
+pub use file_types::Oid;
+
 use crate::error::{Error, Result};
 
 /// One of git's single-letter status codes.
@@ -84,35 +86,6 @@ impl Code {
 pub struct Xy {
     pub index: Code,
     pub worktree: Code,
-}
-
-/// A git object id, kept as text.
-///
-/// Never parsed into bytes: it is only handed back to git or compared, and git
-/// prints abbreviated ids of varying length.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Oid(String);
-
-impl Oid {
-    pub fn new(text: impl Into<String>) -> Self {
-        Self(text.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// True for the all-zero id git prints where an object does not exist,
-    /// such as the after side of a deletion.
-    pub fn is_null(&self) -> bool {
-        !self.0.is_empty() && self.0.chars().all(|c| c == '0')
-    }
-}
-
-impl std::fmt::Display for Oid {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
 }
 
 /// One record of `git status --porcelain=v2`.

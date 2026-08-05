@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::Repo;
 use crate::error::Result;
-use file_types::{ChangeType, ChangedFile};
+use file_types::{ChangeType, ChangedFile, DiffVersion, Revs};
 use file_types::{File, FileContent, RepoPath};
 
 pub use status::{Code, Entry, Oid, Untracked, Xy};
@@ -31,8 +31,16 @@ pub use status::{Code, Entry, Oid, Untracked, Xy};
 pub struct Git {
     repo: Repo,
     untracked: Untracked,
-    /// What the before side means. `HEAD` for the default worktree comparison.
+    /// What the before side means, as the caller spelled it. `HEAD` unless
+    /// told otherwise.
     before: String,
+    /// [`before`](Self::before) resolved, with what the after side is.
+    ///
+    /// Resolved on first use, so a status-only run never pays for the extra
+    /// process — and resolved **once**, so a commit made while a review is
+    /// open cannot leave half its files named against one `HEAD` and half
+    /// against another.
+    revs: Option<Revs>,
     /// Opened on first use, so a status-only run never pays for the child.
     blobs: Option<cat_file::Batch>,
 }
@@ -46,6 +54,7 @@ impl Git {
             repo: rev_parse::discover(path)?,
             untracked: Untracked::default(),
             before: "HEAD".to_owned(),
+            revs: None,
             blobs: None,
         })
     }
@@ -58,7 +67,20 @@ impl Git {
     /// Compares against a revision other than `HEAD`.
     pub fn with_before(mut self, rev: impl Into<String>) -> Self {
         self.before = rev.into();
+        self.revs = None;
         self
+    }
+
+    /// What the two sides of this comparison are, resolved.
+    ///
+    /// The before side becomes an id rather than staying a name, because a
+    /// name moves and an id is what says which bytes were read.
+    pub fn revs(&mut self) -> Result<Revs> {
+        if self.revs.is_none() {
+            let commit = rev_parse::resolve(&self.repo, &self.before)?;
+            self.revs = Some(Revs::worktree_against(commit));
+        }
+        Ok(self.revs.clone().expect("just resolved"))
     }
 
     /// The raw records, in git's own terms.
@@ -121,39 +143,36 @@ impl Git {
     /// Every file that differs between the two sides.
     pub fn files(&mut self) -> Result<Vec<ChangedFile>> {
         let root = self.repo.root.clone();
+        let revs = self.revs()?;
         Ok(self
             .entries()?
             .into_iter()
-            .map(|entry| to_file_diff(entry, &root))
+            .map(|entry| to_file_diff(entry, &root, revs.clone()))
             .collect())
     }
 
-    /// The file's content before the change.
+    /// The content of one side of a file.
     ///
     /// Takes the whole [`ChangedFile`] rather than a path so that a move reads
     /// its old path without the caller having to know that rule. Returns
     /// [`FileContent`] rather than bytes because a repository holds pictures as
-    /// readily as source, and every caller would otherwise have to work that
-    /// out for itself.
-    pub fn before(&mut self, file: &ChangedFile) -> Result<FileContent> {
-        // An untracked file has no before side at all, and asking git for one
-        // would spend a round trip to be told so.
-        if file.change() == ChangeType::Untracked || file.change() == ChangeType::Added {
+    /// readily as source.
+    ///
+    /// One function for both sides: which side it is says nothing about where
+    /// to look, and the file's own revision does.
+    pub fn read(&mut self, file: &ChangedFile, version: DiffVersion) -> Result<FileContent> {
+        let Some(path) = file.file.on(version).cloned() else {
             return Ok(FileContent::Absent);
+        };
+        match file.file.rev(version).stored() {
+            None => Ok(FileContent::of(worktree::read(&path)?)),
+            // Cloned because reading borrows `self` mutably, and the revision
+            // lives in the file rather than in the batch.
+            Some(rev) => {
+                let rev = rev.to_owned();
+                Ok(FileContent::of(self.blobs()?.read(&rev, &path)?))
+            }
         }
-        let rev = self.before.clone();
-        let path = file.before_path().clone();
-        Ok(FileContent::of(self.blobs()?.read(&rev, &path)?))
-    }
-
-    /// The file's content after the change.
-    pub fn after(&mut self, file: &ChangedFile) -> Result<FileContent> {
-        if file.change() == ChangeType::Deleted {
-            return Ok(FileContent::Absent);
-        }
-        // The after side of the default comparison is the working tree, which
-        // is on disk rather than in the object store.
-        Ok(FileContent::of(worktree::read(file.path())?))
     }
 }
 
@@ -164,7 +183,7 @@ impl Git {
 /// reviewer looking at "what changed since the last commit" wants one answer.
 /// The index code wins where they differ, since it is the one that describes
 /// the file's relationship to `HEAD`.
-pub fn to_file_diff(entry: Entry, root: &std::path::Path) -> ChangedFile {
+pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> ChangedFile {
     let change = match (entry.xy.index, entry.xy.worktree) {
         // Unresolved merges first: nothing else about the codes matters.
         (Code::Unmerged, _) | (_, Code::Unmerged) => ChangeType::Conflicted,
@@ -186,10 +205,10 @@ pub fn to_file_diff(entry: Entry, root: &std::path::Path) -> ChangedFile {
     // and `ChangedFile` stores nothing that could contradict it.
     let path = RepoPath::new(entry.path, root);
     let file = match (change, entry.original) {
-        (ChangeType::Added | ChangeType::Untracked, _) => File::added(path),
-        (ChangeType::Deleted, _) => File::deleted(path),
-        (_, Some(previous)) => File::renamed(RepoPath::new(previous, root), path),
-        (_, None) => File::unchanged_path(path),
+        (ChangeType::Added | ChangeType::Untracked, _) => File::added(path, revs),
+        (ChangeType::Deleted, _) => File::deleted(path, revs),
+        (_, Some(previous)) => File::renamed(RepoPath::new(previous, root), path, revs),
+        (_, None) => File::unchanged_path(path, revs),
     };
 
     // Only the two the paths cannot express are carried; the rest is read back

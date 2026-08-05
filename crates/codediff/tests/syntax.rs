@@ -230,6 +230,7 @@ fn a_rename_is_coloured_as_each_side_is_named() {
         file_types::File::renamed(
             file_types::RepoPath::new("a.py", std::path::Path::new("/repo")),
             file_types::RepoPath::new("a.rs", std::path::Path::new("/repo")),
+            harness::revs(),
         ),
         alignment("def f():\n    pass\n", "fn f() {}\n"),
     );

@@ -14,16 +14,21 @@
 
 #![allow(dead_code)]
 
-use file_types::{File, RepoPath};
+use file_types::{File, Oid, RepoPath, Revs};
 use ui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ui::ratatui::Terminal;
 use ui::ratatui::backend::TestBackend;
 use ui::ratatui::buffer::Buffer as Cells;
 use ui::{Buffer, Diff, DiffLayout, Session, Theme};
 
+/// The ordinary comparison, since these tests never open a repository.
+pub fn revs() -> Revs {
+    Revs::worktree_against(Oid::new("b87b24c"))
+}
+
 /// A file under a fixed root, since these tests never touch a disk.
 pub fn file(path: &str) -> File {
-    File::unchanged_path(RepoPath::new(path, std::path::Path::new("/repo")))
+    File::unchanged_path(RepoPath::new(path, std::path::Path::new("/repo")), revs())
 }
 
 /// A side-by-side buffer over two texts.
@@ -59,7 +64,7 @@ pub fn single(label: &str, contents: &str) -> Buffer {
 /// The `(added)` note is derived from that, never passed in — which is the
 /// point of `File` and the reason a test cannot fake it with a label.
 pub fn added(label: &str, contents: &str) -> Buffer {
-    let file = File::added(RepoPath::new(label, std::path::Path::new("/repo")));
+    let file = File::added(RepoPath::new(label, std::path::Path::new("/repo")), revs());
     Buffer::single_file(file, &vscode_diff::lines(contents))
 }
 

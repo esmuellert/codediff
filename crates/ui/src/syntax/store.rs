@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use align::DiffVersion;
 use syntax::Span;
 
-use super::message::{Key, SyntaxResponse, Version};
+use super::message::{SyntaxResponse, Version};
 
 /// Lines held before the least recently used file is dropped.
 ///
@@ -73,11 +73,11 @@ impl Colours {
 /// The colours of every file open, and the order they were last wanted in.
 #[derive(Debug, Default)]
 pub struct Store {
-    entries: HashMap<Key, Colours>,
+    entries: HashMap<String, Colours>,
     /// Most recently wanted last. A `Vec` rather than a queue because it is
     /// searched by key on every touch, and at the handful of entries a review
     /// holds a scan beats a second index.
-    order: Vec<Key>,
+    order: Vec<String>,
     held: usize,
 }
 
@@ -91,12 +91,12 @@ impl Store {
     /// Does not count as a use. Drawing asks for this many times a frame, and
     /// what should keep an entry alive is a reader looking at the file, which
     /// is what [`want`](Self::want) records.
-    pub fn get(&self, key: &Key) -> Option<&Colours> {
+    pub fn get(&self, key: &str) -> Option<&Colours> {
         self.entries.get(key)
     }
 
     /// How many lines of a file are already coloured.
-    pub fn have(&self, key: &Key) -> u32 {
+    pub fn have(&self, key: &str) -> u32 {
         self.entries.get(key).map_or(0, Colours::lines)
     }
 
@@ -105,7 +105,7 @@ impl Store {
     /// Called when a request is about to be sent. A file whose content has
     /// changed loses what was read of it, because the old colours describe
     /// text that is gone.
-    pub fn want(&mut self, key: &Key, version: Version) {
+    pub fn want(&mut self, key: &str, version: Version) {
         match self.entries.get_mut(key) {
             Some(colours) if colours.version == version => {}
             Some(colours) => {
@@ -117,7 +117,7 @@ impl Store {
             }
             None => {
                 self.entries.insert(
-                    key.clone(),
+                    key.to_owned(),
                     Colours {
                         read: Vec::new(),
                         version,
@@ -152,7 +152,7 @@ impl Store {
     /// `keeping` is never dropped however large it is — a single file over
     /// budget is still the file being read, and colouring it only to throw it
     /// away would loop.
-    fn evict(&mut self, keeping: &Key) {
+    fn evict(&mut self, keeping: &str) {
         while self.held > BUDGET {
             let Some(position) = self.order.iter().position(|key| key != keeping) else {
                 return;
@@ -164,16 +164,21 @@ impl Store {
         }
     }
 
-    fn touch(&mut self, key: &Key) {
+    fn touch(&mut self, key: &str) {
         if let Some(position) = self.order.iter().position(|held| held == key) {
             self.order.remove(position);
         }
-        self.order.push(key.clone());
+        self.order.push(key.to_owned());
     }
 
     /// How many lines are held, for tests and for a status display.
     pub fn held(&self) -> usize {
         self.held
+    }
+
+    /// How many versions of how many files are held.
+    pub fn entries(&self) -> usize {
+        self.entries.len()
     }
 }
 
@@ -229,17 +234,17 @@ mod tests {
     use super::*;
     use syntax::{Pen, Style};
 
-    fn key(path: &str) -> Key {
-        Key::new(path, DiffVersion::Modified)
+    fn key(path: &str) -> String {
+        format!("worktree:{path}")
     }
 
     fn span() -> Span {
         Span::new(0..1, Style::pen(Pen(0)))
     }
 
-    fn piece(key: &Key, version: Version, from: u32, lines: usize, more: bool) -> SyntaxResponse {
+    fn piece(key: &str, version: Version, from: u32, lines: usize, more: bool) -> SyntaxResponse {
         SyntaxResponse {
-            key: key.clone(),
+            key: key.to_owned(),
             version,
             from,
             spans: vec![vec![span()]; lines],

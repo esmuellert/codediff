@@ -24,7 +24,7 @@ use file_types::File;
 
 use std::sync::Arc;
 
-use crate::syntax::{Key, Spans, Store, Syntax, SyntaxRequest, Version, key_of};
+use crate::syntax::{Spans, Store, Syntax, SyntaxRequest, Version, path_of};
 
 /// One version of a file, and its lines.
 #[derive(Debug)]
@@ -33,9 +33,9 @@ pub struct SingleFile {
     /// Shared, so the thread that colours can be handed the text rather than
     /// a copy of it.
     lines: Arc<Vec<String>>,
-    /// Which store entry holds this file's colours. One, not two: there is
-    /// only one version here, which is the whole difference from a diff.
-    key: Option<Key>,
+    /// Which side the file is on. One, not two: there is only one version
+    /// here, which is the whole difference from a diff.
+    side: DiffVersion,
     version: Version,
 }
 
@@ -49,16 +49,24 @@ impl SingleFile {
         // it is not has no path and so no language.
         let side = file.only().unwrap_or(DiffVersion::Modified);
         Self {
-            key: key_of(&file, side),
+            side,
             file,
             lines: Arc::new(lines.iter().map(|line| (*line).to_owned()).collect()),
             version: Version(0),
         }
     }
 
+    /// What names this file's content, if it is on the side it claims.
+    ///
+    /// Asked of the file rather than held, because it is derived — a copy
+    /// kept beside the file is how one comes to disagree with the other.
+    fn key(&self) -> Option<String> {
+        self.file.name(self.side)
+    }
+
     /// The colouring, for a frame.
     pub fn spans<'a>(&self, store: &'a Store) -> Spans<'a> {
-        match self.key.as_ref().and_then(|key| store.get(key)) {
+        match self.key().and_then(|key| store.get(&key)) {
             Some(colours) => Spans::One(colours),
             None => Spans::Off,
         }
@@ -67,7 +75,7 @@ impl SingleFile {
     /// Asks for everything up to `want`.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
         self.version = version;
-        let Some(key) = self.key.clone() else {
+        let (Some(key), Some(path)) = (self.key(), path_of(&self.file, self.side)) else {
             return;
         };
         if self.lines.is_empty() || syntax.busy(&key) {
@@ -81,6 +89,7 @@ impl SingleFile {
         }
         syntax.send(SyntaxRequest {
             key,
+            path,
             version,
             text: Arc::clone(&self.lines),
             have,
