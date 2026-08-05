@@ -576,6 +576,24 @@ opened, and S12 opens one.
 
 See [D44](05-decisions.md#d44--a-files-content-is-named-by-which-version-it-is-not-which-column).
 
+### S11g — Fillers where the plugin puts them ✅
+
+**Build.** `align::side_by_side` cuts a change into runs that line up before placing its
+fillers, using the character-level detail the engine already reports. `codediff debug parity`
+prints everything drawn in a form a machine can diff.
+
+**Why.** Reviewing one real commit showed 22 of 301 rows opposite the wrong line. We had no
+splitting step at all — every filler went to the bottom of its block.
+
+**Pass when.**
+- [x] the file that showed it up: 22 disagreeing rows to 0 of 301
+- [x] 35 of 35 real changes from this repository match the plugin
+- [x] filler and line marks match on 168/168 cases once the phantom line is discounted
+- [x] the regression test fails with the fix removed — the first one did not
+
+See [D45](05-decisions.md#d45--a-change-is-split-before-its-fillers-are-placed) and
+[D46](05-decisions.md#d46--what-the-parity-harness-found-and-has-not-fixed).
+
 ### S12 — Explorer
 
 **Build.** `explorer` crate: entries → grouped tree, path collapsing, filter. `ui`:

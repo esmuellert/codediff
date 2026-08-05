@@ -183,11 +183,23 @@ impl Alignment {
 
     /// Every view line, in order, laid out the way asked for.
     pub fn view_lines(&self, layout: DiffLayout) -> ViewLines<'_> {
-        layout::view_lines(layout, &self.diff, self.originals(), self.modifieds())
+        layout::view_lines(
+            layout,
+            &self.diff,
+            &self.original,
+            self.originals(),
+            self.modifieds(),
+        )
     }
 
     pub fn view_line_count(&self, layout: DiffLayout) -> u32 {
-        layout::view_line_count(layout, &self.diff, self.originals(), self.modifieds())
+        layout::view_line_count(
+            layout,
+            &self.diff,
+            &self.original,
+            self.originals(),
+            self.modifieds(),
+        )
     }
 
     /// The view lines a viewport covers.
@@ -218,6 +230,7 @@ impl Alignment {
         layout::line_at(
             layout,
             &self.diff,
+            &self.original,
             self.originals(),
             self.modifieds(),
             view_line,
@@ -229,6 +242,7 @@ impl Alignment {
         layout::view_line_at(
             layout,
             &self.diff,
+            &self.original,
             self.originals(),
             self.modifieds(),
             version,

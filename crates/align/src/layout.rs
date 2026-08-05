@@ -68,15 +68,17 @@ impl Iterator for ViewLines<'_> {
     }
 }
 
-pub(crate) fn view_lines(
+pub(crate) fn view_lines<'a>(
     layout: DiffLayout,
-    diff: &LinesDiff,
+    diff: &'a LinesDiff,
+    original: &'a [String],
     original_lines: u32,
     modified_lines: u32,
-) -> ViewLines<'_> {
+) -> ViewLines<'a> {
     match layout {
         DiffLayout::SideBySide => ViewLines::SideBySide(side_by_side::view_lines(
             diff,
+            original,
             original_lines,
             modified_lines,
         )),
@@ -89,12 +91,13 @@ pub(crate) fn view_lines(
 pub(crate) fn view_line_count(
     layout: DiffLayout,
     diff: &LinesDiff,
+    original: &[String],
     original_lines: u32,
     modified_lines: u32,
 ) -> u32 {
     match layout {
         DiffLayout::SideBySide => {
-            side_by_side::view_line_count(diff, original_lines, modified_lines)
+            side_by_side::view_line_count(diff, original, original_lines, modified_lines)
         }
         DiffLayout::Inline => inline::view_line_count(diff, original_lines, modified_lines),
     }
@@ -103,13 +106,14 @@ pub(crate) fn view_line_count(
 pub(crate) fn line_at(
     layout: DiffLayout,
     diff: &LinesDiff,
+    original: &[String],
     original_lines: u32,
     modified_lines: u32,
     view_line: u32,
 ) -> Option<(DiffVersion, u32)> {
     match layout {
         DiffLayout::SideBySide => {
-            side_by_side::line_at(diff, original_lines, modified_lines, view_line)
+            side_by_side::line_at(diff, original, original_lines, modified_lines, view_line)
         }
         DiffLayout::Inline => inline::line_at(diff, original_lines, modified_lines, view_line),
     }
@@ -118,15 +122,21 @@ pub(crate) fn line_at(
 pub(crate) fn view_line_at(
     layout: DiffLayout,
     diff: &LinesDiff,
+    original: &[String],
     original_lines: u32,
     modified_lines: u32,
     version: DiffVersion,
     line: u32,
 ) -> Option<u32> {
     match layout {
-        DiffLayout::SideBySide => {
-            side_by_side::view_line_at(diff, original_lines, modified_lines, version, line)
-        }
+        DiffLayout::SideBySide => side_by_side::view_line_at(
+            diff,
+            original,
+            original_lines,
+            modified_lines,
+            version,
+            line,
+        ),
         DiffLayout::Inline => {
             inline::view_line_at(diff, original_lines, modified_lines, version, line)
         }

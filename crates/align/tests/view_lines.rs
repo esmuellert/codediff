@@ -230,3 +230,111 @@ fn slot_reports_filler_correctly() {
     assert!(!Slot::Line(3).is_filler());
     assert_eq!(Slot::Line(3).line(), Some(3));
 }
+
+// --- where the fillers go inside a change ---------------------------------
+//
+// A change is not one block with its fillers at the bottom. Where the engine
+// matched text across it, the lines carrying that text are pulled level and
+// the fillers go around them. These pin that, because the columns read back
+// as their files either way and every other invariant stays true.
+
+#[test]
+fn a_line_that_survived_a_rewrite_sits_beside_itself() {
+    // Real text, from the change that showed this up: a doc comment loses two
+    // lines and rewrites the rest, and the engine reports the whole thing as
+    // one change with inner detail. Without splitting on that detail the two
+    // fillers land at the bottom, and every line of the comment sits opposite
+    // the wrong one.
+    let original = split(
+        "impl std::fmt::Debug for Highlighted {\n\
+         \x20   /// How far it has got, not every span it found.\n\
+         \x20   ///\n\
+         \x20   /// Written out rather than derived because the derived form is tens of\n\
+         \x20   /// thousands of byte ranges, which no failing test is easier to read for.\n\
+         \x20   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
+    );
+    let modified = split(
+        "impl std::fmt::Debug for Highlighted {\n\
+         \x20   /// Written out rather than derived because `Reading` is a grammar's\n\
+         \x20   /// context stack, which no failing test is easier to read for.\n\
+         \x20   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
+    );
+    let alignment = Alignment::new(compute(&original, &modified), &original, &modified);
+
+    assert_eq!(
+        table(&alignment),
+        vec![
+            (Some(1), Some(1), Unchanged),
+            (Some(2), None, Deleted), // the two lines that went
+            (Some(3), None, Deleted),
+            (Some(4), Some(2), Modified), // "Written out rather than derived"
+            (Some(5), Some(3), Modified), // "which no failing test is easier"
+            (Some(6), Some(4), Unchanged),
+        ],
+        "the rewritten lines pair with what they became"
+    );
+}
+
+#[test]
+fn a_block_with_nothing_matching_puts_its_fillers_first() {
+    // Built by hand: this engine always reports inner detail when both sides
+    // have text, so nothing it produces reaches this branch. The plugin has
+    // the rule, a slower engine that gave up could produce the shape, and it
+    // is ten lines — so it is here and pinned rather than guessed at later.
+    let original = split("one\ntwo\nthree");
+    let modified = split("one\nalpha\nbeta\ngamma\nthree");
+    let blunt = LinesDiff {
+        changes: vec![DetailedLineRangeMapping {
+            original: LineRange {
+                start_line: 2,
+                end_line: 3,
+            },
+            modified: LineRange {
+                start_line: 2,
+                end_line: 5,
+            },
+            inner_changes: vec![],
+        }],
+        moves: vec![],
+        hit_timeout: false,
+    };
+    let alignment = Alignment::new(blunt, &original, &modified);
+
+    assert_eq!(
+        table(&alignment),
+        vec![
+            (Some(1), Some(1), Unchanged),
+            (None, Some(2), Inserted), // the fillers open the block
+            (None, Some(3), Inserted),
+            (Some(2), Some(4), Modified),
+            (Some(3), Some(5), Unchanged),
+        ]
+    );
+}
+
+#[test]
+fn the_view_line_count_matches_the_walk() {
+    // Splitting a change can make it taller than either side, so the count
+    // cannot be derived from the line totals and must come from the same walk.
+    for (original, modified) in [
+        (
+            "impl std::fmt::Debug for Highlighted {\n    /// How far it has got.\n    ///\n    /// Written out rather than derived because the derived form is tens of\n    /// thousands of byte ranges, which no failing test is easier to read for.\n    fn fmt(&self) {",
+            "impl std::fmt::Debug for Highlighted {\n    /// Written out rather than derived because `Reading` is a grammar's\n    /// context stack, which no failing test is easier to read for.\n    fn fmt(&self) {",
+        ),
+        ("head\nkeep\ntail one", "head A\nhead B\nkeep\ntail two"),
+        ("one\ntwo\nthree", "one\nalpha\nbeta\ngamma\nthree"),
+        ("a\nb\nc\nd", "a\nb\nc\nd"),
+        ("x", "p\nq\nr\ns\nt"),
+    ] {
+        let original = split(original);
+        let modified = split(modified);
+        let alignment = Alignment::new(compute(&original, &modified), &original, &modified);
+        for layout in [DiffLayout::SideBySide, DiffLayout::Inline] {
+            assert_eq!(
+                alignment.view_line_count(layout) as usize,
+                alignment.view_lines(layout).count(),
+                "{layout:?} on {original:?} -> {modified:?}"
+            );
+        }
+    }
+}

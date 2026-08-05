@@ -16,6 +16,7 @@ mod align;
 mod diff;
 mod diff_file;
 mod line;
+mod parity;
 mod show;
 mod status;
 
@@ -36,6 +37,7 @@ pub fn run(command: Debug) -> Result<()> {
             verbose,
         } => align::run(&original, &modified, verbose),
         Debug::Line { file, verbose } => line::run(&file, verbose),
+        Debug::Parity { original, modified } => parity::run(&original, &modified),
         Debug::Show { spec, raw } => show::run(&spec, raw),
         Debug::Status { dir, verbose } => status::run(&dir, verbose),
     }

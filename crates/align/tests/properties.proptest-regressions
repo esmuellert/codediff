@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 73cb1fb31c80629d6b44b3b00ca588dbc18c769dac267ce2efe5941d47d0591e # shrinks to original = [], modified = ["fn a() {}"]
+cc 134bb7c7c1c84a9217c196439a0e895711409dfe08b362610084e4dfca2104db # shrinks to original = ["fn a() {}", "fn a() {}", "fn a() {}", "    return 1;", "fn a() {}"], modified = ["fn a() {}", "\tlet x = 1;", "}", "// 日本語 comment"]

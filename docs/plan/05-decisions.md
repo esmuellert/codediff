@@ -2341,6 +2341,90 @@ looking at, and putting `Rev` in `vcs` would mean `ui` depending on `vcs` — th
 exists to make unnecessary. A second backend widens the enum. It is the same bargain
 `ChangeType` already struck.
 
+## D45 — a change is split before its fillers are placed
+
+**S11g.** A change is not one block with its fillers at the bottom. Where the engine found
+character-level detail, the lines it matched are pulled level with each other and the fillers go
+around them.
+
+**What it looked like.** Reviewing `crates/syntax/src/highlighted.rs` at `3b05181`, **22 of 301
+rows** sat opposite the wrong line. The clearest one:
+
+```text
+OURS                                              codediff.nvim
+39  /// How far it has got…  │ 44  /// Written…   39  /// How far it has got…  │     ╱╱╱╱╱
+41  /// Written out rather…  │     ╱╱╱╱╱          41  /// Written out rather…  │ 44  /// Written…
+```
+
+The plugin pairs original 41 with modified 44 — the same sentence. We paired 41 with a filler
+and put its match two rows up.
+
+**It was not a bug in our rule. We had no rule.** The whole algorithm was one function that
+emitted a line while the range lasted and a filler after: every filler at the bottom of the
+block, whatever the engine had said about what matched.
+
+**The rule, from `codediff.nvim`'s `calculate_fillers`, and VS Code before it.** A change is
+cut into runs that line up, and each run places its own fillers at its end:
+
+- a cut **before** an inner change that starts part way into both lines
+- a cut **after** an inner change that ends before the end of its line
+- a cut that would leave one side empty is dropped, except the first
+
+Either kind of cut says the text around it corresponds, so the lines carrying it can be pulled
+level. A change with no inner detail has nothing to pull level, and puts its fillers at the
+**start** of the block — where a reader looks for the line it replaced. This engine never
+produces that shape when both sides have text, so that branch is exercised by a hand-built diff.
+
+**A split can make a change taller than either side**, so `view_line_count` can no longer be
+`max(original, modified)` and comes from the same walk. The layout also had to be handed the
+original side's text: one of the two cuts asks whether an inner change stops before the end of
+its line, which the engine's columns alone cannot answer.
+
+**Checked against the plugin, not against taste.** The plugin loads the same
+`libvscode_diff.so` we link, so the input is byte-identical and every difference was ours.
+A harness runs both over a corpus and compares what each draws — filler runs, line marks and
+character marks — and the target file went from 22 disagreeing rows to **0 of 301**, with
+**35 of 35** real changes matching.
+
+**One test lied first.** The first regression test passed with the fix removed, because the
+input I invented made the engine emit two separate changes rather than one split change. It now
+uses the real text from the diverging region, and fails without the fix.
+
+## D46 — what the parity harness found, and has not fixed
+
+**S11g.** Two differences from `codediff.nvim` are measured, understood, and left standing.
+Written down because a measured difference nobody has decided about is worse than either
+fixing it or accepting it.
+
+The harness builds 168 cases — 30 awkward ones by hand, 60 real changes from this repository,
+80 randomly generated — and runs both tools over all of them. One Neovim serves every case,
+which is what makes the corpus affordable: half a second each rather than seven.
+
+**The phantom trailing line.** We split text on newlines and keep the empty piece after the
+last one; the plugin uses a Neovim buffer, which has no such line.
+
+```rust
+lines("a\nb\n") → ["a", "b", ""]     // ours, three
+nvim_buf_get_lines() → ["a", "b"]      // the plugin, two
+```
+
+So every file ending in a newline draws one extra blank row, and the engine sees one more line
+than the plugin gives it. **Every** filler and line-mark difference in the corpus traces to it:
+removing it takes both from 163/168 and 167/168 to **168/168**. It also found a case the
+history corpus never did — a random one where an insertion at the very end landed a row low.
+
+**A character run that reaches past the last line.** The plugin drops it:
+
+```lua
+if start_line > buf_line_count or end_line > buf_line_count then return end
+```
+
+All 210 character differences are ours only, never the reverse, and each is an inner change
+ending one line past the file. So a wholly inserted line gets only its background from the
+plugin, while we also mark its text. That check is written as a defence against a buffer
+changing under a stale diff rather than as a rule about what to draw, so copying it would be
+adopting an accident. Left alone until someone decides which is right.
+
 ## Open questions
 
 | # | question | needed by |

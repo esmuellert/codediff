@@ -151,6 +151,24 @@ character-level byte ranges and the stretches that could be collapsed:
 Read the left column top to bottom and you have the original file; read the right and you
 have the modified one. That is the property the tests assert over all twelve fixtures.
 
+### Checking against the plugin
+
+```sh
+codediff debug parity old.txt new.txt
+```
+
+Prints everything drawn — filler runs, changed lines, changed characters — one record per
+line, so it can be compared with what `codediff.nvim` draws for the same two files. The other
+commands here are for a reader; this one is for a machine. See
+[D45](docs/plan/05-decisions.md#d45--a-change-is-split-before-its-fillers-are-placed).
+
+```text
+lines 215 289
+filler original 12 5
+line modified 44
+char modified 44 48 57
+```
+
 ### Inspecting text measurement
 
 ```sh
