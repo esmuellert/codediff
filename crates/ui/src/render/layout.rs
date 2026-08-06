@@ -93,6 +93,47 @@ pub fn screen(area: Rect) -> Option<(Rect, Rect)> {
     Some((body, status))
 }
 
+/// Splits the body between a list on the left and what it opened on the right.
+///
+/// The border is a column of its own, taken off the top before dividing, so
+/// widening the list by one widens the list rather than the border.
+///
+/// Returns `None` if the screen cannot hold both, which the caller draws as
+/// one pane rather than as two unusable ones.
+pub fn split(area: Rect, left: u16) -> Option<(Rect, Rect, Rect)> {
+    // Both sides have a floor, not just the right. Without one on the left the
+    // list was squeezed to a single column at 22 columns wide — too narrow to
+    // draw, so the whole screen said "terminal too small" while 21 columns
+    // showed the list perfectly. A wider terminal must never show less.
+    if area.width < MIN_LIST + 1 + MIN_RIGHT {
+        return None;
+    }
+    let left = left.clamp(MIN_LIST, area.width - MIN_RIGHT - 1);
+    let list = Rect {
+        width: left,
+        ..area
+    };
+    let border = Rect {
+        x: area.x + left,
+        width: 1,
+        ..area
+    };
+    let rest = Rect {
+        x: area.x + left + 1,
+        width: area.width - left - 1,
+        ..area
+    };
+    Some((list, border, rest))
+}
+
+/// The narrowest a diff is worth drawing beside a list.
+const MIN_RIGHT: u16 = 20;
+/// The narrowest a list is worth drawing beside a diff.
+///
+/// Enough for a cut-off name and the letter beside it. Below this the screen
+/// is better used by one pane than by two useless ones.
+const MIN_LIST: u16 = 8;
+
 /// Divides one pane into its two columns.
 ///
 /// Returns `None` if the pane is too narrow to draw anything meaningful,
@@ -274,6 +315,54 @@ mod tests {
         assert_eq!(columns(body(10, 24), 50, 10, 10), None);
         assert_eq!(screen(area(80, 1)), None);
         assert!(columns(body(80, 2), 50, 10, 10).is_some());
+    }
+
+    #[test]
+    fn a_split_tiles_the_body_exactly() {
+        for width in [40u16, 61, 80, 200] {
+            let (list, border, rest) = split(body(width, 24), 40).expect("room");
+            assert_eq!(list.x, 0);
+            assert_eq!(border.x, list.right());
+            assert_eq!(rest.x, border.right());
+            assert_eq!(list.width + border.width + rest.width, width);
+        }
+    }
+
+    #[test]
+    fn a_screen_too_narrow_for_both_is_refused_rather_than_split() {
+        // Answered with `None` so the caller can show one pane, instead of a
+        // diff four columns wide that says nothing. A screen that is merely
+        // tight is not refused — the list gives up columns first.
+        assert_eq!(split(body(28, 24), 40), None);
+        assert!(split(body(50, 24), 40).is_some(), "tight, but usable");
+    }
+
+    #[test]
+    fn a_wider_screen_never_shows_less_than_a_narrower_one() {
+        // At 22 columns the list was squeezed to one column, too narrow to
+        // draw, so the whole screen said "terminal too small" — while 21
+        // columns showed the list perfectly.
+        let mut previous = 0;
+        for width in 1..200u16 {
+            let Some((list, _, rest)) = split(body(width, 24), 40) else {
+                continue;
+            };
+            assert!(list.width >= MIN_LIST, "{width} columns gives {list:?}");
+            assert!(rest.width >= MIN_RIGHT, "{width} columns gives {rest:?}");
+            assert!(
+                list.width + rest.width > previous,
+                "not monotone at {width}"
+            );
+            previous = list.width + rest.width;
+        }
+    }
+
+    #[test]
+    fn a_list_wider_than_the_screen_is_pulled_back_rather_than_overflowing() {
+        // Reachable by dragging a terminal narrower after widening the list.
+        let (list, _, rest) = split(body(80, 24), 200).expect("room");
+        assert_eq!(list.width, 59);
+        assert_eq!(rest.width, MIN_RIGHT);
     }
 
     #[test]

@@ -20,6 +20,7 @@ anyhow.workspace = true
 clap.workspace = true
 line-index.workspace = true
 align.workspace = true
+explorer.workspace = true
 file-types.workspace = true
 ui.workspace = true
 vcs.workspace = true

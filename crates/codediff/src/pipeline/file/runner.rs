@@ -9,9 +9,8 @@ use anyhow::Result;
 use file_types::DiffVersion;
 use ui::{Buffer, Diff, DiffLayout};
 
-use crate::pipeline::contents::{self, Contents};
-use crate::pipeline::diff;
-use crate::pipeline::resolver::{self, Request};
+use crate::pipeline::file::contents::{self, Contents};
+use crate::pipeline::file::diff;
 
 /// Drives the five stages for one request.
 ///
@@ -24,11 +23,10 @@ pub struct Runner {
 }
 
 impl Runner {
-    /// Runs stages one and two: find the file, read both sides.
-    pub fn new(request: &Request<'_>) -> Result<Self> {
-        let resolved = resolver::resolve(request)?;
+    /// Runs stage one: open the repository, read both sides.
+    pub fn new(file: &file_types::ChangedFile) -> Result<Self> {
         Ok(Self {
-            contents: contents::read(resolved)?,
+            contents: contents::read(file)?,
         })
     }
 

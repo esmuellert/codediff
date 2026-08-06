@@ -282,6 +282,7 @@ dependencies = [
  "align",
  "anyhow",
  "clap",
+ "explorer",
  "file-types",
  "fixtures",
  "line-index",
@@ -542,6 +543,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1a05365e3b1c6d1650318537c7460c6923f1abdd272ad6842baa2b509957a06"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "explorer"
+version = "0.11.0"
+dependencies = [
+ "file-types",
+ "line-index",
 ]
 
 [[package]]
@@ -2373,6 +2382,7 @@ dependencies = [
  "crokey",
  "crossterm",
  "diff-types",
+ "explorer",
  "file-types",
  "line-index",
  "ratatui",

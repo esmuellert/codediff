@@ -16,6 +16,7 @@ mod align;
 mod diff;
 mod diff_file;
 mod line;
+mod list;
 mod parity;
 mod show;
 mod status;
@@ -39,6 +40,11 @@ pub fn run(command: Debug) -> Result<()> {
         Debug::Line { file, verbose } => line::run(&file, verbose),
         Debug::Parity { original, modified } => parity::run(&original, &modified),
         Debug::Show { spec, raw } => show::run(&spec, raw),
+        Debug::List {
+            rev,
+            staged,
+            pathspec,
+        } => list::run(crate::cli::diff_type(&rev, staged), pathspec),
         Debug::Status { dir, verbose } => status::run(&dir, verbose),
     }
 }

@@ -13,6 +13,7 @@ publish = false
 diff-types.workspace = true
 file-types.workspace = true
 align.workspace = true
+explorer.workspace = true
 line-index.workspace = true
 syntax.workspace = true
 ratatui.workspace = true

@@ -23,7 +23,7 @@ use std::ops::Range;
 use align::{Alignment, DiffLayout};
 use file_types::File;
 
-use super::{BufferType, Inline, SideBySide, SingleFile};
+use super::{BufferType, Explorer, Inline, SideBySide, SingleFile};
 use crate::diff::Diff;
 use crate::input::{BufferAction, KeymapType};
 use crate::syntax::{Store, Syntax, Version};
@@ -78,6 +78,11 @@ impl Buffer {
         Self::of(BufferType::SingleFile(SingleFile::new(file, lines)))
     }
 
+    /// The list of changed files.
+    pub fn explorer(groups: explorer::Groups) -> Self {
+        Self::of(BufferType::Explorer(Explorer::new(groups)))
+    }
+
     /// The one place `view_lines` and `blocks` are computed, so neither can be
     /// set without the other or without the layout they were derived from.
     fn of(buffer_type: BufferType) -> Self {
@@ -130,6 +135,9 @@ impl Buffer {
             BufferType::SideBySide(d) => d.request(syntax, store, version, want),
             BufferType::Inline(d) => d.request(syntax, store, version, want),
             BufferType::SingleFile(f) => f.request(syntax, store, version, want),
+            // A list of file names is not code, so there is no language to
+            // colour it by. Its colours come from the theme alone.
+            BufferType::Explorer(_) => {}
         }
     }
 
@@ -175,8 +183,56 @@ impl Buffer {
     /// Structured, not a formatted name: the status line styles the directory
     /// differently from the file name and drops it first when the width runs
     /// out, which a single string could not support. See D28.
-    pub fn file(&self) -> &File {
+    pub fn file(&self) -> Option<&File> {
         self.buffer_type.file()
+    }
+
+    /// The list of changed files, when that is what this is.
+    pub fn as_explorer_mut(&mut self) -> Option<&mut Explorer> {
+        match &mut self.buffer_type {
+            BufferType::Explorer(explorer) => Some(explorer),
+            _ => None,
+        }
+    }
+
+    /// Acts on the selected row of a list, if this buffer is one.
+    ///
+    /// Returns whether the buffer dealt with it. `false` means the row is a
+    /// file, which only something above this crate can open — so the answer
+    /// is what decides whether a task leaves at all.
+    pub fn select(&mut self, cursor: u32) -> bool {
+        let BufferType::Explorer(explorer) = &mut self.buffer_type else {
+            return false;
+        };
+        if !explorer.toggle(cursor) {
+            return false;
+        }
+        self.recount();
+        true
+    }
+
+    /// Where the reader should start.
+    ///
+    /// Zero for anything showing text, because the top of a file is where a
+    /// file begins. A list starts on its first *file*: row zero is a heading,
+    /// which can be folded but not opened, so starting there would mean the
+    /// first key press did nothing.
+    pub fn start_row(&self) -> u32 {
+        match &self.buffer_type {
+            BufferType::Explorer(explorer) => explorer.first_file(),
+            _ => 0,
+        }
+    }
+
+    /// Rebuilds the row count after the model has changed under it.
+    ///
+    /// A fold changes how many rows there are, and `view_lines` is what every
+    /// motion and every scroll is clamped against. Called by whoever changed
+    /// the model, in the same breath, so the two cannot be left disagreeing.
+    pub fn recount(&mut self) {
+        let (view_lines, blocks) = counts(&self.buffer_type);
+        self.view_lines = view_lines;
+        self.blocks = blocks;
     }
 
     /// Which keymap is live while this buffer has focus.
@@ -188,6 +244,7 @@ impl Buffer {
             BufferType::SideBySide(_) => KeymapType::Diff(DiffLayout::SideBySide),
             BufferType::Inline(_) => KeymapType::Diff(DiffLayout::Inline),
             BufferType::SingleFile(_) => KeymapType::SingleFile,
+            BufferType::Explorer(_) => KeymapType::Explorer,
         }
     }
 
@@ -212,6 +269,21 @@ impl Buffer {
             BufferAction::WidenOriginal | BufferAction::NarrowOriginal => {
                 if let BufferType::SideBySide(data) = &mut self.buffer_type {
                     data.drag(action, count);
+                }
+            }
+            // Both reshape the list, so both change how many rows there are.
+            // `recount` keeps the motions clamped to the new number, and the
+            // reshape keeps the reader on the file they were reading — landing
+            // them on row zero, which is a heading nothing can open, was the
+            // first version of this and it was wrong.
+            BufferAction::ToggleViewMode | BufferAction::ToggleStats => {
+                if let BufferType::Explorer(explorer) = &mut self.buffer_type {
+                    let landing = explorer.reshape(view.cursor(), |model| match action {
+                        BufferAction::ToggleViewMode => model.toggle_mode(),
+                        _ => model.toggle_stats(),
+                    });
+                    self.recount();
+                    view.jump(landing, self.view_lines);
                 }
             }
         }

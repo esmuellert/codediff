@@ -1,42 +1,37 @@
-//! From "what should I look at" to "here is what to draw".
+//! From a question to something the interface can draw.
 //!
 //! ---
 //!
-//! Admission criterion: is this a step between a request and a drawable buffer?
-//! Five of them, in order, one file each:
+//! Admission criterion: is this a step between a request and an answer the
+//! interface can hold? Two pipelines of the same shape, one folder each:
 //!
-//! | | file | |
-//! |---|---|---|
-//! | 1 | [`resolver`] | which file, in which repository |
-//! | 2 | [`contents`] | read both sides |
-//! | 3 | [`diff`] | call the C engine |
-//! | 4 | [`diff`] | pair the lines up |
-//! | 5 | [`runner`] | hand over a [`Buffer`], ready to render |
+//! | | | in | out |
+//! |---|---|---|---|
+//! | [`list`] | a set of files, in two stages | an [`ExplorerDiffRequest`] | [`Groups`] |
+//! | [`file`] | one of them, in four | a [`ChangedFile`] | a [`Buffer`] |
 //!
 //! [`Buffer`]: ui::Buffer
+//! [`ExplorerDiffRequest`]: explorer::ExplorerDiffRequest
+//! [`Groups`]: explorer::Groups
 //!
-//! Every stage returns its result. That was briefly untrue — stage four's
-//! output borrowed, so stage five had to lend through a closure — and D27
-//! records what it cost.
+//! **The list's item type is the file's input type.** That is what makes them
+//! two pipelines rather than one thing bolted to another, and it is the whole
+//! join: the reader picks a row, and the row is already the next request.
+//!
+//! ```text
+//! list ──▶ Groups ──▶ (a row) ──▶ file ──▶ Buffer
+//! ```
+//!
+//! The file pipeline used to search for a file by path, which was the list
+//! written again — and worse, since a search cannot know which comparison the
+//! reader chose. It answered `HEAD → worktree` for everything, so one path had
+//! three different diffs depending on how it was reached. See D58.
 //!
 //! This lives in the binary because it is the only crate allowed to name
-//! `vcs`, `vscode-diff`, `align` and `ui` together — `cargo xtask
+//! `vcs`, `vscode-diff`, `align`, `explorer` and `ui` together — `cargo xtask
 //! lint-arch` forbids those edges everywhere else. A renderer that could
 //! assemble its own input would be a renderer that can shell out to git, which
 //! is the failure that produced a 674-line `explorer/render.lua` in the plugin.
-//!
-//! Stages one and two perform IO; everything after them is pure computation
-//! over the two texts they produce.
-//!
-//! ```ignore
-//! let runner = pipeline::Runner::new(&request)?;
-//! let mut session = ui::Session::new(runner.run()?, theme);
-//! ```
 
-pub mod contents;
-pub mod diff;
-pub mod resolver;
-pub mod runner;
-
-pub use resolver::Request;
-pub use runner::Runner;
+pub mod file;
+pub mod list;

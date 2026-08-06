@@ -55,6 +55,17 @@ impl Batch {
     /// error: a diff against `HEAD` asks for both sides of every file and one
     /// of them is routinely absent.
     pub fn read(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
+        // A request ends at a newline, so a path holding one would be read as
+        // two requests and every answer after it would belong to the wrong
+        // file — silently. Refused here, where it costs one file rather than
+        // the rest of the session. `git cat-file --batch -Z` frames requests
+        // with NUL and would let this be read, at the price of requiring git
+        // 2.42; that trade has not been made anywhere else in this crate.
+        if path.as_str().contains('\n') {
+            return Err(Error::Parse {
+                what: format!("a path with a newline in it: {:?}", path.as_str()),
+            });
+        }
         // The `rev:path` spelling is what cat-file expects for a path inside a
         // tree, and the path is relative to the root.
         writeln!(self.stdin, "{rev}:{path}").map_err(Self::broken)?;

@@ -594,24 +594,39 @@ splitting step at all — every filler went to the bottom of its block.
 See [D45](05-decisions.md#d45--a-change-is-split-before-its-fillers-are-placed) and
 [D46](05-decisions.md#d46--what-the-parity-harness-found-and-has-not-fixed).
 
-### S12 — Explorer
+### S12 — Explorer ✅
 
-**Build.** `explorer` crate: entries → grouped tree, path collapsing, filter. `ui`:
-explorer pane, selection, expand and collapse, focus switching. Lazy per-file diff with a
-cache, computed concurrently.
+**Built.** `explorer` crate: entries → sections → tree, directory flattening, two sort
+orders, folds, glob filter, rows as classified regions. `ui`: the explorer buffer, the
+two-pane tab, focus and resize, the row renderer. `vcs`: `changes()` splits a status three
+ways, `numstat` counts the lines. The composition root assembles the entries and performs
+the one task that leaves `ui`.
 
 **Check.**
 ```
 cd /tmp/cdfix && codediff
 ```
 
-**Pass when.**
-- [ ] the list contains **exactly the manifest files** with correct status letters
-- [ ] `src/both.rs`, staged and then edited again, appears **once**, carrying both codes
-- [ ] the conflicted file is listed and marked as conflicted, with no merge view offered
-- [ ] the rename shows both old and new paths
-- [ ] `Tab` switches focus; `Enter` opens the diff; `j`/`k` moves; folds work
-- [ ] a file with a very long path truncates without breaking the layout
+**Passed.**
+- [x] the list contains **exactly the manifest files** with correct status letters
+- [x] `staged-then-edited.txt` appears **twice**, once per comparison — see D47, which
+      replaces this line's original claim that it should appear once
+- [x] the conflicted file is listed and marked as conflicted, with no merge view offered
+- [x] the rename shows both old and new paths
+- [x] `Tab` switches focus; `Enter` opens the diff or folds a directory; `j`/`k` moves
+- [x] a file with a very long path truncates without breaking the layout
+- [x] a CJK file name is measured in cells, so its status letter stays on screen — D50
+- [x] a clean tree is refused rather than opened as an empty screen
+
+**Audited.** Two reviewers drove the interface headless over three rounds. Sixteen findings:
+one crash (a count before `>` overflowed `i16`), six of state corruption, seven of wrong
+output. Every one is recorded with the fix and a test that fails without it. The findings that
+mattered most were in the git layer, which no amount of reading the new crate would have
+reached — see D53 to D56.
+
+**Not built, and deliberately.** The `z` folds: they turned out to fold only the section the
+cursor is in, which is not what "close all folds" says. Mouse support, which needs the
+terminal capture mode measured earlier. Refresh — S14 owns the watcher.
 
 ---
 

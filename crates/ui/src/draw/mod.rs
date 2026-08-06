@@ -33,6 +33,7 @@
 //! Not the same word twice: **render** turns a value into marks, **draw**
 //! composes those marks into what a buffer type looks like.
 
+mod explorer;
 mod inline;
 mod screen;
 mod side_by_side;

@@ -23,7 +23,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
 
     // Git's own records, because the manifest this is checked against is
     // written in git's XY spelling.
-    let entries = git.entries().context("reading status")?;
+    let entries = git.entries(&[]).context("reading status")?;
     println!();
     if entries.is_empty() {
         println!("working tree clean");

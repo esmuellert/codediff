@@ -41,7 +41,7 @@ pub mod theme;
 pub mod view;
 
 pub use align::DiffLayout;
-pub use app::{Flow, Session, run};
+pub use app::{Flow, Open, Session, run};
 pub use diff::Diff;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
