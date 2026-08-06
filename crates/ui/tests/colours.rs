@@ -58,13 +58,13 @@ fn read(path: &str, source: &str, needle: &str) -> Option<Group> {
 
 fn check(cases: &[(&str, &str, &str, Group)]) {
     let mut wrong = Vec::new();
-    for (path, source, needle, want) in cases {
+    for (path, source, needle, expected) in cases {
         let got = token_of(path, source, needle);
-        if got != Some(*want) {
+        if got != Some(*expected) {
             wrong.push(format!(
                 "{path}: {needle:?} is {} but should be {}",
                 got.map_or("nothing", Group::name),
-                want.name(),
+                expected.name(),
             ));
         }
     }

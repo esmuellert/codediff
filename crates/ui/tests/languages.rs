@@ -51,13 +51,13 @@ type Language = (&'static str, &'static str, &'static [(&'static str, Group)]);
 fn check(languages: &[Language]) {
     let mut wrong = Vec::new();
     for (path, source, cases) in languages {
-        for (needle, want) in *cases {
+        for (needle, expected) in *cases {
             let got = token_of(path, source, needle);
-            if got != Some(*want) {
+            if got != Some(*expected) {
                 wrong.push(format!(
                     "{path:<16} {needle:<22} is {:<12} but should be {}",
                     got.map_or("nothing", Group::name),
-                    want.name(),
+                    expected.name(),
                 ));
             }
         }

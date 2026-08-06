@@ -8,7 +8,7 @@
 //! Entries are dropped least-recently-used, capped by lines held rather than
 //! by number of files, because files differ by three orders of magnitude and
 //! counting them measures nothing. The file being read is never dropped: it is
-//! touched every frame, so it is never the least recent, and that falls out of
+//! used every frame, so it is never the least recent, and that falls out of
 //! the ordering instead of needing a rule.
 
 use std::collections::HashMap;
@@ -70,12 +70,12 @@ impl Colours {
     }
 }
 
-/// The colours of every file open, and the order they were last wanted in.
+/// The colours of every file open, and the order they were last used in.
 #[derive(Debug, Default)]
 pub struct Store {
     entries: HashMap<String, Colours>,
-    /// Most recently wanted last. A `Vec` rather than a queue because it is
-    /// searched by key on every touch, and at the handful of entries a review
+    /// Most recently used last. A `Vec` rather than a queue because it is
+    /// searched by key every time one is used, and at the handful of entries a review
     /// holds a scan beats a second index.
     order: Vec<String>,
     held: usize,
@@ -105,7 +105,7 @@ impl Store {
     /// Called when a request is about to be sent. A file whose content has
     /// changed loses what was read of it, because the old colours describe
     /// text that is gone.
-    pub fn want(&mut self, key: &str, version: Version) {
+    pub fn start(&mut self, key: &str, version: Version) {
         match self.entries.get_mut(key) {
             Some(colours) if colours.version == version => {}
             Some(colours) => {
@@ -125,7 +125,7 @@ impl Store {
                 );
             }
         }
-        self.touch(key);
+        self.mark_used(key);
     }
 
     /// Installs a piece, and says whether the screen may have changed.
@@ -164,7 +164,7 @@ impl Store {
         }
     }
 
-    fn touch(&mut self, key: &str) {
+    fn mark_used(&mut self, key: &str) {
         if let Some(position) = self.order.iter().position(|held| held == key) {
             self.order.remove(position);
         }
@@ -263,7 +263,7 @@ mod tests {
     fn what_is_installed_can_be_read_back() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         assert!(store.install(piece(&a, Version(1), 0, 3, false)));
         assert_eq!(store.have(&a), 3);
         assert!(!store.get(&a).unwrap().line(0).is_empty());
@@ -275,7 +275,7 @@ mod tests {
         // last ended is stale, and taking it would misplace every line after.
         let mut store = Store::new();
         let a = key("a.rs");
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         assert!(!store.install(piece(&a, Version(1), 5, 2, false)));
         assert_eq!(store.have(&a), 0);
     }
@@ -284,7 +284,7 @@ mod tests {
     fn an_answer_for_content_that_has_changed_is_thrown_away() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.want(&a, Version(2));
+        store.start(&a, Version(2));
         assert!(!store.install(piece(&a, Version(1), 0, 3, false)));
         assert_eq!(store.have(&a), 0);
     }
@@ -293,9 +293,9 @@ mod tests {
     fn asking_again_for_new_content_forgets_the_old_colours() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         store.install(piece(&a, Version(1), 0, 4, false));
-        store.want(&a, Version(2));
+        store.start(&a, Version(2));
         assert_eq!(
             store.have(&a),
             0,
@@ -313,9 +313,9 @@ mod tests {
         // The whole point: come back to a file and it is still coloured.
         let mut store = Store::new();
         let a = key("a.rs");
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         store.install(piece(&a, Version(1), 0, 4, false));
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         assert_eq!(store.have(&a), 4);
     }
 
@@ -331,7 +331,7 @@ mod tests {
         let mut store = Store::new();
         let (a, b, c) = (key("a.rs"), key("b.rs"), key("c.rs"));
         for file in [&a, &b, &c] {
-            store.want(file, Version(1));
+            store.start(file, Version(1));
             store.install(piece(file, Version(1), 0, BUDGET / 2, false));
         }
         assert!(store.get(&a).is_none(), "the oldest went");
@@ -342,14 +342,14 @@ mod tests {
     fn looking_at_a_file_again_saves_it_from_eviction() {
         let mut store = Store::new();
         let (a, b, c) = (key("a.rs"), key("b.rs"), key("c.rs"));
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         store.install(piece(&a, Version(1), 0, BUDGET / 2, false));
-        store.want(&b, Version(1));
+        store.start(&b, Version(1));
         store.install(piece(&b, Version(1), 0, BUDGET / 4, false));
 
-        store.want(&a, Version(1)); // looked at again
+        store.start(&a, Version(1)); // looked at again
 
-        store.want(&c, Version(1));
+        store.start(&c, Version(1));
         store.install(piece(&c, Version(1), 0, BUDGET / 2, false));
         assert!(store.get(&a).is_some(), "recently wanted, so kept");
         assert!(store.get(&b).is_none(), "the least recent went instead");
@@ -361,7 +361,7 @@ mod tests {
         // over and over.
         let mut store = Store::new();
         let a = key("huge.rs");
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         store.install(piece(&a, Version(1), 0, BUDGET + 10, false));
         assert_eq!(store.have(&a), BUDGET as u32 + 10);
     }
@@ -379,7 +379,7 @@ mod tests {
     fn line_numbers_are_counted_from_one() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.want(&a, Version(1));
+        store.start(&a, Version(1));
         store.install(piece(&a, Version(1), 0, 2, false));
         let colours = store.get(&a).unwrap();
         let spans = Spans::One(colours);

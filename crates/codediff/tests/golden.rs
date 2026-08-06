@@ -196,17 +196,17 @@ fn check_column(
         );
         next += 1;
 
-        let want = expand_tabs(expected[number as usize - 1]);
+        let expected = expand_tabs(expected[number as usize - 1]);
         // Long lines are clipped with an ellipsis; the visible part must still
         // be a prefix of the real one.
         match shown.strip_suffix('\u{2026}') {
             Some(prefix) => assert!(
-                want.starts_with(prefix),
-                "{pair}/{version}: line {number} was clipped to {prefix:?}, which is not a prefix of {want:?}"
+                expected.starts_with(prefix),
+                "{pair}/{version}: line {number} was clipped to {prefix:?}, which is not a prefix of {expected:?}"
             ),
             None => assert_eq!(
                 shown.as_str(),
-                want.trim_end(),
+                expected.trim_end(),
                 "{pair}/{version}: line {number} does not match the file"
             ),
         }

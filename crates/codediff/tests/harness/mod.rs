@@ -147,6 +147,6 @@ pub fn measure(session: &mut Session) {
 ///
 /// `╱` and `│` are three bytes each, so byte offsets would be wrong in exactly
 /// the lines these tests care about.
-pub fn column_of(line: &str, wanted: char) -> Option<usize> {
-    line.chars().position(|c| c == wanted)
+pub fn column_of(line: &str, needle: char) -> Option<usize> {
+    line.chars().position(|c| c == needle)
 }

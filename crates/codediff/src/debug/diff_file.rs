@@ -33,12 +33,12 @@ fn find(path: &str) -> Result<file_types::ChangedFile> {
     if let Some(file) = list::files(&request)?.into_iter().next() {
         return Ok(file);
     }
-    let wanted = file_types::RepoPath::new(path, &root);
-    if wanted.as_path().exists() {
+    let repo_path = file_types::RepoPath::new(path, &root);
+    if repo_path.as_path().exists() {
         let mut git = git;
         let revs = git.revs()?;
         return Ok(ChangedFile::new(
-            file_types::File::unchanged_path(wanted, revs),
+            file_types::File::unchanged_path(repo_path, revs),
             None,
         ));
     }

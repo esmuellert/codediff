@@ -124,7 +124,7 @@ impl Buffer {
         &self.buffer_type
     }
 
-    /// Asks for everything up to `want`, whatever this buffer is showing.
+    /// Asks for everything up to `last`, whatever this buffer is showing.
     ///
     /// Returns at once. The colours arrive over the following frames, and the
     /// buffer draws plainly until they do — which is the whole point of
@@ -132,11 +132,11 @@ impl Buffer {
     ///
     /// Sends nothing when the store already has enough, which after the first
     /// screen is the ordinary case.
-    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, last: u32) {
         match &mut self.buffer_type {
-            BufferType::SideBySide(d) => d.request(syntax, store, version, want),
-            BufferType::Inline(d) => d.request(syntax, store, version, want),
-            BufferType::SingleFile(f) => f.request(syntax, store, version, want),
+            BufferType::SideBySide(d) => d.request(syntax, store, version, last),
+            BufferType::Inline(d) => d.request(syntax, store, version, last),
+            BufferType::SingleFile(f) => f.request(syntax, store, version, last),
             // A list of file names is not code, so there is no language to
             // colour it by. Its colours come from the theme alone.
             BufferType::Explorer(_) => {}

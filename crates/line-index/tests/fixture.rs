@@ -71,13 +71,13 @@ fn the_fixture_matches_its_reference_table() {
         actual.len()
     );
 
-    for (want, got) in expected.iter().zip(&actual) {
+    for (expected, got) in expected.iter().zip(&actual) {
         assert_eq!(
-            want,
+            expected,
             got,
             "line {} of nasty.txt no longer measures as recorded:\n  {:?}",
-            want.line,
-            FIXTURE.lines().nth(want.line - 1).unwrap_or_default()
+            expected.line,
+            FIXTURE.lines().nth(expected.line - 1).unwrap_or_default()
         );
     }
 }

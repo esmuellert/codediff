@@ -31,7 +31,7 @@
 //! ```ignore
 //! let mut files = file::Files::start();
 //! files.want(&changed);          // returns at once
-//! let answer = files.take();     // next frame, or the one after
+//! let response = files.take();   // next frame, or the one after
 //! ```
 //!
 pub mod contents;
@@ -40,4 +40,4 @@ pub mod runner;
 pub mod service;
 
 pub use runner::{Diff, DiffContent, Runner, SingleFile};
-pub use service::{Answer, Files};
+pub use service::{Files, Response};

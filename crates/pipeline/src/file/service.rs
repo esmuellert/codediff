@@ -14,7 +14,7 @@
 //! answers no keys.
 //!
 //! So the rule is the same one colouring follows: **the interface never
-//! compares.** It asks, draws whatever it already has, and installs the answer
+//! compares.** It asks, draws whatever it already has, and installs the response
 //! when it arrives.
 //!
 //! ```text
@@ -42,10 +42,10 @@ use file_types::ChangedFile;
 ///
 /// A failure is a sentence, not an [`anyhow::Error`]: it is shown to a reader,
 /// who has no use for a chain of contexts.
-pub struct Answer {
+pub struct Response {
     /// Which request this answers.
     ///
-    /// Carried back so a late answer for a file the reader has since moved off
+    /// Carried back so a late response for a file the reader has since moved off
     /// can be told apart and dropped. Nothing today can invalidate a file
     /// mid-read, but a watcher can, and an explorer can outrun one.
     pub file: ChangedFile,
@@ -54,15 +54,15 @@ pub struct Answer {
 
 /// The worker, the two queues to it, and whether one is outstanding.
 pub struct Files {
-    wanted: Sender<ChangedFile>,
-    answers: Receiver<Answer>,
+    requests: Sender<ChangedFile>,
+    answers: Receiver<Response>,
     /// One request in flight, and no queue behind it.
     ///
     /// A reader holding `j` down moves through a list faster than any of it
     /// can be compared. Queueing would run git once per row and answer every
     /// one of them into a screen that had already moved on; the newest request
     /// is the only one anybody wants. So nothing is queued — the asker re-asks
-    /// once the answer it is waiting for lands, with whatever row is current
+    /// once the response it is waiting for lands, with whatever row is current
     /// by then.
     outstanding: bool,
 }
@@ -73,14 +73,14 @@ impl Files {
     /// One thread for the life of the program. It sleeps whenever there is
     /// nothing to compare, which is nearly always.
     pub fn start() -> Self {
-        let (wanted, incoming) = channel::<ChangedFile>();
-        let (finished, answers) = channel::<Answer>();
+        let (requests, incoming) = channel::<ChangedFile>();
+        let (finished, answers) = channel::<Response>();
         thread::Builder::new()
             .name("file".to_owned())
             .spawn(move || run(&incoming, &finished))
             .expect("the file thread starts");
         Self {
-            wanted,
+            requests,
             answers,
             outstanding: false,
         }
@@ -95,8 +95,8 @@ impl Files {
     /// replaced. A request past the end of the script is refused, which is how
     /// a test that opens more often than it meant to is told.
     pub fn canned(script: Vec<Result<DiffContent, String>>) -> Self {
-        let (wanted, incoming) = channel::<ChangedFile>();
-        let (finished, answers) = channel::<Answer>();
+        let (requests, incoming) = channel::<ChangedFile>();
+        let (finished, answers) = channel::<Response>();
         thread::Builder::new()
             .name("file-canned".to_owned())
             .spawn(move || {
@@ -105,14 +105,14 @@ impl Files {
                     let content = script
                         .next()
                         .unwrap_or_else(|| Err("nothing left in the script".to_owned()));
-                    if finished.send(Answer { file, content }).is_err() {
+                    if finished.send(Response { file, content }).is_err() {
                         return;
                     }
                 }
             })
             .expect("the file thread starts");
         Self {
-            wanted,
+            requests,
             answers,
             outstanding: false,
         }
@@ -121,39 +121,39 @@ impl Files {
     /// Asks for a file to be compared.
     ///
     /// Returns without waiting — an unbounded channel never blocks the sender.
-    /// Does nothing while an answer is outstanding, which is what keeps the
+    /// Does nothing while a response is outstanding, which is what keeps the
     /// queue at one. A worker that has stopped, which can only happen if it
     /// panicked, leaves the request unanswered rather than failing the review.
-    pub fn want(&mut self, file: &ChangedFile) {
+    pub fn request(&mut self, file: &ChangedFile) {
         if self.outstanding {
             return;
         }
         self.outstanding = true;
-        let _ = self.wanted.send(file.clone());
+        let _ = self.requests.send(file.clone());
     }
 
-    /// Whether an answer is outstanding.
+    /// Whether a response is outstanding.
     ///
     /// What decides whether the loop waits for a frame or for a key.
     pub fn working(&self) -> bool {
         self.outstanding
     }
 
-    /// The answer, if one has arrived.
+    /// The response, if one has arrived.
     ///
     /// Never blocks. Called once a frame, and costs a few nanoseconds when
     /// there is nothing.
-    pub fn take(&mut self) -> Option<Answer> {
+    pub fn take(&mut self) -> Option<Response> {
         match self.answers.try_recv() {
-            Ok(answer) => {
+            Ok(response) => {
                 self.outstanding = false;
-                Some(answer)
+                Some(response)
             }
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
         }
     }
 
-    /// Waits for the answer.
+    /// Waits for the response.
     ///
     /// **Blocks.** Only a caller with nothing else to do may use it: `debug
     /// diff-file` prints one file and exits, and a test waits for the
@@ -162,20 +162,20 @@ impl Files {
     ///
     /// `None` means the worker has stopped, which can only happen if it
     /// panicked.
-    pub fn wait(&mut self) -> Option<Answer> {
-        let answer = self.answers.recv().ok()?;
+    pub fn wait(&mut self) -> Option<Response> {
+        let response = self.answers.recv().ok()?;
         self.outstanding = false;
-        Some(answer)
+        Some(response)
     }
 }
 
 /// Answers requests until the asker goes away.
-fn run(requests: &Receiver<ChangedFile>, answers: &Sender<Answer>) {
+fn run(requests: &Receiver<ChangedFile>, answers: &Sender<Response>) {
     // Blocks. A worker with nothing to do costs nothing at all — no timer, no
     // spin, no wake-ups — which is its ordinary state.
     while let Ok(file) = requests.recv() {
         let content = compare(&file);
-        if answers.send(Answer { file, content }).is_err() {
+        if answers.send(Response { file, content }).is_err() {
             return;
         }
     }
@@ -193,9 +193,9 @@ fn run(requests: &Receiver<ChangedFile>, answers: &Sender<Answer>) {
 /// changes with them. A cache keyed by those names cannot tell a re-read from
 /// a stale one. Reading two versions and pairing them takes milliseconds,
 /// which is the whole cost of getting this right. See D51.
-fn compare(wanted: &ChangedFile) -> Result<DiffContent, String> {
-    let path = wanted.path().as_str().to_owned();
-    let runner = Runner::new(wanted).map_err(|why| format!("{path}: {why:#}"))?;
+fn compare(file: &ChangedFile) -> Result<DiffContent, String> {
+    let path = file.path().as_str().to_owned();
+    let runner = Runner::new(file).map_err(|why| format!("{path}: {why:#}"))?;
     if runner.is_binary() {
         return Err(format!("{path} is binary — there are no lines to review"));
     }

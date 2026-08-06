@@ -53,7 +53,7 @@ pub struct SyntaxRequest {
     /// a question nobody asked, and reading must start again from the top.
     pub have: u32,
     /// The last line the asker needs, counted from 0.
-    pub want: u32,
+    pub last: u32,
 }
 
 /// Some of a file, coloured.

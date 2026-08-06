@@ -57,8 +57,8 @@ impl Inline {
         colour::spans_diff(&self.diff, store)
     }
 
-    /// Asks for everything up to `want`, on both versions.
-    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        colour::request_diff(&self.diff, syntax, store, version, want);
+    /// Asks for everything up to `last`, on both versions.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, last: u32) {
+        colour::request_diff(&self.diff, syntax, store, version, last);
     }
 }

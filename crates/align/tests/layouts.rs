@@ -95,11 +95,11 @@ fn both_layouts_read_back_as_the_same_two_files() {
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         for version in [DiffVersion::Original, DiffVersion::Modified] {
-            let paired = read_back(&alignment, DiffType::SideBySide, version);
+            let side_by_side = read_back(&alignment, DiffType::SideBySide, version);
             let inline = read_back(&alignment, DiffType::Inline, version);
-            assert_eq!(paired, inline, "{name}, {version:?}");
+            assert_eq!(side_by_side, inline, "{name}, {version:?}");
             assert_eq!(
-                paired,
+                side_by_side,
                 alignment.lines(version),
                 "{name}, {version:?}: not the file itself"
             );

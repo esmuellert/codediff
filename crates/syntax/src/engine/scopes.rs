@@ -289,11 +289,11 @@ mod tests {
     fn every_group_is_claimed_by_some_scope() {
         // A group nothing reaches is a colour nobody can ever see. The compiler
         // cannot say so, because an unused struct field is legal.
-        for want in Group::ALL {
+        for expected in Group::ALL {
             assert!(
-                SCOPES.iter().any(|s| s.group == want),
+                SCOPES.iter().any(|s| s.group == expected),
                 "no scope produces {}",
-                want.name()
+                expected.name()
             );
         }
     }

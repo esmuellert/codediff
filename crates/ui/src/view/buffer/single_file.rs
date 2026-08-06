@@ -46,9 +46,9 @@ impl SingleFile {
         colour::spans_single_file(&self.read, store)
     }
 
-    /// Asks for everything up to `want`.
-    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        colour::request_single_file(&self.read, syntax, store, version, want);
+    /// Asks for everything up to `last`.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, last: u32) {
+        colour::request_single_file(&self.read, syntax, store, version, last);
     }
 
     /// Which file this is — structured, so a status line can style and shorten

@@ -85,21 +85,21 @@ fn height(change: &DetailedLineRangeMapping, original: &[String]) -> u32 {
 /// carrying it can be pulled level. A cut that would leave one side empty is
 /// dropped, except the first — which is what keeps a leading insertion whole.
 fn cuts(change: &DetailedLineRangeMapping, original: &[String]) -> Vec<(u32, u32)> {
-    let mut wanted = Vec::new();
+    let mut candidates = Vec::new();
     for inner in &change.inner_changes {
         if inner.original.start_col > 1 && inner.modified.start_col > 1 {
-            wanted.push((inner.original.start_line, inner.modified.start_line));
+            candidates.push((inner.original.start_line, inner.modified.start_line));
         }
         if ends_within_its_line(inner.original.end_line, inner.original.end_col, original) {
-            wanted.push((inner.original.end_line, inner.modified.end_line));
+            candidates.push((inner.original.end_line, inner.modified.end_line));
         }
     }
-    wanted.push((change.original.end_line, change.modified.end_line));
+    candidates.push((change.original.end_line, change.modified.end_line));
 
     let mut out = Vec::new();
     let (mut last_o, mut last_m) = (change.original.start_line, change.modified.start_line);
     let mut first = true;
-    for (o, m) in wanted {
+    for (o, m) in candidates {
         if o < last_o || m < last_m {
             continue;
         }

@@ -228,14 +228,14 @@ impl Engine {
         reading: &mut Reading,
         palette: &Palette,
         lines: &[String],
-        want: Range<usize>,
+        rows: Range<usize>,
         into: &mut Vec<Vec<Span>>,
     ) {
         match reading {
             Reading::Tree(grammar) => self.trees.read(*grammar, &palette.trees, lines, into),
             Reading::TextMate(state) => {
                 self.textmate
-                    .read(state, &palette.textmate, &lines[want], into);
+                    .read(state, &palette.textmate, &lines[rows], into);
             }
         }
     }
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn every_pen_either_table_hands_out_names_a_group() {
-        for (pen, want) in rules()
+        for (pen, expected) in rules()
             .iter()
             .filter_map(|r| r.style.pen)
             .zip(scopes::SCOPES.iter().map(|s| s.group))
@@ -313,7 +313,7 @@ mod tests {
                     .zip(captures::NAMES.iter().map(|c| c.group)),
             )
         {
-            assert_eq!(group(pen), Some(want), "{pen:?}");
+            assert_eq!(group(pen), Some(expected), "{pen:?}");
         }
     }
 

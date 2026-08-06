@@ -11,7 +11,7 @@
 //! back — there is nowhere for it to wait, and the alternative is a field
 //! `Inline` carries and never reads, at which point the two are the same type
 //! and neither name means anything. Pressing `t` is a reader saying they do
-//! not want columns; returning to the default split is the answer to that.
+//! not last columns; returning to the default split is the answer to that.
 //!
 //! The divider is here rather than on the pane's `Viewport` because it is not
 //! a pane boundary: both columns are inside one pane, drawn by one buffer, so
@@ -53,7 +53,7 @@ impl SideBySide {
 
     /// The pairing to draw from.
     ///
-    /// What callers actually want. Handing out the [`Diff`] instead would make
+    /// What callers actually last. Handing out the [`Diff`] instead would make
     /// every one of them take a second hop through it — the pass-through
     /// getter `Alignment` had and lost, for the same reason.
     pub fn alignment(&self) -> &Alignment {
@@ -75,9 +75,9 @@ impl SideBySide {
         colour::spans_diff(&self.diff, store)
     }
 
-    /// Asks for everything up to `want`, on both versions.
-    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        colour::request_diff(&self.diff, syntax, store, version, want);
+    /// Asks for everything up to `last`, on both versions.
+    pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, last: u32) {
+        colour::request_diff(&self.diff, syntax, store, version, last);
     }
 
     /// Where the divider sits: the share of the width given to the original,

@@ -12,7 +12,7 @@
 //!
 //! So the work moves off the drawing thread entirely, and the rule becomes
 //! simple enough to state in one line: **the interface never computes a
-//! colour.** It asks for one, draws whatever it has, and installs the answer
+//! colour.** It asks for one, draws whatever it has, and installs the response
 //! when it arrives.
 //!
 //! ---
@@ -46,7 +46,7 @@
 //! by the compiler rather than by a comment.
 //!
 //! **Staleness.** A [`Version`] rides on every request and comes back on every
-//! answer. Nothing today can invalidate a file mid-read, but a file watcher
+//! response. Nothing today can invalidate a file mid-read, but a file watcher
 //! can, and an explorer can outrun one — so the answer to "is this still what
 //! was asked for" is built in rather than retrofitted after the first bug.
 
@@ -70,12 +70,12 @@ pub struct Syntax {
     /// Scrolling changes what is wanted on every frame, and sending each
     /// change would put sixty requests a second behind one that takes a
     /// quarter of a second to answer — the queue would grow for as long as
-    /// the reader kept scrolling, and every answer would be for a screen
+    /// the reader kept scrolling, and every response would be for a screen
     /// already gone.
     ///
     /// **Holding the newest one back would be worse, not better.** A request
     /// says how much of the file the asker already has, and that number moves
-    /// every time an answer lands — so a request waiting its turn is answered
+    /// every time a response lands — so a request waiting its turn is answered
     /// from a starting point that has since gone stale, and its lines are
     /// refused on arrival. Nothing is held. The asker re-asks on the next
     /// frame with a number that is current, and asking is a lookup.
@@ -113,7 +113,7 @@ impl Syntax {
         let _ = self.requests.send(request);
     }
 
-    /// Whether a file is waiting on an answer.
+    /// Whether a file is waiting on a response.
     pub fn busy(&self, key: &str) -> bool {
         self.outstanding.contains(key)
     }
@@ -133,9 +133,9 @@ impl Syntax {
         let mut out = Vec::new();
         loop {
             match self.answers.try_recv() {
-                Ok(answer) => {
-                    self.finish(&answer);
-                    out.push(answer);
+                Ok(response) => {
+                    self.finish(&response);
+                    out.push(response);
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return out,
             }
@@ -151,17 +151,17 @@ impl Syntax {
     /// `None` means the worker has stopped, which can only happen if it
     /// panicked.
     pub fn next(&mut self) -> Option<SyntaxResponse> {
-        let answer = self.answers.recv().ok()?;
-        self.finish(&answer);
-        Some(answer)
+        let response = self.answers.recv().ok()?;
+        self.finish(&response);
+        Some(response)
     }
 
     /// Clears a finished request, so the file can be asked about again.
-    fn finish(&mut self, answer: &SyntaxResponse) {
-        if answer.more {
+    fn finish(&mut self, response: &SyntaxResponse) {
+        if response.more {
             return;
         }
-        self.outstanding.remove(&answer.key);
+        self.outstanding.remove(&response.key);
     }
 }
 
@@ -181,14 +181,14 @@ mod tests {
         Arc::new((0..lines).map(|n| format!("let x{n} = {n};")).collect())
     }
 
-    fn request(path: &str, text: &Arc<Vec<String>>, have: u32, want: u32) -> SyntaxRequest {
+    fn request(path: &str, text: &Arc<Vec<String>>, have: u32, last: u32) -> SyntaxRequest {
         SyntaxRequest {
             key: format!("worktree:{path}"),
             path: path.to_owned(),
             version: Version(1),
             text: Arc::clone(text),
             have,
-            want,
+            last,
         }
     }
 
@@ -197,7 +197,7 @@ mod tests {
         let mut out = Vec::new();
         while syntax.working() {
             match syntax.next() {
-                Some(answer) => out.push(answer),
+                Some(response) => out.push(response),
                 None => break,
             }
         }
@@ -224,8 +224,8 @@ mod tests {
         let mut syntax = Syntax::start();
         let text = text(20_000);
         syntax.send(request("a.pl", &text, 0, 19_999));
-        for want in [100, 200, 300] {
-            syntax.send(request("a.pl", &text, 0, want));
+        for last in [100, 200, 300] {
+            syntax.send(request("a.pl", &text, 0, last));
         }
         assert_eq!(syntax.outstanding.len(), 1, "one file, one request");
         drain(&mut syntax);

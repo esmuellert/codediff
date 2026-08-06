@@ -17,13 +17,13 @@ use pipeline::file;
 
 use crate::syntax::{Colours, Spans, Store, Syntax, SyntaxRequest, Version, path_of};
 
-/// Asks for both versions of a paired file, up to `want`.
+/// Asks for both versions of a paired file, up to `last`.
 pub fn request_diff(
     read: &file::Diff,
     syntax: &mut Syntax,
     store: &mut Store,
     version: Version,
-    want: u32,
+    last: u32,
 ) {
     for side in [DiffVersion::Original, DiffVersion::Modified] {
         request(
@@ -33,18 +33,18 @@ pub fn request_diff(
             side,
             read.alignment.text(side),
             version,
-            want,
+            last,
         );
     }
 }
 
-/// Asks for the one version a lone file has, up to `want`.
+/// Asks for the one version a lone file has, up to `last`.
 pub fn request_single_file(
     read: &file::SingleFile,
     syntax: &mut Syntax,
     store: &mut Store,
     version: Version,
-    want: u32,
+    last: u32,
 ) {
     request(
         syntax,
@@ -53,7 +53,7 @@ pub fn request_single_file(
         read.side(),
         Arc::clone(&read.lines),
         version,
-        want,
+        last,
     );
 }
 
@@ -98,10 +98,10 @@ fn request(
     if lines == 0 || syntax.busy(&key) {
         return;
     }
-    let want = upto.min(lines - 1);
-    store.want(&key, version);
+    let last = upto.min(lines - 1);
+    store.start(&key, version);
     let have = store.have(&key);
-    if have > want {
+    if have > last {
         return;
     }
     syntax.send(SyntaxRequest {
@@ -110,7 +110,7 @@ fn request(
         version,
         text,
         have,
-        want,
+        last,
     });
 }
 

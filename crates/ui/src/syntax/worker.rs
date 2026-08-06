@@ -55,11 +55,11 @@ pub fn run(requests: &Receiver<SyntaxRequest>, answers: &Sender<SyntaxResponse>)
     // spin, no wake-ups — which is its ordinary state.
     let mut memos: Vec<Memo> = Vec::new();
     while let Ok(request) = requests.recv() {
-        answer(&request, answers, &mut memos);
+        respond(&request, answers, &mut memos);
     }
 }
 
-fn answer(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mut Vec<Memo>) {
+fn respond(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mut Vec<Memo>) {
     let lines = request.text.len() as u32;
     let Some(mut reading) = resume(request, memos) else {
         // Nothing claims this language. Answering once with no spans is how
@@ -75,7 +75,7 @@ fn answer(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mut
     };
 
     let mut sent = reading.reached;
-    let target = request.want.min(lines.saturating_sub(1));
+    let target = request.last.min(lines.saturating_sub(1));
     let mut spans = Vec::new();
     let mut answered = false;
     while sent <= target && sent < lines {

@@ -113,6 +113,40 @@ pub const UNSAFE_EXEMPT: &[&str] = &["vscode-diff-sys", "vscode-diff"];
 pub const ENGINE_CRATES: &[&str] = &["syntect", "tree_sitter"];
 pub const ENGINE_DIR: &str = "crates/syntax/src/engine";
 
+/// Words that may not be a name on their own, and what to say instead.
+///
+/// Unlike [`BANNED_TYPE_WORDS`], which forbids a word *inside* a name, these
+/// are forbidden as the *whole* name — of anything we declare or bind: a type,
+/// a function, a field, a parameter, a local. `answer` is refused; `answers`,
+/// `request_diff` and `SyntaxResponse` are not.
+///
+/// Every one of them describes the *shape of the interaction* rather than the
+/// thing being handled. They read as if they said something, which is what
+/// makes them worse than a meta-name: `RowKind` at least admits it is telling
+/// you nothing. Each of these was reached for, at least once, instead of a
+/// word this codebase already had — `Comparison` where `Diff` existed,
+/// `Answer` where `SyntaxResponse` existed, `paired` where the type was
+/// already called `Diff`. That is how one idea comes to have two words, which
+/// is the failure D28 removed and D61 removed again.
+///
+/// Checked against the code with string literals stripped: "paired line by
+/// line" is prose, and prose is not a name.
+pub const BANNED_NAMES: &[(&str, &str)] = &[
+    (
+        "comparison",
+        "what is compared — a `Diff`, or the two revisions",
+    ),
+    ("answer", "what came back; the type is a `Response`"),
+    ("ask", "what is asked for, as `request` already does"),
+    ("wanted", "what wants it, or what it is"),
+    ("want", "what is asked for, or what was expected"),
+    ("paired", "a diff is a `Diff`"),
+    (
+        "touch",
+        "what happened to it — a file is `used`, not touched",
+    ),
+];
+
 /// Words that may not appear in a type we declare, and what to use instead.
 ///
 /// These are *meta-names*: they classify without saying anything. `RowKind`

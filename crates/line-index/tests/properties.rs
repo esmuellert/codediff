@@ -124,11 +124,11 @@ proptest! {
         // The window binary-searches a starting point rather than walking from
         // column zero. Filtering the whole line is the same answer computed
         // the slow, obvious way, so this checks the shortcut.
-        let want: Vec<_> = line
+        let expected: Vec<_> = line
             .graphemes()
             .filter(|g| g.cells().end > from && g.cell.get() < to)
             .collect();
-        prop_assert_eq!(got, want);
+        prop_assert_eq!(got, expected);
     }
 
     #[test]

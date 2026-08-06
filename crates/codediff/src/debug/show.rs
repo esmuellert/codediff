@@ -17,9 +17,9 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
     let cwd = std::env::current_dir().context("finding the current directory")?;
     let mut git = Git::open(&cwd).context("opening a repository")?;
 
-    let wanted = RepoPath::new(path, &git.repo().root);
+    let repo_path = RepoPath::new(path, &git.repo().root);
     let bytes = git
-        .cat_file(rev, &wanted)
+        .cat_file(rev, &repo_path)
         .with_context(|| format!("reading {spec}"))?;
 
     let Some(bytes) = bytes else {

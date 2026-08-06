@@ -18,7 +18,7 @@
 //! resolving and dispatching are separate: [`crate::input`] would have to
 //! reach the view, the terminal and the task runner at once to do both.
 
-use pipeline::file::{Answer, Files};
+use pipeline::file::{Files, Response};
 use ratatui::backend::Backend;
 
 use crate::draw;
@@ -32,7 +32,7 @@ use crate::view::View;
 
 /// Answers in a row that install nothing before [`Session::settle`] gives up.
 ///
-/// Generous: every ordinary reason for an answer to install nothing happens
+/// Generous: every ordinary reason for a response to install nothing happens
 /// once, not eight times running.
 const IDLE_ANSWERS: u32 = 8;
 
@@ -59,8 +59,8 @@ pub struct Session {
     /// Held rather than sent straight on, because only one comparison runs at
     /// a time: a reader moving down a list faster than git can answer leaves
     /// this pointing at wherever they got to, and that is what is asked for
-    /// next. An answer for anything else is discarded on arrival.
-    wanted: Option<file_types::ChangedFile>,
+    /// next. A response for anything else is discarded on arrival.
+    selected: Option<file_types::ChangedFile>,
     /// Every colour anything open has. Owned here rather than by a buffer, so
     /// a file keeps its colours when the reader moves away and comes back.
     store: Store,
@@ -99,7 +99,7 @@ impl Session {
             resolver: Resolver::new(),
             syntax,
             files,
-            wanted: None,
+            selected: None,
             store,
             notice: None,
         }
@@ -117,7 +117,7 @@ impl Session {
     /// Returns whether anything arrived, so a caller can tell "settled" from
     /// "there was nothing to settle".
     pub fn settle(&mut self) -> bool {
-        // Progress is lines installed. An answer that installs none is
+        // Progress is lines installed. A response that installs none is
         // ordinary on its own — a stale piece is refused, and a file no
         // language claims answers with nothing — but a run of them means the
         // store and the worker disagree about how far the file has been read
@@ -128,7 +128,7 @@ impl Session {
         while self.painting() && idle < IDLE_ANSWERS {
             let held = self.store.held();
             match self.syntax.next() {
-                Some(answer) => changed |= self.store.install(answer),
+                Some(response) => changed |= self.store.install(response),
                 // The worker stopped, which can only mean it panicked. The
                 // review continues in plain text rather than hanging.
                 None => break,
@@ -138,7 +138,7 @@ impl Session {
             } else {
                 idle + 1
             };
-            // As the loop does, and for the same reason: what was wanted
+            // As the loop does, and for the same reason: what was selected
             // while that request was running was dropped, not queued.
             self.request();
         }
@@ -160,8 +160,8 @@ impl Session {
     /// Never waits. Costs a few nanoseconds when there is nothing.
     pub fn collect(&mut self) -> bool {
         let mut changed = false;
-        for answer in self.syntax.take() {
-            changed |= self.store.install(answer);
+        for response in self.syntax.take() {
+            changed |= self.store.install(response);
         }
         changed
     }
@@ -229,7 +229,7 @@ impl Session {
     /// Nothing is sent here. [`request_file`](Self::request_file) does that,
     /// once, when the worker is free.
     pub fn open(&mut self) {
-        self.wanted = self.selected_file();
+        self.selected = self.selected_file();
     }
 
     /// Whether a comparison is outstanding.
@@ -243,12 +243,12 @@ impl Session {
     /// Asks the worker for the row the reader chose.
     ///
     /// Called after every event, beside [`request`](Self::request), and silent
-    /// unless there is something to ask for. Does nothing while an answer is
-    /// outstanding: what the reader wanted meanwhile was not queued, so this
+    /// unless there is something to ask for. Does nothing while a response is
+    /// outstanding: what the reader selected meanwhile was not queued, so this
     /// is where it is asked for again, with a row that is current by now.
     pub fn request_file(&mut self) {
-        if let Some(file) = &self.wanted {
-            self.files.want(file);
+        if let Some(file) = &self.selected {
+            self.files.request(file);
         }
     }
 
@@ -257,17 +257,17 @@ impl Session {
     ///
     /// Never waits. Costs a few nanoseconds when there is nothing.
     pub fn collect_file(&mut self) -> bool {
-        let Some(answer) = self.files.take() else {
+        let Some(response) = self.files.take() else {
             return false;
         };
         // The reader moved off this row while it was being compared, so this
         // answers a question nobody is asking any more. Dropped rather than
         // shown: `request_file` asks again for wherever they are now.
-        if self.wanted.as_ref() != Some(&answer.file) {
+        if self.selected.as_ref() != Some(&response.file) {
             return false;
         }
-        self.wanted = None;
-        self.install(answer)
+        self.selected = None;
+        self.install(response)
     }
 
     /// Waits for the comparison that is outstanding.
@@ -281,14 +281,14 @@ impl Session {
     /// Returns whether anything was installed.
     pub fn opened(&mut self) -> bool {
         self.request_file();
-        let Some(answer) = self.files.wait() else {
+        let Some(response) = self.files.wait() else {
             return false;
         };
-        if self.wanted.as_ref() != Some(&answer.file) {
+        if self.selected.as_ref() != Some(&response.file) {
             return false;
         }
-        self.wanted = None;
-        self.install(answer)
+        self.selected = None;
+        self.install(response)
     }
 
     /// Puts a finished comparison on screen, or says why there is none.
@@ -296,7 +296,7 @@ impl Session {
     /// A failure is a notice on the status line rather than an exit: a
     /// repository can hold one file that cannot be read, and quitting over it
     /// would lose the review.
-    fn install(&mut self, answer: Answer) -> bool {
+    fn install(&mut self, response: Response) -> bool {
         // Where the reader was, if this is the file they are already on. Kept
         // rather than used to refuse the work: a working-tree file can change
         // under an open review, and this is the only gesture that re-reads it,
@@ -306,11 +306,11 @@ impl Session {
         // The cursor of the pane showing the *file*, not of the focused pane —
         // which is the list, since that is what the reader pressed enter in.
         let keep = self
-            .showing(&answer.file)
+            .showing(&response.file)
             .then(|| self.view.tab().shown())
             .flatten()
             .map(|id| self.view.pane_for(id).viewport.cursor());
-        match answer.content {
+        match response.content {
             Ok(content) => {
                 self.view.show(Buffer::diff(content));
                 if let Some(line) = keep {
@@ -480,7 +480,7 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
         let coloured = session.collect();
         let compared = session.collect_file();
         if coloured || compared {
-            // Anything wanted while a request was running was dropped rather
+            // Anything selected while a request was running was dropped rather
             // than queued. This is where it is asked for again, from a
             // starting point that is now current.
             session.request();

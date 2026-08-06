@@ -365,3 +365,102 @@ fn blocking_calls(root: &Path, file: &Path, place: &str, failures: &mut Vec<Stri
     }
     Ok(())
 }
+
+/// Refuses a word from [`BANNED_NAMES`] used as a whole identifier.
+///
+/// String literals are removed first, so the prose in a message or in this
+/// crate's own rule table is not mistaken for a name. Comments are skipped for
+/// the same reason.
+pub fn check_banned_names(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for dir in ["crates", "xtask"] {
+        let base = root.join(dir);
+        if !base.is_dir() {
+            continue;
+        }
+        for file in rust_files(&base)? {
+            // The table itself names every banned word, in a string.
+            if file.ends_with("lint_arch/rules.rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&file)?;
+            for (n, line) in text.lines().enumerate() {
+                let code = line.trim_start();
+                if code.starts_with("//") {
+                    continue;
+                }
+                let code = without_strings(code).to_lowercase();
+                for (word, instead) in BANNED_NAMES {
+                    if names(&code, word) {
+                        failures.push(format!(
+                            "{}:{} names something `{word}` — say {instead}",
+                            rel(root, &file),
+                            n + 1
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The line with every double-quoted span removed, and any trailing comment
+/// cut off.
+///
+/// Both matter, and in that order: these are ordinary English words, so a
+/// message or a note at the end of a line will contain them as prose. A URL in
+/// a string would otherwise look like the start of a comment.
+fn without_strings(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut inside = false;
+    let mut escaped = false;
+    for c in line.chars() {
+        if inside {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                inside = false;
+            }
+            continue;
+        }
+        if c == '"' {
+            inside = true;
+            continue;
+        }
+        out.push(c);
+    }
+    match out.find("//") {
+        Some(at) => out[..at].to_owned(),
+        None => out,
+    }
+}
+
+/// Whether `word` appears as a whole identifier, not as part of a longer one.
+///
+/// `code` is lowercased by the caller, so `Comparison` and `comparison` are
+/// one name: a type is CamelCase and a binding is not, and both are banned.
+///
+/// A field read or a method call is caught like anything else. That is
+/// deliberate: it is how a use of our own banned field is found. It also means
+/// no word may be banned here while somebody else's API uses it — `kind` is
+/// the one that was tried and refused, since `std::io::Error::kind` and
+/// crossterm's `KeyEvent::kind` are not ours to rename. `Kind` stays banned in
+/// [`BANNED_TYPE_WORDS`], which checks only types we declare.
+///
+/// [`BANNED_TYPE_WORDS`]: super::rules::BANNED_TYPE_WORDS
+fn names(code: &str, word: &str) -> bool {
+    let is_part = |c: char| c.is_alphanumeric() || c == '_';
+    let mut from = 0;
+    while let Some(at) = code[from..].find(word) {
+        let at = from + at;
+        let before = code[..at].chars().next_back();
+        let after = code[at + word.len()..].chars().next();
+        if !before.is_some_and(is_part) && !after.is_some_and(is_part) {
+            return true;
+        }
+        from = at + word.len();
+    }
+    false
+}
