@@ -44,7 +44,7 @@ pub fn run(command: Debug) -> Result<()> {
             rev,
             staged,
             pathspec,
-        } => list::run(crate::cli::diff_type(&rev, staged), pathspec),
+        } => list::run(list::diff_type(&rev, staged), pathspec),
         Debug::Status { dir, verbose } => status::run(&dir, verbose),
     }
 }

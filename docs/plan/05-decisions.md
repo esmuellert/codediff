@@ -2742,3 +2742,109 @@ had to be read as a sentence.
 had been hiding the fork — including `Diff::version` and `SingleFile::version`,
 two fields written on every request and read nowhere, which had been used to
 argue that these types belonged to `ui`.
+
+## D62 — the command line says nothing about revisions; the review does
+
+`codediff` takes a path and a theme. It does not take `--rev`, `--staged`, or
+any other way of saying what to compare against. It briefly did, and that was
+scope taken without being asked for.
+
+**Two reasons, and the second is the real one.**
+
+The first is bugs. Argument parsing that grows a mode per comparison is how the
+Neovim plugin's command grew, and every combination is a path nothing tests.
+
+The second is who the reader is. `a...b` means "compare `b` against where it
+parted from `a`". That is exact, it is git's own spelling, and almost nobody
+outside a Neovim configuration knows it. A reviewer should not have to know
+git's revision syntax to open a review — and if they do know it, they still
+have to know it *before the review opens*, when they have seen nothing to base
+the choice on.
+
+So the model is lazygit's: **open with one word, then change what you are
+looking at from inside.** What is being compared is a state of the review, shown
+on screen, not an argument recalled from memory.
+
+**The five comparisons stay** — `list::resolver` resolves all of them and
+`tests/diff_types.rs` drives each through `codediff debug list`, which is
+hidden plumbing rather than a command. They are what the interface will switch
+between when the keys for it arrive. What was removed is the *only* way a
+reader could have reached them, which was the wrong way.
+
+## D63 — the rule is about the thread, not about the crate
+
+`("ui", "vcs")` said *"a renderer must not be able to reach git"*. It was false
+when it was written, and [D59](#d59) made it worse by adding a text rule that
+repeated the claim more loudly.
+
+**Measured.** This compiles inside `crates/ui`:
+
+```rust
+pipeline::list::run(&ExplorerDiffRequest::worktree(root))
+```
+
+It opens a repository, spawns git and blocks — 29 ms on this repository, 296 ms
+on five thousand changed files. `ui` depends on `pipeline`, and `pipeline`
+depends on `vcs`, so the manifest rule cannot see it and the text rule does not
+look for it. What the two rules did stop was the word `vcs::`, whose only use
+would have been `git rev-parse` once at startup: the cheapest call in the
+program, and the one that matters least.
+
+**The question is not which crate a call comes from. It is when it runs.**
+
+| when | may block |
+|---|---|
+| once, before the terminal is opened | **yes** — there is nothing to stay responsive with |
+| inside the loop, on a key or a frame | **no** |
+
+That is the same reasoning that keeps the file list synchronous while a diff
+runs on a thread, and it is the principle D59 should have written down instead
+of a crate name.
+
+So the text rules are gone and `NON_BLOCKING_DIRS` replaces them: four
+directories — `input`, `draw`, `render`, `view` — reached only from inside the
+loop, in which nothing may name `std::fs`, `std::process`, `std::net`, `vcs::`,
+`vscode_diff::`, `recv()` or `join()`. `try_recv` is deliberately allowed: it
+is how the loop collects an answer without waiting.
+
+**`app.rs` is not covered**, because it holds the loop *and* the startup that
+precedes it, and a directory rule cannot separate them. Splitting those into
+different files is what would let the rule reach it.
+
+The manifest edges stay, with honest reasons: `ui` still must not name `vcs`
+directly, not because it could reach git — it can — but because git is reached
+through `pipeline`, which owns the thread it runs on. One seam, not two.
+
+## D64 — the interface starts itself; the binary hands it a place to look
+
+`main` used to run the review: resolve the theme, open the repository, build
+the request, run the list pipeline, refuse an empty one, construct a session,
+ask for the first file, and start the loop. Eight steps, of which two were the
+binary's and six were the interface's.
+
+It is `ui::start` now, and `main` is:
+
+```rust
+let cwd = std::env::current_dir()?;
+ui::start(cwd, path.into_iter().collect(), cli.theme.as_deref())
+```
+
+**A file of its own, not part of `app.rs`**, because the two obey opposite
+rules. `start` runs once, before the terminal is opened, so it may block —
+there is nothing to stay responsive with, which is why the file list is read
+rather than asked for. The loop may not block at all. [D63](#d63) could not
+reach `app.rs` while it held both; with the split it does, as a file rule.
+
+**And `vcs` was never needed.** `main` opened the repository to put its root in
+the request. But `list::resolver` opens git again from that path, and every
+path it builds comes from the root git *discovered*, not from the one it was
+handed. So the request carries a place to start looking, `git rev-parse
+--show-toplevel` does the rest, and `ui` names no version control at all.
+
+`main.rs` fell from 85 lines to 41, and stopped naming `vcs`, `explorer` and
+`pipeline`. It parses arguments and picks a subcommand; everything else it used
+to do belonged to somebody else.
+
+`ui` gained `anyhow`, because "nothing has changed here" is not an IO error and
+`run` returns `std::io::Result`. Every crate here is `publish = false`, so the
+usual objection to `anyhow` in a library does not apply.

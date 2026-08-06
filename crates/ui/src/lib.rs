@@ -34,12 +34,14 @@ mod app;
 mod draw;
 pub mod input;
 mod render;
+mod start;
 mod syntax;
 mod terminal;
 pub mod theme;
 pub mod view;
 
 pub use app::{Flow, Session, run};
+pub use start::start;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 pub use view::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};

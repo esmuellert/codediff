@@ -10,12 +10,10 @@ mod debug;
 mod doctor;
 mod text;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Parser;
-use ui::Theme;
 
 use cli::{Cli, Command};
-use explorer::{ExplorerDiffRequest, ExplorerDiffType};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -25,7 +23,6 @@ fn main() -> Result<()> {
         panic!("deliberate panic, to check the terminal is restored");
     }
 
-    let diff_type = cli.diff_type();
     match (cli.command, cli.path) {
         (Some(Command::Doctor), _) => {
             doctor::run();
@@ -37,46 +34,8 @@ fn main() -> Result<()> {
         // naming it and the same file reached by pressing enter on its row are
         // the same comparison — which they were not. See D58.
         (None, path) => {
-            let pathspec = path.into_iter().collect();
-            explore(diff_type, pathspec, cli.theme.as_deref())
+            let cwd = std::env::current_dir().context("finding the current directory")?;
+            ui::start(cwd, path.into_iter().collect(), cli.theme.as_deref())
         }
-    }
-}
-
-/// Reviews everything that changed: the list, and whatever it opens.
-fn explore(diff_type: ExplorerDiffType, pathspec: Vec<String>, theme: Option<&str>) -> Result<()> {
-    let theme = theme_for(theme)?;
-    let cwd = std::env::current_dir().context("finding the current directory")?;
-    let repo = vcs::Git::open(&cwd).context("opening a repository")?;
-    let request =
-        ExplorerDiffRequest::new(repo.repo().root.clone(), diff_type).with_pathspec(pathspec);
-    let groups = pipeline::list::run(&request)?;
-
-    // Refused rather than opened. An empty list on a full screen looks like a
-    // tool that failed to load, and there is nothing in it to press; the
-    // reader wants to be told, and to get their shell back.
-    if groups.iter().all(explorer::Group::is_empty) {
-        bail!("nothing has changed here — there is nothing to review");
-    }
-
-    let mut session = ui::Session::new(ui::Buffer::explorer(groups), theme);
-    // The first file is asked for before the terminal opens, so it is already
-    // being compared while the screen is set up. It arrives a frame or two
-    // after the list rather than before it: a comparison runs on a thread of
-    // its own now, and the list is usable while it does.
-    session.open();
-    ui::run(&mut session).context("running the review interface")
-}
-
-/// The theme named on the command line, or the one the terminal suggests.
-///
-/// Named themes are validated by clap, so an unknown one here would be a bug
-/// rather than a mistake by the reader.
-fn theme_for(name: Option<&str>) -> Result<Theme> {
-    match name {
-        Some(name) => {
-            Theme::named(name).with_context(|| format!("{name} is not a theme; see --help"))
-        }
-        None => Ok(Theme::from_environment()),
     }
 }

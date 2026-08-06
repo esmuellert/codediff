@@ -8,7 +8,11 @@
 
 /// Edges that must never exist, with the reason reported on failure.
 pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
-    ("ui", "vcs", "a renderer must not be able to reach git"),
+    (
+        "ui",
+        "vcs",
+        "git is reached through `pipeline`, which owns the thread it runs on",
+    ),
     (
         "ui",
         "vscode-diff",
@@ -133,29 +137,6 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
     ("Handler", "the event it answers"),
 ];
 
-/// Directories that may not name something, and why.
-///
-/// Two kinds of rule live here. The first is the boundary between a brick and
-/// a composition: `ui/src/render` draws onto a cell grid — rectangles, line
-/// numbers, one line of text — and is handed everything it needs; `ui/src/draw`
-/// is what knows that a side-by-side diff is two of those columns with a
-/// divider between them. If a brick could name a buffer it would stop being
-/// reusable by a buffer type that does not exist yet, and would stop being
-/// testable without a model.
-///
-/// The second is **what the drawing thread may not reach**. That used to be a
-/// pair of manifest rules — `ui` must not depend on `vcs` or `vscode-diff` —
-/// and those still stand, but they check a `Cargo.toml`, so they say nothing
-/// once a crate between the two exists. `ui` now depends on `pipeline`, which
-/// depends on both, and neither manifest rule fails. Checking the text
-/// instead cannot be defeated that way, and it catches things the manifest
-/// never could: `std::fs` was reachable the whole time. See D59.
-///
-/// `std::process` is not here because `terminal.rs` ends the program with it
-/// after a signal, which is the one place a process call is right.
-///
-/// Checked as text rather than by the compiler because Rust has no way to say
-/// "this module may not import that one" within a crate.
 /// The files allowed to start a thread, and why nowhere else may.
 ///
 /// Concurrency is the easiest thing in this program to get wrong and the
@@ -178,6 +159,68 @@ pub const THREAD_FILES: &[&str] = &[
 ];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 
+/// Directories reached on every key and every frame, which must not block.
+///
+/// **The rule is about the thread, not about the crate.** An earlier version
+/// forbade `crates/ui/src` from naming `vcs::`, on the grounds that a renderer
+/// must not reach git. That rule was already defeated when it was written:
+/// `ui` depends on `pipeline`, so `pipeline::list::run` compiles anywhere in
+/// `ui`, opens a repository and blocks for as long as git takes — 29 ms on
+/// this repository, 296 ms measured on five thousand changed files. Banning
+/// the word `vcs::` stopped the cheapest call in the program, `git rev-parse`
+/// once at startup, and stopped nothing else.
+///
+/// So the question is not which crate a call comes from. It is **when it
+/// runs**. A call made once, before the terminal is opened, may block: there
+/// is nothing to stay responsive with, which is why the file list is read
+/// synchronously. A call made while the reader is holding a key may not.
+///
+/// These directories are only ever reached from inside the loop, so nothing in
+/// them may perform IO or wait. `app.rs` holds the loop itself and is checked
+/// as a file: the startup that used to sit beside it now lives in `start.rs`,
+/// which runs once, before the terminal is opened, and may block. That split
+/// is what let this rule reach the loop at all. See D63 and D64.
+pub const NON_BLOCKING_DIRS: &[&str] = &[
+    "crates/ui/src/input",
+    "crates/ui/src/draw",
+    "crates/ui/src/render",
+    "crates/ui/src/view",
+];
+
+/// Files reached on every key and every frame, checked as [`NON_BLOCKING_DIRS`]
+/// are.
+///
+/// One so far: the loop. It is a file rather than a directory because
+/// `crates/ui/src` also holds `start.rs`, whose whole job is the blocking work
+/// the loop must never do.
+pub const NON_BLOCKING_FILES: &[&str] = &["crates/ui/src/app.rs"];
+
+/// What blocking looks like, in the directories above.
+///
+/// `IO_MARKERS` plus the two ways to wait for something already running.
+/// `try_recv` is deliberately absent: it is how the loop collects an answer
+/// without waiting, and it is the whole point of the workers.
+pub const BLOCKING_MARKERS: &[&str] = &[
+    "std::fs",
+    "std::process",
+    "std::net",
+    "vcs::",
+    "vscode_diff::",
+    ".recv()",
+    ".join()",
+];
+
+/// Directories that may not name a module of their own crate, and why.
+///
+/// The boundary between a brick and a composition. `ui/src/render` draws onto
+/// a cell grid — rectangles, line numbers, one line of text — and is handed
+/// everything it needs; `ui/src/draw` is what knows that a side-by-side diff
+/// is two of those columns with a divider between them. If a brick could name
+/// a buffer it would stop being reusable by a buffer type that does not exist
+/// yet, and would stop being testable without a model.
+///
+/// Checked as text rather than by the compiler because Rust has no way to say
+/// "this module may not import that one" within a crate.
 pub const BLIND_DIRS: &[(&str, &str, &str)] = &[
     (
         "crates/ui/src/render",
@@ -193,20 +236,5 @@ pub const BLIND_DIRS: &[(&str, &str, &str)] = &[
         "crates/ui/src",
         "syntax::engine",
         "the engines' own words live in `syntax`; `ui` asks for a palette and a role",
-    ),
-    (
-        "crates/ui/src",
-        "vcs::",
-        "a renderer must not be able to reach git, whatever its manifest says",
-    ),
-    (
-        "crates/ui/src",
-        "vscode_diff::",
-        "rendering consumes model types, it does not compute diffs",
-    ),
-    (
-        "crates/ui/src",
-        "std::fs",
-        "the drawing thread must not touch the disk — a frame has no time for it",
     ),
 ];

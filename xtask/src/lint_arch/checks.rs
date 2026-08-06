@@ -311,3 +311,57 @@ pub fn check_blind_dirs(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     }
     Ok(())
 }
+
+/// Refuses anything that waits, where the loop can reach it.
+///
+/// The companion to [`check_threads`]: that one says slow work happens on a
+/// worker, this one says the drawing thread never does it. Both are needed —
+/// a worker nobody uses prevents nothing.
+pub fn check_non_blocking(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for name in NON_BLOCKING_FILES {
+        let file = root.join(name);
+        if !file.is_file() {
+            failures.push(format!("`{name}` is missing, so its rule is dead"));
+            continue;
+        }
+        blocking_calls(root, &file, name, failures)?;
+    }
+    for dir in NON_BLOCKING_DIRS {
+        let path = root.join(dir);
+        if !path.is_dir() {
+            failures.push(format!("`{dir}` is missing, so its rule is dead"));
+            continue;
+        }
+        for file in rust_files(&path)? {
+            blocking_calls(root, &file, dir, failures)?;
+        }
+    }
+    Ok(())
+}
+
+/// Reports every blocking call in one file, naming the rule that caught it.
+fn blocking_calls(root: &Path, file: &Path, place: &str, failures: &mut Vec<String>) -> Result<()> {
+    let text = std::fs::read_to_string(file)?;
+    // Tests may wait: proving that a worker answered means waiting for it.
+    // What must not block is what a frame reaches.
+    let Some(code) = text.split("#[cfg(test)]").next() else {
+        return Ok(());
+    };
+    for (n, line) in code.lines().enumerate() {
+        let line = line.trim_start();
+        if line.starts_with("//") {
+            continue;
+        }
+        for marker in BLOCKING_MARKERS {
+            if line.contains(marker) {
+                failures.push(format!(
+                    "{}:{} names `{marker}` — {place} is reached on every key and \
+                     every frame, so nothing in it may wait",
+                    rel(root, file),
+                    n + 1
+                ));
+            }
+        }
+    }
+    Ok(())
+}
