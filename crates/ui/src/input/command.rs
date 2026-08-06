@@ -20,7 +20,6 @@ use crate::input::buffer::BufferAction;
 use crate::input::pane::PaneAction;
 use crate::input::program::ProgramAction;
 use crate::input::tab::TabAction;
-use crate::input::task::TaskAction;
 use crate::input::view::ViewAction;
 
 /// One resolved key sequence: what to do, and how many times.
@@ -61,12 +60,11 @@ impl Command {
 /// | `Tab` | the active tab | no | µs |
 /// | `View` | the view | no | µs |
 /// | `Program` | whoever owns the terminal | no | µs |
-/// | `Task` | the composition root, off-thread | **yes** | ms |
 ///
-/// A [`TaskAction`] is a **request, not a call**: `ui` names what it
-/// wants and something above performs it. That is the only way opening a file
-/// can exist here without `ui` depending on `vcs`, which `cargo xtask
-/// lint-arch` forbids.
+/// Nothing here blocks and nothing leaves the crate. There used to be a sixth
+/// level, `Task`, for the one action that needed a repository; it was returned
+/// rather than run, because `ui` could not reach git. The pipeline answers on
+/// a thread now, so asking costs a `send` and the level is gone. See D59.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Motions, and whatever this buffer's kind adds.
@@ -78,7 +76,6 @@ pub enum Action {
     /// The whole view, about its tabs.
     View(ViewAction),
     Program(ProgramAction),
-    Task(TaskAction),
 }
 
 #[cfg(test)]

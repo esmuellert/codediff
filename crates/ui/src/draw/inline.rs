@@ -11,7 +11,8 @@
 //! inner-change highlighting and the cursor line are shared with it verbatim,
 //! in [`line`](crate::render::line).
 
-use align::{DiffLayout, DiffVersion, Slot, ViewLine};
+use align::{DiffVersion, Slot, ViewLine};
+use file_types::DiffType;
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
@@ -62,7 +63,7 @@ pub fn draw(
 
     let mut drawn = 0;
     for (offset, current) in alignment
-        .view_lines_from(DiffLayout::Inline, visible.start)
+        .view_lines_from(DiffType::Inline, visible.start)
         .take(visible.len())
         .enumerate()
     {

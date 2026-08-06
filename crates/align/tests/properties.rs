@@ -4,7 +4,8 @@
 //! generated from a tiny alphabet so the engine finds real matches and produces
 //! genuinely mixed diffs rather than one big replacement.
 
-use align::{Alignment, DiffLayout, DiffVersion, ViewLineType};
+use align::{Alignment, DiffVersion, ViewLineType};
+use file_types::DiffType;
 use proptest::prelude::*;
 use vscode_diff::Options;
 
@@ -41,7 +42,7 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
     let mut right = Vec::new();
     let (mut last_original, mut last_modified) = (0, 0);
 
-    for line in alignment.view_lines(DiffLayout::SideBySide) {
+    for line in alignment.view_lines(DiffType::SideBySide) {
         // 1. no line is blank on both sides
         prop_assert!(!(line.original.is_filler() && line.modified.is_filler()));
 
@@ -91,8 +92,8 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
 
     // 6. the advertised line count is the number of lines produced
     prop_assert_eq!(
-        alignment.view_line_count(DiffLayout::SideBySide) as usize,
-        alignment.view_lines(DiffLayout::SideBySide).count()
+        alignment.view_line_count(DiffType::SideBySide) as usize,
+        alignment.view_lines(DiffType::SideBySide).count()
     );
 
     Ok(())
@@ -111,8 +112,8 @@ proptest! {
             .expect("comparing a file with itself cannot time out");
         let alignment = Alignment::new(diff.clone(), &text, &text);
 
-        prop_assert_eq!(alignment.view_line_count(DiffLayout::SideBySide) as usize, alignment.lines(DiffVersion::Original).len());
-        for line in alignment.view_lines(DiffLayout::SideBySide) {
+        prop_assert_eq!(alignment.view_line_count(DiffType::SideBySide) as usize, alignment.lines(DiffVersion::Original).len());
+        for line in alignment.view_lines(DiffType::SideBySide) {
             prop_assert_eq!(line.kind, ViewLineType::Unchanged);
         }
     }

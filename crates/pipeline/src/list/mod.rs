@@ -25,7 +25,6 @@
 //!
 //! ```ignore
 //! let groups = list::run(&ExplorerDiffRequest::worktree(root))?;
-//! let mut session = ui::Session::new(ui::Buffer::explorer(groups), theme);
 //! ```
 
 pub mod entries;

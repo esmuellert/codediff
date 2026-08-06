@@ -286,6 +286,7 @@ dependencies = [
  "file-types",
  "fixtures",
  "line-index",
+ "pipeline",
  "portable-pty",
  "ui",
  "vcs",
@@ -1208,6 +1209,18 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "pipeline"
+version = "0.11.0"
+dependencies = [
+ "align",
+ "anyhow",
+ "explorer",
+ "file-types",
+ "vcs",
+ "vscode-diff",
+]
 
 [[package]]
 name = "pkg-config"
@@ -2385,6 +2398,7 @@ dependencies = [
  "explorer",
  "file-types",
  "line-index",
+ "pipeline",
  "ratatui",
  "signal-hook",
  "syntax",

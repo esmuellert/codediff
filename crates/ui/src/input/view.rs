@@ -29,6 +29,20 @@ pub enum ViewAction {
     /// palette, and being able to remove one of them is how you find out
     /// whether the other still reads.
     ToggleSyntax,
+    /// Open what the list has selected.
+    ///
+    /// Here rather than at the buffer level because it replaces the buffer in
+    /// the *other* pane, which no buffer can do to itself. The row may turn
+    /// out to be a directory, in which case the list folds it and the view is
+    /// untouched — which of the two it is, is the buffer's answer and not the
+    /// key's: one key does the obvious thing on every row, exactly as it does
+    /// in the plugin.
+    ///
+    /// It used to be a `Task`, returned out of the crate for the composition
+    /// root to perform, because performing it meant reaching git. It is
+    /// performed here now: the pipeline answers on a thread of its own, so
+    /// asking costs a `send` and nothing here waits. See D59.
+    Open,
 }
 
 pub const BINDINGS: &[Binding] = &[

@@ -232,11 +232,18 @@ fn words_of(name: &str) -> impl Iterator<Item = String> + '_ {
 }
 
 /// Refuses a module a directory is not allowed to know about.
-/// Refuses a thread anywhere but the painter.
+/// Refuses a thread anywhere but the workers.
 pub fn check_threads(root: &Path, failures: &mut Vec<String>) -> Result<()> {
-    let allowed = root.join(THREAD_FILE);
-    if !allowed.is_file() {
-        failures.push(format!("`{THREAD_FILE}` is missing, so its rule is dead"));
+    let mut allowed = Vec::new();
+    for name in THREAD_FILES {
+        let path = root.join(name);
+        if path.is_file() {
+            allowed.push(path);
+        } else {
+            failures.push(format!("`{name}` is missing, so its rule is dead"));
+        }
+    }
+    if allowed.len() < THREAD_FILES.len() {
         return Ok(());
     }
     for dir in ["crates", "xtask"] {
@@ -250,7 +257,7 @@ pub fn check_threads(root: &Path, failures: &mut Vec<String>) -> Result<()> {
             let is_test = file
                 .components()
                 .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "benches");
-            if file == allowed || is_test || file.ends_with("lint_arch/rules.rs") {
+            if allowed.contains(&file) || is_test || file.ends_with("lint_arch/rules.rs") {
                 continue;
             }
             let text = std::fs::read_to_string(&file)?;
@@ -265,8 +272,8 @@ pub fn check_threads(root: &Path, failures: &mut Vec<String>) -> Result<()> {
                 for marker in THREAD_MARKERS {
                     if trimmed.contains(marker) {
                         failures.push(format!(
-                            "{}:{} starts a thread — only {THREAD_FILE} may, so that \
-                             \"which thread owns this?\" keeps an obvious answer",
+                            "{}:{} starts a thread — only a worker in `THREAD_FILES` may, \
+                             so that \"which thread owns this?\" keeps an obvious answer",
                             rel(root, &file),
                             n + 1
                         ));

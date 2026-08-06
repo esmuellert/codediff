@@ -32,14 +32,15 @@ pub use inline::Inline;
 pub use side_by_side::SideBySide;
 pub use single_file::SingleFile;
 
-use align::{Alignment, DiffLayout};
+use align::Alignment;
+use file_types::DiffType;
 use file_types::File;
 
 /// Which type of buffer this is, and what only that type holds.
 ///
 /// The variant *is* the layout, so the renderer and the keymap dispatch on
 /// something the compiler checks rather than on a field. Which walk each one
-/// asks `align` for is [`DiffLayout`], defined once there — these variants
+/// asks `align` for is [`DiffType`], defined once there — these variants
 /// select it, they do not redefine what it means.
 #[derive(Debug)]
 pub enum BufferType {
@@ -54,13 +55,18 @@ pub enum BufferType {
 }
 
 impl BufferType {
-    /// Which walk to ask `align` for, or `None` when there is nothing to lay
-    /// out against.
-    pub fn layout(&self) -> Option<DiffLayout> {
+    /// Which of the three ways this shows a file, or `None` for the list.
+    ///
+    /// A second answer, not an absent one: the explorer is a list *of* files
+    /// and so is none of them. Every other kind has a [`DiffType`], including
+    /// the single file — which used to be a `None` here, and was one of four
+    /// places that spelled the same fork as an absence. See D60.
+    pub fn diff_type(&self) -> Option<DiffType> {
         match self {
-            BufferType::SideBySide(_) => Some(DiffLayout::SideBySide),
-            BufferType::Inline(_) => Some(DiffLayout::Inline),
-            BufferType::SingleFile(_) | BufferType::Explorer(_) => None,
+            BufferType::SideBySide(_) => Some(DiffType::SideBySide),
+            BufferType::Inline(_) => Some(DiffType::Inline),
+            BufferType::SingleFile(_) => Some(DiffType::Single),
+            BufferType::Explorer(_) => None,
         }
     }
 

@@ -13,8 +13,9 @@
 
 use std::path::Path;
 
-use align::{Alignment, DiffLayout, ViewLineType};
+use align::{Alignment, ViewLineType};
 use anyhow::{Context, Result};
+use file_types::DiffType;
 use file_types::DiffVersion;
 
 pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
@@ -42,7 +43,7 @@ fn fillers(alignment: &Alignment) {
     ] {
         let mut run = 0;
         let mut last = 0;
-        for line in alignment.view_lines(DiffLayout::SideBySide) {
+        for line in alignment.view_lines(DiffType::SideBySide) {
             let slot = match version {
                 DiffVersion::Original => line.original,
                 DiffVersion::Modified => line.modified,
@@ -70,7 +71,7 @@ fn marked(alignment: &Alignment) {
         ("original", DiffVersion::Original),
         ("modified", DiffVersion::Modified),
     ] {
-        for view_line in alignment.view_lines(DiffLayout::SideBySide) {
+        for view_line in alignment.view_lines(DiffType::SideBySide) {
             if view_line.kind == ViewLineType::Unchanged {
                 continue;
             }

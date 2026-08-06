@@ -125,7 +125,7 @@ mod tests {
     use crate::input::buffer::{BufferAction, Motion};
     use crate::input::command::Action;
     use crate::input::program::ProgramAction;
-    use align::DiffLayout;
+    use file_types::DiffType;
 
     /// Feeds a line of keys in and returns what came out.
     ///
@@ -133,7 +133,7 @@ mod tests {
     fn run(keys: &[KeyCombination]) -> Vec<Resolution> {
         let mut input = Resolver::new();
         keys.iter()
-            .map(|k| input.key(*k, KeymapType::Diff(DiffLayout::SideBySide)))
+            .map(|k| input.key(*k, KeymapType::File(DiffType::SideBySide)))
             .collect()
     }
 
@@ -275,9 +275,9 @@ mod tests {
     #[test]
     fn nothing_is_left_behind_after_a_command_runs() {
         let mut input = Resolver::new();
-        input.key(key!('5'), KeymapType::Diff(DiffLayout::SideBySide));
-        input.key(key!(g), KeymapType::Diff(DiffLayout::SideBySide));
-        input.key(key!(g), KeymapType::Diff(DiffLayout::SideBySide));
+        input.key(key!('5'), KeymapType::File(DiffType::SideBySide));
+        input.key(key!(g), KeymapType::File(DiffType::SideBySide));
+        input.key(key!(g), KeymapType::File(DiffType::SideBySide));
         assert!(input.pending().is_empty());
         assert_eq!(input.count(), None);
     }
@@ -285,9 +285,9 @@ mod tests {
     #[test]
     fn the_pending_keys_are_visible_while_waiting() {
         let mut input = Resolver::new();
-        input.key(key!('1'), KeymapType::Diff(DiffLayout::SideBySide));
+        input.key(key!('1'), KeymapType::File(DiffType::SideBySide));
         assert_eq!(input.count().map(NonZeroU32::get), Some(1));
-        input.key(key!(g), KeymapType::Diff(DiffLayout::SideBySide));
+        input.key(key!(g), KeymapType::File(DiffType::SideBySide));
         assert_eq!(input.pending(), [key!(g)]);
     }
 }

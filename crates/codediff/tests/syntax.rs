@@ -15,7 +15,7 @@ mod harness;
 use harness::{cells, diff};
 use ui::ratatui::buffer::Buffer as Cells;
 use ui::ratatui::style::Color;
-use ui::{Buffer, DiffLayout, Session, Theme};
+use ui::{Buffer, Session, Theme};
 
 /// The colours found on one row, left to right, ignoring runs.
 fn foregrounds(cells: &Cells, y: u16) -> Vec<Color> {
@@ -226,15 +226,15 @@ fn a_rename_is_coloured_as_each_side_is_named() {
     // A `.py` that became a `.rs`. If one grammar were used for both, whichever
     // side lost would be mis-coloured, and `def` is the tell: it is a keyword
     // in Python and nothing at all in Rust.
-    let file = ui::Diff::new(
-        file_types::File::renamed(
+    let file = pipeline::file::DiffContent::Paired {
+        file: file_types::File::renamed(
             file_types::RepoPath::new("a.py", std::path::Path::new("/repo")),
             file_types::RepoPath::new("a.rs", std::path::Path::new("/repo")),
             harness::revs(),
         ),
-        alignment("def f():\n    pass\n", "fn f() {}\n"),
-    );
-    let mut session = Session::new(Buffer::diff(file, DiffLayout::SideBySide), Theme::DARK);
+        alignment: alignment("def f():\n    pass\n", "fn f() {}\n"),
+    };
+    let mut session = Session::new(Buffer::diff(file), Theme::DARK);
     let cells = settled(&mut session, 100, 10);
     let code = Theme::DARK.code;
     assert!(

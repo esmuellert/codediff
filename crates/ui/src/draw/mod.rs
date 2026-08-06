@@ -7,8 +7,8 @@
 //! **One file draws one buffer type**, and the files line up with the model:
 //!
 //! ```text
-//! view/buffer/diff_buffer.rs  ←→  draw/side_by_side.rs  (DiffLayout::SideBySide)
-//!                             ←→  draw/inline.rs        (DiffLayout::Inline)
+//! view/buffer/diff_buffer.rs  ←→  draw/side_by_side.rs  (DiffType::SideBySide)
+//!                             ←→  draw/inline.rs        (DiffType::Inline)
 //! view/buffer/single_file.rs  ←→  draw/single_file.rs
 //! ```
 //!

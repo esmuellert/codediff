@@ -27,7 +27,7 @@
 use crokey::KeyCombination;
 
 use crate::input::command::Action;
-use align::DiffLayout;
+use file_types::DiffType;
 
 use crate::input::{buffer, pane, program, tab, view};
 
@@ -37,28 +37,31 @@ use crate::input::{buffer, pane, program, tab, view};
 /// anywhere, so this module depends on nothing — which is what lets the keymap
 /// be built before the thing that decides focus exists.
 ///
-/// A diff carries its [`DiffLayout`] rather than restating `SideBySide` and
-/// `Inline`, because those are the same two things `align` already names and a
-/// second definition is one that can drift. What this enum adds is the
-/// buffers that are *not* diffs — which is exactly why it cannot simply be an
-/// `Option<DiffLayout>`: the explorer is a third answer, not an absent one.
-/// See D33.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// A file carries its [`DiffType`] rather than restating `SideBySide`,
+/// `Inline` and `Single`, because those are the same three things
+/// `file-types` already names and a second definition is one that can drift.
+/// What this enum adds is the buffer that is *not* a file — which is exactly
+/// why it cannot simply be an `Option<DiffType>`: the explorer is a second
+/// answer, not an absent one. See D33 and D60.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeymapType {
-    /// Two versions, laid out one of the two ways.
-    Diff(DiffLayout),
-    /// One version of a file, with nothing to compare it against.
-    #[default]
-    SingleFile,
+    /// One file, shown one of the three ways.
+    File(DiffType),
     /// The list of changed files.
     Explorer,
 }
 
+impl Default for KeymapType {
+    fn default() -> Self {
+        Self::File(DiffType::default())
+    }
+}
+
 impl KeymapType {
     pub const ALL: &'static [KeymapType] = &[
-        KeymapType::Diff(DiffLayout::SideBySide),
-        KeymapType::Diff(DiffLayout::Inline),
-        KeymapType::SingleFile,
+        KeymapType::File(DiffType::SideBySide),
+        KeymapType::File(DiffType::Inline),
+        KeymapType::File(DiffType::Single),
         KeymapType::Explorer,
     ];
 }
@@ -139,7 +142,7 @@ mod tests {
     #[test]
     fn a_single_key_resolves_to_its_action() {
         assert!(matches!(
-            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!(j)]),
+            lookup(KeymapType::File(DiffType::SideBySide), &[key!(j)]),
             Match::Exact(_)
         ));
     }
@@ -147,14 +150,11 @@ mod tests {
     #[test]
     fn the_first_key_of_a_sequence_asks_for_more() {
         assert_eq!(
-            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!(g)]),
+            lookup(KeymapType::File(DiffType::SideBySide), &[key!(g)]),
             Match::Prefix
         );
         assert!(matches!(
-            lookup(
-                KeymapType::Diff(DiffLayout::SideBySide),
-                &[key!(g), key!(g)]
-            ),
+            lookup(KeymapType::File(DiffType::SideBySide), &[key!(g), key!(g)]),
             Match::Exact(_)
         ));
     }
@@ -163,16 +163,13 @@ mod tests {
     fn an_unbound_key_matches_nothing() {
         assert_eq!(
             lookup(
-                KeymapType::Diff(DiffLayout::SideBySide),
+                KeymapType::File(DiffType::SideBySide),
                 &[key!(ctrl - alt - x)]
             ),
             Match::None
         );
         assert_eq!(
-            lookup(
-                KeymapType::Diff(DiffLayout::SideBySide),
-                &[key!(g), key!(x)]
-            ),
+            lookup(KeymapType::File(DiffType::SideBySide), &[key!(g), key!(x)]),
             Match::None
         );
     }
@@ -180,7 +177,7 @@ mod tests {
     #[test]
     fn a_program_binding_works_from_any_context() {
         assert!(matches!(
-            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!(q)]),
+            lookup(KeymapType::File(DiffType::SideBySide), &[key!(q)]),
             Match::Exact(_)
         ));
     }
@@ -238,7 +235,7 @@ mod tests {
         // Not provable from the tables today — nothing is shadowed yet — so it
         // is proved of the mechanism instead. Without this ordering, the
         // explorer could not bind a key the diff already uses.
-        let arms: Vec<Action> = live(KeymapType::Diff(DiffLayout::SideBySide))
+        let arms: Vec<Action> = live(KeymapType::File(DiffType::SideBySide))
             .filter_map(|list| list.first().map(|b| b.action))
             .collect();
         assert!(
@@ -271,10 +268,13 @@ mod tests {
         // no second column, so the key is simply not live there — which is
         // what stops it being a silent no-op.
         assert!(matches!(
-            lookup(KeymapType::Diff(DiffLayout::SideBySide), &[key!('>')]),
+            lookup(KeymapType::File(DiffType::SideBySide), &[key!('>')]),
             Match::Exact(_)
         ));
-        assert_eq!(lookup(KeymapType::SingleFile, &[key!('>')]), Match::None);
+        assert_eq!(
+            lookup(KeymapType::File(DiffType::Single), &[key!('>')]),
+            Match::None
+        );
         // The list claims the same key for the border beside it, which is a
         // different border and a different executor.
         assert_eq!(

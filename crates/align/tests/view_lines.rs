@@ -5,7 +5,8 @@
 //! inside a changed block leaves both columns intact and every invariant true.
 //! These pin which line sits opposite which.
 
-use align::{Alignment, DiffLayout, Malformed, Slot, ViewLineType};
+use align::{Alignment, Malformed, Slot, ViewLineType};
+use file_types::DiffType;
 use vscode_diff::{DetailedLineRangeMapping, LineRange, LinesDiff, Options};
 
 fn split(text: &str) -> Vec<&str> {
@@ -20,7 +21,7 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 /// `(original, modified, kind)` for every line, as a readable table.
 fn table(alignment: &Alignment) -> Vec<(Option<u32>, Option<u32>, ViewLineType)> {
     alignment
-        .view_lines(DiffLayout::SideBySide)
+        .view_lines(DiffType::SideBySide)
         .map(|r| (r.original.line(), r.modified.line(), r.kind))
         .collect()
 }
@@ -138,7 +139,7 @@ fn adjacent_changes_with_no_unchanged_run_between_them() {
             (Some(3), Some(3), Unchanged),
         ]
     );
-    assert_eq!(alignment.view_line_count(DiffLayout::SideBySide), 4);
+    assert_eq!(alignment.view_line_count(DiffType::SideBySide), 4);
 }
 
 #[test]
@@ -329,7 +330,7 @@ fn the_view_line_count_matches_the_walk() {
         let original = split(original);
         let modified = split(modified);
         let alignment = Alignment::new(compute(&original, &modified), &original, &modified);
-        for layout in [DiffLayout::SideBySide, DiffLayout::Inline] {
+        for layout in [DiffType::SideBySide, DiffType::Inline] {
             assert_eq!(
                 alignment.view_line_count(layout) as usize,
                 alignment.view_lines(layout).count(),

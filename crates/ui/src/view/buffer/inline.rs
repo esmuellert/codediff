@@ -7,11 +7,11 @@
 //!
 //! What makes inline different from [`SideBySide`](super::SideBySide) is not
 //! state but the walk: a change is as tall as both its sides together rather
-//! than as tall as the taller one, which is [`DiffLayout::Inline`] in `align`.
+//! than as tall as the taller one, which is [`DiffType::Inline`] in `align`.
 //! Being a type of its own is what lets the renderer and the keymap dispatch
 //! on a variant the compiler checks, rather than reading a field.
 //!
-//! [`DiffLayout::Inline`]: align::DiffLayout::Inline
+//! [`DiffType::Inline`]: file_types::DiffType::Inline
 
 use align::Alignment;
 use file_types::File;

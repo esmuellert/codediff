@@ -6,7 +6,8 @@
 //!
 //! [`Alignment`]: align::Alignment
 
-use align::{DiffLayout, DiffVersion};
+use align::DiffVersion;
+use file_types::DiffType;
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
@@ -47,7 +48,7 @@ pub fn draw(
     // Collected once and handed to both columns. Two columns reading one slice
     // cannot disagree about what line they are on.
     let lines: Vec<_> = alignment
-        .view_lines_from(DiffLayout::SideBySide, visible.start)
+        .view_lines_from(DiffType::SideBySide, visible.start)
         .take(visible.len())
         .collect();
 

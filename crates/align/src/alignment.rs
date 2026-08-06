@@ -3,11 +3,12 @@
 use std::sync::Arc;
 
 use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff, MovedText};
+use file_types::DiffType;
 pub use file_types::DiffVersion;
 
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
-use crate::layout::{self, DiffLayout, ViewLines};
+use crate::layout::{self, ViewLines};
 use crate::region::{UnchangedRegion, regions};
 use crate::view_line::{ViewLine, blocks, is_well_formed};
 
@@ -182,7 +183,7 @@ impl Alignment {
     }
 
     /// Every view line, in order, laid out the way asked for.
-    pub fn view_lines(&self, layout: DiffLayout) -> ViewLines<'_> {
+    pub fn view_lines(&self, layout: DiffType) -> ViewLines<'_> {
         layout::view_lines(
             layout,
             &self.diff,
@@ -192,7 +193,7 @@ impl Alignment {
         )
     }
 
-    pub fn view_line_count(&self, layout: DiffLayout) -> u32 {
+    pub fn view_line_count(&self, layout: DiffType) -> u32 {
         layout::view_line_count(
             layout,
             &self.diff,
@@ -210,14 +211,14 @@ impl Alignment {
     /// the alternative — a stored view-line index per layout — out of the crate.
     pub fn view_lines_from(
         &self,
-        layout: DiffLayout,
+        layout: DiffType,
         first: u32,
     ) -> impl Iterator<Item = ViewLine> + '_ {
         self.view_lines(layout).skip(first as usize)
     }
 
     /// Runs of adjacent changed view lines, in the given view layout.
-    pub fn blocks(&self, layout: DiffLayout) -> Vec<std::ops::Range<u32>> {
+    pub fn blocks(&self, layout: DiffType) -> Vec<std::ops::Range<u32>> {
         blocks(self.view_lines(layout))
     }
 
@@ -226,7 +227,7 @@ impl Alignment {
     /// With [`view_line_at`](Self::view_line_at), how a reader keeps their place when the
     /// layout changes: a view-line number means nothing in the other layout, but a
     /// line means the same in both.
-    pub fn line_at(&self, layout: DiffLayout, view_line: u32) -> Option<(DiffVersion, u32)> {
+    pub fn line_at(&self, layout: DiffType, view_line: u32) -> Option<(DiffVersion, u32)> {
         layout::line_at(
             layout,
             &self.diff,
@@ -238,7 +239,7 @@ impl Alignment {
     }
 
     /// Which line shows a given line, if any.
-    pub fn view_line_at(&self, layout: DiffLayout, version: DiffVersion, line: u32) -> Option<u32> {
+    pub fn view_line_at(&self, layout: DiffType, version: DiffVersion, line: u32) -> Option<u32> {
         layout::view_line_at(
             layout,
             &self.diff,

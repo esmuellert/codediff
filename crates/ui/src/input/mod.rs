@@ -4,9 +4,9 @@
 //!
 //! Admission criterion: does this decide *what was asked for*? Never what to
 //! do about it. [`Resolver`] resolves and returns; the loop dispatches. If
-//! this module also acted, it would need references to the view, the terminal
-//! and the task runner all at once, which is the coupling the three-way
-//! [`Action`] exists to avoid.
+//! this module also acted, it would need references to the view and the
+//! terminal at once, which is the coupling the levelled [`Action`] exists to
+//! avoid.
 //!
 //! One file per **executor**, each holding that executor's commands *and* the
 //! keys bound to them — so a new command is one file, not two:
@@ -17,7 +17,6 @@
 //! tab.rs       a tab, about its panes: focus, resize, zoom
 //! view.rs      the whole view, about its tabs             ← outermost
 //! program.rs   quit, suspend, redraw — below every level
-//! task.rs      what leaves the crate
 //! ```
 //!
 //! The first four are the view model, and lookup walks them in that order, so
@@ -36,7 +35,6 @@ pub mod pane;
 pub mod program;
 mod resolver;
 pub mod tab;
-pub mod task;
 pub mod view;
 
 use crokey::KeyCombination;
@@ -49,7 +47,6 @@ pub use pane::PaneAction;
 pub use program::ProgramAction;
 pub use resolver::{Resolution, Resolver};
 pub use tab::TabAction;
-pub use task::TaskAction;
 pub use view::ViewAction;
 
 /// The key of a press, normalised, or `None` for anything else.

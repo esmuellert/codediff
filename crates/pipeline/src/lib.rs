@@ -8,9 +8,10 @@
 //! | | | in | out |
 //! |---|---|---|---|
 //! | [`list`] | a set of files, in two stages | an [`ExplorerDiffRequest`] | [`Groups`] |
-//! | [`file`] | one of them, in four | a [`ChangedFile`] | a [`Buffer`] |
+//! | [`file`] | one of them, in four | a [`ChangedFile`] | a [`DiffContent`] |
 //!
-//! [`Buffer`]: ui::Buffer
+//! [`ChangedFile`]: file_types::ChangedFile
+//! [`DiffContent`]: file::DiffContent
 //! [`ExplorerDiffRequest`]: explorer::ExplorerDiffRequest
 //! [`Groups`]: explorer::Groups
 //!
@@ -19,7 +20,7 @@
 //! join: the reader picks a row, and the row is already the next request.
 //!
 //! ```text
-//! list ──▶ Groups ──▶ (a row) ──▶ file ──▶ Buffer
+//! list ──▶ Groups ──▶ (a row) ──▶ file ──▶ DiffContent
 //! ```
 //!
 //! The file pipeline used to search for a file by path, which was the list
@@ -27,11 +28,12 @@
 //! reader chose. It answered `HEAD → worktree` for everything, so one path had
 //! three different diffs depending on how it was reached. See D58.
 //!
-//! This lives in the binary because it is the only crate allowed to name
-//! `vcs`, `vscode-diff`, `align`, `explorer` and `ui` together — `cargo xtask
-//! lint-arch` forbids those edges everywhere else. A renderer that could
-//! assemble its own input would be a renderer that can shell out to git, which
-//! is the failure that produced a 674-line `explorer/render.lua` in the plugin.
+//! **This crate must never name `ui`.** It is the only one that names `vcs`,
+//! `vscode-diff`, `align` and `explorer` together, and `ui` depends on it —
+//! the interface owns the threads that run these, because it owns the loop
+//! that collects from them. An answer therefore stops at [`DiffContent`], which
+//! is data; deciding what to *draw* from it is the interface's, and pointing
+//! that arrow back would be a cycle.
 
 pub mod file;
 pub mod list;

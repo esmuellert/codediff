@@ -10,7 +10,7 @@ use explorer::{Entry, ExplorerDiffRequest, Group, Groups};
 use vcs::Git;
 use vcs::git::{Changes, Counts};
 
-use crate::pipeline::list::resolver::{Plan, Resolved};
+use crate::list::resolver::{Plan, Resolved};
 
 /// Answers stage two: go and get the files.
 pub fn read(resolved: Resolved, request: &ExplorerDiffRequest) -> Result<Groups> {

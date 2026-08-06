@@ -7,10 +7,11 @@
 use anyhow::Result;
 use file_types::ChangedFile;
 use file_types::{DiffVersion, FileContent};
+use pipeline::file::DiffContent;
 
-use crate::pipeline::file::Runner;
-use crate::pipeline::list;
 use crate::text::visible;
+use pipeline::file::Runner;
+use pipeline::list;
 
 /// The file at `path`, as the list found it.
 ///
@@ -26,8 +27,8 @@ fn find(path: &str) -> Result<file_types::ChangedFile> {
     let cwd = std::env::current_dir()?;
     let git = vcs::Git::open(&cwd)?;
     let root = git.repo().root.clone();
-    let request = explorer::ExplorerDiffRequest::worktree(root.clone())
-        .with_pathspec(vec![path.to_owned()]);
+    let request =
+        explorer::ExplorerDiffRequest::worktree(root.clone()).with_pathspec(vec![path.to_owned()]);
 
     if let Some(file) = list::files(&request)?.into_iter().next() {
         return Ok(file);
@@ -63,18 +64,18 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
         return one_sided(&runner, version);
     }
 
-    // The same buffer the interface is given, read rather than drawn. Any
+    // The same content the interface is given, read rather than drawn. Any
     // disagreement between this and the screen would have to come from
     // drawing, since there is only one source for both.
-    let buffer = runner.run()?;
-    let Some(alignment) = buffer.alignment() else {
+    let content = runner.run()?;
+    let DiffContent::Paired { alignment, .. } = &content else {
         unreachable!("two sides were read, so this is a diff");
     };
     println!(
         "{} line(s) -> {} line(s), {} view line(s), {} change(s)",
         alignment.lines(DiffVersion::Original).len(),
         alignment.lines(DiffVersion::Modified).len(),
-        alignment.view_line_count(::align::DiffLayout::SideBySide),
+        alignment.view_line_count(file_types::DiffType::SideBySide),
         alignment.changes().len()
     );
     println!();

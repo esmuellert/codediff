@@ -40,6 +40,8 @@ pub use pane::Pane;
 pub use tab::{Layout, PaneId, Tab};
 pub use viewport::Viewport;
 
+use file_types::DiffType;
+
 use crate::input::KeymapType;
 use crate::syntax::{Store, Syntax, Version};
 
@@ -295,7 +297,7 @@ impl View {
             let buffer = &self.buffers[id];
             let view_line = buffer
                 .alignment()?
-                .view_line_at(buffer.layout()?, version, line)?;
+                .view_line_at(buffer.diff_type()?, version, line)?;
             Some((view_line, buffer.view_lines()))
         });
         if let Some((view_line, total)) = landing {
@@ -312,7 +314,11 @@ impl View {
     /// there is. `None` when nothing on screen has two versions to lay out.
     fn reading(&self) -> Option<PaneId> {
         let tab = self.tab();
-        let is_diff = |id: PaneId| self.buffers[tab.pane(id).buffer.0].layout().is_some();
+        let is_diff = |id: PaneId| {
+            self.buffers[tab.pane(id).buffer.0]
+                .diff_type()
+                .is_some_and(DiffType::is_paired)
+        };
         let focus = tab.focus();
         if is_diff(focus) {
             return Some(focus);
@@ -322,7 +328,7 @@ impl View {
 
     fn line_at(&self, id: usize, view_line: u32) -> Option<(align::DiffVersion, u32)> {
         let buffer = &self.buffers[id];
-        buffer.alignment()?.line_at(buffer.layout()?, view_line)
+        buffer.alignment()?.line_at(buffer.diff_type()?, view_line)
     }
 
     pub fn overlays(&self) -> &[Overlay] {

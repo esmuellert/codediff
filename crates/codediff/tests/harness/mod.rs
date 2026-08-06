@@ -15,11 +15,12 @@
 #![allow(dead_code)]
 
 use file_types::{File, Oid, RepoPath, Revs};
+use pipeline::file::DiffContent;
 use ui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ui::ratatui::Terminal;
 use ui::ratatui::backend::TestBackend;
 use ui::ratatui::buffer::Buffer as Cells;
-use ui::{Buffer, Diff, DiffLayout, Session, Theme};
+use ui::{Buffer, Session, Theme};
 
 /// The ordinary comparison, since these tests never open a repository.
 pub fn revs() -> Revs {
@@ -51,12 +52,15 @@ pub fn with_diff(
     let original = vscode_diff::lines(before);
     let modified = vscode_diff::lines(after);
     let alignment = align::Alignment::new(computed, &original, &modified);
-    Buffer::diff(Diff::new(file(label), alignment), DiffLayout::SideBySide)
+    Buffer::diff(DiffContent::Paired {
+        file: file(label),
+        alignment,
+    })
 }
 
 /// A buffer for a file present on both sides, shown alone.
 pub fn single(label: &str, contents: &str) -> Buffer {
-    Buffer::single_file(file(label), &vscode_diff::lines(contents))
+    Buffer::diff(lone(file(label), contents))
 }
 
 /// A buffer for a file that exists only on the modified side.
@@ -65,7 +69,20 @@ pub fn single(label: &str, contents: &str) -> Buffer {
 /// point of `File` and the reason a test cannot fake it with a label.
 pub fn added(label: &str, contents: &str) -> Buffer {
     let file = File::added(RepoPath::new(label, std::path::Path::new("/repo")), revs());
-    Buffer::single_file(file, &vscode_diff::lines(contents))
+    Buffer::diff(lone(file, contents))
+}
+
+/// One version of a file, as the pipeline would hand it over.
+fn lone(file: File, contents: &str) -> DiffContent {
+    DiffContent::Single {
+        file,
+        lines: std::sync::Arc::new(
+            vscode_diff::lines(contents)
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect(),
+        ),
+    }
 }
 
 /// A session over a side-by-side buffer, in the default dark theme.

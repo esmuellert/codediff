@@ -4,8 +4,9 @@
 //! the left column must read as exactly the original file and the right as
 //! exactly the modified one, which a human can confirm by looking.
 
-use ::align::{Alignment, DiffLayout, DiffVersion, Slot, ViewLine, ViewLineType};
+use ::align::{Alignment, DiffVersion, Slot, ViewLine, ViewLineType};
 use anyhow::{Context, Result};
+use file_types::DiffType;
 
 use crate::text::{expand_str, fit, pad, visible};
 
@@ -40,7 +41,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
 /// Shared with `debug diff-file`, which finds its two sides through git rather
 /// than being handed them, but renders the result identically.
 pub fn print(alignment: &Alignment, verbose: bool) {
-    for line in alignment.view_lines(DiffLayout::SideBySide) {
+    for line in alignment.view_lines(DiffType::SideBySide) {
         println!("{}", rendered(alignment, &line));
     }
     if verbose {
@@ -60,7 +61,7 @@ fn header(
         "{} lines -> {} lines, {} view lines",
         original.len(),
         modified.len(),
-        alignment.view_line_count(DiffLayout::SideBySide)
+        alignment.view_line_count(DiffType::SideBySide)
     );
     println!(
         "{} change(s), {} move(s), {} hunk(s){}",
@@ -162,7 +163,7 @@ fn detail(alignment: &Alignment) {
     println!();
     println!("character changes");
     let mut any = false;
-    for line in alignment.view_lines(DiffLayout::SideBySide) {
+    for line in alignment.view_lines(DiffType::SideBySide) {
         if line.kind != ViewLineType::Modified {
             continue;
         }

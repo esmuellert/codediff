@@ -1,0 +1,21 @@
+[package]
+name = "pipeline"
+description = "From a request to something the interface can draw."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+align.workspace = true
+explorer.workspace = true
+file-types.workspace = true
+vcs.workspace = true
+vscode-diff.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

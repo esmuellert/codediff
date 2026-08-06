@@ -25,24 +25,16 @@ use crate::syntax::{Spans, Store, Syntax, SyntaxRequest, Version, path_of};
 pub struct Diff {
     file: File,
     alignment: Alignment,
-    /// Which content those keys are for, so a late answer for a file that
-    /// has since changed can be told apart and dropped.
-    version: Version,
 }
 
 impl Diff {
-    /// A diff that has not been coloured and never will be.
+    /// A diff that has not been coloured.
     ///
-    /// What the pipeline builds. Colouring starts when the interface asks for
-    /// it, which is the composition root's business rather than the
-    /// pipeline's — `ui` owns the thread because `ui` owns the loop that
-    /// collects from it.
+    /// Built from what the pipeline read. Colouring starts when the interface
+    /// asks for it, which is why nothing here carries a colour: `ui` owns the
+    /// store and the thread, because `ui` owns the loop that collects from it.
     pub fn new(file: File, alignment: Alignment) -> Self {
-        Self {
-            file,
-            alignment,
-            version: Version(0),
-        }
+        Self { file, alignment }
     }
 
     /// Asks for everything up to `want`, on both sides.
@@ -51,7 +43,6 @@ impl Diff {
     /// the ordinary case after the first screen and the whole reason the
     /// store is on this side of the thread.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        self.version = version;
         for side in [DiffVersion::Original, DiffVersion::Modified] {
             let (Some(key), Some(path)) = (self.key(side), path_of(&self.file, side)) else {
                 continue;

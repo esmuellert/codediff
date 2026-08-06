@@ -15,6 +15,7 @@ file-types.workspace = true
 align.workspace = true
 explorer.workspace = true
 line-index.workspace = true
+pipeline.workspace = true
 syntax.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true

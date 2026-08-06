@@ -18,13 +18,12 @@
 //! resolving and dispatching are separate: [`crate::input`] would have to
 //! reach the view, the terminal and the task runner at once to do both.
 
+use pipeline::file::{Answer, Files};
 use ratatui::backend::Backend;
 
 use crate::draw;
 use crate::input::tab::RESIZE_STEP;
-use crate::input::{
-    Action, Command, ProgramAction, Resolution, Resolver, TabAction, TaskAction, ViewAction,
-};
+use crate::input::{Action, Command, ProgramAction, Resolution, Resolver, TabAction, ViewAction};
 use crate::syntax::{Store, Syntax};
 use crate::terminal::Screen;
 use crate::theme::Theme;
@@ -44,13 +43,6 @@ pub enum Flow {
     /// Give the terminal back until the reader brings us forward again.
     Suspend,
     Quit,
-    /// Something has to happen that this crate cannot do.
-    ///
-    /// Returned rather than performed, which is the whole seam: `ui` names
-    /// what it wants and [`run`]'s caller supplies the means. Without it,
-    /// opening a file from the list would need a repository in here, and
-    /// `cargo xtask lint-arch` forbids that edge.
-    Task(TaskAction),
 }
 
 /// One review, from opening the terminal to giving it back.
@@ -60,6 +52,15 @@ pub struct Session {
     resolver: Resolver,
     /// The thread that colours, and the queues to it.
     syntax: Syntax,
+    /// The thread that compares, and the queues to it.
+    files: Files,
+    /// The row the reader last chose, until its comparison is installed.
+    ///
+    /// Held rather than sent straight on, because only one comparison runs at
+    /// a time: a reader moving down a list faster than git can answer leaves
+    /// this pointing at wherever they got to, and that is what is asked for
+    /// next. An answer for anything else is discarded on arrival.
+    wanted: Option<file_types::ChangedFile>,
     /// Every colour anything open has. Owned here rather than by a buffer, so
     /// a file keeps its colours when the reader moves away and comes back.
     store: Store,
@@ -78,6 +79,14 @@ impl Session {
     /// One constructor, because how a buffer is drawn follows from its kind
     /// rather than from which function the caller chose.
     pub fn new(buffer: Buffer, theme: Theme) -> Self {
+        Self::with_files(buffer, theme, Files::start())
+    }
+
+    /// The same, with a worker supplied.
+    ///
+    /// **For tests, and for nothing else** — [`Files::canned`] is the reason
+    /// it exists. A review always starts the real one.
+    pub fn with_files(buffer: Buffer, theme: Theme, files: Files) -> Self {
         let mut syntax = Syntax::start();
         let mut store = Store::new();
         let mut view = View::single(buffer);
@@ -89,6 +98,8 @@ impl Session {
             theme,
             resolver: Resolver::new(),
             syntax,
+            files,
+            wanted: None,
             store,
             notice: None,
         }
@@ -208,15 +219,84 @@ impl Session {
         Ok(())
     }
 
-    /// Opens whatever the list has selected, and says so if it cannot.
+    /// Asks for whatever the list has selected.
     ///
-    /// The one place a task's result comes back in. A failure is a notice on
-    /// the status line rather than an exit: a repository can hold one file
-    /// that cannot be read, and quitting over it would lose the review.
-    pub fn open(&mut self, open: Open<'_>) {
-        let Some(file) = self.selected_file() else {
-            return;
+    /// **Returns at once.** The comparison arrives on a later frame, and until
+    /// it does the screen keeps showing whatever was there — the list stays
+    /// live, and every key still answers. A 50,000-line file takes about a
+    /// second to compare, which used to be a second of dead terminal.
+    ///
+    /// Nothing is sent here. [`request_file`](Self::request_file) does that,
+    /// once, when the worker is free.
+    pub fn open(&mut self) {
+        self.wanted = self.selected_file();
+    }
+
+    /// Whether a comparison is outstanding.
+    ///
+    /// What decides, with [`painting`](Self::painting), whether the loop waits
+    /// for a frame or for a key.
+    pub fn opening(&self) -> bool {
+        self.files.working()
+    }
+
+    /// Asks the worker for the row the reader chose.
+    ///
+    /// Called after every event, beside [`request`](Self::request), and silent
+    /// unless there is something to ask for. Does nothing while an answer is
+    /// outstanding: what the reader wanted meanwhile was not queued, so this
+    /// is where it is asked for again, with a row that is current by now.
+    pub fn request_file(&mut self) {
+        if let Some(file) = &self.wanted {
+            self.files.want(file);
+        }
+    }
+
+    /// Installs a comparison if one has arrived, and says whether the screen
+    /// changed.
+    ///
+    /// Never waits. Costs a few nanoseconds when there is nothing.
+    pub fn collect_file(&mut self) -> bool {
+        let Some(answer) = self.files.take() else {
+            return false;
         };
+        // The reader moved off this row while it was being compared, so this
+        // answers a question nobody is asking any more. Dropped rather than
+        // shown: `request_file` asks again for wherever they are now.
+        if self.wanted.as_ref() != Some(&answer.file) {
+            return false;
+        }
+        self.wanted = None;
+        self.install(answer)
+    }
+
+    /// Waits for the comparison that is outstanding.
+    ///
+    /// **For tests, and for nothing else.** The interface must never wait for
+    /// a comparison — that is the whole reason the pipeline has a thread — but
+    /// a test asserting about a pane has to know when to look. It uses the
+    /// same calls the loop does, so it exercises the real path, and it blocks
+    /// on the channel rather than sleeping.
+    ///
+    /// Returns whether anything was installed.
+    pub fn opened(&mut self) -> bool {
+        self.request_file();
+        let Some(answer) = self.files.wait() else {
+            return false;
+        };
+        if self.wanted.as_ref() != Some(&answer.file) {
+            return false;
+        }
+        self.wanted = None;
+        self.install(answer)
+    }
+
+    /// Puts a finished comparison on screen, or says why there is none.
+    ///
+    /// A failure is a notice on the status line rather than an exit: a
+    /// repository can hold one file that cannot be read, and quitting over it
+    /// would lose the review.
+    fn install(&mut self, answer: Answer) -> bool {
         // Where the reader was, if this is the file they are already on. Kept
         // rather than used to refuse the work: a working-tree file can change
         // under an open review, and this is the only gesture that re-reads it,
@@ -226,13 +306,13 @@ impl Session {
         // The cursor of the pane showing the *file*, not of the focused pane —
         // which is the list, since that is what the reader pressed enter in.
         let keep = self
-            .showing(&file)
+            .showing(&answer.file)
             .then(|| self.view.tab().shown())
             .flatten()
             .map(|id| self.view.pane_for(id).viewport.cursor());
-        match open(&file) {
-            Ok(buffer) => {
-                self.view.show(buffer);
+        match answer.content {
+            Ok(content) => {
+                self.view.show(Buffer::diff(content));
                 if let Some(line) = keep {
                     let id = self.view.tab().shown().expect("just shown");
                     let rows = self.view.buffer(id).view_lines();
@@ -244,13 +324,14 @@ impl Session {
                 self.notice = None;
                 // A buffer that has just arrived on screen has no colours, and
                 // nothing else will ask for them until the reader presses a
-                // key. The first file is opened before the loop starts, so
+                // key. The first file is asked for before the loop starts, so
                 // without this it stays in plain text until they touch
                 // something — which is what happened.
                 self.request();
             }
             Err(why) => self.notice = Some(why),
         }
+        true
     }
 
     /// Whether this exact comparison is already in the pane beside the list.
@@ -311,8 +392,8 @@ impl Session {
     ///
     /// The arms are the levels, in containment order. An action goes to the
     /// lowest level that contains everything it affects: a motion to the
-    /// focused buffer, quitting to the terminal's owner, anything needing IO
-    /// out of the crate entirely.
+    /// focused buffer, quitting to the terminal's owner, opening to the view
+    /// that will hold what comes back.
     fn dispatch(&mut self, command: Command) -> Flow {
         match command.action {
             Action::Buffer(action) => {
@@ -351,71 +432,66 @@ impl Session {
                 self.view.toggle_syntax();
                 Flow::Continue
             }
+            // A directory folds where it stands, and only a file is asked for.
+            // Which of the two the row is, is the buffer's answer: this level
+            // knows that a list can deal with its own selection, not what a
+            // list is.
+            Action::View(ViewAction::Open) => {
+                let (buffer, viewport) = self.view.focused_mut();
+                let cursor = viewport.cursor();
+                if buffer.select(cursor) {
+                    let lines = buffer.view_lines();
+                    viewport.jump(cursor.min(lines.saturating_sub(1)), lines);
+                } else {
+                    self.open();
+                }
+                Flow::Continue
+            }
             Action::Program(ProgramAction::Quit) => Flow::Quit,
             Action::Program(ProgramAction::Suspend) => Flow::Suspend,
             // Everything is redrawn after every event already; this exists so
             // a reader whose screen has been corrupted by another program has
             // something to press.
             Action::Program(ProgramAction::Redraw) => Flow::Continue,
-            // A directory folds where it stands, and only a file has to leave
-            // the crate. Which of the two the row is, is the buffer's answer:
-            // this level knows that a list can deal with its own selection,
-            // not what a list is.
-            Action::Task(TaskAction::Open) => {
-                let (buffer, viewport) = self.view.focused_mut();
-                let cursor = viewport.cursor();
-                if buffer.select(cursor) {
-                    let lines = buffer.view_lines();
-                    viewport.jump(cursor.min(lines.saturating_sub(1)), lines);
-                    Flow::Continue
-                } else {
-                    Flow::Task(TaskAction::Open)
-                }
-            }
         }
     }
 }
 
-/// Building something to show for one file the reader picked out of a list.
-///
-/// The other half of [`TaskAction`]: the enum names the request, this performs
-/// it. `ui` cannot — `cargo xtask lint-arch` forbids a renderer from reaching
-/// git — so the caller supplies it.
-///
-/// A function rather than a trait. It has one method, no state and one
-/// implementor, which is a closure wearing a name; naming it needed a noun for
-/// something that is a verb, and two attempts produced `Opener` and `Root` —
-/// one an `-er` name the house rules ban, the other a word already taken by
-/// the repository root.
-///
-/// The file carries the revisions of both its sides, so it says which versions
-/// to read without being told which group the row was in. The `String` is what
-/// the status line will show when it cannot be read.
-pub type Open<'a> = &'a mut dyn FnMut(&file_types::ChangedFile) -> Result<Buffer, String>;
-
 /// Takes over the terminal and reviews until the reader quits.
+///
+/// One argument, because nothing in here has to be supplied from outside any
+/// more. The two workers are the session's, and both answer through a queue.
 ///
 /// The terminal is restored by [`Screen`]'s `Drop`, so an error returned from
 /// anywhere in here still leaves a usable shell.
-pub fn run(session: &mut Session, open: Open<'_>) -> std::io::Result<()> {
+pub fn run(session: &mut Session) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
+    // Before the first frame, so the file the caller asked for is already
+    // being compared while the terminal is set up. Without it nothing is
+    // outstanding, the wait below blocks for a key rather than for a frame,
+    // and the first file arrives only once the reader presses something.
+    session.request_file();
     session.draw(screen.terminal())?;
 
     loop {
-        // Whatever the worker finished since the last frame. Never waits.
-        if session.collect() {
-            // A file only ever has one request out at a time, so anything
-            // wanted while that one was running was dropped rather than
-            // queued. This is where it is asked for again, with a starting
-            // point that is now current.
+        // Whatever the workers finished since the last frame. Neither waits.
+        // Both are asked, not one and then the other, because a colour and a
+        // comparison can land on the same frame.
+        let coloured = session.collect();
+        let compared = session.collect_file();
+        if coloured || compared {
+            // Anything wanted while a request was running was dropped rather
+            // than queued. This is where it is asked for again, from a
+            // starting point that is now current.
             session.request();
+            session.request_file();
             session.draw(screen.terminal())?;
         }
 
-        // Where the thread sleeps. With colouring outstanding it gives up
-        // after a frame's worth of time so the next piece can be collected;
-        // otherwise it waits for a key and costs nothing until one arrives.
-        let Some(event) = screen.next_event(session.painting())? else {
+        // Where the thread sleeps. With work outstanding it gives up after a
+        // frame's worth of time so the next piece can be collected; otherwise
+        // it waits for a key and costs nothing until one arrives.
+        let Some(event) = screen.next_event(session.painting() || session.opening())? else {
             continue;
         };
 
@@ -423,10 +499,11 @@ pub fn run(session: &mut Session, open: Open<'_>) -> std::io::Result<()> {
             Flow::Quit => return Ok(()),
             Flow::Suspend => screen.suspend()?,
             Flow::Continue => {}
-            Flow::Task(TaskAction::Open) => session.open(open),
         }
-        // A motion may have brought lines into view that nothing has coloured.
+        // A motion may have brought lines into view that nothing has coloured,
+        // and enter may have chosen a row that nothing has compared.
         session.request();
+        session.request_file();
         session.draw(screen.terminal())?;
     }
 }

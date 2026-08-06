@@ -20,8 +20,9 @@
 
 use std::ops::Range;
 
-use align::{Alignment, DiffLayout};
-use file_types::File;
+use align::Alignment;
+use file_types::{DiffType, File};
+use pipeline::file::DiffContent;
 
 use super::{BufferType, Explorer, Inline, SideBySide, SingleFile};
 use crate::diff::Diff;
@@ -65,17 +66,23 @@ pub enum Direction {
 }
 
 impl Buffer {
-    /// A diff, laid out the given way.
-    pub fn diff(diff: Diff, layout: DiffLayout) -> Self {
-        Self::of(match layout {
-            DiffLayout::SideBySide => BufferType::SideBySide(SideBySide::new(diff)),
-            DiffLayout::Inline => BufferType::Inline(Inline::new(diff)),
+    /// A file the pipeline read, as something to draw.
+    ///
+    /// The one constructor for a file, because which kind of buffer it becomes
+    /// follows from what was read rather than from which function the caller
+    /// chose. A file with one version has nothing to lay out against, so it
+    /// cannot be shown either paired way; a file with two starts side by side,
+    /// which is where a reader starts, and `t` reads the same pairing inline
+    /// without rebuilding any of it. See D23 and D60.
+    pub fn diff(content: DiffContent) -> Self {
+        Self::of(match content {
+            DiffContent::Single { file, lines } => {
+                BufferType::SingleFile(SingleFile::new(file, lines))
+            }
+            DiffContent::Paired { file, alignment } => {
+                BufferType::SideBySide(SideBySide::new(Diff::new(file, alignment)))
+            }
         })
-    }
-
-    /// One version of a file, with nothing to compare it against.
-    pub fn single_file(file: File, lines: &[&str]) -> Self {
-        Self::of(BufferType::SingleFile(SingleFile::new(file, lines)))
     }
 
     /// The list of changed files.
@@ -163,9 +170,9 @@ impl Buffer {
         self.exhausted
     }
 
-    /// How this diff is laid out, if it is a diff at all.
-    pub fn layout(&self) -> Option<DiffLayout> {
-        self.buffer_type.layout()
+    /// Which of the three ways this shows a file, or `None` for the list.
+    pub fn diff_type(&self) -> Option<DiffType> {
+        self.buffer_type.diff_type()
     }
 
     pub fn alignment(&self) -> Option<&Alignment> {
@@ -240,11 +247,9 @@ impl Buffer {
     /// One keymap_type per kind, and per layout: a diff read inline has no
     /// second column, so the keys that move the divider are not bound there.
     pub fn keymap_type(&self) -> KeymapType {
-        match &self.buffer_type {
-            BufferType::SideBySide(_) => KeymapType::Diff(DiffLayout::SideBySide),
-            BufferType::Inline(_) => KeymapType::Diff(DiffLayout::Inline),
-            BufferType::SingleFile(_) => KeymapType::SingleFile,
-            BufferType::Explorer(_) => KeymapType::Explorer,
+        match self.buffer_type.diff_type() {
+            Some(diff_type) => KeymapType::File(diff_type),
+            None => KeymapType::Explorer,
         }
     }
 
@@ -308,10 +313,11 @@ impl Buffer {
 /// How tall the document is and which of its view lines changed, both of which
 /// follow from the layout and neither of which is stored anywhere else.
 fn counts(buffer_type: &BufferType) -> (u32, Vec<Range<u32>>) {
-    match (buffer_type.alignment(), buffer_type.layout()) {
-        (Some(alignment), Some(layout)) => {
-            (alignment.view_line_count(layout), alignment.blocks(layout))
-        }
+    match (buffer_type.alignment(), buffer_type.diff_type()) {
+        (Some(alignment), Some(diff_type)) => (
+            alignment.view_line_count(diff_type),
+            alignment.blocks(diff_type),
+        ),
         // Nothing to compare against: one view line per file line, and no
         // changes, because nothing here changed *relative to* anything.
         _ => (buffer_type.lines(), Vec::new()),

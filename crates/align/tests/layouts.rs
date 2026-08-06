@@ -11,7 +11,8 @@
 //! interleaved wrongly, an unchanged run mispaired, a change's lines counted
 //! against the wrong side.
 
-use align::{Alignment, DiffLayout, DiffVersion, ViewLineType};
+use align::{Alignment, DiffVersion, ViewLineType};
+use file_types::DiffType;
 use vscode_diff::{LinesDiff, Options};
 
 fn split(text: &str) -> Vec<&str> {
@@ -30,7 +31,7 @@ fn aligned(original: &str, modified: &str) -> Alignment {
 }
 
 /// Every line of one version, in the order the lines put them.
-fn read_back(alignment: &Alignment, layout: DiffLayout, version: DiffVersion) -> Vec<&str> {
+fn read_back(alignment: &Alignment, layout: DiffType, version: DiffVersion) -> Vec<&str> {
     alignment
         .view_lines(layout)
         .filter_map(|line| match version {
@@ -94,8 +95,8 @@ fn both_layouts_read_back_as_the_same_two_files() {
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         for version in [DiffVersion::Original, DiffVersion::Modified] {
-            let paired = read_back(&alignment, DiffLayout::SideBySide, version);
-            let inline = read_back(&alignment, DiffLayout::Inline, version);
+            let paired = read_back(&alignment, DiffType::SideBySide, version);
+            let inline = read_back(&alignment, DiffType::Inline, version);
             assert_eq!(paired, inline, "{name}, {version:?}");
             assert_eq!(
                 paired,
@@ -110,7 +111,7 @@ fn both_layouts_read_back_as_the_same_two_files() {
 fn a_counted_layout_is_as_tall_as_it_walks() {
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
-        for layout in [DiffLayout::SideBySide, DiffLayout::Inline] {
+        for layout in [DiffType::SideBySide, DiffType::Inline] {
             assert_eq!(
                 alignment.view_line_count(layout) as usize,
                 alignment.view_lines(layout).count(),
@@ -127,8 +128,8 @@ fn inline_is_never_shorter_than_side_by_side() {
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         assert!(
-            alignment.view_line_count(DiffLayout::Inline)
-                >= alignment.view_line_count(DiffLayout::SideBySide),
+            alignment.view_line_count(DiffType::Inline)
+                >= alignment.view_line_count(DiffType::SideBySide),
             "{name}"
         );
     }
@@ -140,7 +141,7 @@ fn no_inline_row_holds_both_versions_unless_they_agree() {
     // the only exception is an unchanged line, which both versions share.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
-        for line in alignment.view_lines(DiffLayout::Inline) {
+        for line in alignment.view_lines(DiffType::Inline) {
             if line.original.line().is_some() && line.modified.line().is_some() {
                 assert_eq!(line.kind, ViewLineType::Unchanged, "{name}: {line:?}");
             }
@@ -153,7 +154,7 @@ fn inline_shows_what_was_there_before_what_replaced_it() {
     // Reading the other order would describe an edit backwards.
     let alignment = aligned("a\nb\nc", "a\nX\nc");
     let kinds: Vec<_> = alignment
-        .view_lines(DiffLayout::Inline)
+        .view_lines(DiffType::Inline)
         .map(|l| l.kind)
         .collect();
     assert_eq!(
@@ -171,7 +172,7 @@ fn inline_shows_what_was_there_before_what_replaced_it() {
 fn a_view_line_maps_to_a_file_line_and_back_within_its_own_layout() {
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
-        for layout in [DiffLayout::SideBySide, DiffLayout::Inline] {
+        for layout in [DiffType::SideBySide, DiffType::Inline] {
             for view_line in 0..alignment.view_line_count(layout) {
                 let Some((version, line)) = alignment.line_at(layout, view_line) else {
                     continue;
@@ -192,15 +193,15 @@ fn a_file_line_keeps_its_place_when_the_layout_changes() {
     // other layout, but the line it shows is not.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
-        for view_line in 0..alignment.view_line_count(DiffLayout::SideBySide) {
-            let Some((version, line)) = alignment.line_at(DiffLayout::SideBySide, view_line) else {
+        for view_line in 0..alignment.view_line_count(DiffType::SideBySide) {
+            let Some((version, line)) = alignment.line_at(DiffType::SideBySide, view_line) else {
                 continue;
             };
             let moved = alignment
-                .view_line_at(DiffLayout::Inline, version, line)
+                .view_line_at(DiffType::Inline, version, line)
                 .unwrap_or_else(|| panic!("{name}: line {line} has no inline line"));
             assert_eq!(
-                alignment.line_at(DiffLayout::Inline, moved),
+                alignment.line_at(DiffType::Inline, moved),
                 Some((version, line)),
                 "{name}: landed somewhere else"
             );
@@ -212,7 +213,7 @@ fn a_file_line_keeps_its_place_when_the_layout_changes() {
 fn blocks_cover_every_changed_row_and_nothing_else() {
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
-        for layout in [DiffLayout::SideBySide, DiffLayout::Inline] {
+        for layout in [DiffType::SideBySide, DiffType::Inline] {
             let blocks = alignment.blocks(layout);
             let covered: Vec<u32> = blocks.iter().flat_map(|b| b.clone()).collect();
             let changed: Vec<u32> = alignment

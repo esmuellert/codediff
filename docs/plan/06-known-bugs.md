@@ -123,3 +123,27 @@ Refused with an error rather than corrupting the stream, which was the bug
 before. Reading it needs `git cat-file --batch -Z`, whose NUL framing would set
 a floor of git 2.42 — a trade not made anywhere else in this crate, so it is
 recorded rather than taken.
+
+---
+
+## B8 — three terminal tests still describe the pre-pathspec screen
+
+**Owner: the terminal tests.** `crates/codediff/tests/terminal.rs`.
+
+`codediff <path>` is a pathspec on the list now (D58), so it draws the split —
+list on the left with focus, file on the right — where it used to draw one
+buffer. Three tests still assert the old screen and fail:
+
+| test | what it assumes |
+|---|---|
+| `a_one_sided_file_is_drawn_in_one_pane` | no `│` anywhere; the split always draws one |
+| `a_change_key_with_nowhere_to_go_says_so_on_a_real_terminal` | `]c` reaches the diff, not the list |
+| `the_layout_key_is_delivered_by_a_real_terminal` | the status line is the diff's, not the list's |
+
+The last two need a `Tab` before their keys. The first needs a different
+assertion: with a split there is always one divider, so "no second column" can
+no longer be shown by its absence.
+
+They were hidden because `cargo test --workspace` stops at the first failing
+target and `--test pipeline` fails earlier. **Run the suite with
+`--no-fail-fast`**, or targets after the first failure never run at all.

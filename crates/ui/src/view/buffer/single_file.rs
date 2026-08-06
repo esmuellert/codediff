@@ -36,24 +36,16 @@ pub struct SingleFile {
     /// Which side the file is on. One, not two: there is only one version
     /// here, which is the whole difference from a diff.
     side: DiffVersion,
-    version: Version,
 }
 
 impl SingleFile {
-    /// Copies the lines in, as [`Alignment::new`] does, so a caller holding
-    /// borrowed lines need not convert them first.
-    ///
-    /// [`Alignment::new`]: align::Alignment::new
-    pub fn new(file: File, lines: &[&str]) -> Self {
+    /// Takes the lines as they are shared, so the pipeline's copy is the one
+    /// the colouring thread is handed.
+    pub fn new(file: File, lines: Arc<Vec<String>>) -> Self {
         // Whichever side exists: a lone file is one or the other, and the side
         // it is not has no path and so no language.
         let side = file.only().unwrap_or(DiffVersion::Modified);
-        Self {
-            side,
-            file,
-            lines: Arc::new(lines.iter().map(|line| (*line).to_owned()).collect()),
-            version: Version(0),
-        }
+        Self { side, file, lines }
     }
 
     /// What names this file's content, if it is on the side it claims.
@@ -74,7 +66,6 @@ impl SingleFile {
 
     /// Asks for everything up to `want`.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        self.version = version;
         let (Some(key), Some(path)) = (self.key(), path_of(&self.file, self.side)) else {
             return;
         };

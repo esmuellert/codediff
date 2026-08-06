@@ -2617,3 +2617,128 @@ Two more of the same kind, found together:
   `read_link` are what agree with git. A directory found the same way is a submodule, whose
   content is a commit id rather than bytes; it reads as absent, so the row says it cannot be
   shown rather than failing to read a directory as a file.
+
+## D57 — a group is a revision pair, not a category a file belongs to
+
+The explorer held a fixed `{unstaged, staged}` pair, so comparing two revisions had nowhere to
+put its files. The plugin this replaces met the same wall and wrote its way past it:
+
+```lua
+-- For revision comparison, we treat everything as "unstaged" for explorer compatibility
+```
+
+A group is now `{ name, revs, files }`. "Staged Changes" is not a category — it is the *name*
+for comparing the index against a commit, which every file in it already carries in its own
+`Revs`. `--rev A B` is one group named after its two revisions, and needs no pretending.
+
+What this buys is measurable: adding a way to compare touches **one file**,
+`pipeline/list/resolver.rs`, plus its arm of `ExplorerDiffType` and a command-line flag.
+Nothing in the explorer, the view or the drawing code learns a new word.
+
+## D58 — the file pipeline does not search; the list is the search
+
+The file pipeline had a first stage that found a file in git by path. That was the list
+pipeline written a second time, and worse: a search cannot know *which comparison* the reader
+chose, so it answered `HEAD → worktree` for everything. One path then had up to three different
+diffs depending on how it was reached — `codediff staged-then-edited.txt` compared 6 bytes that
+neither of that file's two rows compared.
+
+The stage is gone. A `ChangedFile` carries the revisions of both its sides, so the row *is* the
+request, and the two pipelines join at that type:
+
+```text
+list ──▶ Groups ──▶ (a row) ──▶ file ──▶ Comparison
+```
+
+`codediff <path>` is therefore a **pathspec on the list**, not a different mode: one code path,
+so a file reached by naming it and the same file reached by pressing enter on its row are the
+same comparison.
+
+## D59 — the interface asks, and never computes
+
+Opening a file used to leave the crate. `ui` could not reach git, so `Flow::Task` named the
+request and `run`'s caller performed it — a callback pointing *up*, out of the loop.
+
+The reason for the seam was real, and it was not the dependency. Measured on a 50,000-line file
+with one line in ten changed, the four stages take **1057 ms**, of which the C engine is 718 ms;
+and `max_computation_time_ms` puts the engine's own ceiling at 5 s. Every one of those
+milliseconds was a terminal that answered no keys.
+
+So the pipeline moved to a thread, exactly as colouring did in [D41](#d41):
+
+| thread | file | what it does off the drawing thread |
+|---|---|---|
+| syntax | `ui/src/syntax/mod.rs` | colours text |
+| file | `pipeline/src/file/service.rs` | reads two versions and pairs them |
+
+Both are one long-lived worker asleep on `recv`, one request in flight, nothing queued behind
+it. Asking costs a `send` on an unbounded channel, which std documents as never blocking, so
+`Flow::Task`, the `Tasks` trait and the `Open` callback are all gone and `ui::run` takes one
+argument again. `Open` is an ordinary `ViewAction` now, executed where it lands.
+
+**Which meant `pipeline` could stop naming `ui`.** It answers with an `align::Comparison` —
+data, not a projection — and `ui` decides which buffer kind to build from it, which inverts
+[D23](#d23)'s "the last place that knows": the answer carries what it knew. Without that
+inversion `ui → pipeline → ui` would be a Cargo cycle.
+
+**And it cost a lint rule its meaning.** `("ui", "vcs")` reads a `Cargo.toml`, so it says
+nothing once a crate sits between the two — `ui → pipeline → vcs` passes it. The rule that
+replaced it checks the *text* of `crates/ui/src` for `vcs::`, `vscode_diff::` and `std::fs`,
+which no intermediate crate can defeat, and which catches what the manifest rule never could.
+
+## D60 — one file has a `DiffType`, and it is never spelled as an absence
+
+One fork — *is there a second version to lay this against?* — was spelled five
+different ways, in four crates, and four of them said "no" by being empty:
+
+```rust
+File::only()          -> Option<DiffVersion>   // file-types
+BufferType::layout()  -> Option<DiffLayout>    // ui: None meant single file
+BufferType::alignment()-> Option<&Alignment>   // ui: None meant single file
+KeymapType            { Diff(DiffLayout), SingleFile, Explorer }
+align::Comparison     { OneSide, Both }        // a fifth, added and removed the same day
+```
+
+An `Option` is the wrong shape for it, and the keymap had already worked that out
+in its own doc comment — *"the explorer is a third answer, not an absent one"* —
+without noticing that `SingleFile` beside it was the same mistake it was warning about.
+
+**One enum, in `file-types`:**
+
+```rust
+pub enum DiffType { SideBySide, Inline, Single }
+```
+
+`align::DiffLayout` is gone; `DiffType` is what `Alignment::view_lines` and its
+five siblings take. `KeymapType` collapsed from three variants to two —
+`File(DiffType)` and `Explorer` — which is what the fork always was. The three
+`Buffer` constructors collapsed to two: `Buffer::diff` takes what the pipeline
+read and decides the kind from it, `Buffer::explorer` takes a list.
+
+**It is in `file-types` rather than `align` because every layer names it**, and
+the crate's own criterion had to widen to admit it: *"never how one is read,
+diffed, or drawn"* was written when nothing below `ui` had to say how a file is
+shown. `align`'s criterion — *does this say which line appears where* — refused
+it on inspection: every other file in that crate names only `DiffVersion`, and
+the one holding this reached for `File`. Neither `align` nor `ui` re-exports it;
+there is one name for it and one place to import it from.
+
+**What it cost.** `DiffType` is wider than `align`'s question. The old
+`DiffLayout` *was* that question — two variants, both a way of walking a
+pairing, both live — so its matches had no dead arm. `Single` is not a walk,
+and an `Alignment` is built only for a file with two sides, so four functions
+in `align/src/layout.rs` now carry an arm that cannot be reached. Each says so
+with an `unreachable!`, which is what `debug/diff_file.rs` already does for the
+same kind of invariant.
+
+Measured, by replacing all four with a panic and running the suite: **606
+tests, none reached one.** A `ViewLines::Unpaired` variant returning an empty
+iterator was tried first and removed — it added a public variant nothing can
+construct, and would have drawn an empty pane in silence if the invariant ever
+broke. Four unreachable arms is a smaller price than four `Option`s that each
+had to be read as a sentence.
+
+**What it caught.** Making the type total made the compiler name every site that
+had been hiding the fork — including `Diff::version` and `SingleFile::version`,
+two fields written on every request and read nowhere, which had been used to
+argue that these types belonged to `ui`.

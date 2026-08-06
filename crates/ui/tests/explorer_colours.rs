@@ -117,8 +117,15 @@ fn a_pane_that_does_not_have_focus_is_still_coloured() {
         theme.line_number.fg.unwrap(),
         "or nothing is proved"
     );
-    let mut session = Session::new(Buffer::explorer(only(vec![modified("src/lib.rs")])), theme);
-    session.open(&mut Fake("// a comment\nfn main() {}\n"));
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs")]),
+        theme,
+        vec![single(
+            unchanged("src/lib.rs"),
+            "// a comment\nfn main() {}\n",
+        )],
+    );
+    open_selected(&mut session);
     session.settle();
 
     // The list keeps focus, exactly as it does at startup.
@@ -150,14 +157,20 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
     // Two files, because opening the one already shown is refused — the
     // reader's place in it is worth more than a re-read they did not ask for.
     // Going away and coming back is how the same name is asked for twice.
-    let mut session = Session::new(
-        Buffer::explorer(only(vec![modified("a.rs"), modified("b.rs")])),
+    let mut session = scripted(
+        only(vec![modified("a.rs"), modified("b.rs")]),
         theme,
+        vec![
+            single(unchanged("a.rs"), "fn main() {}\n"),
+            single(unchanged("b.rs"), "struct Other;\n"),
+            // The first file again, by the same name, with different bytes.
+            single(unchanged("a.rs"), "// now a comment\n"),
+        ],
     );
     let area = Rect::new(0, 0, 80, 6);
     let mut cells = Cells::empty(area);
 
-    session.open(&mut Fake("fn main() {}\n"));
+    open_selected(&mut session);
     session.settle();
     session.draw_into(&mut cells, area);
     let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
@@ -168,12 +181,12 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
     );
 
     session.press(crokey::key!(j));
-    session.open(&mut Fake("struct Other;\n"));
+    open_selected(&mut session);
     session.settle();
     session.press(crokey::key!(k));
 
     // The first file again, by the same name, with different bytes behind it.
-    session.open(&mut Fake("// now a comment\n"));
+    open_selected(&mut session);
     session.settle();
     session.draw_into(&mut cells, area);
     let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();

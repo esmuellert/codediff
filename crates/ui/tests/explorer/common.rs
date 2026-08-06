@@ -5,7 +5,8 @@
 //! none of the three is the one that happens to own the fixtures.
 
 pub use explorer::{Entry, Group, Groups};
-pub use file_types::{ChangeType, ChangedFile, File, Oid, RepoPath, Rev, Revs, Stats};
+pub use file_types::{ChangeType, ChangedFile, DiffType, File, Oid, RepoPath, Rev, Revs, Stats};
+pub use pipeline::file::{DiffContent, Files};
 pub use ratatui::buffer::Buffer as Cells;
 pub use ratatui::layout::Rect;
 pub use ratatui::style::Color;
@@ -78,41 +79,62 @@ pub fn screen(session: &mut Session, width: u16, height: u16) -> Vec<String> {
         .collect()
 }
 
-/// A task runner that hands back one file, so a test can open a pane without a
-/// repository.
-pub struct Fake(pub &'static str);
-
-impl ui::Tasks for Fake {
-    fn open(&mut self, file: &ChangedFile) -> Result<Buffer, String> {
-        let lines: Vec<&str> = self.0.lines().collect();
-        Ok(Buffer::single_file(file.file.clone(), &lines))
-    }
+/// The file a [`modified`] row is built for, so its comparison can be
+/// scripted with the same revisions the row carries.
+pub fn unchanged(path: &str) -> File {
+    File::unchanged_path(at(path), revs())
 }
 
-/// A task runner that hands back a two-sided diff, which is what a layout key
-/// has anything to say about.
-pub struct FakeDiff(pub &'static str);
+/// One version of a file, as the worker would answer with it.
+///
+/// What a test hands to [`Files::canned`], in the order it expects rows to be
+/// opened. No repository is touched and no engine is run — what these check is
+/// what a pane shows, not how its contents were obtained.
+pub fn single(file: File, text: &str) -> Result<DiffContent, String> {
+    let lines = text.lines().map(str::to_owned).collect();
+    Ok(DiffContent::Single {
+        file,
+        lines: std::sync::Arc::new(lines),
+    })
+}
 
-impl ui::Tasks for FakeDiff {
-    fn open(&mut self, file: &ChangedFile) -> Result<Buffer, String> {
-        let lines: Vec<&str> = self.0.lines().collect();
-        // A file against itself: no engine is run, because `ui` may not name
-        // one, and none is needed — what this carries is a layout, not a
-        // pairing.
-        let alignment = align::Alignment::new(
-            diff_types::LinesDiff {
-                changes: Vec::new(),
-                moves: Vec::new(),
-                hit_timeout: false,
-            },
-            &lines,
-            &lines,
-        );
-        Ok(Buffer::diff(
-            ui::Diff::new(file.file.clone(), alignment),
-            ui::DiffLayout::SideBySide,
-        ))
-    }
+/// A two-sided comparison, which is what a layout key has anything to say
+/// about.
+///
+/// A file against itself: no engine is run, because `ui` may not name one, and
+/// none is needed — what this carries is a layout, not a pairing.
+pub fn paired(file: File, text: &str) -> Result<DiffContent, String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let alignment = align::Alignment::new(
+        diff_types::LinesDiff {
+            changes: Vec::new(),
+            moves: Vec::new(),
+            hit_timeout: false,
+        },
+        &lines,
+        &lines,
+    );
+    Ok(DiffContent::Paired { file, alignment })
+}
+
+/// A session over `groups`, whose worker answers from a script.
+///
+/// The theme stays at the call site: which one a colour test uses is part of
+/// what it checks — in `basic-dark` the comment, the line number and the
+/// indent guide are all `DarkGray`, so a test written against it can match the
+/// wrong thing and never fail.
+pub fn scripted(groups: Groups, theme: Theme, script: Vec<Result<DiffContent, String>>) -> Session {
+    Session::with_files(Buffer::explorer(groups), theme, Files::canned(script))
+}
+
+/// Opens the selected row and waits for its comparison.
+///
+/// The two calls the loop makes, without a terminal between them. The wait is
+/// what a test may do and the interface may not: the comparison is on a thread
+/// of its own, and an assertion about a pane has to know when to look.
+pub fn open_selected(session: &mut Session) {
+    session.open();
+    assert!(session.opened(), "nothing was installed");
 }
 
 /// The **column** `needle` starts at, which is not where `str::find` puts it.

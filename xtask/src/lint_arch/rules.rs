@@ -133,29 +133,49 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
     ("Handler", "the event it answers"),
 ];
 
-/// Directories that may not name a module of their own crate, and why.
+/// Directories that may not name something, and why.
 ///
-/// The boundary between a brick and a composition. `ui/src/render` draws onto
-/// a cell grid — rectangles, line numbers, one line of text — and is handed
-/// everything it needs; `ui/src/draw` is what knows that a side-by-side diff
-/// is two of those columns with a divider between them. If a brick could name
-/// a buffer it would stop being reusable by a buffer type that does not exist
-/// yet, and would stop being testable without a model.
+/// Two kinds of rule live here. The first is the boundary between a brick and
+/// a composition: `ui/src/render` draws onto a cell grid — rectangles, line
+/// numbers, one line of text — and is handed everything it needs; `ui/src/draw`
+/// is what knows that a side-by-side diff is two of those columns with a
+/// divider between them. If a brick could name a buffer it would stop being
+/// reusable by a buffer type that does not exist yet, and would stop being
+/// testable without a model.
+///
+/// The second is **what the drawing thread may not reach**. That used to be a
+/// pair of manifest rules — `ui` must not depend on `vcs` or `vscode-diff` —
+/// and those still stand, but they check a `Cargo.toml`, so they say nothing
+/// once a crate between the two exists. `ui` now depends on `pipeline`, which
+/// depends on both, and neither manifest rule fails. Checking the text
+/// instead cannot be defeated that way, and it catches things the manifest
+/// never could: `std::fs` was reachable the whole time. See D59.
+///
+/// `std::process` is not here because `terminal.rs` ends the program with it
+/// after a signal, which is the one place a process call is right.
 ///
 /// Checked as text rather than by the compiler because Rust has no way to say
 /// "this module may not import that one" within a crate.
-/// The one file allowed to start a thread, and why nowhere else may.
+/// The files allowed to start a thread, and why nowhere else may.
 ///
 /// Concurrency is the easiest thing in this program to get wrong and the
-/// hardest to test, so there is exactly one place it exists: the syntax
-/// worker, which colours text off the drawing thread. Everything else is
-/// single-threaded and can be reasoned about as such.
+/// hardest to test, so it exists in as few places as can be counted on one
+/// hand: one worker per kind of slow work, each a queue in and a queue out.
+/// Everything else is single-threaded and can be reasoned about as such.
 ///
-/// A second `spawn` anywhere would mean two things sharing the view, and the
-/// question "which thread owns this?" would stop having an obvious answer. If
-/// another background job is ever wanted, it belongs beside this one or behind
-/// the same channel — not in a new corner. See D41.
-pub const THREAD_FILE: &str = "crates/ui/src/syntax/mod.rs";
+/// A `spawn` outside this list would mean something sharing the view without
+/// a queue between them, and the question "which thread owns this?" would stop
+/// having an obvious answer. Another background job belongs beside one of
+/// these or behind the same channel — not in a new corner. See D41 and D59.
+///
+/// | file | what it does off the drawing thread |
+/// |---|---|
+/// | `ui/src/syntax/mod.rs` | colours text |
+/// | `pipeline/src/file/service.rs` | reads two versions and pairs them |
+pub const THREAD_FILES: &[&str] = &[
+    "crates/ui/src/syntax/mod.rs",
+    "crates/pipeline/src/file/service.rs",
+];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 
 pub const BLIND_DIRS: &[(&str, &str, &str)] = &[
@@ -173,5 +193,20 @@ pub const BLIND_DIRS: &[(&str, &str, &str)] = &[
         "crates/ui/src",
         "syntax::engine",
         "the engines' own words live in `syntax`; `ui` asks for a palette and a role",
+    ),
+    (
+        "crates/ui/src",
+        "vcs::",
+        "a renderer must not be able to reach git, whatever its manifest says",
+    ),
+    (
+        "crates/ui/src",
+        "vscode_diff::",
+        "rendering consumes model types, it does not compute diffs",
+    ),
+    (
+        "crates/ui/src",
+        "std::fs",
+        "the drawing thread must not touch the disk — a frame has no time for it",
     ),
 ];

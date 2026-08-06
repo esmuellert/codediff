@@ -5,13 +5,13 @@
 //! buffer kind claims a key without anyone else having to know — `<` narrows
 //! a diff's column divider here, and falls through to the tab elsewhere.
 
-use align::DiffLayout;
 use crokey::{KeyCombination, key};
+use file_types::DiffType;
 
 use crate::input::command::Action;
 use crate::input::keymap::{Binding, KeymapType};
 use crate::input::tab::{self, TabAction};
-use crate::input::task::TaskAction;
+use crate::input::view::ViewAction;
 
 /// Something the focused buffer does, to itself or to the viewport it is lent.
 ///
@@ -79,9 +79,9 @@ pub const DIVIDER_STEP: u16 = 5;
 /// same keys whatever has focus.
 pub const fn bindings(keymap_type: KeymapType) -> &'static [&'static [Binding]] {
     match keymap_type {
-        KeymapType::Diff(DiffLayout::SideBySide) => &[MOTIONS, CHANGES, TWO_COLUMNS],
-        KeymapType::Diff(DiffLayout::Inline) => &[MOTIONS, CHANGES],
-        KeymapType::SingleFile => &[MOTIONS],
+        KeymapType::File(DiffType::SideBySide) => &[MOTIONS, CHANGES, TWO_COLUMNS],
+        KeymapType::File(DiffType::Inline) => &[MOTIONS, CHANGES],
+        KeymapType::File(DiffType::Single) => &[MOTIONS],
         KeymapType::Explorer => &[MOTIONS, LIST],
     }
 }
@@ -141,11 +141,11 @@ pub const LIST: &[Binding] = &[
     // what a reader coming from the plugin will press.
     Binding {
         keys: &[key!(enter)],
-        action: Action::Task(TaskAction::Open),
+        action: Action::View(ViewAction::Open),
     },
     Binding {
         keys: &[key!(o)],
-        action: Action::Task(TaskAction::Open),
+        action: Action::View(ViewAction::Open),
     },
     buffer(&[key!(i)], BufferAction::ToggleViewMode),
     buffer(&[key!(s)], BufferAction::ToggleStats),

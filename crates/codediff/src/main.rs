@@ -8,7 +8,6 @@
 mod cli;
 mod debug;
 mod doctor;
-mod pipeline;
 mod text;
 
 use anyhow::{Context, Result, bail};
@@ -45,16 +44,12 @@ fn main() -> Result<()> {
 }
 
 /// Reviews everything that changed: the list, and whatever it opens.
-fn explore(
-    diff_type: ExplorerDiffType,
-    pathspec: Vec<String>,
-    theme: Option<&str>,
-) -> Result<()> {
+fn explore(diff_type: ExplorerDiffType, pathspec: Vec<String>, theme: Option<&str>) -> Result<()> {
     let theme = theme_for(theme)?;
     let cwd = std::env::current_dir().context("finding the current directory")?;
     let repo = vcs::Git::open(&cwd).context("opening a repository")?;
-    let request = ExplorerDiffRequest::new(repo.repo().root.clone(), diff_type)
-        .with_pathspec(pathspec);
+    let request =
+        ExplorerDiffRequest::new(repo.repo().root.clone(), diff_type).with_pathspec(pathspec);
     let groups = pipeline::list::run(&request)?;
 
     // Refused rather than opened. An empty list on a full screen looks like a
@@ -65,10 +60,12 @@ fn explore(
     }
 
     let mut session = ui::Session::new(ui::Buffer::explorer(groups), theme);
-    // The first file is opened before the terminal does, so the reader arrives
-    // at a diff rather than at a list they must press a key to use.
-    session.open(&mut pipeline::file::open);
-    ui::run(&mut session, &mut pipeline::file::open).context("running the review interface")
+    // The first file is asked for before the terminal opens, so it is already
+    // being compared while the screen is set up. It arrives a frame or two
+    // after the list rather than before it: a comparison runs on a thread of
+    // its own now, and the list is usable while it does.
+    session.open();
+    ui::run(&mut session).context("running the review interface")
 }
 
 /// The theme named on the command line, or the one the terminal suggests.
@@ -83,5 +80,3 @@ fn theme_for(name: Option<&str>) -> Result<Theme> {
         None => Ok(Theme::from_environment()),
     }
 }
-
-

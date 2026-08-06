@@ -10,8 +10,6 @@
 use anyhow::Result;
 use explorer::{ExplorerDiffRequest, ExplorerDiffType};
 
-use crate::pipeline;
-
 /// Prints every group, and every file in it.
 pub fn run(diff_type: ExplorerDiffType, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;

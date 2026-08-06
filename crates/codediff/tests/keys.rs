@@ -233,7 +233,7 @@ fn change_navigation_works_the_same_in_both_layouts() {
 fn line_under_cursor(session: &ui::Session) -> String {
     let buffer = session.view().focused_buffer();
     let alignment = buffer.alignment().expect("these tests build a diff");
-    let layout = buffer.layout().expect("these tests build a diff");
+    let layout = buffer.diff_type().expect("these tests build a diff");
     let (version, line) = alignment
         .line_at(layout, cursor(session))
         .expect("the cursor is on a line");
