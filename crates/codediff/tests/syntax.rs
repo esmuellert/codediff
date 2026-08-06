@@ -226,14 +226,14 @@ fn a_rename_is_coloured_as_each_side_is_named() {
     // A `.py` that became a `.rs`. If one grammar were used for both, whichever
     // side lost would be mis-coloured, and `def` is the tell: it is a keyword
     // in Python and nothing at all in Rust.
-    let file = pipeline::file::DiffContent::Paired {
+    let file = pipeline::file::DiffContent::Diff(pipeline::file::Diff {
         file: file_types::File::renamed(
             file_types::RepoPath::new("a.py", std::path::Path::new("/repo")),
             file_types::RepoPath::new("a.rs", std::path::Path::new("/repo")),
             harness::revs(),
         ),
         alignment: alignment("def f():\n    pass\n", "fn f() {}\n"),
-    };
+    });
     let mut session = Session::new(Buffer::diff(file), Theme::DARK);
     let cells = settled(&mut session, 100, 10);
     let code = Theme::DARK.code;

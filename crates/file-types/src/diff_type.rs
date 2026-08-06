@@ -52,7 +52,7 @@ impl DiffType {
     }
 
     /// Whether this shows two versions paired against each other.
-    pub fn is_paired(self) -> bool {
+    pub fn is_diff(self) -> bool {
         !matches!(self, Self::Single)
     }
 }

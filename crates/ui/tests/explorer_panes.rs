@@ -17,7 +17,7 @@ fn the_border_runs_the_whole_height_of_the_tab() {
     let mut session = scripted(
         only(vec![modified("src/lib.rs")]),
         theme,
-        vec![single(unchanged("src/lib.rs"), "fn main() {}\n")],
+        vec![single_file(unchanged("src/lib.rs"), "fn main() {}\n")],
     );
     open_selected(&mut session);
 
@@ -40,7 +40,7 @@ fn the_layout_key_acts_on_the_diff_even_when_the_list_has_focus() {
     let mut session = scripted(
         only(vec![modified("src/lib.rs")]),
         theme,
-        vec![paired(unchanged("src/lib.rs"), "fn main() {}\n")],
+        vec![diff(unchanged("src/lib.rs"), "fn main() {}\n")],
     );
     open_selected(&mut session);
 
@@ -85,7 +85,7 @@ fn a_pane_that_will_not_fit_falls_back_to_one_rather_than_failing_the_screen() {
     let mut session = scripted(
         only(vec![modified("src/lib.rs")]),
         theme,
-        vec![paired(unchanged("src/lib.rs"), &long)],
+        vec![diff(unchanged("src/lib.rs"), &long)],
     );
     open_selected(&mut session);
 
@@ -134,8 +134,8 @@ fn opening_the_file_already_shown_re_reads_it_and_keeps_the_readers_place() {
         only(vec![modified("src/lib.rs")]),
         theme,
         vec![
-            paired(unchanged("src/lib.rs"), &long),
-            paired(unchanged("src/lib.rs"), &edited),
+            diff(unchanged("src/lib.rs"), &long),
+            diff(unchanged("src/lib.rs"), &edited),
         ],
     );
     open_selected(&mut session);
@@ -177,8 +177,8 @@ fn re_opening_a_file_that_has_grown_shorter_lands_inside_it() {
         only(vec![modified("src/lib.rs")]),
         theme,
         vec![
-            paired(unchanged("src/lib.rs"), &long),
-            paired(unchanged("src/lib.rs"), "all that is left\n"),
+            diff(unchanged("src/lib.rs"), &long),
+            diff(unchanged("src/lib.rs"), "all that is left\n"),
         ],
     );
     open_selected(&mut session);
@@ -225,8 +225,8 @@ fn the_file_listed_twice_can_be_opened_from_either_section() {
         ],
         theme,
         vec![
-            single(in_unstaged.file, "the unstaged one\n"),
-            single(in_staged.file, "the staged one\n"),
+            single_file(in_unstaged.file, "the unstaged one\n"),
+            single_file(in_staged.file, "the staged one\n"),
         ],
     );
 
@@ -255,7 +255,7 @@ fn enter_on_a_file_row_asks_for_it() {
     let mut session = scripted(
         only(vec![modified("a.rs"), modified("b.rs")]),
         theme,
-        vec![single(unchanged("b.rs"), "the second file\n")],
+        vec![single_file(unchanged("b.rs"), "the second file\n")],
     );
     // Past the first row, so what is asked for is not what is already shown.
     session.press(crokey::key!(j));

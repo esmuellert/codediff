@@ -120,7 +120,7 @@ fn a_pane_that_does_not_have_focus_is_still_coloured() {
     let mut session = scripted(
         only(vec![modified("src/lib.rs")]),
         theme,
-        vec![single(
+        vec![single_file(
             unchanged("src/lib.rs"),
             "// a comment\nfn main() {}\n",
         )],
@@ -161,10 +161,10 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
         only(vec![modified("a.rs"), modified("b.rs")]),
         theme,
         vec![
-            single(unchanged("a.rs"), "fn main() {}\n"),
-            single(unchanged("b.rs"), "struct Other;\n"),
+            single_file(unchanged("a.rs"), "fn main() {}\n"),
+            single_file(unchanged("b.rs"), "struct Other;\n"),
             // The first file again, by the same name, with different bytes.
-            single(unchanged("a.rs"), "// now a comment\n"),
+            single_file(unchanged("a.rs"), "// now a comment\n"),
         ],
     );
     let area = Rect::new(0, 0, 80, 6);

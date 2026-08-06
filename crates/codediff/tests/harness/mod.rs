@@ -52,10 +52,10 @@ pub fn with_diff(
     let original = vscode_diff::lines(before);
     let modified = vscode_diff::lines(after);
     let alignment = align::Alignment::new(computed, &original, &modified);
-    Buffer::diff(DiffContent::Paired {
+    Buffer::diff(DiffContent::Diff(pipeline::file::Diff {
         file: file(label),
         alignment,
-    })
+    }))
 }
 
 /// A buffer for a file present on both sides, shown alone.
@@ -74,7 +74,7 @@ pub fn added(label: &str, contents: &str) -> Buffer {
 
 /// One version of a file, as the pipeline would hand it over.
 fn lone(file: File, contents: &str) -> DiffContent {
-    DiffContent::Single {
+    DiffContent::SingleFile(pipeline::file::SingleFile {
         file,
         lines: std::sync::Arc::new(
             vscode_diff::lines(contents)
@@ -82,7 +82,7 @@ fn lone(file: File, contents: &str) -> DiffContent {
                 .map(|line| (*line).to_owned())
                 .collect(),
         ),
-    }
+    })
 }
 
 /// A session over a side-by-side buffer, in the default dark theme.

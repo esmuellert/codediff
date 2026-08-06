@@ -1,4 +1,4 @@
-//! One version of a file, shown alone.
+//! Colouring one version of a file, shown alone.
 //!
 //! A peer of [`SideBySide`] and [`Inline`], not a content type. It is what
 //! both diff layouts fall back to when a file exists on only one side: there
@@ -12,93 +12,56 @@
 //! and stopped opening a diff editor for added, untracked and deleted files.
 //! See D23.
 //!
-//! It holds no [`Diff`](crate::diff::Diff) for the same reason, which is why
-//! that field cannot move up to the parent: an `Option<Diff>` there would be
-//! the empty-model trap D23 records.
+//! It holds no [`Diff`] for the same reason, which is why that field cannot
+//! move up to the parent: an `Option<Diff>` there would be the empty-model
+//! trap D23 records.
+//!
+//! **The file itself is the pipeline's**, held rather than copied out of. This
+//! used to be a struct of the same two fields, built from the answer on
+//! arrival and adding nothing to it. See D61.
 //!
 //! [`SideBySide`]: super::SideBySide
 //! [`Inline`]: super::Inline
+//! [`Diff`]: pipeline::file::Diff
 
-use align::DiffVersion;
 use file_types::File;
+use pipeline::file;
 
-use std::sync::Arc;
+use super::colour;
+use crate::syntax::{Spans, Store, Syntax, Version};
 
-use crate::syntax::{Spans, Store, Syntax, SyntaxRequest, Version, path_of};
-
-/// One version of a file, and its lines.
+/// One version of a file, and what has been coloured of it.
 #[derive(Debug)]
 pub struct SingleFile {
-    file: File,
-    /// Shared, so the thread that colours can be handed the text rather than
-    /// a copy of it.
-    lines: Arc<Vec<String>>,
-    /// Which side the file is on. One, not two: there is only one version
-    /// here, which is the whole difference from a diff.
-    side: DiffVersion,
+    read: file::SingleFile,
 }
 
 impl SingleFile {
-    /// Takes the lines as they are shared, so the pipeline's copy is the one
-    /// the colouring thread is handed.
-    pub fn new(file: File, lines: Arc<Vec<String>>) -> Self {
-        // Whichever side exists: a lone file is one or the other, and the side
-        // it is not has no path and so no language.
-        let side = file.only().unwrap_or(DiffVersion::Modified);
-        Self { side, file, lines }
-    }
-
-    /// What names this file's content, if it is on the side it claims.
-    ///
-    /// Asked of the file rather than held, because it is derived — a copy
-    /// kept beside the file is how one comes to disagree with the other.
-    fn key(&self) -> Option<String> {
-        self.file.name(self.side)
+    pub fn new(read: file::SingleFile) -> Self {
+        Self { read }
     }
 
     /// The colouring, for a frame.
     pub fn spans<'a>(&self, store: &'a Store) -> Spans<'a> {
-        match self.key().and_then(|key| store.get(&key)) {
-            Some(colours) => Spans::One(colours),
-            None => Spans::Off,
-        }
+        colour::spans_single_file(&self.read, store)
     }
 
     /// Asks for everything up to `want`.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        let (Some(key), Some(path)) = (self.key(), path_of(&self.file, self.side)) else {
-            return;
-        };
-        if self.lines.is_empty() || syntax.busy(&key) {
-            return;
-        }
-        let want = want.min(self.lines.len() as u32 - 1);
-        store.want(&key, version);
-        let have = store.have(&key);
-        if have > want {
-            return;
-        }
-        syntax.send(SyntaxRequest {
-            key,
-            path,
-            version,
-            text: Arc::clone(&self.lines),
-            have,
-            want,
-        });
+        colour::request_single_file(&self.read, syntax, store, version, want);
     }
 
     /// Which file this is — structured, so a status line can style and shorten
     /// its parts independently.
     pub fn file(&self) -> &File {
-        &self.file
+        &self.read.file
     }
 
     pub fn lines(&self) -> u32 {
-        self.lines.len() as u32
+        self.read.lines.len() as u32
     }
 
     pub fn line(&self, view_line: u32) -> Option<&str> {
-        self.lines.get(view_line as usize).map(String::as_str)
+        self.read.lines.get(view_line as usize).map(String::as_str)
     }
 }

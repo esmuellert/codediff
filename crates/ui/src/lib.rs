@@ -31,7 +31,6 @@ pub use crossterm;
 pub use ratatui;
 
 mod app;
-mod diff;
 mod draw;
 pub mod input;
 mod render;
@@ -41,7 +40,6 @@ pub mod theme;
 pub mod view;
 
 pub use app::{Flow, Session, run};
-pub use diff::Diff;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 pub use view::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};

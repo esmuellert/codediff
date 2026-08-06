@@ -23,7 +23,9 @@
 use align::Alignment;
 use file_types::File;
 
-use crate::diff::Diff;
+use pipeline::file;
+
+use super::colour;
 use crate::input::{BufferAction, DIVIDER_STEP};
 use crate::syntax::{Spans, Store, Syntax, Version};
 
@@ -34,18 +36,18 @@ const MAX_DIVIDER: u16 = 85;
 /// A diff shown in two columns, and where the line between them sits.
 #[derive(Debug)]
 pub struct SideBySide {
-    diff: Diff,
+    diff: file::Diff,
     /// The share of the width given to the original, in percent.
     divider: u16,
 }
 
 impl SideBySide {
-    pub fn new(diff: Diff) -> Self {
+    pub fn new(diff: file::Diff) -> Self {
         Self { diff, divider: 50 }
     }
 
     /// Hands the diff over, for reading the same one inline.
-    pub fn into_diff(self) -> Diff {
+    pub fn into_diff(self) -> file::Diff {
         self.diff
     }
 
@@ -55,27 +57,27 @@ impl SideBySide {
     /// every one of them take a second hop through it — the pass-through
     /// getter `Alignment` had and lost, for the same reason.
     pub fn alignment(&self) -> &Alignment {
-        self.diff.alignment()
+        &self.diff.alignment
     }
 
     /// Which file this is — structured, so a status line can style and shorten
     /// its parts independently.
     pub fn file(&self) -> &File {
-        self.diff.file()
+        &self.diff.file
     }
 
     pub fn hit_timeout(&self) -> bool {
-        self.diff.hit_timeout()
+        self.diff.alignment.hit_timeout()
     }
 
     /// How each version is coloured, for a frame.
     pub fn spans<'a>(&self, store: &'a Store) -> Spans<'a> {
-        self.diff.spans(store)
+        colour::spans_diff(&self.diff, store)
     }
 
     /// Asks for everything up to `want`, on both versions.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, want: u32) {
-        self.diff.request(syntax, store, version, want);
+        colour::request_diff(&self.diff, syntax, store, version, want);
     }
 
     /// Where the divider sits: the share of the width given to the original,

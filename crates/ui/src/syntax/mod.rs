@@ -59,7 +59,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 pub use message::{SyntaxRequest, SyntaxResponse, Version, path_of};
-pub use store::{Spans, Store};
+pub use store::{Colours, Spans, Store};
 
 /// The worker, the two queues to it, and what is outstanding.
 pub struct Syntax {

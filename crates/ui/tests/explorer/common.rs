@@ -90,12 +90,12 @@ pub fn unchanged(path: &str) -> File {
 /// What a test hands to [`Files::canned`], in the order it expects rows to be
 /// opened. No repository is touched and no engine is run — what these check is
 /// what a pane shows, not how its contents were obtained.
-pub fn single(file: File, text: &str) -> Result<DiffContent, String> {
+pub fn single_file(file: File, text: &str) -> Result<DiffContent, String> {
     let lines = text.lines().map(str::to_owned).collect();
-    Ok(DiffContent::Single {
+    Ok(DiffContent::SingleFile(pipeline::file::SingleFile {
         file,
         lines: std::sync::Arc::new(lines),
-    })
+    }))
 }
 
 /// A two-sided comparison, which is what a layout key has anything to say
@@ -103,7 +103,7 @@ pub fn single(file: File, text: &str) -> Result<DiffContent, String> {
 ///
 /// A file against itself: no engine is run, because `ui` may not name one, and
 /// none is needed — what this carries is a layout, not a pairing.
-pub fn paired(file: File, text: &str) -> Result<DiffContent, String> {
+pub fn diff(file: File, text: &str) -> Result<DiffContent, String> {
     let lines: Vec<&str> = text.lines().collect();
     let alignment = align::Alignment::new(
         diff_types::LinesDiff {
@@ -114,7 +114,7 @@ pub fn paired(file: File, text: &str) -> Result<DiffContent, String> {
         &lines,
         &lines,
     );
-    Ok(DiffContent::Paired { file, alignment })
+    Ok(DiffContent::Diff(pipeline::file::Diff { file, alignment }))
 }
 
 /// A session over `groups`, whose worker answers from a script.

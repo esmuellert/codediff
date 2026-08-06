@@ -317,7 +317,7 @@ impl View {
         let is_diff = |id: PaneId| {
             self.buffers[tab.pane(id).buffer.0]
                 .diff_type()
-                .is_some_and(DiffType::is_paired)
+                .is_some_and(DiffType::is_diff)
         };
         let focus = tab.focus();
         if is_diff(focus) {

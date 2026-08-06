@@ -68,9 +68,10 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     // disagreement between this and the screen would have to come from
     // drawing, since there is only one source for both.
     let content = runner.run()?;
-    let DiffContent::Paired { alignment, .. } = &content else {
+    let DiffContent::Diff(diff) = &content else {
         unreachable!("two sides were read, so this is a diff");
     };
+    let alignment = &diff.alignment;
     println!(
         "{} line(s) -> {} line(s), {} view line(s), {} change(s)",
         alignment.lines(DiffVersion::Original).len(),

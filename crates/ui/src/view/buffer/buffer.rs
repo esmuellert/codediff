@@ -25,7 +25,6 @@ use file_types::{DiffType, File};
 use pipeline::file::DiffContent;
 
 use super::{BufferType, Explorer, Inline, SideBySide, SingleFile};
-use crate::diff::Diff;
 use crate::input::{BufferAction, KeymapType};
 use crate::syntax::{Store, Syntax, Version};
 use crate::view::Viewport;
@@ -76,12 +75,8 @@ impl Buffer {
     /// without rebuilding any of it. See D23 and D60.
     pub fn diff(content: DiffContent) -> Self {
         Self::of(match content {
-            DiffContent::Single { file, lines } => {
-                BufferType::SingleFile(SingleFile::new(file, lines))
-            }
-            DiffContent::Paired { file, alignment } => {
-                BufferType::SideBySide(SideBySide::new(Diff::new(file, alignment)))
-            }
+            DiffContent::SingleFile(single) => BufferType::SingleFile(SingleFile::new(single)),
+            DiffContent::Diff(diff) => BufferType::SideBySide(SideBySide::new(diff)),
         })
     }
 

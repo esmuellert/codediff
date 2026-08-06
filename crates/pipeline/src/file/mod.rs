@@ -39,5 +39,5 @@ pub mod diff;
 pub mod runner;
 pub mod service;
 
-pub use runner::{DiffContent, Runner};
+pub use runner::{Diff, DiffContent, Runner, SingleFile};
 pub use service::{Answer, Files};

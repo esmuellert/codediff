@@ -13,7 +13,7 @@ use file_types::{DiffVersion, File};
 use crate::file::contents::{self, Contents};
 use crate::file::diff;
 
-/// One file, read and paired: what the four stages produce.
+/// One file, read: what the four stages produce.
 ///
 /// The producer defines it, which is the direction that keeps the graph
 /// acyclic — `ui` depends on this crate, so a type of `ui`'s here would be a
@@ -21,35 +21,62 @@ use crate::file::diff;
 /// three ways of showing a file this one is rather than leaving it to be
 /// worked out again from an `Option` somewhere else. See D60.
 ///
-/// It carries no colour, no width and no position. Those are the interface's,
-/// and it consolidates them onto this.
+/// Each case is a struct, because the interface holds it rather than copying
+/// out of it: a side-by-side buffer and an inline one are two readings of one
+/// [`Diff`], and switching between them moves it rather than rebuilding it.
+/// Both structs used to sit in `ui` as well, with the same two fields each and
+/// nothing added, converted from this on arrival. See D61.
+///
+/// Neither carries a colour, a width or a position. Those are the interface's,
+/// and it keeps them beside this rather than in it.
 ///
 /// [`DiffType`]: file_types::DiffType
 pub enum DiffContent {
-    /// The one version there is.
-    ///
-    /// An added, untracked or deleted file has nothing on the other side, so
-    /// there is no pairing to make and no empty column to draw. See D23.
-    Single {
-        file: File,
-        /// Shared rather than owned outright, as [`Alignment`] shares its two
-        /// sides, so the thread that colours can be handed the text without
-        /// copying it.
-        lines: Arc<Vec<String>>,
-    },
-    /// Both versions, paired line by line.
-    ///
-    /// Which of the two paired layouts it is read in is the reader's choice
-    /// and can change without re-reading, so it is not decided here.
-    Paired { file: File, alignment: Alignment },
+    SingleFile(SingleFile),
+    Diff(Diff),
+}
+
+/// The one version there is.
+///
+/// An added, untracked or deleted file has nothing on the other side, so there
+/// is no pairing to make and no empty column to draw. See D23.
+#[derive(Debug)]
+pub struct SingleFile {
+    pub file: File,
+    /// Shared rather than owned outright, as [`Alignment`] shares its two
+    /// sides, so the thread that colours can be handed the text without
+    /// copying it.
+    pub lines: Arc<Vec<String>>,
+}
+
+/// One file's two versions, paired line by line.
+///
+/// Which of the two paired layouts it is read in is the reader's choice and
+/// can change without re-reading, so it is not decided here.
+#[derive(Debug)]
+pub struct Diff {
+    pub file: File,
+    pub alignment: Alignment,
 }
 
 impl DiffContent {
     /// Which file this is, whichever it is.
     pub fn file(&self) -> &File {
         match self {
-            Self::Single { file, .. } | Self::Paired { file, .. } => file,
+            Self::SingleFile(single) => &single.file,
+            Self::Diff(diff) => &diff.file,
         }
+    }
+}
+
+impl SingleFile {
+    /// Which side the file exists on.
+    ///
+    /// Derived rather than stored: a copy kept beside the file is how one
+    /// comes to disagree with the other. A file existing on both sides would
+    /// have been paired instead of landing here.
+    pub fn side(&self) -> DiffVersion {
+        self.file.only().unwrap_or(DiffVersion::Modified)
     }
 }
 
@@ -91,7 +118,7 @@ impl Runner {
         match file.only() {
             // Nothing to compare against, so neither two columns nor an
             // interleaving has anything to say.
-            Some(version) => Ok(DiffContent::Single {
+            Some(version) => Ok(DiffContent::SingleFile(SingleFile {
                 file,
                 lines: Arc::new(
                     self.contents
@@ -100,13 +127,13 @@ impl Runner {
                         .map(|line| (*line).to_owned())
                         .collect(),
                 ),
-            }),
+            })),
             None => {
                 let original = self.contents.version(DiffVersion::Original);
                 let modified = self.contents.version(DiffVersion::Modified);
                 let changed = diff::compute(&original, &modified)?;
                 let alignment = diff::align(changed, &original, &modified)?;
-                Ok(DiffContent::Paired { file, alignment })
+                Ok(DiffContent::Diff(Diff { file, alignment }))
             }
         }
     }
