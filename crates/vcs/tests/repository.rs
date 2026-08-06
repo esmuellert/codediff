@@ -71,7 +71,7 @@ fn manifest(dir: &Path) -> Vec<String> {
 #[test]
 fn status_matches_the_manifest_exactly() {
     let fixture = Fixture::new("manifest");
-    let entries = fixture.git().entries().expect("status runs");
+    let entries = fixture.git().entries(&[]).expect("status runs");
     assert_eq!(render(&entries), manifest(&fixture.dir));
 }
 
@@ -359,7 +359,7 @@ fn a_file_staged_then_edited_again_is_one_entry() {
     assert_eq!(entry.change(), ChangeType::Modified);
 
     // Git's own layer still has both codes for anything that wants them.
-    let raw = fixture.git().entries().expect("status runs");
+    let raw = fixture.git().entries(&[]).expect("status runs");
     let raw = raw
         .iter()
         .find(|e| e.path == "staged-then-edited.txt")

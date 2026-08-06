@@ -324,3 +324,98 @@ fn suspending_gives_the_terminal_back_and_resuming_redraws() {
          against a frame the terminal no longer holds"
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn a_signal_still_gives_the_terminal_back() {
+    // `Drop` does not run for a signal, so `kill` used to leave the reader in
+    // the alternate screen with the cursor hidden and raw mode on — a shell
+    // they had to type `reset` into blind.
+    //
+    // The first attempt at this was worse than the bug: it registered a
+    // handler that set a flag, and nothing ever read the flag, because
+    // crossterm retries its wait on `EINTR` rather than reporting it. The
+    // program became unkillable. Hence a wait with a timeout, and hence this
+    // test asserting the process actually goes.
+    // 15 and 1. Written as numbers because `kill` takes numbers and this
+    // crate has no libc dependency to name them from.
+    for signal in [15, 1] {
+        let fixture = Fixture::new(&format!("signal{signal}"));
+        let (output, status) = killed_by(&["modified.txt"], &fixture.dir, signal);
+
+        assert!(status.is_some(), "signal {signal} did not stop it");
+        assert!(
+            output.contains(ENTER_ALT),
+            "signal {signal}: it never took the screen"
+        );
+        assert!(
+            output.contains(LEAVE_ALT),
+            "signal {signal}: the terminal was not given back"
+        );
+        assert!(
+            output.contains("\u{1b}[?25h"),
+            "signal {signal}: the cursor was left hidden"
+        );
+    }
+}
+
+/// Runs `codediff` on a pty, sends it a signal, and returns what it wrote.
+///
+/// `None` for the status means it was still running when the wait ran out,
+/// which is the failure this exists to catch.
+#[cfg(unix)]
+fn killed_by(args: &[&str], cwd: &PathBuf, signal: i32) -> (String, Option<i32>) {
+    let pty = native_pty_system()
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("opening a pty");
+
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codediff"));
+    command.args(args);
+    command.cwd(cwd);
+    command.env("TERM", "xterm-256color");
+
+    let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
+    drop(pty.slave);
+
+    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
+    let collector = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while let Ok(read) = reader.read(&mut chunk) {
+            if read == 0 {
+                break;
+            }
+            output.extend_from_slice(&chunk[..read]);
+        }
+        output
+    });
+
+    // The first frame has to be on screen, or there is nothing to restore.
+    std::thread::sleep(Duration::from_millis(600));
+    let pid = child.process_id().expect("a process id") as i32;
+    std::process::Command::new("kill")
+        .args([format!("-{signal}"), pid.to_string()])
+        .status()
+        .expect("sending the signal");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("waiting for codediff") {
+            break Some(status.exit_code() as i32);
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+
+    drop(pty.master);
+    let output = collector.join().expect("collecting output");
+    (String::from_utf8_lossy(&output).into_owned(), status)
+}

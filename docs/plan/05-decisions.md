@@ -2435,3 +2435,253 @@ adopting an accident. Left alone until someone decides which is right.
 *Question 1 (explorer grouping) is settled in [04-milestones.md](04-milestones.md): one list, worktree vs HEAD, conflicts marked but not resolvable.
 Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).
 Question 3 (inline mode) was put out of the MVP by [D19](#d19--the-container-owns-the-row-index-so-scroll-sync-cannot-exist); built at S10b anyway, in about the two days that answer estimated — see [D31](#d31--a-row-space-is-a-layout-and-align-owns-both-of-them). Still no auto-switch.*
+
+---
+
+## D47 — a file staged and then edited again is listed twice
+
+Git compares three things: a commit, the index, and the working tree. A file it reports as
+`MM` differs from the index *and* the index differs from the commit, so there are **two
+diffs** of one path. The milestone said the file should appear once, carrying both codes.
+That is not possible: one row opens one comparison, and a row carrying `MM` could not say
+which of the two it would open.
+
+Capturing the plugin settled it — it lists the file twice, once under **Changes** and once
+under **Staged Changes** — and the reason it is right is not that the plugin does it. Each
+row carries the revisions of its own comparison (`Rev::Index` against `Rev::Worktree`, or the
+commit against `Rev::Index`), so a row that has been opened already knows which two versions
+to read. That is what [`Rev`](#d44) was built for, and this is its first real use.
+
+The consequence is that `explorer::Entry` is one per **(file, section)** and not one per file,
+and that `vcs::Changes` returns three lists rather than one with a code on each record.
+
+## D48 — the list starts on the first file, not on the first row
+
+Row zero is a section heading. It can be folded, but it cannot be opened, so a reader arriving
+there and pressing the key that opens a file sees nothing happen — which reads as a broken key
+rather than as a row that has nothing to open.
+
+The answer is a `Buffer::start_row`, asked once by `View::single` and set on the viewport
+before the first frame. It is not a property of the explorer's own state: the cursor **is** the
+selection, and there is exactly one of it, on the pane. The model carries a selection too, but
+only so it can be used without a viewport at all; the interface overwrites it from the cursor
+before reading anything from it.
+
+The plugin does the same, which its capture states directly: `cursor 2` on the first frame.
+
+## D49 — a binding's list and its executor are different questions
+
+Widening the list moves the border between two panes, so the **tab** executes it — D27's rule,
+unchanged. But the binding cannot live in the tab's list, because a tab-level binding is live
+in every buffer, and a plain file has no border beside it. `>` there would be a key that
+silently does nothing, which is the failure the keymap was built to prevent.
+
+So `>` and `<` sit in the *list's* binding table and name `Action::Tab`. The keymap already
+said this was allowed — "a key's list and a key's executor need not be tied together" — and
+this is the first case that needs it. A diff claims the same two keys at the buffer level for
+its own column divider, and shadowing does the rest: one key, three meanings, none of them
+silent.
+
+`<Tab>` stays at the tab level, because "the next pane" means something wherever it is pressed.
+
+## D50 — a row is measured in cells, and cut in cells
+
+`ünïcodé-ファイル.txt` lost its status letter off the right-hand edge. The row was measured by
+counting characters, and every Japanese character is **two columns**, so the row was eight
+columns wider than it was thought to be.
+
+Both the width and the cut go through `line-index`, the crate that already answers this
+question for the diff. A cut lands on a character boundary and never inside one: asking for
+three columns of `ファイル` gives back `フ` and two columns, not half a glyph. The row is then a
+column short rather than corrupt, which is the right way to be wrong.
+
+## D51 — nothing is kept when a file is opened twice
+
+Opening a file reads both versions, pairs them, and builds a buffer. This first said the two
+texts were worth keeping, since reading them is the only part that leaves the process. **That
+was wrong, and an audit found it.**
+
+Three of the four revisions a row can name — the working tree, the index, and a conflict
+stage — are mutable. [D44](#d44) says so in as many words. Their bytes change while the review
+is open and *nothing in their name changes with them*, so a cache keyed by the revision and the
+path cannot tell a fresh read from a stale one. A reader who edits a file and opens it again
+would be shown what it used to be, with nothing on screen to say so.
+
+The alternatives were to key by content — which means reading the content, which is the thing
+being avoided — or to cache only immutable revisions, which today means caching nothing while
+leaving the machinery in place to be misread later. So nothing is kept. Reading two versions
+and pairing them takes milliseconds, and that is the whole price of being right.
+
+The buffer is not kept either, for a separate reason that still holds: it carries the reader's
+place, so handing the same one to two panes would give them one scroll position.
+
+---
+
+## D52 — a list has its own colour table, for the same reason code does
+
+Every row of the explorer came out in the ordinary text colour. Three separate faults, and all
+three had one cause: the renderer borrowed styles that were built for somewhere else.
+
+```rust
+status_path: Style::new().add_modifier(Modifier::BOLD)   // no fg — a patch over `status`
+inserted_text: over(blend(p.green, base, opacity::TEXT)) // no fg — a diff background
+warning: ink(p.red).add_modifier(Modifier::BOLD)         // red, whatever happened
+```
+
+So a heading and a directory got bold and no colour; `+7 -4` got *nothing*, because the style
+carried only a background and the renderer copies only the foreground; and every status letter
+was red, whether the file was added, deleted or renamed.
+
+The fix is the shape `Code` already has. `explorer::RegionType` says **what** a piece of a row
+is — and `Status` now carries the `ChangeType`, so a deletion is distinguishable from an
+addition without the theme knowing what a section is. `theme::List` says what each looks like.
+Between them there is nothing to get wrong.
+
+`List` holds `Color`, not `Style`, exactly as `Code` does, and for the same reason: the
+background of a row says which row the reader is on, so a region that could set one would be
+able to hide the selection. Bold is not in the table either — a heading is bold in every theme,
+so it is structural and is applied where the row is drawn.
+
+The six status colours are separate fields rather than one because that column is what a
+reviewer scans down. A screen where a deletion and an addition look alike has to be read a word
+at a time, which is the thing a list exists to avoid.
+
+---
+
+## D53 — what a viewport belongs to, and why opening a file must not keep one
+
+A viewport is `top`, `cursor` and `left`. Those are places **in the buffer it was looking at**,
+and they mean nothing in another one. Repointing a pane at a new buffer and keeping its
+viewport opened the new file at the old file's line and horizontal offset — a file that opened
+blank, scrolled off its own text, which is how an audit found it.
+
+So `Tab::show` installs a **fresh `Pane`** rather than assigning `pane.buffer`. The pane is the
+thing that pairs a buffer with a place in it, and replacing one half of a pair is what produced
+a pair that did not go together.
+
+The buffer *slot* is reused, which is the opposite decision about a different thing. `View`
+owns the buffers and nothing removes from that list, so pushing on every open held every file a
+reader had ever visited. `Tab::shown()` names the slot already beside the list, and the second
+open writes over it.
+
+## D54 — a row number does not survive a rebuild, so the reader is anchored by name
+
+Toggling the view mode renumbers every row: tree mode has directory rows that list mode does
+not. Toggling the counts does not renumber anything, but nothing in the code said so. Both used
+to send the reader to row zero — a section heading, which folds but cannot be opened, so the
+next key did nothing.
+
+`explorer::Anchor` is a **section and a path**, which is what the reader actually chose, and
+`Explorer::reshape` takes the anchor before the change and looks it up after. A file that is
+gone — hidden by a filter — leaves the cursor where it was, clamped.
+
+This is the same shape as `View::toggle_layout`, which carries a *file line* across a change of
+layout because a view line means different things in each. Both say: when a rebuild renumbers
+things, carry the thing the reader named, not the number it happened to have.
+
+## D55 — a key must not be silently dead in a context that binds it
+
+`t` flips a diff between two columns and inline. It is bound at the view level, so it is live
+everywhere — and it flipped **the focused buffer**, which while the list has focus is the list,
+which has no layout. The key did nothing, silently, in the context a reader spends most of
+their time in.
+
+`View::reading()` now names the pane showing a diff: the focused one when it is a diff, and
+otherwise the only other one. There is never more than one diff on screen, so this is not a
+guess. When there is no diff at all — the list before anything is opened — the key does
+nothing, which is correct rather than merely quiet, and a test says so.
+
+The general rule this joins is [D49](#d49): a binding's list and its executor are different
+questions. `>` is bound by the list and executed by the tab. `t` is bound by the view and
+executed on whichever pane the word "diff" refers to.
+
+## D56 — git's own switches are forced, never left to the reader's config
+
+The status is read with `--find-renames`. The line counts were not, so a reader with
+`diff.renames=false` saw a row that called a file a rename *and* counted it as a whole new
+file: the two commands were describing different sets of changes, and the row put both on one
+line.
+
+Every git command this program runs must force what it depends on. A setting that changes what
+one command reports and not another is not a preference, it is a disagreement, and the reader
+is the one who has to notice it.
+
+Two more of the same kind, found together:
+
+- **An unborn `HEAD`.** `git init` then `git add` is the moment a reviewer has the most to look
+  at, and it failed outright because there was no commit to resolve. `resolve_or_empty` answers
+  with the **empty tree** — an id git carries in every version — so the first commit is
+  reviewable before it exists.
+- **A symlink.** `std::fs::read` follows one; git stores the *target path* as the content. An
+  unchanged link therefore looked like a whole file rewritten. `symlink_metadata` and
+  `read_link` are what agree with git. A directory found the same way is a submodule, whose
+  content is a commit id rather than bytes; it reads as absent, so the row says it cannot be
+  shown rather than failing to read a directory as a file.
+
+## D57 — a group is a revision pair, not a category a file belongs to
+
+The explorer held a fixed `{unstaged, staged}` pair, so comparing two revisions had nowhere to
+put its files. The plugin this replaces met the same wall and wrote its way past it:
+
+```lua
+-- For revision comparison, we treat everything as "unstaged" for explorer compatibility
+```
+
+A group is now `{ name, revs, files }`. "Staged Changes" is not a category — it is the *name*
+for comparing the index against a commit, which every file in it already carries in its own
+`Revs`. `--rev A B` is one group named after its two revisions, and needs no pretending.
+
+What this buys is measurable: adding a way to compare touches **one file**,
+`pipeline/list/resolver.rs`, plus its arm of `ExplorerDiffType` and a command-line flag.
+Nothing in the explorer, the view or the drawing code learns a new word.
+
+## D58 — the file pipeline does not search; the list is the search
+
+The file pipeline had a first stage that found a file in git by path. That was the list
+pipeline written a second time, and worse: a search cannot know *which comparison* the reader
+chose, so it answered `HEAD → worktree` for everything. One path then had up to three different
+diffs depending on how it was reached — `codediff staged-then-edited.txt` compared 6 bytes that
+neither of that file's two rows compared.
+
+The stage is gone. A `ChangedFile` carries the revisions of both its sides, so the row *is* the
+request, and the two pipelines join at that type:
+
+```text
+list ──▶ Groups ──▶ (a row) ──▶ file ──▶ Comparison
+```
+
+`codediff <path>` is therefore a **pathspec on the list**, not a different mode: one code path,
+so a file reached by naming it and the same file reached by pressing enter on its row are the
+same comparison.
+
+## D59 — the interface asks, and never computes
+
+Opening a file used to leave the crate. `ui` could not reach git, so `Flow::Task` named the
+request and `run`'s caller performed it — a callback pointing *up*, out of the loop.
+
+The reason for the seam was real, and it was not the dependency. Measured on a 50,000-line file
+with one line in ten changed, the four stages take **1057 ms**, of which the C engine is 718 ms;
+and `max_computation_time_ms` puts the engine's own ceiling at 5 s. Every one of those
+milliseconds was a terminal that answered no keys.
+
+So the pipeline moved to a thread, exactly as colouring did in [D41](#d41):
+
+| thread | file | what it does off the drawing thread |
+|---|---|---|
+| syntax | `ui/src/syntax/mod.rs` | colours text |
+| file | `pipeline/src/file/service.rs` | reads two versions and pairs them |
+
+Both are one long-lived worker asleep on `recv`, one request in flight, nothing queued behind
+it. Asking costs a `send` on an unbounded channel, which std documents as never blocking, so
+`Flow::Task`, the `Tasks` trait and the `Open` callback are all gone and `ui::run` takes one
+argument again. `Open` is an ordinary `ViewAction` now, executed where it lands.
+
+**Which meant `pipeline` could stop naming `ui`.** It answers with an `align::Comparison` —
+data, not a projection — and `ui` decides which buffer kind to build from it, which inverts
+[D23](#d23)'s "the last place that knows": the answer carries what it knew. Without that
+inversion `ui → pipeline → ui` would be a Cargo cycle.
+
+**And it cost a lint rule its meaning.** `("ui", "vcs")` reads a `Cargo.toml`, so it says
+nothing once a crate sits between the two — `ui → pipeline → vcs` passes it. The rule that
+replaced it checks the *text* of `crates/ui/src` for `vcs::`, `vscode_diff::` and `std::fs`,
+which no intermediate crate can defeat, and which catches what the manifest rule never could.

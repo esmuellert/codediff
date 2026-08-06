@@ -19,7 +19,7 @@ fn themes() -> PossibleValuesParser {
     name = "codediff",
     version,
     about = "A standalone, read-only terminal diff reviewer",
-    after_help = "With no arguments this will open the explorer, listing every changed file. That\nis not built yet; until then, name a file. See docs/plan/04-milestones.md.",
+    after_help = "With no arguments this lists every changed file. Name one or two revisions to\ncompare those instead, or a file to review just that one.",
     disable_help_subcommand = true
 )]
 pub struct Cli {
@@ -45,8 +45,52 @@ pub struct Cli {
     #[arg(long, hide = true)]
     pub self_panic: bool,
 
+    /// Compare against this revision, or between two of them
+    ///
+    /// One name compares it against the file on disk; two compare them with
+    /// each other. `a...b` compares `b` against where it parted from `a`,
+    /// which is git's own spelling.
+    #[arg(long = "rev", short = 'r', value_name = "REV", num_args = 1..=2)]
+    pub rev: Vec<String>,
+
+    /// List what is staged, against a revision
+    #[arg(long, visible_alias = "cached")]
+    pub staged: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+impl Cli {
+    /// What the reader asked the explorer to compare.
+    ///
+    /// The one place the command line becomes a diff type. Adding a way to
+    /// compare is an arm here and an arm in the list pipeline's resolver, and
+    /// nothing between them.
+    pub fn diff_type(&self) -> explorer::ExplorerDiffType {
+        diff_type(&self.rev, self.staged)
+    }
+}
+
+/// The reader's words, as a diff type.
+///
+/// A free function because two callers share it: the review itself and
+/// `debug list`, which exists so a test can see the groups without a
+/// terminal. Adding a way to compare is an arm here and an arm in the list
+/// pipeline's resolver, and nothing between them.
+pub fn diff_type(rev: &[String], staged: bool) -> explorer::ExplorerDiffType {
+    use explorer::ExplorerDiffType as Type;
+    match (staged, rev.first().cloned(), rev.get(1).cloned()) {
+        // `--staged` with no revision means against the last commit, which is
+        // what `git diff --cached` means with no revision.
+        (true, rev, _) => Type::Staged(rev.unwrap_or_else(|| "HEAD".to_owned())),
+        (false, None, _) => Type::Worktree,
+        (false, Some(a), Some(b)) => Type::Between(a, b),
+        (false, Some(a), None) => match a.split_once("...") {
+            Some((base, target)) => Type::MergeBase(base.to_owned(), target.to_owned()),
+            None => Type::Against(a),
+        },
+    }
 }
 
 #[derive(Subcommand)]
@@ -104,6 +148,17 @@ pub enum Debug {
         /// Write the exact bytes to stdout, for comparing against `git show`
         #[arg(long)]
         raw: bool,
+    },
+
+    /// Print the groups a request produces
+    List {
+        #[arg(long = "rev", short = 'r', value_name = "REV", num_args = 1..=2)]
+        rev: Vec<String>,
+        #[arg(long, visible_alias = "cached")]
+        staged: bool,
+        /// Paths to narrow the list to
+        #[arg(last = true)]
+        pathspec: Vec<String>,
     },
 
     /// Print what git says about a worktree

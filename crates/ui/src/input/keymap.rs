@@ -41,8 +41,8 @@ use crate::input::{buffer, pane, program, tab, view};
 /// `Inline`, because those are the same two things `align` already names and a
 /// second definition is one that can drift. What this enum adds is the
 /// buffers that are *not* diffs — which is exactly why it cannot simply be an
-/// `Option<DiffLayout>`: the explorer at S12 is a third answer, not an absent
-/// one. See D33.
+/// `Option<DiffLayout>`: the explorer is a third answer, not an absent one.
+/// See D33.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KeymapType {
     /// Two versions, laid out one of the two ways.
@@ -50,6 +50,8 @@ pub enum KeymapType {
     /// One version of a file, with nothing to compare it against.
     #[default]
     SingleFile,
+    /// The list of changed files.
+    Explorer,
 }
 
 impl KeymapType {
@@ -57,6 +59,7 @@ impl KeymapType {
         KeymapType::Diff(DiffLayout::SideBySide),
         KeymapType::Diff(DiffLayout::Inline),
         KeymapType::SingleFile,
+        KeymapType::Explorer,
     ];
 }
 
@@ -272,6 +275,12 @@ mod tests {
             Match::Exact(_)
         ));
         assert_eq!(lookup(KeymapType::SingleFile, &[key!('>')]), Match::None);
+        // The list claims the same key for the border beside it, which is a
+        // different border and a different executor.
+        assert_eq!(
+            lookup(KeymapType::Explorer, &[key!('>')]),
+            Match::Exact(Action::Tab(crate::input::TabAction::WidenLeft))
+        );
     }
 
     #[test]

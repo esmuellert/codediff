@@ -111,6 +111,18 @@ pub fn repo(dir: &Path) -> Result<()> {
         "untracked-dir/inside.txt",
         "in an untracked directory\n",
     )?;
+    // A chain of directories with nothing to choose between, so a flattened
+    // tree and an unflattened one are different pictures. Without it the two
+    // cannot be told apart, and a broken flattener passes every test.
+    write(
+        dir,
+        "deep/only/one/chain/leaf.txt",
+        "at the end of a chain\n",
+    )?;
+    // A directory with two children, which must *not* flatten.
+    write(dir, "nest/a/one.txt", "one\n")?;
+    write(dir, "nest/b/two.txt", "two\n")?;
+    write(dir, "nest/b/three.txt", "three\n")?;
     write(dir, "ignored.txt", "should not appear\n")?;
     write(dir, "ignored-dir/inside.txt", "should not appear either\n")?;
 
@@ -156,6 +168,10 @@ D  .  deleted.txt
 .  M  no-trailing-newline.txt
 R  .  renamed-to.txt <- renamed-from.txt
 M  M  staged-then-edited.txt
+.  ?  deep/only/one/chain/leaf.txt
+.  ?  nest/a/one.txt
+.  ?  nest/b/three.txt
+.  ?  nest/b/two.txt
 .  ?  untracked-dir/inside.txt
 .  ?  untracked.txt
 .  M  with spaces.txt

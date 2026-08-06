@@ -10,6 +10,8 @@ use crokey::{KeyCombination, key};
 
 use crate::input::command::Action;
 use crate::input::keymap::{Binding, KeymapType};
+use crate::input::tab::{self, TabAction};
+use crate::input::view::ViewAction;
 
 /// Something the focused buffer does, to itself or to the viewport it is lent.
 ///
@@ -35,6 +37,10 @@ pub enum BufferAction {
     /// column that grows, since that is what the reader is asking for.
     WidenOriginal,
     NarrowOriginal,
+    /// Show whole paths instead of a tree, or the other way round.
+    ToggleViewMode,
+    /// Show or hide the line counts.
+    ToggleStats,
 }
 
 /// Movement that needs nothing but the number of rows.
@@ -76,6 +82,7 @@ pub const fn bindings(keymap_type: KeymapType) -> &'static [&'static [Binding]] 
         KeymapType::Diff(DiffLayout::SideBySide) => &[MOTIONS, CHANGES, TWO_COLUMNS],
         KeymapType::Diff(DiffLayout::Inline) => &[MOTIONS, CHANGES],
         KeymapType::SingleFile => &[MOTIONS],
+        KeymapType::Explorer => &[MOTIONS, LIST],
     }
 }
 
@@ -120,6 +127,33 @@ pub const MOTIONS: &[Binding] = &[
     // A motion when no count is in progress, a digit when one is — vim's own
     // rule, and the only place counts and bindings interact.
     motion(&[key!('0')], Motion::ScrollHome),
+];
+
+/// What the list of changed files adds to the motions.
+///
+/// `i` and `<CR>` are the plugin's own keys, so the two tools do not need
+/// different fingers for the same thought. The `z` folds are deliberately not
+/// here: they turned out to fold only the section the cursor is in, which is
+/// not what "close all folds" says, and one key that opens and shuts the row
+/// under the cursor is the whole of what a read-only list needs.
+pub const LIST: &[Binding] = &[
+    // Both, because one is what a list looks like it wants and the other is
+    // what a reader coming from the plugin will press.
+    Binding {
+        keys: &[key!(enter)],
+        action: Action::View(ViewAction::Open),
+    },
+    Binding {
+        keys: &[key!(o)],
+        action: Action::View(ViewAction::Open),
+    },
+    buffer(&[key!(i)], BufferAction::ToggleViewMode),
+    buffer(&[key!(s)], BufferAction::ToggleStats),
+    // The border beside the list. Bound here rather than at the tab, so that
+    // it is live only where there is a border — a diff claims the same two
+    // keys for its own column divider, and a plain file has neither.
+    tab::resize(&[key!('>')], TabAction::WidenLeft),
+    tab::resize(&[key!('<')], TabAction::NarrowLeft),
 ];
 
 /// What any diff adds to the motions, however it is laid out.

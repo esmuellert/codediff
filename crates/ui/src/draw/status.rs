@@ -21,7 +21,10 @@ pub struct Status<'a> {
     /// the row is too narrow. A string could support neither. It used to be
     /// one — `"old.rs → new.rs   (added)"` — and the `(added)` was rendered
     /// bold, as though it were part of the path. See D28.
-    pub file: &'a File,
+    /// `None` when the buffer is not one file — the list of them is not any
+    /// of the files it holds, and naming the first would put a name in the
+    /// status line that nothing on screen corresponds to.
+    pub file: Option<&'a File>,
     /// Cursor position and document height, in view lines. Both 0-based
     /// internally, shown 1-based.
     pub view_line: u32,
@@ -37,6 +40,12 @@ pub struct Status<'a> {
     /// Shown instead of the change counter, since it answers the key that was
     /// just pressed and the counter would only repeat what it already said.
     pub exhausted: Option<Direction>,
+    /// What went wrong the last time something was asked for.
+    ///
+    /// Shown in place of the file name, and loudly: a reader who pressed enter
+    /// and saw nothing change must be told why, or they will conclude the key
+    /// is broken.
+    pub notice: Option<&'a str>,
 }
 
 pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
@@ -46,7 +55,11 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
     let right = summary(status);
     // The room the name has, once the position on the right is accounted for.
     let room = area.width.saturating_sub(right.chars().count() as u16 + 3);
-    let mut x = name(buf, area, status.file, room, base, theme);
+    let mut x = match (status.notice, status.file) {
+        (Some(why), _) => cells::write(buf, area, 1, why, base.patch(theme.warning)),
+        (None, Some(file)) => name(buf, area, file, room, base, theme),
+        (None, None) => cells::write(buf, area, 1, "changed files", base.patch(theme.status_path)),
+    };
 
     if status.timed_out {
         // Deliberately loud. A diff the engine abandoned is not a diff, and a
@@ -129,6 +142,12 @@ fn name(
 
 fn summary(status: &Status<'_>) -> String {
     let position = format!("{}/{}", status.view_line + 1, status.view_lines.max(1));
+    // A list of changed files is not a diff, so it has no changes to count.
+    // Saying "no changes" beside eight changed files is a contradiction the
+    // reader has to stop and resolve.
+    if status.file.is_none() {
+        return position;
+    }
     if let Some(direction) = status.exhausted {
         let which = match direction {
             Direction::Next => "next",
@@ -165,13 +184,14 @@ mod tests {
 
     fn status() -> Status<'static> {
         Status {
-            file: &MAIN,
+            file: Some(&MAIN),
             view_line: 0,
             view_lines: 100,
             changes: 3,
             change: None,
             timed_out: false,
             exhausted: None,
+            notice: None,
         }
     }
 
@@ -264,7 +284,7 @@ mod tests {
         let deep = File::unchanged_path(at("crates/ui/src/render/status.rs"), revs());
         let wide = render(
             &Status {
-                file: &deep,
+                file: Some(&deep),
                 ..status()
             },
             70,
@@ -274,7 +294,7 @@ mod tests {
 
         let narrow = render(
             &Status {
-                file: &deep,
+                file: Some(&deep),
                 ..status()
             },
             30,
@@ -294,7 +314,7 @@ mod tests {
         let added = File::added(at("new.rs"), revs());
         let line = render(
             &Status {
-                file: &added,
+                file: Some(&added),
                 ..status()
             },
             60,
@@ -305,7 +325,7 @@ mod tests {
         let gone = File::deleted(at("old.rs"), revs());
         let line = render(
             &Status {
-                file: &gone,
+                file: Some(&gone),
                 ..status()
             },
             60,
@@ -318,7 +338,7 @@ mod tests {
         let moved = File::renamed(at("old.rs"), at("new.rs"), revs());
         let wide = render(
             &Status {
-                file: &moved,
+                file: Some(&moved),
                 ..status()
             },
             70,
@@ -330,7 +350,7 @@ mod tests {
         // Too narrow for both: the name it has *now* is the one that stays.
         let narrow = render(
             &Status {
-                file: &moved,
+                file: Some(&moved),
                 ..status()
             },
             24,

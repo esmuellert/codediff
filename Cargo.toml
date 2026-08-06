@@ -10,10 +10,12 @@ members = [
     "crates/vscode-diff",
     "crates/line-index",
     "crates/align",
+    "crates/explorer",
     "crates/vcs",
     "crates/fixtures",
     "crates/syntax",
     "crates/ui",
+    "crates/pipeline",
     "crates/codediff",
     "xtask",
 ]
@@ -42,10 +44,12 @@ file-types = { path = "crates/file-types" }
 vscode-diff = { path = "crates/vscode-diff" }
 line-index = { path = "crates/line-index" }
 align = { path = "crates/align" }
+explorer = { path = "crates/explorer" }
 vcs = { path = "crates/vcs" }
 fixtures = { path = "crates/fixtures" }
 syntax = { path = "crates/syntax" }
 ui = { path = "crates/ui" }
+pipeline = { path = "crates/pipeline" }
 
 # The TextMate engine, and bat's extended grammar set. `onig` rather than
 # `fancy-regex`: it is the same Oniguruma VS Code compiles to WASM, four times

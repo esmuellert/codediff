@@ -7,6 +7,9 @@
 //! change if git's vocabulary and ours ever disagree.
 
 pub mod cat_file;
+mod changes;
+mod name_status;
+mod numstat;
 pub mod rev_parse;
 pub mod run;
 pub mod status;
@@ -19,6 +22,9 @@ use crate::error::Result;
 use file_types::{ChangeType, ChangedFile, DiffVersion, Revs};
 use file_types::{File, FileContent, RepoPath};
 
+pub use changes::Changes;
+pub use name_status::{Change, to_changed_file};
+pub use numstat::Counts;
 pub use status::{Code, Entry, Oid, Untracked, Xy};
 
 /// Reads a git repository by running `git`.
@@ -77,7 +83,7 @@ impl Git {
     /// name moves and an id is what says which bytes were read.
     pub fn revs(&mut self) -> Result<Revs> {
         if self.revs.is_none() {
-            let commit = rev_parse::resolve(&self.repo, &self.before)?;
+            let commit = rev_parse::resolve_or_empty(&self.repo, &self.before)?;
             self.revs = Some(Revs::worktree_against(commit));
         }
         Ok(self.revs.clone().expect("just resolved"))
@@ -88,20 +94,22 @@ impl Git {
     /// Runs `git --no-optional-locks status --porcelain=v2 -z`. Available for
     /// anything that genuinely needs git's staging state, which the neutral
     /// [`ChangedFile`] deliberately does not carry.
-    pub fn entries(&self) -> Result<Vec<Entry>> {
-        let out = run::run(
-            &self.repo.root,
-            &[
-                "status",
-                "--porcelain=v2",
-                "-z",
-                self.untracked.flag(),
-                // Renames are the whole point of the `2` record; without this a
-                // moved file appears as an unrelated add and delete.
-                "--find-renames",
-            ],
-        )?;
-        status::parse(&out)
+    pub fn entries(&self, pathspec: &[String]) -> Result<Vec<Entry>> {
+        let mut args = vec![
+            "status",
+            "--porcelain=v2",
+            "-z",
+            self.untracked.flag(),
+            // Renames are the whole point of the `2` record; without this a
+            // moved file appears as an unrelated add and delete.
+            "--find-renames",
+        ];
+        if !pathspec.is_empty() {
+            args.push("--");
+        }
+        let owned: Vec<&str> = pathspec.iter().map(String::as_str).collect();
+        args.extend_from_slice(&owned);
+        status::parse(&run::run(&self.repo.root, &args)?)
     }
 
     /// A file's content at a revision, straight from the object store.
@@ -145,7 +153,7 @@ impl Git {
         let root = self.repo.root.clone();
         let revs = self.revs()?;
         Ok(self
-            .entries()?
+            .entries(&[])?
             .into_iter()
             .map(|entry| to_file_diff(entry, &root, revs.clone()))
             .collect())
@@ -170,10 +178,56 @@ impl Git {
             // lives in the file rather than in the batch.
             Some(rev) => {
                 let rev = rev.to_owned();
+                // Against the working tree, the stored side is converted the
+                // way a checkout would convert it. A repository with
+                // `core.autocrlf` stores LF and checks out CRLF, so comparing
+                // the stored bytes with the bytes on disk marked **every line**
+                // changed — measured, on a file where one line had been
+                // edited. The same is true of any clean/smudge filter.
+                //
+                // Not batched: `cat-file --batch --filters` reports the size
+                // of the object *before* filtering and then writes the
+                // filtered bytes, so a reader framing by that size falls out
+                // of step with the stream. One process per file is the price
+                // of being right, and it is paid only when a file is opened.
+                if file.file.rev(version.other()) == &file_types::Rev::Worktree {
+                    return Ok(FileContent::of(filtered(&self.repo, &rev, &path)?));
+                }
                 Ok(FileContent::of(self.blobs()?.read(&rev, &path)?))
             }
         }
     }
+}
+
+/// A stored version, converted as a checkout would convert it.
+///
+/// Runs `git cat-file --filters <rev>:<path>`. `None` when the object does not
+/// exist, which is ordinary: one side of a diff is routinely absent.
+fn filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
+    let spec = format!("{rev}:{path}");
+    match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
+        Ok(bytes) => Ok(Some(bytes)),
+        // Only what git says when the object is not there. Reading *every*
+        // failure as "missing" turned a broken clean filter, a corrupt object
+        // and a killed process into a file that had simply been added — a
+        // whole-file diff, with nothing to say the read had failed.
+        Err(crate::error::Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
+        Err(other) => Err(other),
+    }
+}
+
+/// Whether git's complaint means the object does not exist.
+///
+/// Matched on the message because `cat-file` exits 128 for everything. The
+/// wordings are git's own, and a wording we do not know is treated as a real
+/// failure — the safe way round, since the cost is an error the reader can
+/// read rather than a diff that quietly lies.
+fn is_missing(stderr: &str) -> bool {
+    stderr.contains("does not exist")
+        || stderr.contains("Not a valid object name")
+        || stderr.contains("unknown revision")
+        || stderr.ends_with("missing")
+        || stderr.contains("exists on disk, but not in")
 }
 
 /// Git's model, in the reviewer's terms.

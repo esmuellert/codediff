@@ -26,6 +26,7 @@
 
 pub mod cells;
 pub mod column;
+pub mod explorer;
 pub mod gutter;
 pub mod layout;
 pub mod line;

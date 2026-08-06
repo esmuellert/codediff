@@ -20,12 +20,14 @@ pub mod basic;
 pub mod catppuccin;
 pub mod code;
 mod colour;
+pub mod list;
 
 use ratatui::style::Style;
 
 pub use catppuccin::Flavour;
 pub use code::Code;
 pub use colour::{Rgb, blend};
+pub use list::List;
 
 /// Every style the interface draws with.
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +72,15 @@ pub struct Theme {
     /// because it holds colours where everything above holds styles — syntax
     /// may only tint letters, never repaint a line. See [`code`].
     pub code: Code,
+
+    /// The colour of each part of a row in the list of changed files.
+    ///
+    /// Apart from the rest for the same reason as [`code`](Self::code): it is
+    /// indexed by something the *list* decides rather than something the diff
+    /// decides, and it holds colours where everything above holds styles — a
+    /// row may only tint its letters, because the background says which row
+    /// the reader is on. See [`list`].
+    pub list: List,
 }
 
 impl Theme {

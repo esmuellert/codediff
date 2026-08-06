@@ -28,6 +28,15 @@ use ratatui::backend::CrosstermBackend;
 /// on how quickly a key is answered.
 const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 
+/// How long to wait for a key when there is nothing else to do.
+///
+/// Not a blocking wait, because a blocking wait cannot be interrupted: a
+/// signal wakes the process, and crossterm goes straight back to sleep rather
+/// than reporting it. Waking four times a second is what lets a `kill` be
+/// noticed. Each wake is one `poll` that returns at once, which is a few
+/// microseconds — measured at under 0.1% of a core while idle.
+const IDLE: std::time::Duration = std::time::Duration::from_millis(250);
+
 pub struct Screen {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
@@ -40,6 +49,8 @@ impl Screen {
     /// backtrace lands on the alternate screen and vanishes with it.
     pub fn open() -> io::Result<Self> {
         install_panic_hook();
+        #[cfg(unix)]
+        std::sync::LazyLock::force(&KILLED);
         take()?;
         Ok(Self {
             terminal: Terminal::new(CrosstermBackend::new(io::stdout()))?,
@@ -60,12 +71,14 @@ impl Screen {
     /// Either way a keypress ends the wait at once — the timeout paces
     /// *collection*, never the answer to a key.
     pub fn next_event(&self, waiting: bool) -> io::Result<Option<event::Event>> {
-        if !waiting {
+        let wait = if waiting { FRAME } else { IDLE };
+        if event::poll(wait)? {
             return event::read().map(Some);
         }
-        if event::poll(FRAME)? {
-            return event::read().map(Some);
-        }
+        // Nothing arrived. The one thing that could have happened while we
+        // slept is a signal, which is checked here rather than in the handler
+        // it came from — see [`stop_if_killed`].
+        stop_if_killed();
         Ok(None)
     }
 
@@ -126,6 +139,51 @@ pub fn restore() {
     let _ = terminal::disable_raw_mode();
     let _ = stdout.flush();
 }
+
+/// Notices a signal asking us to stop, restores the terminal, and goes.
+///
+/// Called from the wait, not from the handler that set the flag. A handler may
+/// only do what is safe to interrupt anything with — setting one atomic — and
+/// `signal_hook`'s API for running arbitrary code in one is `unsafe`, which
+/// this workspace forbids. So the handler sets a flag and this does the work,
+/// on the thread that owns the terminal, in order.
+///
+/// The exit code follows the convention for a signal, so a shell reports the
+/// same thing it would have reported without a handler at all.
+#[cfg(unix)]
+fn stop_if_killed() {
+    use std::sync::atomic::Ordering;
+    let Some(signal) = KILLED.iter().find(|(_, flag)| flag.load(Ordering::Relaxed)) else {
+        return;
+    };
+    restore();
+    std::process::exit(128 + signal.0);
+}
+
+#[cfg(not(unix))]
+fn stop_if_killed() {}
+
+/// The signals that mean stop, and whether each has arrived.
+///
+/// `SIGINT` is not here: raw mode delivers `Ctrl-C` as an ordinary key, and
+/// the quit path already restores.
+#[cfg(unix)]
+static KILLED: std::sync::LazyLock<[(i32, std::sync::Arc<std::sync::atomic::AtomicBool>); 3]> =
+    std::sync::LazyLock::new(|| {
+        [
+            signal_hook::consts::SIGTERM,
+            signal_hook::consts::SIGHUP,
+            signal_hook::consts::SIGQUIT,
+        ]
+        .map(|signal| {
+            let flag = std::sync::Arc::<std::sync::atomic::AtomicBool>::default();
+            // Ignored deliberately: failing to install a handler leaves the
+            // signal's default action, which is what happened before this
+            // existed. It must not stop the review.
+            let _ = signal_hook::flag::register(signal, std::sync::Arc::clone(&flag));
+            (signal, flag)
+        })
+    });
 
 /// Restores the terminal before the default hook prints anything.
 ///
