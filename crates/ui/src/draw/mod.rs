@@ -4,25 +4,19 @@
 //! which is why the whole interface can be tested by drawing into a buffer and
 //! reading the text back out.
 //!
-//! **One file draws one buffer type**, and the files line up with the model:
+//! **The files are the same picture as [`view`](crate::view)** — one level
+//! contains the next, and each hands the one below a rectangle:
 //!
 //! ```text
-//! view/buffer/diff_buffer.rs  ←→  draw/side_by_side.rs  (DiffType::SideBySide)
-//!                             ←→  draw/inline.rs        (DiffType::Inline)
-//! view/buffer/single_file.rs  ←→  draw/single_file.rs
+//! view/            View      draw/screen.rs   the body, and the status line
+//! ├ tab.rs         Tab       ├ tab.rs         every pane, and the border
+//! ├ pane.rs        Pane      ├ pane.rs        one buffer, at one height
+//! ├ viewport.rs    Viewport  │                (a position; nothing draws it)
+//! └ buffer/        Buffer    └ buffer/        what a buffer type looks like
 //! ```
 //!
-//! A diff carries the layout it is being read in, and that is what [`screen`]
-//! dispatches on. Adding either a buffer type or a layout is a new arm and a
-//! new file, and the compiler names the arm that is missing.
-//!
-//! ```text
-//! screen          the screen: body and status line
-//! ├ side_by_side  one pane holding a diff in two columns
-//! ├ inline        one pane holding a diff one version per view line
-//! ├ single_file   one pane holding one version of a file
-//! └ status        the bottom row
-//! ```
+//! `status.rs` is not a level: it is the row beneath the body, drawn by
+//! `screen.rs` beside it rather than under it.
 //!
 //! **This is the only half of drawing that may name [`crate::view`]**, and
 //! `cargo xtask lint-arch` holds the other half to it. The bricks these are
@@ -33,12 +27,11 @@
 //! Not the same word twice: **render** turns a value into marks, **draw**
 //! composes those marks into what a buffer type looks like.
 
-mod explorer;
-mod inline;
+mod buffer;
+mod pane;
 mod screen;
-mod side_by_side;
-mod single_file;
 mod status;
+mod tab;
 
 pub use screen::render;
 

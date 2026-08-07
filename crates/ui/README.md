@@ -106,7 +106,7 @@ write guards. See [D19](../../docs/plan/05-decisions.md#d19).
 
 A diff always has **two** columns, so neither field of `Frame` is optional. A file with one
 side is not compared against anything, so it is not a diff at all — it is a `SingleFile`
-buffer, drawn by `draw/single_file.rs` in a single column. Both diff modes fall back to
+buffer, drawn by `draw/buffer/single_file.rs` in a single column. Both diff modes fall back to
 it, because with one version there is nothing to lay out against. Nothing on it changed *relative to* anything,
 so nothing is highlighted. Marking every line of a new file green says nothing the word "added" does
 not. VSCode arrived here from the same bug and stopped opening a diff editor for added,
@@ -132,9 +132,14 @@ view/                what is on screen, and where
     └── single_file.rs   SingleFile — one version, shown alone
 draw/                what each buffer type looks like
 ├── screen.rs          the screen: body and status line
-├── side_by_side.rs    one pane holding a diff in two columns
-├── inline.rs          one pane holding a diff one version per view line
-├── single_file.rs     one pane holding one version of a file
+├── tab.rs             every pane the tab has, and the border between two
+├── pane.rs            one buffer, at the height its rectangle gives it
+├── buffer/            what a buffer type looks like
+│   ├── mod.rs           the one place a BufferType is dispatched on
+│   ├── side_by_side.rs  one pane holding a diff in two columns
+│   ├── inline.rs        one pane holding a diff one version per view line
+│   ├── single_file.rs   one pane holding one version of a file
+│   └── explorer.rs      one pane holding the list of changed files
 └── status.rs          the bottom row
 render/              putting characters and colour on a cell grid
 ├── layout.rs          where the columns and gutters go
@@ -156,10 +161,16 @@ terminal.rs          who owns the screen, and how it is given back
 ```
 
 **The module tree is the model.** Each of the four levels is one file, in containment
-order, so `ls view/` and the diagram above are the same picture. `buffer/` is *inside*
-`view/` because `View` owns the buffers — Neovim's are global and Helix keeps `documents`
-beside its `tree`, but both have an editor above that owns the two. We do not, and
-inventing one to justify a directory would be the tail wagging the dog.
+order, so `ls view/`, `ls draw/` and the diagram above are the same picture. `buffer/` is
+*inside* `view/` because `View` owns the buffers — Neovim's are global and Helix keeps
+`documents` beside its `tree`, but both have an editor above that owns the two. We do not,
+and inventing one to justify a directory would be the tail wagging the dog.
+
+`draw/` mirrors it level for level: `screen.rs` hands `tab.rs` a body, `tab.rs` hands
+`pane.rs` a rectangle, `pane.rs` hands `buffer/` a height. Nothing above is told what type
+of buffer is below it, and nothing below is told how many panes there are. `viewport.rs`
+has no counterpart because a position draws nothing, and `status.rs` has no counterpart
+because it is not a level — it is the row beneath the body.
 
 An id lives with the collection it indexes: `BufferId` in `mod.rs` beside `View::buffers`,
 `PaneId` in `tab.rs` beside `Tab::panes`.
