@@ -18,6 +18,11 @@ A comment three times longer than its neighbours draws the eye to the wrong plac
 **Use the name Neovim, VSCode or `codediff.nvim` already uses. Look it up before you invent one.**
 These are the references this project follows. Most things already have a name — `:help group-name` had ours.
 
+## Explaining
+
+**Explain in plain words. Reach for a term of art only when it is both shorter and exact.**
+The reader is an expert who checks every claim, so an unexplained word hides nothing — it only costs them the moment spent decoding it.
+
 ## Verifying
 
 **Do not state a number or a cause unless you measured it.**
