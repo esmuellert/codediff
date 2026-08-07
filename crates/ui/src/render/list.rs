@@ -11,7 +11,8 @@
 //! reports. See D65.
 //!
 //! Nothing here decides what survives a narrow pane. That is [`fit`], which
-//! knows about neither list nor diff and is shared with the status line.
+//! knows about neither list nor diff, and so can narrow anything drawn from
+//! parts.
 //!
 //! [`fit`]: super::fit
 
@@ -56,14 +57,14 @@ mod priority {
 /// `background` is the row's own — the selected row keeps its highlight under
 /// every colour it holds, rather than having it replaced by them.
 pub fn pieces(row: &Row, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<Piece>) {
-    let list = &theme.list;
+    let tree = &theme.tree;
     let mut left = Vec::new();
     let mut right = Vec::new();
 
     if let Some(guides) = &row.guides {
         left.push(Piece::droppable(
             indent(guides),
-            background.fg(list.marker),
+            background.fg(tree.marker),
             priority::GUIDES,
         ));
     }
@@ -80,9 +81,9 @@ pub fn pieces(row: &Row, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<P
             // and colour from the theme.
             left.push(Piece::fixed(
                 title,
-                background.fg(list.heading).add_modifier(Modifier::BOLD),
+                background.fg(tree.heading).add_modifier(Modifier::BOLD),
             ));
-            let count = background.fg(list.count);
+            let count = background.fg(tree.count);
             match stats {
                 Some(stats) => {
                     left.push(Piece::droppable(
@@ -103,9 +104,9 @@ pub fn pieces(row: &Row, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<P
         Content::Directory { name, open } => {
             left.push(Piece::fixed(
                 if *open { OPEN } else { SHUT },
-                background.fg(list.marker),
+                background.fg(tree.marker),
             ));
-            left.push(Piece::fixed(name, background.fg(list.directory)));
+            left.push(Piece::fixed(name, background.fg(tree.directory)));
         }
         Content::File {
             name,
@@ -113,11 +114,11 @@ pub fn pieces(row: &Row, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<P
             stats,
             change,
         } => {
-            left.push(Piece::fixed(name, background.fg(list.name)));
+            left.push(Piece::fixed(name, background.fg(tree.name)));
             if let Some(previous) = moved_from {
                 left.push(Piece::droppable(
                     format!(" ← {previous}"),
-                    background.fg(list.moved),
+                    background.fg(tree.previous),
                     priority::MOVED,
                 ));
             }
@@ -127,14 +128,14 @@ pub fn pieces(row: &Row, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<P
                 // them rather than staying behind as a lone column.
                 right.push(Piece::droppable(
                     " ",
-                    background.fg(list.name),
+                    background.fg(tree.name),
                     priority::STATS,
                 ));
             }
             right.push(Piece::fixed(
                 letter(*change),
                 background
-                    .fg(status_colour(*change, theme))
+                    .fg(theme.change.of(*change))
                     .add_modifier(Modifier::BOLD),
             ));
         }
@@ -171,7 +172,7 @@ fn push_stats(
     if stats.added > 0 {
         pieces.push(Piece::droppable(
             format!("+{}", stats.added),
-            background.fg(theme.list.added),
+            background.fg(theme.change.gained),
             priority,
         ));
     }
@@ -179,7 +180,7 @@ fn push_stats(
         let separator = if stats.added > 0 { " " } else { "" };
         pieces.push(Piece::droppable(
             format!("{separator}-{}", stats.removed),
-            background.fg(theme.list.removed),
+            background.fg(theme.change.lost),
             priority,
         ));
     }
@@ -194,18 +195,6 @@ pub fn letter(change: ChangeType) -> &'static str {
         ChangeType::Moved => "R",
         ChangeType::Untracked => "??",
         ChangeType::Conflicted => "!",
-    }
-}
-
-fn status_colour(change: ChangeType, theme: &Theme) -> ratatui::style::Color {
-    let list = &theme.list;
-    match change {
-        ChangeType::Added => list.new_file,
-        ChangeType::Modified => list.modified,
-        ChangeType::Deleted => list.deleted,
-        ChangeType::Moved => list.renamed,
-        ChangeType::Untracked => list.untracked,
-        ChangeType::Conflicted => list.conflicted,
     }
 }
 

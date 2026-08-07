@@ -2926,7 +2926,8 @@ name did not fit it. `row.rs` was considered and refused — `cells.rs` already
 calls one row of the grid `row: Rect`, and this codebase has already paid for
 that collision once, when `align`'s `Row` became `ViewLine`. `list` was already
 the word in `ui` for the thing on screen, which is what the theme tables are
-named after: `theme/list.rs`, `theme::List`, and `Theme::list`.
+named after — and [D66](#d66) then split those tables by the same test this
+decision applies to `render`.
 
 **What is checked where.** `explorer/tests/tree.rs` spells the facts with a
 helper of its own, so its 360 lines of assertions about the *shape* of the tree
@@ -2937,3 +2938,56 @@ Sabotage: a changed guide, a changed fold triangle and a changed status letter
 each fail three or more tests. Bold on a heading failed nothing at all, having
 been moved on trust; `a_heading_and_a_status_letter_are_bold_in_every_theme`
 now covers it.
+
+## D66 — a colour table is named for what it colours, not for who draws it
+
+`theme::List` held fourteen colours, and they answered two different questions.
+
+Five need rows that nest to mean anything: `heading`, `marker`, `directory`,
+`name`, `count`. An indent guide is nothing where nothing indents.
+
+The other nine are about a **file**, and mean the same wherever one is named:
+six for what happened to it — added, modified, deleted, renamed, untracked,
+conflicted — and `added`/`removed` for the lines it gained and lost. A tab of
+open files would want them. So would a header over a diff, or the bottom row.
+None of those is a list, and none would think to look inside a table named for
+one.
+
+The table's own doc said as much without noticing: *"the letters follow the
+diff's own colours where they exist — green for what arrived, red for what
+went, so the list and the file beside it agree about what green means."* That
+is a claim about the whole screen, written inside one buffer type's table.
+
+So:
+
+| table | what it colours | indexed by |
+|---|---|---|
+| `theme::Tree` | a tree drawn in rows | what a row *is* |
+| `theme::Change` | a file that changed | `file_types::ChangeType` |
+
+`Change::of(ChangeType)` is on the table rather than at each caller, so a
+seventh kind of change is a field and one arm rather than a search for
+everywhere six were spelled out. `render/list.rs` had that `match` inline and
+was the only place it existed; now it has none.
+
+**Two fields were renamed on the way, both because they collided.**
+
+`List::moved` was grey, and meant *where a file came from*. `Theme::moved` is
+faint blue, and means *a block the engine judged to have moved within a file*.
+One word, two meanings, one struct apart. It is `Tree::previous` now, which is
+what the row beside it says: `← old-name.rs`.
+
+`List::new_file` was the odd one of the six — five named for a `ChangeType`
+variant and one not, because `added` was taken by the line count in the same
+struct. With the two tables apart, `Change::added` is the change and
+`Change::gained`/`Change::lost` are the counts, so nothing is named around a
+clash that no longer exists.
+
+**Why not `theme/explorer.rs`.** The theme files are named for what a reader
+sees — `code`, `colour`, `catppuccin` — never for the code that draws it;
+`code.rs` is not called `syntax.rs`. And `Explorer` already means three things
+in `ui`: the crate, the buffer, and the `BufferType` variant. A fourth would be
+the collision [D65](#d65) had just removed one layer down.
+
+The split is what makes the question moot. `Change` is not the explorer's, and
+`Tree` is named for the shape it colours rather than the buffer that has one.

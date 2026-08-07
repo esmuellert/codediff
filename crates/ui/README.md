@@ -158,7 +158,13 @@ syntax/              colouring, on a thread that is not the one drawing
 │                     dropped least recently used
 └── worker.rs          the loop, and where it left off in unfinished files
 input/               what does this key mean
-theme/               what colour is it (Group -> Color, and nothing else)
+theme/               what colour is it — taste, and nothing else
+├── code.rs            a piece of code, by what the language says it is
+├── tree.rs            a part of a tree drawn in rows
+├── change.rs          a file, by what happened to it
+├── catppuccin.rs      four flavours, by their arithmetic
+├── basic.rs           the sixteen colours every terminal has
+└── colour.rs          colour arithmetic
 start.rs             opening a review, and everything it needs before frame one
 app.rs               read a key, dispatch it, draw a frame
 terminal.rs          who owns the screen, and how it is given back

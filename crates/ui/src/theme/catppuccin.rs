@@ -257,7 +257,8 @@ pub const fn theme(flavour: Flavour) -> Theme {
         status_path: Style::new().add_modifier(Modifier::BOLD),
         warning: ink(p.red).add_modifier(Modifier::BOLD),
 
-        list: crate::theme::List::catppuccin(&p),
+        tree: crate::theme::Tree::catppuccin(&p),
+        change: crate::theme::Change::catppuccin(&p),
         code: crate::theme::code::catppuccin(p),
     }
 }

@@ -24,34 +24,35 @@ fn every_part_of_a_row_is_coloured_by_what_it_is() {
     // colour, because the styles it borrowed were status-line patches with no
     // foreground and diff backgrounds with no foreground either.
     let theme = Theme::named("basic-dark").unwrap();
-    let list = theme.list;
+    let tree = theme.tree;
+    let change = theme.change;
     let mut session = Session::new(Buffer::explorer(entries()), theme);
 
     // Row 0 `Changes (3 · +16 -3)`, row 1 `├ ▾ src`, row 5 `└ notes.txt … ??`.
     let first = colours(&mut session, 44, 8, 0);
-    assert_eq!(first[0], list.heading, "the section heading");
-    assert_eq!(first[1], list.marker, "an indent guide");
+    assert_eq!(first[0], tree.heading, "the section heading");
+    assert_eq!(first[1], tree.marker, "an indent guide");
 
     // Column four of row 1 is the `s` of `src`; of row 5, the `o` of `notes`.
     let fourth = colours(&mut session, 44, 8, 4);
-    assert_eq!(fourth[1], list.directory, "a directory name");
-    assert_eq!(fourth[5], list.name, "a file name");
+    assert_eq!(fourth[1], tree.directory, "a directory name");
+    assert_eq!(fourth[5], tree.name, "a file name");
 
     // The last column is the status letter.
     let last = colours(&mut session, 44, 8, 43);
-    assert_eq!(last[3], list.modified, "a modified file");
-    assert_eq!(last[5], list.untracked, "an untracked file");
+    assert_eq!(last[3], change.modified, "a modified file");
+    assert_eq!(last[5], change.untracked, "an untracked file");
 
     // And the counts, at the end of row 3: `+4 M`.
     let counts = colours(&mut session, 44, 8, 40);
-    assert_eq!(counts[3], list.added, "lines gained");
-    assert_ne!(list.added, list.removed, "and green is not red");
+    assert_eq!(counts[3], change.gained, "lines gained");
+    assert_ne!(change.gained, change.lost, "and green is not red");
 }
 
 #[test]
 fn every_status_letter_has_a_colour_of_its_own() {
     let theme = Theme::named("basic-dark").unwrap();
-    let list = theme.list;
+    let change = theme.change;
     let groups = vec![
         unstaged(vec![
             untracked("new.txt"),
@@ -76,21 +77,21 @@ fn every_status_letter_has_a_colour_of_its_own() {
     let mut session = Session::new(Buffer::explorer(groups), theme);
     let letters = colours(&mut session, 40, 12, 39);
     // Unstaged in name order, then staged in name order.
-    assert_eq!(letters[1], list.conflicted, "clash.rs");
-    assert_eq!(letters[2], list.untracked, "new.txt");
-    assert_eq!(letters[4], list.new_file, "added.rs");
-    assert_eq!(letters[5], list.modified, "edited.rs");
-    assert_eq!(letters[6], list.deleted, "gone.rs");
-    assert_eq!(letters[7], list.renamed, "now.rs");
+    assert_eq!(letters[1], change.conflicted, "clash.rs");
+    assert_eq!(letters[2], change.untracked, "new.txt");
+    assert_eq!(letters[4], change.added, "added.rs");
+    assert_eq!(letters[5], change.modified, "edited.rs");
+    assert_eq!(letters[6], change.deleted, "gone.rs");
+    assert_eq!(letters[7], change.renamed, "now.rs");
 
     // All six are distinct, which is the whole point of the column.
     let all = [
-        list.conflicted,
-        list.untracked,
-        list.new_file,
-        list.modified,
-        list.deleted,
-        list.renamed,
+        change.conflicted,
+        change.untracked,
+        change.added,
+        change.modified,
+        change.deleted,
+        change.renamed,
     ];
     for (index, colour) in all.iter().enumerate() {
         assert!(
@@ -199,7 +200,7 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
 
 #[test]
 fn a_heading_and_a_status_letter_are_bold_in_every_theme() {
-    // Weight is structural rather than a taste: a `List` holds `Color` and
+    // Weight is structural rather than a taste: a `Tree` holds `Color` and
     // cannot express it, so it is applied where the pieces are built. Nothing
     // asserted it there, and it survived a move only by luck.
     use ratatui::style::Modifier;

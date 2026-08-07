@@ -164,7 +164,8 @@ pub const DARK: Theme = Theme {
         .add_modifier(Modifier::REVERSED),
 
     code: DARK_CODE,
-    list: super::list::BASIC_DARK,
+    tree: super::tree::BASIC_DARK,
+    change: super::change::BASIC_DARK,
 };
 
 /// For a terminal with a light background.
@@ -194,7 +195,8 @@ pub const LIGHT: Theme = Theme {
         .add_modifier(Modifier::REVERSED),
 
     code: LIGHT_CODE,
-    list: super::list::BASIC_LIGHT,
+    tree: super::tree::BASIC_LIGHT,
+    change: super::change::BASIC_LIGHT,
 };
 
 #[cfg(test)]

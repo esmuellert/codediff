@@ -18,16 +18,18 @@
 
 pub mod basic;
 pub mod catppuccin;
+pub mod change;
 pub mod code;
 mod colour;
-pub mod list;
+pub mod tree;
 
 use ratatui::style::Style;
 
 pub use catppuccin::Flavour;
+pub use change::Change;
 pub use code::Code;
 pub use colour::{Rgb, blend};
-pub use list::List;
+pub use tree::Tree;
 
 /// Every style the interface draws with.
 #[derive(Debug, Clone, Copy)]
@@ -73,14 +75,21 @@ pub struct Theme {
     /// may only tint letters, never repaint a line. See [`code`].
     pub code: Code,
 
-    /// The colour of each part of a row in the list of changed files.
+    /// The colour of each part of a tree drawn in rows.
     ///
     /// Apart from the rest for the same reason as [`code`](Self::code): it is
-    /// indexed by something the *list* decides rather than something the diff
+    /// indexed by something the *tree* decides rather than something the diff
     /// decides, and it holds colours where everything above holds styles — a
     /// row may only tint its letters, because the background says which row
-    /// the reader is on. See [`list`].
-    pub list: List,
+    /// the reader is on. See [`tree`].
+    pub tree: Tree,
+
+    /// The colour of each way a file can have changed.
+    ///
+    /// Its own table rather than part of [`tree`](Self::tree), because a
+    /// change is a fact about a file and means the same wherever a file is
+    /// named — the tree is only what draws them today. See [`change`].
+    pub change: Change,
 }
 
 impl Theme {
