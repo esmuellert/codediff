@@ -50,8 +50,8 @@ impl Command {
 /// Who carries a command out.
 ///
 /// The first four arms are the view model, innermost first, and lookup
-/// consults their bindings in that order. `Program` and `Task` are not levels:
-/// one sits below every level, the other leaves the crate.
+/// consults their bindings in that order. `Program` is not a level: it sits
+/// below every one of them.
 ///
 /// | arm | executed by | can fail | latency |
 /// |---|---|---|---|

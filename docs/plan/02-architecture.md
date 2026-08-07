@@ -171,8 +171,9 @@ impl Alignment<'_> {
 alignment entries are line-range pairs; ours drops the two pixel fields it carries for line
 wrapping and plugin-inserted boxes, neither of which a terminal has. See D18.
 
-**`Alignment` owns its two files, and is therefore stored.** Stage 4 of the pipeline builds
-one and stage 5 hands it over inside a `ui::Diff`; drawing a frame only reads it.
+**`Alignment` owns its two files, and is therefore stored.** The pipeline builds one when a
+file is opened and hands it over inside a `pipeline::file::Diff`, which a `SideBySide` or
+`Inline` buffer then holds; drawing a frame only reads it.
 
 It used to borrow, and that one fact propagated further than anything else in the project:
 a borrowed alignment cannot outlive the function that builds it, so the pipeline's last

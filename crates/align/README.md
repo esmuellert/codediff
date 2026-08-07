@@ -55,16 +55,21 @@ the surface is now the same.
 
 ## Three things worth knowing
 
-**Two layouts, one vocabulary.** `DiffLayout::SideBySide` gives a change as many view lines as
-its taller side, pairing the two versions across each view line; `DiffLayout::Inline` gives it as
-many as both sides together, one version per view line. That single arithmetic difference is the
-whole of it — both yield the same `ViewLine`, so fillers, change kinds, inner-change spans and
-everything downstream work in either without a branch.
+**Two ways to read a diff, one vocabulary.** `DiffType::SideBySide` gives a change as many
+view lines as its taller side, pairing the two versions across each view line;
+`DiffType::Inline` gives it as many as both sides together, one version per view line. That
+single arithmetic difference is the whole of it — both yield the same `ViewLine`, so
+fillers, change types, inner-change spans and everything downstream work in either without
+a branch.
 
-They are *layouts*, not layouts: a layout is how panes are arranged on a screen, and this
-is settled long before anything knows how wide a pane is. View line 40 in one is not view line 40 in the
-other, which is why switching translates through `line_at` and `row_at` rather than keeping
-the number.
+Neither is a *layout*, which is what this used to be called: a layout is how panes are
+arranged on a screen, and which of these to walk is settled long before anything knows how
+wide a pane is. The type lives in `file-types` as `DiffType`, beside the third way of
+reading a file — `Single`, which has nothing to pair against. See
+[D60](../../docs/plan/05-decisions.md#d60).
+
+View line 40 in one is not view line 40 in the other, which is why switching translates
+through `line_at` and `view_line_at` rather than keeping the number.
 
 **`Original` and `Modified`, never left and right.** Left and right are places on a screen.
 Inline view draws both on one side, so a model naming them cannot describe it.

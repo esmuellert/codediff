@@ -127,9 +127,11 @@ view/                what is on screen, and where
 └── buffer/            what a pane can show
     ├── mod.rs           BufferType — the closed set of kinds
     ├── buffer.rs        Buffer — view lines, changed blocks, change navigation
+    ├── colour.rs        asking the colouring thread, and reading the answer
     ├── side_by_side.rs  SideBySide — a diff, and its column divider
     ├── inline.rs        Inline — a diff, one version per view line
-    └── single_file.rs   SingleFile — one version, shown alone
+    ├── single_file.rs   SingleFile — one version, shown alone
+    └── explorer.rs      Explorer — the list of changed files
 draw/                what each buffer type looks like
 ├── screen.rs          the screen: body and status line
 ├── tab.rs             every pane the tab has, and the border between two
@@ -146,6 +148,7 @@ render/              putting characters and colour on a cell grid
 ├── column.rs          one column's view lines
 ├── gutter.rs          one line number
 ├── line.rs            how a line of a diff is coloured
+├── explorer.rs        one list row, fitted to the width it has
 └── cells.rs           one line onto one row of cells
 syntax/              colouring, on a thread that is not the one drawing
 ├── mod.rs             Syntax — the worker, and one request in flight per file
@@ -153,9 +156,9 @@ syntax/              colouring, on a thread that is not the one drawing
 ├── store.rs           Store — every colour, keyed by git's name for it,
 │                     dropped least recently used
 └── worker.rs          the loop, and where it left off in unfinished files
-diff.rs              Diff — what the pipeline delivers
 input/               what does this key mean
 theme/               what colour is it (Group -> Color, and nothing else)
+start.rs             opening a review, and everything it needs before frame one
 app.rs               read a key, dispatch it, draw a frame
 terminal.rs          who owns the screen, and how it is given back
 ```
@@ -188,17 +191,19 @@ because that is the question the loop actually has to act on:
 | arm | executed by | can fail | latency |
 |---|---|---|---|
 | `Buffer(BufferAction)` | the focused pane's buffer | no | µs |
+| `Pane(PaneAction)` | the focused pane | no | µs |
+| `Tab(TabAction)` | the active tab | no | µs |
+| `View(ViewAction)` | the view | no | µs |
 | `Program(ProgramAction)` | whoever owns the terminal | no | µs |
-| `Task(TaskAction)` | the composition root, off-thread | **yes** | ms |
 
 One arm per executor, and each arm's payload is that executor's own set of commands,
-named `<Executor>Action`. `Pane(PaneAction)` and `Tab(TabAction)` join them when the
-explorer brings a second pane, and nothing above changes shape.
+named `<Executor>Action`. The first four are the levels of the view model, innermost
+first; `Program` is not a level and sits below all of them.
 
-A `Task` is a **request, not a call**: `ui` names what it wants and something above
-performs it. That is the only way staging can exist here without `ui → vcs`, which
-`lint-arch` forbids. It is uninhabited today — after startup this binary does no IO — and
-the first will be opening a file from the explorer.
+**Nothing here blocks and nothing leaves the crate.** There used to be a sixth arm,
+`Task`, for the one action that needed a repository: it was *returned* rather than run,
+because `ui` could not reach git. The pipeline answers on a thread now, so opening a file
+costs a `send` and the arm is gone. See [D59](../../docs/plan/05-decisions.md#d59).
 
 `input/resolver.rs` **resolves**; `app.rs` **dispatches**. Keeping those apart is why the
 resolver can be a pure function of its own state and one key: no clock, no IO, no view. A
@@ -213,7 +218,6 @@ pane.rs      one pane, about its own view of a buffer
 tab.rs       a tab, about its panes: focus, resize, zoom
 view.rs      the whole view, about its tabs
 program.rs   quit, suspend, redraw — below every level, consulted last
-task.rs      what leaves the crate
 ```
 
 **Lookup walks that order**, so an inner level *shadows* an outer one. That is what lets the
