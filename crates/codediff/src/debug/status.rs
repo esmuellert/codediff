@@ -1,74 +1,86 @@
-//! `codediff debug status` — what git says about the working tree.
+//! `codediff debug status` — what the working tree looks like.
 //!
-//! The format matches the fixture manifest, so the acceptance check for S5 is
-//! reading the two side by side.
+//! What the repository says, in the reviewer's terms, because that is the only
+//! vocabulary above `vcs`. Git's own `XY` codes are checked against the
+//! fixture manifest inside `vcs`, beside the parser that reads them — a
+//! subcommand cannot see them any more, which is the point of D67.
 
 use anyhow::{Context, Result};
-use file_types::{ChangeType, ChangedFile, Revs};
-use vcs::Git;
-use vcs::git::Entry;
+use file_types::ChangeType;
+use vcs::{DiffType, Repository};
 
 use crate::text::{pad, visible};
 
 pub fn run(dir: &str, verbose: bool) -> Result<()> {
-    let mut git = Git::open(std::path::Path::new(dir))
+    let mut repository = Repository::open(std::path::Path::new(dir))
         .with_context(|| format!("opening a repository at {dir}"))?;
 
-    let repo = git.repo().clone();
+    let repo = repository.repo().clone();
     println!("root     {}", visible(&repo.root.display().to_string()));
     println!(
         "git dir  {}",
         visible(&repo.control_dir.display().to_string())
     );
 
-    // Git's own records, because the manifest this is checked against is
-    // written in git's XY spelling.
-    let entries = git.entries(&[]).context("reading status")?;
+    let groups = repository
+        .changes(&DiffType::Worktree, &[])
+        .context("reading what changed")?;
     println!();
-    if entries.is_empty() {
+    if groups.iter().all(|group| group.files.is_empty()) {
         println!("working tree clean");
         return Ok(());
     }
 
-    println!("{} entry(s)   index worktree path", entries.len());
-    println!();
-    let mut sorted: Vec<&Entry> = entries.iter().collect();
-    sorted.sort_by(|a, b| a.path.as_str().cmp(b.path.as_str()));
-    for entry in &sorted {
-        println!("  {}", line(entry));
-    }
-
-    if verbose {
-        let revs = git.revs().context("resolving what is being compared")?;
-        detail(&sorted, &repo.root, &revs);
+    for group in &groups {
+        if group.files.is_empty() {
+            continue;
+        }
+        // The revisions, not only the name: a name is a label a human reads,
+        // and what the group *is* is the pair.
+        println!(
+            "{} ({}) {} -> {}",
+            group.name,
+            group.files.len(),
+            group.revs.before,
+            group.revs.after
+        );
+        let mut files: Vec<_> = group.files.iter().collect();
+        files.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
+        for file in files {
+            println!("  {}", line(file, verbose));
+        }
+        println!();
     }
     Ok(())
 }
 
-/// `X  Y  path [<- original]`, the manifest's own shape.
-fn line(entry: &Entry) -> String {
-    let mut out = format!(
-        "{}  {}  {}",
-        entry.xy.index.letter(),
-        entry.xy.worktree.letter(),
-        visible(entry.path.as_str())
-    );
-    if let Some(original) = &entry.original {
-        out.push_str(&format!(" <- {}", visible(original.as_str())));
+/// `X  path [<- original]`, one line per file.
+fn line(file: &file_types::ChangedFile, verbose: bool) -> String {
+    let letter = match file.change() {
+        ChangeType::Added => "A",
+        ChangeType::Modified => "M",
+        ChangeType::Deleted => "D",
+        ChangeType::Moved => "R",
+        ChangeType::Untracked => "?",
+        ChangeType::Conflicted => "U",
+    };
+    let mut out = format!("{letter}  ");
+    if verbose {
+        // Padded by display columns, not characters: a CJK filename is twice
+        // as wide as its character count suggests.
+        out.push_str(&pad(&visible(file.path().as_str()), 28));
+    } else {
+        out.push_str(&visible(file.path().as_str()));
     }
-    out
-}
 
-/// The same entries as the reviewer sees them, after the one translation from
-/// git's model to ours.
-fn detail(entries: &[&Entry], root: &std::path::Path, revs: &Revs) {
-    println!();
-    println!(
-        "as the reviewer sees them — {} against {}",
-        revs.before, revs.after
-    );
-    for entry in entries {
-        let file: ChangedFile = vcs::git::to_file_diff((*entry).clone(), root, revs.clone());
+    if let Some(previous) = file
+        .file
+        .on(file_types::DiffVersion::Original)
+        .filter(|original| original.as_str() != file.path().as_str())
+    {
+        out.push_str(&format!(" <- {}", visible(previous.as_str())));
+    }
+    if verbose {
         let note = match file.change() {
             ChangeType::Conflicted => "unresolved merge — listed, not diffable as two sides",
             ChangeType::Moved => "moved; both paths kept, not an add plus a delete",
@@ -77,15 +89,10 @@ fn detail(entries: &[&Entry], root: &std::path::Path, revs: &Revs) {
             ChangeType::Deleted => "deleted",
             ChangeType::Modified => "modified",
         };
-        let similarity = file
-            .similarity
-            .map(|s| format!(" ({s}% similar)"))
-            .unwrap_or_default();
-        // Padded by display columns, not characters: a CJK filename is twice
-        // as wide as its character count suggests.
-        println!(
-            "  {} {note}{similarity}",
-            pad(&visible(file.path().as_str()), 28)
-        );
+        out.push_str(note);
+        if let Some(similarity) = file.similarity {
+            out.push_str(&format!(" ({similarity}% similar)"));
+        }
     }
+    out
 }

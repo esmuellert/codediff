@@ -6,7 +6,6 @@
 //! shape*? Never how they are read, and never how they look:
 //!
 //! ```text
-//! request.rs   what set of files to show, and where from
 //! group.rs     files that share a comparison
 //! entry.rs     one changed file, as one row will show it
 //! node.rs      what the tree is made of
@@ -28,7 +27,6 @@ mod group;
 mod model;
 mod node;
 mod order;
-mod request;
 mod row;
 mod rows;
 mod tree;
@@ -38,6 +36,5 @@ pub use filter::matches;
 pub use group::{Group, Groups};
 pub use model::{Anchor, Explorer};
 pub use node::{EntryId, Node, NodeId, NodeType};
-pub use request::{ExplorerDiffRequest, ExplorerDiffType};
 pub use row::{Content, Guides, Row};
 pub use tree::ViewMode;

@@ -54,10 +54,10 @@ pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /// A repository that has been `git init`-ed and had files added has no `HEAD`
 /// to resolve, and everything in it is a change. Failing there refused to
 /// review the one moment when a reviewer has the most to look at.
-pub fn resolve_or_empty(repo: &Repo, rev: &str) -> Result<super::Oid> {
+pub fn resolve_or_empty(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
     match resolve(repo, rev) {
         Err(Error::UnknownRevision { .. }) if rev == "HEAD" && unborn(repo) => {
-            Ok(super::Oid::new(EMPTY_TREE))
+            Ok(file_types::Oid::new(EMPTY_TREE))
         }
         other => other,
     }
@@ -72,7 +72,7 @@ fn unborn(repo: &Repo) -> bool {
     run::run_line(&repo.root, &["symbolic-ref", "--quiet", "HEAD"]).is_ok_and(|r| !r.is_empty())
 }
 
-pub fn resolve(repo: &Repo, rev: &str) -> Result<super::Oid> {
+pub fn resolve(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
     // `--verify` makes git fail on an ambiguous or unknown name instead of
     // echoing it back, and `^{commit}` peels a tag to what it points at.
     let text = run::run_line(&repo.root, &["rev-parse", "--verify", "--quiet", rev]).map_err(
@@ -88,5 +88,5 @@ pub fn resolve(repo: &Repo, rev: &str) -> Result<super::Oid> {
             rev: rev.to_owned(),
         });
     }
-    Ok(super::Oid::new(text))
+    Ok(file_types::Oid::new(text))
 }

@@ -25,18 +25,19 @@ use pipeline::list;
 /// refuses it, because a screen of unmarked text says nothing.
 fn find(path: &str) -> Result<file_types::ChangedFile> {
     let cwd = std::env::current_dir()?;
-    let git = vcs::Git::open(&cwd)?;
+    let git = vcs::Repository::open(&cwd)?;
     let root = git.repo().root.clone();
     let request =
-        explorer::ExplorerDiffRequest::worktree(root.clone()).with_pathspec(vec![path.to_owned()]);
+        pipeline::list::Request::worktree(root.clone()).with_pathspec(vec![path.to_owned()]);
 
     if let Some(file) = list::files(&request)?.into_iter().next() {
         return Ok(file);
     }
     let repo_path = file_types::RepoPath::new(path, &root);
     if repo_path.as_path().exists() {
-        let mut git = git;
-        let revs = git.revs()?;
+        // Against itself, which is what "unchanged" means and what the
+        // ordinary worktree comparison would have said had it been listed.
+        let revs = file_types::Revs::worktree_against(file_types::Oid::new("HEAD"));
         return Ok(ChangedFile::new(
             file_types::File::unchanged_path(repo_path, revs),
             None,

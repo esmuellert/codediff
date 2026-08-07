@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result, bail};
 use file_types::RepoPath;
-use vcs::Git;
+use vcs::Repository;
 
 use crate::text::visible;
 
@@ -15,11 +15,11 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
         .with_context(|| format!("expected <rev>:<path>, got {spec:?}"))?;
 
     let cwd = std::env::current_dir().context("finding the current directory")?;
-    let mut git = Git::open(&cwd).context("opening a repository")?;
+    let mut repository = Repository::open(&cwd).context("opening a repository")?;
 
-    let repo_path = RepoPath::new(path, &git.repo().root);
-    let bytes = git
-        .cat_file(rev, &repo_path)
+    let repo_path = RepoPath::new(path, &repository.repo().root);
+    let bytes = repository
+        .at(rev, &repo_path)
         .with_context(|| format!("reading {spec}"))?;
 
     let Some(bytes) = bytes else {

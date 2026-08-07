@@ -2991,3 +2991,105 @@ the collision [D65](#d65) had just removed one layer down.
 
 The split is what makes the question moot. `Change` is not the explorer's, and
 `Tree` is named for the shape it colours rather than the buffer that has one.
+
+## D67 — the backend runs commands; the layer above turns them into a review
+
+`vcs` exported `Git` — eleven methods — and also `pub mod git`, so everything
+under it was reachable. Three places outside took that door: two for a return
+type they could not avoid naming, and `debug status`, which printed git's raw
+`XY` codes.
+
+**The measured surface was much wider than the use.** Of nine modules under
+`git/`, six were `pub` and nothing outside touched any of them. Of the eleven
+methods, `files()`, `with_before()` had no callers at all, and five of the
+remainder existed only for `debug`.
+
+**What a review actually needs is four things.** Open a repository, ask what
+changed, ask how much, read one side of one file. That is `Repository`, and
+`git` is private behind it.
+
+### Two layers, and the test for each
+
+**A file in `git/` runs one command and parses what it printed into git's own
+words.** It decides nothing. So it is named as git spells the command:
+
+```text
+run · rev_parse · status · diff/{name_status,numstat} · merge_base · cat_file · worktree
+```
+
+`name_status` and `numstat` used to be top-level, named after *flags* while
+`cat_file` and `rev_parse` were named after commands — so `numstat.rs` did not
+say which command it was a flag of. They are `diff/` now, and the path reads
+`git diff --numstat`. Their shared arguments moved to `diff/mod.rs`, where the
+forced `--find-renames` is one constant rather than three literals: one saying
+a file is a rename while the other counted it as a whole new file would put a
+`+400` beside a move.
+
+**A file in `repository/` turns those into the standard format**, and is named
+for what a reviewer would call it:
+
+```text
+mod.rs          Repository — open, changes, counts, read
+diff_type.rs    DiffType — the five ways to compare
+changes.rs      Changes — files that share a comparison
+changed_file.rs git's records, in the reviewer's terms
+```
+
+`worktree.rs` is the one file in `git/` that is not a command — it is
+`std::fs`. It stays, because the working tree is one of the three things git
+compares, and its own doc says what it is.
+
+### What moved, and why each move was forced
+
+**`Plan` came down.** Turning `DiffType::Staged(rev)` into `["--cached", rev]`
+is git knowledge, and it lived in `pipeline/list/resolver.rs` — so a crate two
+levels above the backend held a `Vec<String>` of git's flags. It is
+`git/mod.rs` now, the door to the directory, which is the one piece of git
+knowledge that is not itself a command.
+
+**The list pipeline collapsed from two stages to one.** With planning gone,
+what was left was a translation: the repository answers in its own words and
+the explorer needs them in its. `resolver.rs` is deleted.
+
+**The request came out of `explorer`.** `ExplorerDiffRequest` was declared
+there and **never used there** — measured: zero references outside its own
+file. A request is what *produces* the files that crate is handed. It is
+`pipeline::list::Request`, and `ExplorerDiffType` became `vcs::DiffType`, named
+after the crate that acts on it.
+
+Two `DiffType`s now exist, and they do not collide: `file_types::DiffType` is
+how a file is *read* — two columns, one column, alone — and `vcs::DiffType` is
+what is being compared. The crate in front of the name says which.
+
+### `debug status` stopped printing what it had no business knowing
+
+It took `vcs::git::Entry` and called `to_file_diff` itself, to print `XY`
+against a hand-written manifest — S5's acceptance check. An agnostic layer
+cannot print `XY`, so the check moved to where the letters live: `git/status.rs`,
+beside the parser that produces them, as a `#[cfg(test)]` module. Sixteen
+parser tests moved inline with it from `tests/git_status.rs`, which is where
+they belonged anyway — they parse bytes and need no repository.
+
+`Code::letter` is `#[cfg(test)]` now. It is the inverse of the parse, and
+nothing draws an `XY` code because nothing outside the crate can see one.
+
+`debug status` prints our model. `debug show` needed a way to name a version no
+comparison mentions, which is `Repository::at` — S6's byte-for-byte check
+against `git show`, verified still passing through the new layer.
+
+### Verification
+
+611 tests pass, up from 610, with the same five known failures.
+
+Sabotage: forcing `--no-renames` fails the test written for exactly that
+(`a_rename_is_counted_the_same_whatever_the_reader_has_configured`); mapping an
+unmerged record to `Modified` fails two, one of them a parser test that moved
+inline. Mapping a renamed record to `Modified` fails **nothing** — and that is
+correct: the paths already say it moved, and `to_file_diff` deliberately reads
+`Added` and `Moved` back off them so there is exactly one source. The rename
+test now asserts the change type as well as the paths, since it had checked
+only half of what it names.
+
+**Cargo did not rebuild** when an edit landed in the same second as the test
+command, so the first sabotage falsely passed. Edits and tests as separate
+commands is not enough — check for `Compiling` in the output.

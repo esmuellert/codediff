@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use file_types::DiffVersion;
-use vcs::Git;
+use vcs::{DiffType, Repository};
 
-/// Where each comparison sits in what `worktree_changes` returns: the working
+/// Where each comparison sits in what `changes` returns for a worktree: the working
 /// tree against the index first, then the index against the commit.
 const UNSTAGED: usize = 0;
 const STAGED: usize = 1;
@@ -47,8 +47,8 @@ impl Repo {
         std::fs::write(self.dir.join(path), text).expect("writing a file");
     }
 
-    fn open(&self) -> Git {
-        Git::open(&self.dir).expect("opening the repository")
+    fn open(&self) -> Repository {
+        Repository::open(&self.dir).expect("opening the repository")
     }
 
     fn path(&self) -> &Path {
@@ -72,7 +72,7 @@ fn a_repository_with_no_commit_yet_lists_what_is_staged() {
 
     let mut git = repo.open();
     let changes = git
-        .worktree_changes(&[])
+        .changes(&DiffType::Worktree, &[])
         .expect("listing an unborn repository");
     assert_eq!(changes[STAGED].files.len(), 1);
     assert_eq!(changes[STAGED].files[0].path().as_str(), "a.txt");
@@ -99,8 +99,8 @@ fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
     repo.git(&["config", "diff.renames", "false"]);
     repo.git(&["mv", "f.txt", "g.txt"]);
 
-    let git = repo.open();
-    let counts = git.staged_counts().expect("counting");
+    let mut git = repo.open();
+    let counts = git.counts(&DiffType::Worktree, &[]).expect("counting");
     // The new name must be *in* the map. Defaulting a missing entry to zero
     // let an empty map pass, which is every way this could be broken.
     let stats = counts
@@ -127,7 +127,7 @@ fn a_symlink_is_its_target_and_not_the_file_it_points_at() {
     std::os::unix::fs::symlink("other.txt", repo.path().join("link.txt")).expect("a new link");
 
     let mut git = repo.open();
-    let changes = git.worktree_changes(&[]).expect("listing");
+    let changes = git.changes(&DiffType::Worktree, &[]).expect("listing");
     let link = changes[UNSTAGED]
         .files
         .iter()
@@ -157,7 +157,7 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
     repo.write("a.txt", "three\n");
 
     let mut git = repo.open();
-    let changes = git.worktree_changes(&[]).expect("listing");
+    let changes = git.changes(&DiffType::Worktree, &[]).expect("listing");
     assert_eq!(
         changes[UNSTAGED].files.len(),
         1,
@@ -197,7 +197,7 @@ fn a_repository_that_converts_line_endings_diffs_only_what_changed() {
     repo.write("a.txt", "one\r\nTWO\r\nthree\r\nfour\r\n");
 
     let mut git = repo.open();
-    let changes = git.worktree_changes(&[]).expect("listing");
+    let changes = git.changes(&DiffType::Worktree, &[]).expect("listing");
     let file = changes[UNSTAGED]
         .files
         .iter()

@@ -7,19 +7,25 @@
 //! `File`, `RepoPath`, `FileContent` — and `cargo xtask lint-arch` forbids
 //! that crate from naming this one, so no git concept can reach a reviewer.
 //!
-//! There is no trait. The contract is the types, and the pipeline that calls
-//! `Git`'s methods is what checks a backend meets it. A second backend earns a
-//! trait extracted from two real implementations; one guessed from a single
-//! implementor was checking nothing. See D30.
+//! ```text
+//! repository/   the whole surface: open, changes, counts, read
+//! repo.rs       where a repository is
+//! error.rs      how running one can fail
+//! git/          PRIVATE — the backend, one file per command
+//! ```
 //!
-//! `repo` and `error` sit above; `git` sits below and is the only place `git`
-//! runs.
+//! **`git` is private**, so nothing outside can run a git command, name a
+//! status code, or hold a `--cached`. A second backend is a directory beside
+//! it and an arm in [`Repository::open`] — not a search for every caller that
+//! reached past the layer. See D67.
 
 mod error;
+mod git;
 mod repo;
-
-pub mod git;
+mod repository;
 
 pub use error::{Error, Result};
-pub use git::Git;
+pub use git::diff::numstat::Counts;
+pub use git::status::Untracked;
 pub use repo::Repo;
+pub use repository::{Changes, DiffType, Repository};

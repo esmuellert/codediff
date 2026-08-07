@@ -5,12 +5,33 @@ Asks a version control system what changed, and reads the two sides of a file.
 ## What is here, and what is not
 
 ```text
-lib.rs        re-exports only
-repo.rs       Repo         where the repository is, and where it keeps its state
-error.rs      Error        how running a version control system fails
+repository/   the whole surface
+├ mod.rs        Repository   open · changes · counts · read
+├ diff_type.rs  DiffType     the five ways to compare
+├ changes.rs    Changes      files that share a comparison
+└ changed_file.rs            git's records, in the reviewer's terms
+repo.rs       Repo           where the repository is, and where it keeps its state
+error.rs      Error          how running a version control system fails
 
-git/          rev_parse · cat_file · status · worktree             git's own words
+git/          PRIVATE — one file per command, named as git spells it
+├ run           spawn git, capture, fail loudly
+├ rev_parse     git rev-parse --show-toplevel | --absolute-git-dir | --verify
+├ status        git status --porcelain=v2 -z
+├ diff/         git diff --name-status -z  ·  git diff --numstat -z
+├ merge_base    git merge-base
+├ cat_file      git cat-file --batch | --filters
+└ worktree      std::fs — the third thing git compares, and not a command
 ```
+
+**Two layers, and the test for each.** A file in `git/` **runs one command and parses what
+it printed into git's own words** — `XY` codes, status letters, similarity scores. Nothing
+there decides anything. `repository/` **turns those into the standard format**, and its files
+are named for what a reviewer would call them.
+
+`git` is private, so nothing outside can run a git command, name a status code, or hold a
+`--cached`. A second backend is a directory beside it and an arm in `Repository::open` —
+not a search for every caller that reached past the layer. See
+[D67](../../docs/plan/05-decisions.md#d67).
 
 **Every type this crate produces lives in `file-types`** — `ChangedFile`, `File`,
 `RepoPath`, `FileContent` — and `cargo xtask lint-arch` forbids that crate from naming this
@@ -25,13 +46,13 @@ recoverable from any `RepoPath`, which carries both spellings.
 call site importing it as `Changes as _` — an inherent `impl` wearing a trait's clothes. It
 claimed to enforce neutrality, but that came from the types in its signatures and from the
 lint, not from the trait itself. What actually checks a backend is the pipeline that calls
-`Git`'s methods: a trait proves four methods exist, while the pipeline proves they are the
-methods needed and that their results compose. A second backend earns a trait extracted from
+`Repository`'s methods: a trait proves four methods exist, while the pipeline proves they
+are the methods needed and that their results compose. A second backend earns a trait extracted from
 two real implementations. See [D30](../../docs/plan/05-decisions.md#d30).
 
-**`git diff` is never run.** `files()` is `git status`; `read()` is `git cat-file` or
-`std::fs`, chosen by the file's own `Rev`. Computing the difference is the engine's job,
-two stages later — which is why nothing here is called `Diff`
+**`git diff` never computes a difference.** It is run for `--name-status` and `--numstat`,
+which are lists rather than diffs; the difference itself is the engine's job, two stages
+later, which is why nothing here is called `Diff`
 ([D29](../../docs/plan/05-decisions.md#d29)).
 
 **One function reads either side**, because which side it is says nothing about where to
@@ -39,10 +60,8 @@ look: `Rev::stored()` gives git's spelling for anything in the object store and 
 the file on disk, so the choice is data rather than a branch written into the function. It
 was two functions once, and the after side could not be anything but the working tree.
 
-Underneath, `git/` keeps every git word it needs: `XY` codes, the index, the stage numbers.
-Its modules are named for the commands they run, so the file tree says which command before
-you open anything. `git::to_file_diff` is the single place the two vocabularies meet, and
-the only thing a second backend would write its own version of.
+`repository/changed_file.rs` is the single place the two vocabularies meet, and **the file a
+second backend forks** — not `Repository`, whose four operations would not change.
 
 ## Why it runs `git` rather than linking a library
 

@@ -13,49 +13,35 @@ use std::collections::HashMap;
 use crate::error::Result;
 use file_types::Stats;
 
-use crate::git::{Git, run};
+use crate::Repo;
+use crate::git::run;
 
 /// Lines gained and lost, by the path git spelled.
 pub type Counts = HashMap<String, Stats>;
 
-/// Forced, because the status is read with it forced.
+/// The flag that shapes the output. See the `diff` module doc.
+const FORMAT: &str = "--numstat";
+
+/// The line counts for the working tree against the index.
+pub fn unstaged(repo: &Repo) -> Result<Counts> {
+    counts(repo, &super::command(FORMAT, &[], &[]))
+}
+
+/// The line counts for the index against the commit.
+pub fn staged(repo: &Repo) -> Result<Counts> {
+    counts(repo, &super::command(FORMAT, &["--cached"], &[]))
+}
+
+/// The line counts for any comparison `git diff` can name.
 ///
-/// A reader with `diff.renames=false` in their config would otherwise get a
-/// list that calls a file a rename and counts it as a whole new file — the two
-/// commands would be describing different sets of changes. Neither of them may
-/// be left to a setting the other does not see.
-const RENAMES: &str = "--find-renames";
+/// The counterpart of the two above for every other way of comparing: the same
+/// numbers, against arguments the caller chose.
+pub fn diff(repo: &Repo, args: &[&str], pathspec: &[String]) -> Result<Counts> {
+    counts(repo, &super::command(FORMAT, args, pathspec))
+}
 
-impl Git {
-    /// The line counts for the working tree against the index.
-    pub fn unstaged_counts(&self) -> Result<Counts> {
-        self.counts(&["diff", "--numstat", "-z", RENAMES])
-    }
-
-    /// The line counts for the index against the commit.
-    pub fn staged_counts(&self) -> Result<Counts> {
-        self.counts(&["diff", "--numstat", "-z", RENAMES, "--cached"])
-    }
-
-    /// The line counts for any comparison `git diff` can name.
-    ///
-    /// The counterpart of the two above for every other diff type: the same
-    /// numbers, against arguments the caller chose.
-    pub fn diff_counts(&self, args: &[&str], pathspec: &[String]) -> Result<Counts> {
-        let mut command = vec!["diff", "--numstat", "-z", RENAMES];
-        command.extend_from_slice(args);
-        if !pathspec.is_empty() {
-            command.push("--");
-        }
-        let owned: Vec<&str> = pathspec.iter().map(String::as_str).collect();
-        command.extend_from_slice(&owned);
-        self.counts(&command)
-    }
-
-    fn counts(&self, args: &[&str]) -> Result<Counts> {
-        let out = run::run(&self.repo().root, args)?;
-        Ok(parse(&out))
-    }
+fn counts(repo: &Repo, args: &[&str]) -> Result<Counts> {
+    Ok(parse(&run::run(&repo.root, args)?))
 }
 
 /// Reads `--numstat -z` output.

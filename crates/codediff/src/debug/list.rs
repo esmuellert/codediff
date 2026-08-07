@@ -8,7 +8,7 @@
 //! can assert on it without a terminal.
 
 use anyhow::Result;
-use explorer::{ExplorerDiffRequest, ExplorerDiffType};
+use vcs::DiffType;
 
 /// The words `debug list` takes, as a diff type.
 ///
@@ -22,8 +22,8 @@ use explorer::{ExplorerDiffRequest, ExplorerDiffType};
 /// The types themselves are real and reachable — the list pipeline resolves
 /// all five — so the interface has something to switch between when the keys
 /// for it arrive. This is how a test reaches them without a terminal.
-pub fn diff_type(rev: &[String], staged: bool) -> ExplorerDiffType {
-    use ExplorerDiffType as Type;
+pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
+    use DiffType as Type;
     match (staged, rev.first().cloned(), rev.get(1).cloned()) {
         // `--staged` with no revision means against the last commit, which is
         // what `git diff --cached` means with no revision.
@@ -38,10 +38,10 @@ pub fn diff_type(rev: &[String], staged: bool) -> ExplorerDiffType {
 }
 
 /// Prints every group, and every file in it.
-pub fn run(diff_type: ExplorerDiffType, pathspec: Vec<String>) -> Result<()> {
+pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let root = vcs::Git::open(&cwd)?.repo().root.clone();
-    let request = ExplorerDiffRequest::new(root, diff_type).with_pathspec(pathspec);
+    let root = vcs::Repository::open(&cwd)?.repo().root.clone();
+    let request = pipeline::list::Request::new(root, diff_type).with_pathspec(pathspec);
 
     for group in pipeline::list::run(&request)? {
         // The revisions, not only the name: a name is a label a human reads,

@@ -1,15 +1,14 @@
-//! Against a real repository.
+//! Against a real repository, through the four operations everything above
+//! `vcs` sees.
 //!
-//! Mostly through the neutral [`Diff`] trait, which is what the rest of the
-//! program sees. The manifest comparison reaches into `git`'s own layer, since
-//! the manifest is written in git's `XY` spelling and there is nothing to gain
-//! from restating it in ours.
+//! Git's own words are checked inside the crate, beside the parser that
+//! produces them — the manifest is written in `XY` spelling, and nothing out
+//! here can say `XY` any more. See D67.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use file_types::{ChangeType, ChangedFile, DiffVersion, FileContent, RepoPath};
-use vcs::Git;
-use vcs::git::Untracked;
+use vcs::{DiffType, Repository, Untracked};
 
 /// A fixture repository in a temporary directory, removed on drop.
 struct Fixture {
@@ -23,8 +22,29 @@ impl Fixture {
         Self { dir }
     }
 
-    fn git(&self) -> Git {
-        Git::open(&self.dir).expect("opening the fixture repository")
+    fn git(&self) -> Repository {
+        Repository::open(&self.dir).expect("opening the fixture repository")
+    }
+
+    /// Every changed file, flat.
+    ///
+    /// A path staged and then edited again is in two groups, and so appears
+    /// twice: they are two comparisons of it, not a duplicate.
+    fn files(&self) -> Vec<ChangedFile> {
+        self.flat(self.git())
+    }
+
+    fn with_untracked(&self, untracked: Untracked) -> Vec<ChangedFile> {
+        self.flat(self.git().with_untracked(untracked))
+    }
+
+    fn flat(&self, mut repository: Repository) -> Vec<ChangedFile> {
+        repository
+            .changes(&DiffType::Worktree, &[])
+            .expect("status runs")
+            .into_iter()
+            .flat_map(|group| group.files)
+            .collect()
     }
 }
 
@@ -34,51 +54,10 @@ impl Drop for Fixture {
     }
 }
 
-/// `index worktree path [<- original]`, sorted — the manifest's format, which
-/// is git's own.
-fn render(entries: &[vcs::git::Entry]) -> Vec<String> {
-    let mut lines: Vec<String> = entries
-        .iter()
-        .map(|e| {
-            let mut line = format!(
-                "{}  {}  {}",
-                e.xy.index.letter(),
-                e.xy.worktree.letter(),
-                e.path
-            );
-            if let Some(original) = &e.original {
-                line.push_str(&format!(" <- {original}"));
-            }
-            line
-        })
-        .collect();
-    lines.sort();
-    lines
-}
-
-fn manifest(dir: &Path) -> Vec<String> {
-    let text = std::fs::read_to_string(dir.join(fixtures::MANIFEST)).expect("manifest exists");
-    let mut lines: Vec<String> = text
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(str::to_owned)
-        .collect();
-    lines.sort();
-    lines
-}
-
-#[test]
-fn status_matches_the_manifest_exactly() {
-    let fixture = Fixture::new("manifest");
-    let entries = fixture.git().entries(&[]).expect("status runs");
-    assert_eq!(render(&entries), manifest(&fixture.dir));
-}
-
 #[test]
 fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
     let fixture = Fixture::new("rename");
-    let entries = fixture.git().files().expect("status runs");
+    let entries = fixture.files();
 
     let renamed = entries
         .iter()
@@ -88,6 +67,11 @@ fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
         renamed.file.previous_path().map(RepoPath::as_str),
         Some("renamed-from.txt")
     );
+    // Both halves, because they come from different fields: the paths say
+    // where it went, and the change says what happened. Asserting only the
+    // paths let a rename read as an ordinary modification, which draws the
+    // wrong letter in the wrong colour.
+    assert_eq!(renamed.change(), ChangeType::Moved);
     assert!(
         !entries
             .iter()
@@ -99,7 +83,7 @@ fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
 #[test]
 fn the_conflicted_file_is_identified_as_a_conflict() {
     let fixture = Fixture::new("conflict");
-    let entries = fixture.git().files().expect("status runs");
+    let entries = fixture.files();
     let conflict = entries
         .iter()
         .find(|e| e.path().as_str() == "conflict.txt")
@@ -110,7 +94,7 @@ fn the_conflicted_file_is_identified_as_a_conflict() {
 #[test]
 fn awkward_paths_survive_the_round_trip() {
     let fixture = Fixture::new("paths");
-    let entries = fixture.git().files().expect("status runs");
+    let entries = fixture.files();
     for path in ["with spaces.txt", "ünïcodé-ファイル.txt"] {
         assert!(
             entries.iter().any(|e| e.path().as_str() == path),
@@ -126,7 +110,7 @@ fn awkward_paths_survive_the_round_trip() {
 #[test]
 fn ignored_files_are_absent_unless_asked_for() {
     let fixture = Fixture::new("ignored");
-    let entries = fixture.git().files().expect("status runs");
+    let entries = fixture.files();
     assert!(
         !entries
             .iter()
@@ -139,14 +123,13 @@ fn ignored_files_are_absent_unless_asked_for() {
 fn untracked_directories_collapse_when_asked() {
     let fixture = Fixture::new("untracked");
 
-    let all = fixture.git().files().expect("status runs");
+    let all = fixture.files();
     assert!(
         all.iter()
             .any(|e| e.path().as_str() == "untracked-dir/inside.txt")
     );
 
-    let mut normal = fixture.git().with_untracked(Untracked::Normal);
-    let collapsed = normal.files().expect("status runs");
+    let collapsed = fixture.with_untracked(Untracked::Normal);
     assert!(
         collapsed
             .iter()
@@ -154,8 +137,7 @@ fn untracked_directories_collapse_when_asked() {
         "Normal mode should report the directory, not its contents"
     );
 
-    let mut none = fixture.git().with_untracked(Untracked::No);
-    let without = none.files().expect("status runs");
+    let without = fixture.with_untracked(Untracked::No);
     assert!(!without.iter().any(|e| e.change() == ChangeType::Untracked));
 }
 
@@ -163,7 +145,7 @@ fn untracked_directories_collapse_when_asked() {
 fn discovery_works_from_a_subdirectory() {
     let fixture = Fixture::new("discover");
     let deep = fixture.dir.join("nested/deep");
-    let git = Git::open(&deep).expect("opens from a subdirectory");
+    let git = Repository::open(&deep).expect("opens from a subdirectory");
 
     assert_eq!(
         git.repo().root.canonicalize().unwrap(),
@@ -176,7 +158,7 @@ fn discovery_works_from_a_subdirectory() {
 fn a_path_outside_a_repository_is_reported_as_such() {
     let outside = std::env::temp_dir().join(format!("codediff-not-a-repo-{}", std::process::id()));
     std::fs::create_dir_all(&outside).unwrap();
-    let err = Git::open(&outside).expect_err("not a repository");
+    let err = Repository::open(&outside).expect_err("not a repository");
     assert!(matches!(err, vcs::Error::NoRepository { .. }), "{err}");
     let _ = std::fs::remove_dir_all(&outside);
 }
@@ -194,7 +176,7 @@ fn file(entries: &[ChangedFile], path: &str) -> ChangedFile {
 fn the_two_sides_of_a_change_come_back_byte_for_byte() {
     let fixture = Fixture::new("sides");
     let mut git = fixture.git();
-    let entries = git.files().expect("status runs");
+    let entries = fixture.files();
     let modified = file(&entries, "modified.txt");
 
     assert_eq!(
@@ -217,7 +199,7 @@ fn a_one_sided_change_has_only_the_side_it_has() {
     // routinely absent. That is an answer, not an error.
     let fixture = Fixture::new("onesided");
     let mut git = fixture.git();
-    let entries = git.files().expect("status runs");
+    let entries = fixture.files();
 
     let untracked = file(&entries, "untracked.txt");
     assert!(matches!(
@@ -250,7 +232,7 @@ fn a_picture_comes_back_classified_rather_than_as_bytes() {
     // answer arrives with the content instead of every caller working it out.
     let fixture = Fixture::new("binary");
     let mut git = fixture.git();
-    let entries = git.files().expect("status runs");
+    let entries = fixture.files();
     let picture = file(&entries, "picture.png");
 
     assert!(
@@ -277,7 +259,7 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
     // the whole change rather than a path.
     let fixture = Fixture::new("moved");
     let mut git = fixture.git();
-    let entries = git.files().expect("status runs");
+    let entries = fixture.files();
     let moved = file(&entries, "renamed-to.txt");
 
     assert_eq!(moved.change(), ChangeType::Moved);
@@ -302,7 +284,7 @@ fn blob_reads_reuse_one_child_process() {
     let mut git = fixture.git();
     for _ in 0..50 {
         let content = git
-            .cat_file("HEAD", &RepoPath::new("unchanged.txt", &fixture.dir))
+            .at("HEAD", &RepoPath::new("unchanged.txt", &fixture.dir))
             .expect("reads")
             .expect("exists");
         assert_eq!(content, b"this file never changes\n");
@@ -314,7 +296,7 @@ fn a_blob_containing_no_trailing_newline_keeps_its_exact_bytes() {
     let fixture = Fixture::new("nonewline");
     let mut git = fixture.git();
     let content = git
-        .cat_file(
+        .at(
             "HEAD",
             &RepoPath::new("no-trailing-newline.txt", &fixture.dir),
         )
@@ -329,7 +311,7 @@ fn crlf_bytes_are_not_rewritten() {
     let fixture = Fixture::new("crlf");
     let mut git = fixture.git();
     let content = git
-        .cat_file("HEAD", &RepoPath::new("crlf.txt", &fixture.dir))
+        .at("HEAD", &RepoPath::new("crlf.txt", &fixture.dir))
         .expect("reads")
         .expect("exists");
     assert!(
@@ -339,31 +321,46 @@ fn crlf_bytes_are_not_rewritten() {
 }
 
 #[test]
-fn revisions_resolve_and_unknown_ones_fail() {
+fn a_comparison_resolves_its_revisions_and_says_so_when_it_cannot() {
+    // A name is resolved to an id before anything is listed, so that a commit
+    // made while a review is open cannot leave half the files named against
+    // one `HEAD` and half against another.
     let fixture = Fixture::new("resolve");
-    let git = fixture.git();
 
-    let head = git.resolve("HEAD").expect("HEAD resolves");
-    assert_eq!(head.as_str().len(), 40);
-    assert!(!head.is_null());
+    let groups = fixture
+        .git()
+        .changes(&DiffType::Against("HEAD".to_owned()), &[])
+        .expect("HEAD resolves");
+    let before = groups[0].revs.before.to_string();
+    assert_eq!(before.len(), 40, "an id, not the name that was typed");
 
-    let err = git.resolve("no-such-branch").expect_err("unknown revision");
+    let err = fixture
+        .git()
+        .changes(&DiffType::Against("no-such-branch".to_owned()), &[])
+        .expect_err("unknown revision");
     assert!(matches!(err, vcs::Error::UnknownRevision { .. }), "{err}");
 }
 
 #[test]
-fn a_file_staged_then_edited_again_is_one_entry() {
+fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
+    // Git reports it once, with two codes. Here it is two files, because they
+    // are two diffs of it: the working tree against the index, and the index
+    // against the commit. Neither is a duplicate of the other. The record
+    // those come from is checked inside the crate, where the codes live.
     let fixture = Fixture::new("both");
-    let entries = fixture.git().files().expect("status runs");
-    let entry = file(&entries, "staged-then-edited.txt");
-    assert_eq!(entry.change(), ChangeType::Modified);
+    let groups = fixture
+        .git()
+        .changes(&DiffType::Worktree, &[])
+        .expect("status runs");
 
-    // Git's own layer still has both codes for anything that wants them.
-    let raw = fixture.git().entries(&[]).expect("status runs");
-    let raw = raw
-        .iter()
-        .find(|e| e.path == "staged-then-edited.txt")
-        .expect("reported");
-    assert_eq!(raw.xy.index, vcs::git::Code::Modified);
-    assert_eq!(raw.xy.worktree, vcs::git::Code::Modified);
+    let mut found = Vec::new();
+    for group in &groups {
+        for file in &group.files {
+            if file.path().as_str() == "staged-then-edited.txt" {
+                assert_eq!(file.change(), ChangeType::Modified);
+                found.push(group.name);
+            }
+        }
+    }
+    assert_eq!(found, vec!["Changes", "Staged Changes"], "{found:?}");
 }

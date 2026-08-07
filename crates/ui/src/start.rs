@@ -18,7 +18,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use explorer::{ExplorerDiffRequest, Group};
+use explorer::Group;
 
 use crate::app::{Session, run};
 use crate::theme::Theme;
@@ -34,7 +34,7 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
     // The working tree, always. What to compare against is a decision the
     // reader makes inside the review, not one they spell in git's revision
     // syntax before it opens. See D62.
-    let request = ExplorerDiffRequest::worktree(cwd).with_pathspec(pathspec);
+    let request = pipeline::list::Request::worktree(cwd).with_pathspec(pathspec);
     let groups = pipeline::list::run(&request)?;
 
     // Refused rather than opened. An empty list on a full screen looks like a

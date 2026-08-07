@@ -7,12 +7,11 @@
 //!
 //! | | | in | out |
 //! |---|---|---|---|
-//! | [`list`] | a set of files, in two stages | an [`ExplorerDiffRequest`] | [`Groups`] |
+//! | [`list`] | a set of files | a [`Request`](list::Request) | [`Groups`] |
 //! | [`file`] | one of them, in four | a [`ChangedFile`] | a [`DiffContent`] |
 //!
 //! [`ChangedFile`]: file_types::ChangedFile
 //! [`DiffContent`]: file::DiffContent
-//! [`ExplorerDiffRequest`]: explorer::ExplorerDiffRequest
 //! [`Groups`]: explorer::Groups
 //!
 //! **The list's item type is the file's input type.** That is what makes them

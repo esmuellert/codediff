@@ -13,6 +13,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::error::{Error, Result};
+use crate::git::run;
 use crate::repo::Repo;
 use file_types::RepoPath;
 
@@ -111,4 +112,41 @@ impl Drop for Batch {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// A stored version, converted as a checkout would convert it.
+///
+/// Runs `git cat-file --filters <rev>:<path>`. `None` when the object does not
+/// exist, which is ordinary: one side of a diff is routinely absent.
+///
+/// **Not batched.** `cat-file --batch --filters` reports the size of the
+/// object *before* filtering and then writes the filtered bytes, so a reader
+/// framing by that size falls out of step with the stream. One process per
+/// file is the price of being right, and it is paid only when a file is
+/// opened.
+pub fn filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
+    let spec = format!("{rev}:{path}");
+    match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
+        Ok(bytes) => Ok(Some(bytes)),
+        // Only what git says when the object is not there. Reading *every*
+        // failure as "missing" turned a broken clean filter, a corrupt object
+        // and a killed process into a file that had simply been added — a
+        // whole-file diff, with nothing to say the read had failed.
+        Err(Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
+        Err(other) => Err(other),
+    }
+}
+
+/// Whether git's complaint means the object does not exist.
+///
+/// Matched on the message because `cat-file` exits 128 for everything. The
+/// wordings are git's own, and a wording we do not know is treated as a real
+/// failure — the safe way round, since the cost is an error the reader can
+/// read rather than a diff that quietly lies.
+fn is_missing(stderr: &str) -> bool {
+    stderr.contains("does not exist")
+        || stderr.contains("Not a valid object name")
+        || stderr.contains("unknown revision")
+        || stderr.ends_with("missing")
+        || stderr.contains("exists on disk, but not in")
 }

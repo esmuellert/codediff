@@ -8,10 +8,8 @@
 //! itself rather than in git's quoted spelling. Fields are NUL-separated, and
 //! a rename spends three of them: `R100`, the old path, the new path.
 
-use file_types::{ChangeType, ChangedFile, File, RepoPath, Revs};
-
+use crate::Repo;
 use crate::error::Result;
-use crate::git::{Git, run};
 
 /// One record, still in git's words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,23 +23,16 @@ pub struct Change {
     pub score: Option<u8>,
 }
 
-impl Git {
-    /// What differs between two things git can name.
-    ///
-    /// `args` is what goes after `diff` — the revisions, and `--cached` when
-    /// the after side is the index. Rename detection is forced here as it is
-    /// for the status, so what the list calls a rename does not depend on the
-    /// reader's own configuration. See D56.
-    pub fn name_status(&self, args: &[&str], pathspec: &[String]) -> Result<Vec<Change>> {
-        let mut command = vec!["diff", "--name-status", "-z", "--find-renames"];
-        command.extend_from_slice(args);
-        if !pathspec.is_empty() {
-            command.push("--");
-        }
-        let owned: Vec<&str> = pathspec.iter().map(String::as_str).collect();
-        command.extend_from_slice(&owned);
-        Ok(parse(&run::run(&self.repo().root, &command)?))
-    }
+/// The flag that shapes the output. See the `diff` module doc.
+const FORMAT: &str = "--name-status";
+
+/// What differs between two things git can name.
+///
+/// `args` is what goes after `diff` — the revisions, and `--cached` when the
+/// after side is the index.
+pub fn run(repo: &Repo, args: &[&str], pathspec: &[String]) -> Result<Vec<Change>> {
+    let command = super::command(FORMAT, args, pathspec);
+    Ok(parse(&crate::git::run::run(&repo.root, &command)?))
 }
 
 /// Reads `--name-status -z` output.
@@ -80,31 +71,6 @@ fn parse(bytes: &[u8]) -> Vec<Change> {
         });
     }
     changes
-}
-
-/// One record, in the reviewer's terms.
-///
-/// The counterpart of [`to_file_diff`](crate::git::to_file_diff), which does
-/// the same for a status record. Both live in this crate because it is the
-/// only one allowed to know both vocabularies.
-pub fn to_changed_file(change: Change, root: &std::path::Path, revs: Revs) -> ChangedFile {
-    let path = RepoPath::new(change.path, root);
-    let file = match (change.letter, change.original) {
-        ('A', _) => File::added(path, revs),
-        ('D', _) => File::deleted(path, revs),
-        // A copy is a move as far as a reviewer is concerned: the question
-        // either asks is "what does the new content say", and the old path is
-        // shown beside it either way.
-        ('R' | 'C', Some(from)) => File::renamed(RepoPath::new(from, root), path, revs),
-        _ => File::unchanged_path(path, revs),
-    };
-    // `U` is an unresolved merge, which the paths cannot say. Nothing else
-    // here needs a backend: added, deleted and moved are all readable from
-    // the pair of paths.
-    if change.letter == 'U' {
-        return ChangedFile::reported(file, ChangeType::Conflicted);
-    }
-    ChangedFile::new(file, change.score)
 }
 
 #[cfg(test)]

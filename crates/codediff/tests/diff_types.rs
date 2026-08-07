@@ -1,8 +1,7 @@
 //! Every way of asking what to compare, against a real repository.
 //!
-//! The point of the list pipeline's shape: a way to compare is one arm of
-//! `ExplorerDiffType` and one arm of the resolver, and nothing between them
-//! learns about it. These tests are what says that is true rather than
+//! The point of the shape: a way to compare is one arm of `vcs::DiffType` and
+//! one arm of `git::plan`, and nothing between them learns about it. These tests are what says that is true rather than
 //! intended — each runs the whole thing, from the command line to the rows.
 
 use std::path::PathBuf;

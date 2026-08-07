@@ -10,7 +10,7 @@
 
 use anyhow::{Context, Result};
 use file_types::{ChangedFile, DiffVersion, File, FileContent};
-use vcs::Git;
+use vcs::Repository;
 
 use vscode_diff::lines;
 
@@ -26,12 +26,12 @@ pub struct Contents {
 /// The file arrives already found, carrying the revisions of the comparison it
 /// was found in, so all that is needed is the repository it lives in.
 pub fn read(file: &ChangedFile) -> Result<Contents> {
-    let mut git = Git::open(file.path().root()).context("opening a repository")?;
+    let mut repository = Repository::open(file.path().root()).context("opening a repository")?;
     let file = file.clone();
-    let original = git
+    let original = repository
         .read(&file, DiffVersion::Original)
         .context("reading the before side")?;
-    let modified = git
+    let modified = repository
         .read(&file, DiffVersion::Modified)
         .context("reading the after side")?;
     Ok(Contents {

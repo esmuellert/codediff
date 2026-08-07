@@ -1,275 +1,155 @@
-//! The git backend.
+//! The git backend: one file per command, and nothing else.
 //!
-//! Everything below this module speaks git — `cat_file`, `rev_parse`, `status`
-//! are named for the commands they run, so the file tree answers "which command
-//! is this?" before you open anything. [`to_change`] is the one place git's
-//! model is translated into the neutral one, and the only place that has to
-//! change if git's vocabulary and ours ever disagree.
+//! **Private to this crate.** Every file below is named as git spells the
+//! command it runs, so the file tree answers "which command is this?" before
+//! you open anything:
+//!
+//! ```text
+//! run             spawn git, capture what it printed, fail loudly
+//! rev_parse       git rev-parse --show-toplevel | --absolute-git-dir | --verify
+//! status          git status --porcelain=v2 -z
+//! diff/           git diff
+//! ├ name_status     --name-status -z    which files, and what happened
+//! └ numstat         --numstat -z        how many lines each gained and lost
+//! merge_base      git merge-base
+//! cat_file        git cat-file --batch | --filters
+//! worktree        std::fs — the third thing git compares, and not a command
+//! ```
+//!
+//! Each of them **runs a command and parses what it printed into git's own
+//! words** — `XY` codes, status letters, similarity scores. None of them
+//! decides anything, and none produces the reviewer's vocabulary; that is
+//! [`repository`](crate::repository), one level up, and
+//! [`changed_file`](crate::repository::changed_file) is the seam.
+//!
+//! Everything here is a free function over a [`Repo`]. What a session
+//! accumulates — what has been resolved, which child is open — belongs to
+//! [`Repository`](crate::Repository).
+//!
+//! This file is the door: it turns a [`DiffType`] into the command that
+//! answers it, which is the one piece of git knowledge that is not itself a
+//! command. See D67.
 
 pub mod cat_file;
-mod changes;
-mod name_status;
-mod numstat;
+pub mod diff;
+pub mod merge_base;
 pub mod rev_parse;
 pub mod run;
 pub mod status;
 pub mod worktree;
 
-use std::path::Path;
+use file_types::{ChangedFile, DiffVersion, FileContent, Rev, Revs};
 
 use crate::Repo;
 use crate::error::Result;
-use file_types::{ChangeType, ChangedFile, DiffVersion, Revs};
-use file_types::{File, FileContent, RepoPath};
+use crate::repository::DiffType;
+use status::{Entry, Untracked};
 
-pub use changes::Changes;
-pub use name_status::{Change, to_changed_file};
-pub use numstat::Counts;
-pub use status::{Code, Entry, Oid, Untracked, Xy};
-
-/// Reads a git repository by running `git`.
+/// Which command answers a comparison, and what its answer will mean.
 ///
-/// Running the real binary rather than reimplementing it means the user's own
-/// config, `.gitignore` rules, worktrees, sparse checkout and clean filters
-/// already apply. Those rules decide which files appear at all, so matching
-/// them matters more than the milliseconds a library would save. See D21.
-#[derive(Debug)]
-pub struct Git {
-    repo: Repo,
-    untracked: Untracked,
-    /// What the before side means, as the caller spelled it. `HEAD` unless
-    /// told otherwise.
-    before: String,
-    /// [`before`](Self::before) resolved, with what the after side is.
-    ///
-    /// Resolved on first use, so a status-only run never pays for the extra
-    /// process — and resolved **once**, so a commit made while a review is
-    /// open cannot leave half its files named against one `HEAD` and half
-    /// against another.
-    revs: Option<Revs>,
-    /// Opened on first use, so a status-only run never pays for the child.
-    blobs: Option<cat_file::Batch>,
+/// Two shapes, because git has two: the working tree is described by a status,
+/// and everything else by a diff. A status describes three things at once and
+/// so yields two comparisons; a diff describes two things and yields one.
+pub enum Plan {
+    /// `git status`, which the caller reads as two comparisons.
+    Worktree,
+    /// `git diff <args>`, one comparison.
+    Diff {
+        /// What a heading will say.
+        name: &'static str,
+        /// What goes after `diff`.
+        args: Vec<String>,
+        /// What those arguments mean in the reviewer's terms.
+        revs: Revs,
+    },
 }
 
-impl Git {
-    /// Opens the repository containing `path`.
-    ///
-    /// Runs `git rev-parse --show-toplevel` and `--absolute-git-dir`.
-    pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self {
-            repo: rev_parse::discover(path)?,
-            untracked: Untracked::default(),
-            before: "HEAD".to_owned(),
-            revs: None,
-            blobs: None,
-        })
-    }
-
-    pub fn with_untracked(mut self, untracked: Untracked) -> Self {
-        self.untracked = untracked;
-        self
-    }
-
-    /// Compares against a revision other than `HEAD`.
-    pub fn with_before(mut self, rev: impl Into<String>) -> Self {
-        self.before = rev.into();
-        self.revs = None;
-        self
-    }
-
-    /// What the two sides of this comparison are, resolved.
-    ///
-    /// The before side becomes an id rather than staying a name, because a
-    /// name moves and an id is what says which bytes were read.
-    pub fn revs(&mut self) -> Result<Revs> {
-        if self.revs.is_none() {
-            let commit = rev_parse::resolve_or_empty(&self.repo, &self.before)?;
-            self.revs = Some(Revs::worktree_against(commit));
-        }
-        Ok(self.revs.clone().expect("just resolved"))
-    }
-
-    /// The raw records, in git's own terms.
-    ///
-    /// Runs `git --no-optional-locks status --porcelain=v2 -z`. Available for
-    /// anything that genuinely needs git's staging state, which the neutral
-    /// [`ChangedFile`] deliberately does not carry.
-    pub fn entries(&self, pathspec: &[String]) -> Result<Vec<Entry>> {
-        let mut args = vec![
-            "status",
-            "--porcelain=v2",
-            "-z",
-            self.untracked.flag(),
-            // Renames are the whole point of the `2` record; without this a
-            // moved file appears as an unrelated add and delete.
-            "--find-renames",
-        ];
-        if !pathspec.is_empty() {
-            args.push("--");
-        }
-        let owned: Vec<&str> = pathspec.iter().map(String::as_str).collect();
-        args.extend_from_slice(&owned);
-        status::parse(&run::run(&self.repo.root, &args)?)
-    }
-
-    /// A file's content at a revision, straight from the object store.
-    ///
-    /// Runs `git cat-file --batch`. The neutral trait offers only the two sides
-    /// of a *changed* file, which is all a reviewer needs; this is here for
-    /// comparisons the trait does not describe, such as one revision against
-    /// another. `None` when the object does not exist.
-    pub fn cat_file(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
-        self.blobs()?.read(rev, path)
-    }
-
-    /// Resolves a revision to an object id. Runs `git rev-parse --verify`.
-    pub fn resolve(&self, rev: &str) -> Result<Oid> {
-        rev_parse::resolve(&self.repo, rev)
-    }
-
-    fn blobs(&mut self) -> Result<&mut cat_file::Batch> {
-        if self.blobs.is_none() {
-            self.blobs = Some(cat_file::Batch::open(&self.repo)?);
-        }
-        Ok(self.blobs.as_mut().expect("just opened"))
-    }
-}
-
-/// What a reviewer needs from git.
+/// Resolves every revision the comparison names, and picks the command.
 ///
-/// There is no trait here. The contract a backend must meet is the *types*:
-/// everything below returns `file-types` values, and `cargo xtask lint-arch`
-/// forbids `file-types` from naming `vcs`, so no git concept can reach them.
-/// A second backend hits the same target by returning the same types, and the
-/// pipeline that calls these methods is what checks it did. See D30.
-impl Git {
-    /// Where the repository is.
-    pub fn repo(&self) -> &Repo {
-        &self.repo
-    }
+/// Names become ids here rather than staying as typed, because a name moves:
+/// `main` an hour into a review is not the `main` the review opened against,
+/// and an id is what says which bytes were read.
+pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
+    let commit = |name: &str| -> Result<Rev> { Ok(Rev::Commit(rev_parse::resolve(repo, name)?)) };
 
-    /// Every file that differs between the two sides.
-    pub fn files(&mut self) -> Result<Vec<ChangedFile>> {
-        let root = self.repo.root.clone();
-        let revs = self.revs()?;
-        Ok(self
-            .entries(&[])?
-            .into_iter()
-            .map(|entry| to_file_diff(entry, &root, revs.clone()))
-            .collect())
-    }
-
-    /// The content of one side of a file.
-    ///
-    /// Takes the whole [`ChangedFile`] rather than a path so that a move reads
-    /// its old path without the caller having to know that rule. Returns
-    /// [`FileContent`] rather than bytes because a repository holds pictures as
-    /// readily as source.
-    ///
-    /// One function for both sides: which side it is says nothing about where
-    /// to look, and the file's own revision does.
-    pub fn read(&mut self, file: &ChangedFile, version: DiffVersion) -> Result<FileContent> {
-        let Some(path) = file.file.on(version).cloned() else {
-            return Ok(FileContent::Absent);
-        };
-        match file.file.rev(version).stored() {
-            None => Ok(FileContent::of(worktree::read(&path)?)),
-            // Cloned because reading borrows `self` mutably, and the revision
-            // lives in the file rather than in the batch.
-            Some(rev) => {
-                let rev = rev.to_owned();
-                // Against the working tree, the stored side is converted the
-                // way a checkout would convert it. A repository with
-                // `core.autocrlf` stores LF and checks out CRLF, so comparing
-                // the stored bytes with the bytes on disk marked **every line**
-                // changed — measured, on a file where one line had been
-                // edited. The same is true of any clean/smudge filter.
-                //
-                // Not batched: `cat-file --batch --filters` reports the size
-                // of the object *before* filtering and then writes the
-                // filtered bytes, so a reader framing by that size falls out
-                // of step with the stream. One process per file is the price
-                // of being right, and it is paid only when a file is opened.
-                if file.file.rev(version.other()) == &file_types::Rev::Worktree {
-                    return Ok(FileContent::of(filtered(&self.repo, &rev, &path)?));
-                }
-                Ok(FileContent::of(self.blobs()?.read(&rev, &path)?))
+    Ok(match diff_type {
+        DiffType::Worktree => Plan::Worktree,
+        DiffType::Against(rev) => Plan::Diff {
+            name: "Changes",
+            args: vec![rev.clone()],
+            revs: Revs::new(commit(rev)?, Rev::Worktree),
+        },
+        DiffType::Between(a, b) => Plan::Diff {
+            name: "Changes",
+            args: vec![a.clone(), b.clone()],
+            revs: Revs::new(commit(a)?, commit(b)?),
+        },
+        DiffType::MergeBase(base, target) => {
+            // Where the two parted, which is what `a...b` means and the only
+            // reason this is its own way of comparing rather than a spelling.
+            let base = merge_base::run(repo, base, target)?;
+            Plan::Diff {
+                name: "Changes",
+                args: vec![base.as_str().to_owned(), target.clone()],
+                revs: Revs::new(Rev::Commit(base), commit(target)?),
             }
         }
+        DiffType::Staged(rev) => Plan::Diff {
+            name: "Staged Changes",
+            args: vec!["--cached".to_owned(), rev.clone()],
+            revs: Revs::new(commit(rev)?, Rev::Index),
+        },
+    })
+}
+
+/// The raw records, in git's own terms.
+///
+/// Runs `git --no-optional-locks status --porcelain=v2 -z`.
+pub fn entries(repo: &Repo, untracked: Untracked, pathspec: &[String]) -> Result<Vec<Entry>> {
+    let mut args = vec![
+        "status",
+        "--porcelain=v2",
+        "-z",
+        untracked.flag(),
+        // Renames are the whole point of the `2` record; without this a moved
+        // file appears as an unrelated add and delete. Forced for the same
+        // reason `diff` forces it — the two are read together. See D56.
+        "--find-renames",
+    ];
+    if !pathspec.is_empty() {
+        args.push("--");
+        args.extend(pathspec.iter().map(String::as_str));
     }
+    status::parse(&run::run(&repo.root, &args)?)
 }
 
-/// A stored version, converted as a checkout would convert it.
+/// One side of a file, from wherever that side lives.
 ///
-/// Runs `git cat-file --filters <rev>:<path>`. `None` when the object does not
-/// exist, which is ordinary: one side of a diff is routinely absent.
-fn filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
-    let spec = format!("{rev}:{path}");
-    match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
-        Ok(bytes) => Ok(Some(bytes)),
-        // Only what git says when the object is not there. Reading *every*
-        // failure as "missing" turned a broken clean filter, a corrupt object
-        // and a killed process into a file that had simply been added — a
-        // whole-file diff, with nothing to say the read had failed.
-        Err(crate::error::Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
-        Err(other) => Err(other),
-    }
-}
-
-/// Whether git's complaint means the object does not exist.
-///
-/// Matched on the message because `cat-file` exits 128 for everything. The
-/// wordings are git's own, and a wording we do not know is treated as a real
-/// failure — the safe way round, since the cost is an error the reader can
-/// read rather than a diff that quietly lies.
-fn is_missing(stderr: &str) -> bool {
-    stderr.contains("does not exist")
-        || stderr.contains("Not a valid object name")
-        || stderr.contains("unknown revision")
-        || stderr.ends_with("missing")
-        || stderr.contains("exists on disk, but not in")
-}
-
-/// Git's model, in the reviewer's terms.
-///
-/// The one place the two vocabularies meet. Git reports two codes because it
-/// compares three things — `HEAD`, the index and the working tree — while a
-/// reviewer looking at "what changed since the last commit" wants one answer.
-/// The index code wins where they differ, since it is the one that describes
-/// the file's relationship to `HEAD`.
-pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> ChangedFile {
-    let change = match (entry.xy.index, entry.xy.worktree) {
-        // Unresolved merges first: nothing else about the codes matters.
-        (Code::Unmerged, _) | (_, Code::Unmerged) => ChangeType::Conflicted,
-        (_, Code::Untracked) => ChangeType::Untracked,
-        (_, Code::Ignored) => ChangeType::Untracked,
-        (Code::Renamed | Code::Copied, _) => ChangeType::Moved,
-        (Code::Added, _) => ChangeType::Added,
-        // Deleted in the index but present on disk is a file staged for
-        // deletion and then rewritten — the content differs from HEAD, so it
-        // reads as a modification.
-        (Code::Deleted, Code::Unmodified) => ChangeType::Deleted,
-        (_, Code::Deleted) => ChangeType::Deleted,
-        _ => ChangeType::Modified,
+/// Three places a version can be: on disk, in the object store, or in the
+/// object store but wanted as a checkout would write it. Which one is decided
+/// by the file's own revisions, not by which side was asked for.
+pub fn read(
+    repo: &Repo,
+    blobs: &mut cat_file::Batch,
+    file: &ChangedFile,
+    version: DiffVersion,
+) -> Result<FileContent> {
+    let Some(path) = file.file.on(version).cloned() else {
+        return Ok(FileContent::Absent);
     };
-
-    // The one place a path gains its absolute form, because this is the first
-    // place that has both git's spelling and the root. Which versions exist is
-    // recorded here, in the paths themselves — `File`'s pair *is* that fact,
-    // and `ChangedFile` stores nothing that could contradict it.
-    let path = RepoPath::new(entry.path, root);
-    let file = match (change, entry.original) {
-        (ChangeType::Added | ChangeType::Untracked, _) => File::added(path, revs),
-        (ChangeType::Deleted, _) => File::deleted(path, revs),
-        (_, Some(previous)) => File::renamed(RepoPath::new(previous, root), path, revs),
-        (_, None) => File::unchanged_path(path, revs),
-    };
-
-    // Only the two the paths cannot express are carried; the rest is read back
-    // off `file`, so `Added` and `Moved` have exactly one source.
-    if change.needs_a_backend() {
-        ChangedFile::reported(file, change)
-    } else {
-        ChangedFile::new(file, entry.score)
+    match file.file.rev(version).stored() {
+        None => Ok(FileContent::of(worktree::read(&path)?)),
+        Some(rev) => {
+            // Against the working tree, the stored side is converted the way a
+            // checkout would convert it. A repository with `core.autocrlf`
+            // stores LF and checks out CRLF, so comparing the stored bytes
+            // with the bytes on disk marked **every line** changed — measured,
+            // on a file where one line had been edited. The same is true of
+            // any clean/smudge filter.
+            if file.file.rev(version.other()) == &Rev::Worktree {
+                return Ok(FileContent::of(cat_file::filtered(repo, rev, &path)?));
+            }
+            Ok(FileContent::of(blobs.read(rev, &path)?))
+        }
     }
 }
