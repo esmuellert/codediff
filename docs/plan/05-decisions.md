@@ -2848,3 +2848,92 @@ to do belonged to somebody else.
 `ui` gained `anyhow`, because "nothing has changed here" is not an IO error and
 `run` returns `std::io::Result`. Every crate here is `publish = false`, so the
 usual objection to `anyhow` in a library does not apply.
+
+## D65 — a model reports facts; only a terminal picks characters
+
+`align` reports that a view line is a gap. It never says a gap is drawn `╱` —
+that word lives in `ui::render::column`, beside the theme that colours it.
+
+`explorer` did the opposite. `rows.rs` built `"│ └ "`, `"▾ "`, `"+4"`, `" -1"`,
+`" (2 · "` and `"M"`, and handed over finished strings. Its own admission
+criterion, at the top of `lib.rs`, said *"never how they look"*. Five places in
+one file broke it.
+
+So the two halves of the screen were built by opposite rules, and only one
+followed the rule the code claimed.
+
+**What it cost, measured.** A `Region` — text plus a droppable priority — is a
+general idea: *here are the pieces of a row, drop the cheap ones and cut the
+longest*. But it was `explorer::Region`, so the one function built on it took a
+slice of them, and nothing that was not a file list could call it without
+pretending to be one.
+
+The status line needs exactly that rule — it drops a directory, then a rename,
+to keep the file name — and `draw/status.rs::name()` writes it again by hand in
+forty lines. The two copies do not agree: `name()` counts `chars()` where
+`fit` counts columns, so it measures a Japanese path at two-thirds of the
+columns it takes. Driven through a pty with two paths **eighteen terminal
+columns wide**, at width 36:
+
+```text
+abcdef/filename.rs  →  " filename.rs      3 changes   1/100 "
+なまえ/ファイル.rs    →  " なまえ/ファイル.rs                 "
+```
+
+The ASCII path drops its directory and keeps the position. The CJK path keeps
+the directory and silently loses `3 changes 1/100`.
+
+**That is left as it is**, and recorded as [B9](06-known-bugs.md). It is a
+behaviour change, and this is a refactor: `fit` is reachable from the status
+line now, which is what this decision is about. Making it call it is a commit
+of its own.
+
+One rule, written twice, and the copy that could not reuse the original is the
+one that is wrong.
+
+**The split.** A `Row` is now three facts — which node, where it sits, what it
+is:
+
+```rust,ignore
+Row { node, guides: Option<Guides>, content: Content }
+Content::{ Heading { title, files, stats },
+           Directory { name, open },
+           File { name, moved_from, stats, change } }
+```
+
+`guides` is `Option` rather than an empty `Vec`: a heading is what the tree
+hangs from rather than a line in it, and "no indent to describe" is a different
+statement from "at the top level". Inside it, `ancestors: Vec<bool>` says for
+each level above whether that ancestor was the last of its siblings — the exact
+question "does this column need a guide, or blank space".
+
+And in `ui`, two files where there was one:
+
+| file | what it is |
+|---|---|
+| `render/fit.rs` | a `Piece` is text, a style and a priority. Knows nothing else. |
+| `render/list.rs` | facts plus a theme, in text and colour. |
+
+`render/list.rs` is the same brick as `render/line.rs`: each takes what its own
+crate reports, adds a theme, and answers in text and colour. `line` is the
+diff's, `list` is the file list's. Neither decides what fits.
+
+**Both names were wrong before this.** The file was `render/explorer.rs` —
+named for the buffer type that called it, while every other brick is named for
+the terminal thing it makes. `render/mod.rs` listed five bricks when there were
+six, and never listed that one: the list is written in terminal words and the
+name did not fit it. `row.rs` was considered and refused — `cells.rs` already
+calls one row of the grid `row: Rect`, and this codebase has already paid for
+that collision once, when `align`'s `Row` became `ViewLine`. `list` was already
+the word in `ui` for the thing on screen, which is what the theme tables are
+named after: `theme/list.rs`, `theme::List`, and `Theme::list`.
+
+**What is checked where.** `explorer/tests/tree.rs` spells the facts with a
+helper of its own, so its 360 lines of assertions about the *shape* of the tree
+survive unchanged. The characters are asserted in `ui/tests/explorer_rows.rs`,
+against a real screen — where they can be wrong.
+
+Sabotage: a changed guide, a changed fold triangle and a changed status letter
+each fail three or more tests. Bold on a heading failed nothing at all, having
+been moved on trust; `a_heading_and_a_status_letter_are_bold_in_every_theme`
+now covers it.

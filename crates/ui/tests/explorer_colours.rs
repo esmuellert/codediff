@@ -196,3 +196,24 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
         "the new bytes wearing the old colours"
     );
 }
+
+#[test]
+fn a_heading_and_a_status_letter_are_bold_in_every_theme() {
+    // Weight is structural rather than a taste: a `List` holds `Color` and
+    // cannot express it, so it is applied where the pieces are built. Nothing
+    // asserted it there, and it survived a move only by luck.
+    use ratatui::style::Modifier;
+
+    for name in ["basic-dark", "catppuccin-mocha"] {
+        let mut session = Session::new(Buffer::explorer(entries()), Theme::named(name).unwrap());
+        let area = Rect::new(0, 0, 44, 8);
+        let mut cells = Cells::empty(area);
+        session.draw_into(&mut cells, area);
+
+        let bold = |x: u16, y: u16| cells[(x, y)].modifier.contains(Modifier::BOLD);
+        assert!(bold(0, 0), "{name}: the `C` of the section heading");
+        assert!(bold(43, 3), "{name}: the status letter of a file");
+        assert!(!bold(0, 1), "{name}: an indent guide is not bold");
+        assert!(!bold(4, 5), "{name}: a file name is not bold");
+    }
+}

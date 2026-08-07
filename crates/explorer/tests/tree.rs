@@ -3,10 +3,82 @@
 //! The fixture is the one `cargo xtask fixture-repo` builds, and the expected
 //! rows were captured by running the plugin headless over it. Anything that
 //! is deliberately not the same is marked where it appears.
+//!
+//! **[`spell`] below is this file's own.** A row is facts now — which
+//! ancestors have more siblings, whether a directory is open — and the
+//! characters live in `ui`, beside the theme that colours them. These tests
+//! are about the shape of the tree, so they spell that shape the way a reader
+//! recognises it. What is really drawn is asserted in
+//! `ui/tests/explorer_rows.rs`, against a real screen.
 
-use explorer::{Entry, Explorer, Group, Groups, ViewMode};
+use explorer::{Content, Entry, Explorer, Group, Groups, Row, ViewMode};
 use file_types::{ChangeType, ChangedFile, File, Oid, RepoPath, Rev, Revs, Stats};
 use std::path::Path;
+
+/// One row's facts, in the form these tests read them by.
+fn spell(row: &Row) -> String {
+    let mut out = String::new();
+    if let Some(guides) = &row.guides {
+        for &ancestor_was_last in &guides.ancestors {
+            out.push_str(if ancestor_was_last { "  " } else { "│ " });
+        }
+        out.push_str(if guides.is_last { "└ " } else { "├ " });
+    }
+    match &row.content {
+        Content::Heading {
+            title,
+            files,
+            stats,
+        } => match stats {
+            // A side that is zero is left out, as the drawn row leaves it out.
+            Some(stats) => {
+                out.push_str(&format!("{title} ({files} · "));
+                if stats.added > 0 {
+                    out.push_str(&format!("+{}", stats.added));
+                }
+                if stats.removed > 0 {
+                    let separator = if stats.added > 0 { " " } else { "" };
+                    out.push_str(&format!("{separator}-{}", stats.removed));
+                }
+                out.push(')');
+            }
+            None => out.push_str(&format!("{title} ({files})")),
+        },
+        Content::Directory { name, open } => {
+            out.push_str(if *open { "▾ " } else { "▸ " });
+            out.push_str(name);
+        }
+        Content::File {
+            name,
+            moved_from,
+            stats,
+            change,
+        } => {
+            out.push_str(name);
+            if let Some(previous) = moved_from {
+                out.push_str(&format!(" ← {previous}"));
+            }
+            if let Some(stats) = stats {
+                if stats.added > 0 {
+                    out.push_str(&format!(" +{}", stats.added));
+                }
+                if stats.removed > 0 {
+                    out.push_str(&format!(" -{}", stats.removed));
+                }
+            }
+            out.push(' ');
+            out.push_str(match change {
+                ChangeType::Added => "A",
+                ChangeType::Modified => "M",
+                ChangeType::Deleted => "D",
+                ChangeType::Moved => "R",
+                ChangeType::Untracked => "??",
+                ChangeType::Conflicted => "!",
+            });
+        }
+    }
+    out
+}
 
 fn revs() -> Revs {
     Revs::worktree_against(Oid::new("b87b24c"))
@@ -49,7 +121,7 @@ fn only(files: Vec<Entry>) -> Groups {
 }
 
 fn text(explorer: &Explorer) -> Vec<String> {
-    explorer.rows().iter().map(|row| row.text()).collect()
+    explorer.rows().iter().map(spell).collect()
 }
 
 /// Every changed file in the fixture repository, as the backend reports them.
@@ -317,7 +389,7 @@ fn switching_view_mode_keeps_the_reader_on_the_same_file() {
         "and it has moved, so a row number would be wrong"
     );
     assert_eq!(
-        explorer.rows()[landing].text(),
+        spell(&explorer.rows()[landing]),
         "├ nest/a/one.txt ??",
         "the same file"
     );
@@ -341,7 +413,7 @@ fn an_anchor_tells_the_two_sections_holding_one_path_apart() {
         .rows()
         .iter()
         .enumerate()
-        .filter(|(_, row)| row.text().contains("staged-then-edited.txt"))
+        .filter(|(_, row)| spell(row).contains("staged-then-edited.txt"))
         .map(|(row, _)| row)
         .collect();
     assert_eq!(rows.len(), 2, "the file is listed twice");

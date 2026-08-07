@@ -147,8 +147,9 @@ render/              putting characters and colour on a cell grid
 ├── layout.rs          where the columns and gutters go
 ├── column.rs          one column's view lines
 ├── gutter.rs          one line number
-├── line.rs            how a line of a diff is coloured
-├── explorer.rs        one list row, fitted to the width it has
+├── line.rs            how one line of a diff is coloured
+├── list.rs            what one row of the file list says, and its colour
+├── fit.rs             what survives when a row is wider than its pane
 └── cells.rs           one line onto one row of cells
 syntax/              colouring, on a thread that is not the one drawing
 ├── mod.rs             Syntax — the worker, and one request in flight per file

@@ -14,7 +14,7 @@
 //! order.rs     what comes before what
 //! filter.rs    hiding rows by a glob
 //! rows.rs      walking the tree into visible lines
-//! row.rs       one line, and the pieces it is made of
+//! row.rs       one line, as facts — never as text
 //! model.rs     the state, and everything that changes it
 //! ```
 //!
@@ -39,5 +39,5 @@ pub use group::{Group, Groups};
 pub use model::{Anchor, Explorer};
 pub use node::{EntryId, Node, NodeId, NodeType};
 pub use request::{ExplorerDiffRequest, ExplorerDiffType};
-pub use row::{Region, RegionType, Row, priority};
+pub use row::{Content, Guides, Row};
 pub use tree::ViewMode;

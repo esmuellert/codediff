@@ -1,8 +1,11 @@
 //! What a row says, and what survives a narrow pane.
 //!
 //! The model is checked in the `explorer` crate and the fitting in
-//! `render::explorer`; this is the two together with a viewport and a theme,
+//! `render::fit`; this is the two together with a viewport and a theme,
 //! which is the only place the whole thing can be wrong.
+//!
+//! **The characters are asserted here and nowhere else.** `explorer` reports
+//! facts, and `render::list` is what turns them into `▾`, `│ ` and `M`.
 
 #![allow(dead_code, unused_imports)]
 

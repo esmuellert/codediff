@@ -10,8 +10,15 @@
 //! cells    one line of text onto one row of the grid
 //! gutter   one line number
 //! column   one gutter-and-text column of a diff
-//! line     how a line of a diff is coloured
+//! line     how one line of a diff is coloured
+//! list     what one row of the file list says, and how it is coloured
+//! fit      what survives when a row is wider than its pane
 //! ```
+//!
+//! `line` and `list` are the same brick for the two things on screen: each
+//! takes what its own crate reports, adds a theme, and answers in text and
+//! colour. Neither decides what fits — that is `fit`, which knows about
+//! neither and is shared with the status line.
 //!
 //! **Nothing here may name [`crate::view`]**, and `cargo xtask lint-arch`
 //! refuses it. That is the whole distinction from [`draw`](crate::draw): a
@@ -26,7 +33,8 @@
 
 pub mod cells;
 pub mod column;
-pub mod explorer;
+pub mod fit;
 pub mod gutter;
 pub mod layout;
 pub mod line;
+pub mod list;

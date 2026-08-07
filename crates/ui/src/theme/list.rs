@@ -4,9 +4,12 @@
 //!
 //! Taste, and only taste — the same split as [`Code`](super::Code). What a
 //! piece of a row *is* — that this one is a directory and that one is a
-//! deletion — is `explorer`'s answer, carried in
-//! [`RegionType`](explorer::RegionType). This file says what a deletion looks
-//! like, which every theme answers differently.
+//! deletion — is `explorer`'s answer, carried in its
+//! [`Content`](explorer::Content). This file says what a deletion looks
+//! like, which every theme answers differently. [`render::list`] is where the
+//! two meet.
+//!
+//! [`render::list`]: crate::render::list
 //!
 //! **A [`List`] holds `Color`, not `Style`.** The background of a row belongs
 //! to the selection, and a region that could set one would be able to hide

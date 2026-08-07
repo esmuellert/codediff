@@ -1,18 +1,16 @@
 //! Drawing the list of changed files.
 //!
-//! One row per line, each fitted to the pane by `render::explorer` and then
-//! coloured a region at a time. Nothing here decides what is in a row or what
-//! survives a narrow pane: this places the surviving pieces and picks their
-//! styles, which is all a drawing step should do.
+//! One row per line: `render::list` says what each row's pieces are and
+//! what colour, `render::fit` says which of them survive the width, and this
+//! places what is left. Nothing here decides any of the three.
 
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 
-use explorer::{Region, RegionType, Row};
-use file_types::ChangeType;
+use explorer::Row;
 
-use crate::render::{cells, explorer as fit};
+use crate::render::{cells, fit, list};
 use crate::theme::Theme;
 use crate::view::Viewport;
 use crate::view::buffer::Explorer;
@@ -55,64 +53,16 @@ pub fn draw(
     true
 }
 
-/// Writes one row's surviving regions across a line.
+/// Writes one row's surviving pieces across a line.
 fn paint(cells: &mut Cells, line: Rect, row: &Row, theme: &Theme, background: Style) {
-    let fitted = fit::fit(&row.left, &row.right, line.width as usize);
+    let (left, right) = list::pieces(row, theme, background);
+    let fitted = fit::fit(&left, &right, line.width as usize);
     let mut x = 0;
-    for region in &fitted.left {
-        x = cells::write(
-            cells,
-            line,
-            x,
-            &region.text,
-            style(region, theme, background),
-        );
+    for piece in &fitted.left {
+        x = cells::write(cells, line, x, &piece.text, piece.style);
     }
     x += fitted.gap as u16;
-    for region in &fitted.right {
-        x = cells::write(
-            cells,
-            line,
-            x,
-            &region.text,
-            style(region, theme, background),
-        );
+    for piece in &fitted.right {
+        x = cells::write(cells, line, x, &piece.text, piece.style);
     }
-}
-
-/// What one piece of a row looks like.
-///
-/// A colour from the theme's list table, over the row's own background rather
-/// than replacing it, so the selected row stays visibly selected under every
-/// colour it holds.
-///
-/// Bold is applied here rather than stored in the theme: a heading is bold in
-/// every theme, so it is structural. That is the same division `Code` makes,
-/// where weight comes from the scope table and colour from the theme.
-fn style(region: &Region, theme: &Theme, background: Style) -> Style {
-    let list = &theme.list;
-    let colour = match region.region_type {
-        RegionType::Heading => list.heading,
-        RegionType::Marker | RegionType::Fold => list.marker,
-        RegionType::Directory => list.directory,
-        RegionType::Name => list.name,
-        RegionType::Moved => list.moved,
-        RegionType::Count => list.count,
-        RegionType::Added => list.added,
-        RegionType::Removed => list.removed,
-        RegionType::Spacer => list.name,
-        RegionType::Status(change) => match change {
-            ChangeType::Added => list.new_file,
-            ChangeType::Modified => list.modified,
-            ChangeType::Deleted => list.deleted,
-            ChangeType::Moved => list.renamed,
-            ChangeType::Untracked => list.untracked,
-            ChangeType::Conflicted => list.conflicted,
-        },
-    };
-    let weight = match region.region_type {
-        RegionType::Heading | RegionType::Status(_) => Modifier::BOLD,
-        _ => Modifier::empty(),
-    };
-    background.fg(colour).add_modifier(weight)
 }

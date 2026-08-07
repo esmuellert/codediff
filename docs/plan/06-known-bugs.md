@@ -147,3 +147,29 @@ no longer be shown by its absence.
 They were hidden because `cargo test --workspace` stops at the first failing
 target and `--test pipeline` fails earlier. **Run the suite with
 `--no-fail-fast`**, or targets after the first failure never run at all.
+
+---
+
+## B9 — a wide path loses the position instead of its directory
+
+**Owner: the status line.** `crates/ui/src/draw/status.rs`, `name()`.
+
+It counts `chars()` where a terminal counts columns, so a CJK path measures at
+two-thirds of the width it takes and keeps a directory there is no room for.
+Two paths that are both eighteen columns wide, at width 36:
+
+```text
+abcdef/filename.rs  →  " filename.rs      3 changes   1/100 "
+なまえ/ファイル.rs    →  " なまえ/ファイル.rs                 "
+```
+
+The ASCII one drops its directory, as it should. The CJK one keeps it and
+silently loses `3 changes 1/100` — the position gone rather than the part a
+reviewer can most afford to lose.
+
+**The fix is already in place to be called.** `render::fit` is what the file
+list narrows a row with, and it counts columns; D65 made it reachable from
+here. `name()` becomes a list of `Piece`s and one call. The one thing to get
+right is which width to pass: `room` is what is left before the position, but
+the row itself is the hard limit, because a name that will not fit beside the
+position pushes the position out rather than being cut.
