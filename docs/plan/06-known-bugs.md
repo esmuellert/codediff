@@ -115,14 +115,41 @@ anywhere.
 
 ---
 
-## B7 — a path with a newline in it cannot be read
+## B7 — a path with a newline in it corrupts the read stream
 
-**Owner: `vcs`.** `crates/vcs/src/git/cat_file.rs`.
+**Owner: wherever a path enters.** `crates/vcs/src/git/status.rs`,
+`name_status.rs`, and the pathspec on the command line.
 
-Refused with an error rather than corrupting the stream, which was the bug
-before. Reading it needs `git cat-file --batch -Z`, whose NUL framing would set
-a floor of git 2.42 — a trade not made anywhere else in this crate, so it is
-recorded rather than taken.
+`git cat-file --batch` takes one request per line, so a path holding a newline
+is read as two requests, and every answer after it belongs to the wrong file —
+silently, which is the bad part.
+
+**Not `cat_file.rs`'s to check.** It was checked there for one commit, and that
+was the wrong place: a path is vetted where one enters, not at each of the
+places that use it. `read()` takes the path as good, as every other function
+handed a `RepoPath` does.
+
+Every other git command here already avoids the problem upstream, by asking for
+NUL framing: `status --porcelain=v2 -z`, `diff --name-status -z`,
+`diff --numstat -z`. Two tests assert it works — `git_status.rs`'s
+`a_path_containing_a_newline_survives`, and `name_status.rs`'s, whose comment
+reads *"What `-z` is for."*
+
+So git hands us a path that git will not take back: `status -z` parses
+`two\nlines.txt`, the explorer lists it, and pressing enter desynchronises the
+stream.
+
+**Two ways to fix it, both upstream of the read.**
+
+*Sanitise where a path enters.* One check, at the boundary, and everything
+below stays simple. Such a file cannot then be reviewed, but it is named rather
+than silently mixed up with another.
+
+*Take the framing git offers.* `cat-file --batch -Z` frames with NUL and the
+problem does not exist. It sets a floor of git 2.42 (September 2023) — Debian
+12 ships 2.39 and Ubuntu 22.04 ships 2.34, and `-Z` on an older git fails at
+startup rather than degrading. Nothing here declares a minimum git version
+today, and `doctor` checks none.
 
 ---
 
