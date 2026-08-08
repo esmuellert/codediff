@@ -5,8 +5,7 @@
 
 use pipeline::file::Response;
 
-use crate::syntax::Store;
-use crate::view::{Buffer, BufferType, View};
+use crate::view::{Buffer, BufferType};
 
 use super::Session;
 

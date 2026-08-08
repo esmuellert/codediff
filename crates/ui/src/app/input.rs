@@ -3,13 +3,11 @@
 use crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
 
-use crate::input::{
-    Action, BufferAction, Command, Motion, ProgramAction, Resolution, TabAction, ViewAction,
-};
+use crate::input::{Action, Command, ProgramAction, Resolution, TabAction, ViewAction};
 use crate::render::layout;
 use crate::view::{BufferType, Layout, PaneId};
 
-use super::{Flow, HitMap, Session};
+use super::{Flow, Session};
 
 impl Session {
     /// Applies one key (for tests — `handle` wraps the crossterm event).
@@ -34,13 +32,32 @@ impl Session {
             }
             Event::Mouse(mouse) => {
                 match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        let (buffer, viewport) = self.view.focused_mut();
-                        buffer.act(BufferAction::Motion(Motion::Up), 3, viewport);
-                    }
-                    MouseEventKind::ScrollDown => {
-                        let (buffer, viewport) = self.view.focused_mut();
-                        buffer.act(BufferAction::Motion(Motion::Down), 3, viewport);
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                        // Scroll the pane the mouse is hovering over, not the
+                        // focused one — and move the view without moving the
+                        // cursor, the way a browser does.
+                        let delta: i32 = if mouse.kind == MouseEventKind::ScrollUp {
+                            -3
+                        } else {
+                            3
+                        };
+                        let col = mouse.column;
+                        let row = mouse.row;
+                        if let Some((pane_id, _)) = self.hit_map.panes.iter().find(|(_, rect)| {
+                            col >= rect.x
+                                && col < rect.x + rect.width
+                                && row >= rect.y
+                                && row < rect.y + rect.height
+                        }) {
+                            let pane_id = *pane_id;
+                            let pane = self.view.tab().pane(pane_id);
+                            let view_lines = self.view.buffer(pane.buffer).view_lines();
+                            self.view
+                                .tab_mut()
+                                .pane_mut(pane_id)
+                                .viewport
+                                .scroll(delta, view_lines);
+                        }
                     }
                     MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
                         let col = mouse.column;

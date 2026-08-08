@@ -64,8 +64,11 @@ impl Viewport {
     /// resize needs no event of its own: the next frame simply has a different
     /// height, and page motions immediately agree with what is on screen.
     pub fn set_height(&mut self, height: u32, view_lines: u32) {
+        let changed = self.height != height;
         self.height = height;
-        self.clamp(view_lines);
+        if changed {
+            self.clamp(view_lines);
+        }
     }
 
     /// The half-open range of view lines the next frame will show.
@@ -98,6 +101,30 @@ impl Viewport {
             Motion::ScrollLeft => self.left = self.left.saturating_sub(count * SCROLL_STEP),
         }
         self.clamp(view_lines);
+    }
+
+    /// Scrolls the view without moving the cursor, like a browser.
+    ///
+    /// The view moves first. Then if the cursor has gone off screen, it is
+    /// brought to the nearest visible edge — rather than the view snapping
+    /// back to the cursor, which is what `clamp` alone would do.
+    pub fn scroll(&mut self, delta: i32, view_lines: u32) {
+        let last_top = view_lines.saturating_sub(self.height);
+        if delta > 0 {
+            self.top = self.top.saturating_add(delta as u32).min(last_top);
+        } else {
+            self.top = self.top.saturating_sub((-delta) as u32);
+        }
+        // Keep the cursor on screen without moving it unnecessarily.
+        let visible_last = (self.top + self.height)
+            .saturating_sub(1)
+            .min(view_lines.saturating_sub(1));
+        if self.cursor < self.top {
+            self.cursor = self.top;
+        }
+        if self.cursor > visible_last {
+            self.cursor = visible_last;
+        }
     }
 
     /// Puts the cursor on a given row and centres on it.
