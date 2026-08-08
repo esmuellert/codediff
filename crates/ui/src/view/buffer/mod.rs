@@ -1,23 +1,10 @@
 //! What a pane can show.
 //!
-//! [`Buffer`] is everything a buffer has whatever it holds — rows, changed
-//! blocks, change navigation. `BufferType` below is only what differs between
-//! the kinds. Rust has no inheritance, so a shared base is composition plus an
-//! enum naming the alternatives; the enum exists because the language needs
-//! them named, not because the kinds are more different than they are.
+//! [`Buffer`] holds what every buffer has (rows, changed blocks, navigation).
+//! [`BufferType`] holds only what differs between kinds.
 //!
-//! Side by side and inline emit different row sequences over the same diff, so
-//! "row 40" means different things in each. That is why they are separate
-//! variants rather than one with a flag: the variant *is* the row layout, so
-//! there is no field for the row count to fall out of step with, and both the
-//! renderer and the keymap can dispatch on it without reading one.
-//!
-//! An enum rather than a trait: the kinds are a closed set, so an exhaustive
-//! `match` means adding one breaks the build until it is handled everywhere —
-//! the same property that stops the keymap growing dead commands. A trait
-//! could not carry the shared fields anyway. Zellij's `Box<dyn Pane>` is the
-//! counter-example; it forced `Rc<RefCell<_>>` throughout because two panes
-//! cannot be borrowed mutably through trait objects.
+//! Side-by-side and inline are separate variants because they produce
+//! different row counts from the same diff.
 
 #[allow(clippy::module_inception)]
 mod buffer;
@@ -37,12 +24,7 @@ use align::Alignment;
 use file_types::DiffType;
 use file_types::File;
 
-/// Which type of buffer this is, and what only that type holds.
-///
-/// The variant *is* the layout, so the renderer and the keymap dispatch on
-/// something the compiler checks rather than on a field. Which walk each one
-/// asks `align` for is [`DiffType`], defined once there — these variants
-/// select it, they do not redefine what it means.
+/// Which type of buffer, and what only that type holds.
 #[derive(Debug)]
 pub enum BufferType {
     /// Two versions, in two columns.

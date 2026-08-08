@@ -24,10 +24,6 @@ use crate::git::{cat_file, rev_parse};
 use crate::repo::Repo;
 
 /// An open repository.
-///
-/// Holds what a session accumulates — what has been resolved, which child
-/// process is open — so that everything below can be a free function over a
-/// [`Repo`] and none of it has to be told twice.
 #[derive(Debug)]
 pub struct Repository {
     repo: Repo,
@@ -36,7 +32,7 @@ pub struct Repository {
     /// open cannot leave half its files named against one `HEAD` and half
     /// against another.
     revs: Option<Revs>,
-    /// Opened on first use, so a list-only run never pays for the child.
+    /// The `cat-file --batch` child, opened on first use.
     blobs: Option<cat_file::Batch>,
 }
 

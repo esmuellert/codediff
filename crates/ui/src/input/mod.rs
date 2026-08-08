@@ -2,11 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: does this decide *what was asked for*? Never what to
-//! do about it. [`Resolver`] resolves and returns; the loop dispatches. If
-//! this module also acted, it would need references to the view and the
-//! terminal at once, which is the coupling the levelled [`Action`] exists to
-//! avoid.
 //!
 //! One file per **executor**, each holding that executor's commands *and* the
 //! keys bound to them — so a new command is one file, not two:

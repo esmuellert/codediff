@@ -1,8 +1,4 @@
-//! Running the stages, and handing over the result.
-//!
-//! The last stage, and what it produces. It is a file of its own rather than
-//! part of `mod.rs` so that the folder listing reads as the pipeline: four
-//! stages, four files, none of them hidden in the signpost.
+//! The last stage: runs the pipeline and hands over the result.
 
 use std::sync::Arc;
 
@@ -13,46 +9,20 @@ use file_types::{DiffVersion, File};
 use crate::file::contents::{self, Contents};
 use crate::file::diff;
 
-/// One file, read: what the four stages produce.
-///
-/// The producer defines it, which is the direction that keeps the graph
-/// acyclic — `ui` depends on this crate, so a type of `ui`'s here would be a
-/// cycle. Its two cases are [`DiffType`]'s, so the answer says which of the
-/// three ways of showing a file this one is rather than leaving it to be
-/// worked out again from an `Option` somewhere else. See D60.
-///
-/// Each case is a struct, because the interface holds it rather than copying
-/// out of it: a side-by-side buffer and an inline one are two readings of one
-/// [`Diff`], and switching between them moves it rather than rebuilding it.
-/// Both structs used to sit in `ui` as well, with the same two fields each and
-/// nothing added, converted from this on arrival. See D61.
-///
-/// Neither carries a colour, a width or a position. Those are the interface's,
-/// and it keeps them beside this rather than in it.
-///
-/// [`DiffType`]: file_types::DiffType
+/// What the pipeline produces for one file.
 pub enum DiffContent {
     SingleFile(SingleFile),
     Diff(Diff),
 }
 
-/// The one version there is.
-///
-/// An added, untracked or deleted file has nothing on the other side, so there
-/// is no pairing to make and no empty column to draw. See D23.
+/// A file with only one version (added, untracked, or deleted).
 #[derive(Debug)]
 pub struct SingleFile {
     pub file: File,
-    /// Shared rather than owned outright, as [`Alignment`] shares its two
-    /// sides, so the thread that colours can be handed the text without
-    /// copying it.
     pub lines: Arc<Vec<String>>,
 }
 
-/// One file's two versions, paired line by line.
-///
-/// Which of the two paired layouts it is read in is the reader's choice and
-/// can change without re-reading, so it is not decided here.
+/// Two versions of a file, paired line by line.
 #[derive(Debug)]
 pub struct Diff {
     pub file: File,
@@ -71,21 +41,12 @@ impl DiffContent {
 
 impl SingleFile {
     /// Which side the file exists on.
-    ///
-    /// Derived rather than stored: a copy kept beside the file is how one
-    /// comes to disagree with the other. A file existing on both sides would
-    /// have been paired instead of landing here.
     pub fn side(&self) -> DiffVersion {
         self.file.only().unwrap_or(DiffVersion::Modified)
     }
 }
 
-/// Drives the four stages for one request.
-///
-/// Stage one runs in [`Runner::new`] and its result is owned here. Stages two
-/// to four run in [`Runner::run`], which returns what they produce rather than
-/// lending it — possible only because an alignment owns the two files it
-/// describes. See D27.
+/// Drives the four stages for one file.
 pub struct Runner {
     pub contents: Contents,
 }
@@ -108,11 +69,7 @@ impl Runner {
         self.contents.is_binary()
     }
 
-    /// Runs stages two to four and returns what was read.
-    ///
-    /// Two cases, decided by how many versions exist. Which of the three ways
-    /// of showing a file that makes it is carried in the answer, so nothing
-    /// downstream has to work it out again. See D23 and D60.
+    /// Runs stages two to four.
     pub fn run(&self) -> Result<DiffContent> {
         let file = self.contents.file().clone();
         match file.only() {

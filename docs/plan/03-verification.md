@@ -138,7 +138,7 @@ human-readable artifact and the regression fixture are the same file.
 
 | command | shows | first used by |
 |---|---|---|
-| `codediff doctor` | version, engine version, linkage, runtime deps, config path | S1 |
+| `codediff doctor` | version, engine version, linkage, deps, config path | S1 |
 | `codediff debug diff <a> <b>` | the raw `LinesDiff` — changes, inner changes, moves | S2 |
 | `codediff debug line <f> [-v]` | per-character byte/utf16/column/width for the characters that diverge, and for control characters | S3 |
 | `codediff debug align <a> <b> [-v]` | plain-text side-by-side with fillers, change markers and move notes; `-v` adds hunks, character spans and unchanged regions | S4 |
@@ -183,21 +183,16 @@ the toolchain rather than competing with it.
 | `align` golden output | integration | std, `UPDATE_GOLDEN=1` | ms | `debug align` output unchanged, and each column still reads back as its file |
 | `ui` screens | integration | `insta` + `TestBackend` | ms | rendered cell grid unchanged |
 | `vcs` against git | integration | `cargo test -p vcs` | ~100 ms | real git behaviour, via fixture repos |
-| **`runtime` state machine** | integration | `cargo test -p runtime` | ms | `Vec<Event>` → `AppState` + emitted `Command`s |
+| `pipeline` + `ui` integration | integration | `cargo test -p codediff` | ms | file worker and session behaviour |
 | replay scripts | e2e | `cargo test --test e2e` | seconds | the real binary, fully wired |
 | pty smoke | e2e | `cargo test --test pty` | seconds | raw mode, alt-screen, terminal restore |
 | oracle | — | `cargo xtask verify-oracle` | seconds | parity with the upstream C tool |
 | acceptance | — | `docs/acceptance/S##.md` | minutes | a human ticked every box |
 
-### State-machine tests are the load-bearing layer
+### Integration tests are the load-bearing layer
 
-`crates/runtime/tests/` drives `runtime::update` with synthesized events and asserts on the
-resulting `AppState` and the `Command`s emitted — no terminal, no repository, no threads,
-no clock. Fast, fully deterministic, no flake.
-
-**This is where the bulk of behavioural coverage belongs**, and it is only possible because
-`update` is pure (invariant 2). It is an integration test of one crate, not an end-to-end
-test: both ends of the system are absent by design.
+`crates/codediff/tests/` drives the session with real files and asserts on
+rendered screens — no live terminal, fully deterministic.
 
 ### e2e is deliberately thin
 

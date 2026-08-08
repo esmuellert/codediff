@@ -1,23 +1,9 @@
 #![doc = include_str!("../README.md")]
 //!
-//! ---
-//!
-//! Admission criterion: is this part of *what a diff is*? Never how one is
-//! computed — that is `vscode-diff`, which owns the engine and depends on
-//! this.
-//!
-//! This crate has no dependencies, no build script and no `unsafe`. That is
-//! its whole purpose: everything downstream of the engine can name a diff
-//! without inheriting a C toolchain.
-//!
-//! These carry no borrows and no C pointers, so a `LinesDiff` is an ordinary
-//! value: it can be stored, sent between threads and outlive the call that
-//! produced it.
-//!
-//! Index conventions are inherited from the engine, which mirrors VSCode:
+//! Index conventions (inherited from the C engine, which mirrors VSCode):
 //!
 //! - lines are **1-based**, ranges are **end-exclusive**
-//! - columns are **1-based** and counted in **UTF-16 code units**, not bytes
+//! - columns are **1-based** in **UTF-16 code units**
 
 /// A range of lines: 1-based, `start_line` inclusive, `end_line` exclusive.
 ///

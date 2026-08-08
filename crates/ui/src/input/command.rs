@@ -1,18 +1,7 @@
 //! What a resolved key sequence asks for, and who will do it.
 //!
-//! [`Action`] has one arm per **executor**. Four of them are the levels of the
-//! view model, and the rule that decides which level a command belongs to is:
-//!
-//! > An action is executed by the **lowest level that contains everything it
-//! > affects.**
-//!
-//! A motion affects one viewport, so the buffer does it. Resizing a border
-//! affects *two* panes, so only the tab can. The executor hierarchy **is** the
-//! containment hierarchy — there is nothing extra to remember, and each level
-//! owns its own commands in its own file. See D27.
-//!
-//! Nothing here is bound to a key; each level binds its own. This file is only
-//! the routing.
+//! One arm per executor level. The rule: an action is executed by the lowest
+//! level that contains everything it affects.
 
 use std::num::NonZeroU32;
 
@@ -49,22 +38,8 @@ impl Command {
 
 /// Who carries a command out.
 ///
-/// The first four arms are the view model, innermost first, and lookup
-/// consults their bindings in that order. `Program` is not a level: it sits
-/// below every one of them.
-///
-/// | arm | executed by | can fail | latency |
-/// |---|---|---|---|
-/// | `Buffer` | the focused pane's buffer | no | µs |
-/// | `Pane` | the focused pane | no | µs |
-/// | `Tab` | the active tab | no | µs |
-/// | `View` | the view | no | µs |
-/// | `Program` | whoever owns the terminal | no | µs |
-///
-/// Nothing here blocks and nothing leaves the crate. There used to be a sixth
-/// level, `Task`, for the one action that needed a repository; it was returned
-/// rather than run, because `ui` could not reach git. The pipeline answers on
-/// a thread now, so asking costs a `send` and the level is gone. See D59.
+/// The first four arms are the view model levels, innermost first.
+/// `Program` sits below all of them. Nothing here blocks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Motions, and whatever this buffer's kind adds.

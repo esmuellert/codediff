@@ -1,24 +1,6 @@
 //! A diff in two columns.
 //!
-//! Adds one thing to [`Buffer`](super::Buffer): the divider between the two
-//! columns. Everything else about reading a diff — how many view lines, which
-//! changed, stepping between them — is the same however it is laid out and
-//! lives on the parent.
-//!
-//! That one field is why this is a type of its own rather than a value of
-//! [`Inline`](super::Inline)'s: a divider is meaningless where there are no
-//! columns. It is also why it does **not** survive a switch to inline and
-//! back — there is nowhere for it to wait, and the alternative is a field
-//! `Inline` carries and never reads, at which point the two are the same type
-//! and neither name means anything. Pressing `t` is a reader saying they do
-//! not last columns; returning to the default split is the answer to that.
-//!
-//! The divider is here rather than on the pane's `Viewport` because it is not
-//! a pane boundary: both columns are inside one pane, drawn by one buffer, so
-//! this is the lowest level containing both sides of it. The same rule puts a
-//! *pane* border on the tab, one level up. A pane holds only what is true of
-//! any view of any buffer, and a percentage meaningless for a lone file is not
-//! that. See D27.
+//! Adds one thing to [`Buffer`](super::Buffer): the column divider.
 
 use align::Alignment;
 use file_types::File;

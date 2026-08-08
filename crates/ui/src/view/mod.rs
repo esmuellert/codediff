@@ -1,34 +1,14 @@
 //! Everything on screen, and where it sits.
 //!
-//! ---
-//!
-//! Admission criterion: does this decide *what is visible and where*? Four
-//! levels, each containing the next, and one file each — so the module tree
-//! and the model are the same picture:
-//!
 //! ```text
-//! view/            View     tabs, and every buffer any of them can show
-//! ├ tab.rs         Tab      a layout of panes, and which has focus
-//! ├ pane.rs        Pane     one buffer, and one Viewport onto it
+//! view/            View     tabs, and every buffer
+//! ├ tab.rs         Tab      pane layout and focus
+//! ├ pane.rs        Pane     one buffer + one Viewport
 //! ├ viewport.rs    Viewport top, cursor, left
 //! └ buffer/        Buffer   what a pane can show
 //! ```
 //!
-//! `buffer/` is *inside* this module because [`View`] owns the buffers.
-//! Neovim's are global and Helix keeps `documents` beside its `tree`, but both
-//! have an editor above that owns the two; we do not, and inventing one to
-//! justify a directory would be the tail wagging the dog.
-//!
-//! Buffers live in [`View`], not in the panes that show them, so two panes can
-//! show one buffer and neither owns it. Panes refer to them by [`BufferId`] —
-//! never by reference, which would make the whole structure self-referential.
-//! Helix does exactly this with `DocumentId`/`ViewId`; Zellij's `Box<dyn
-//! Pane>` is the counter-example, and forced `Rc<RefCell<_>>` throughout.
-//!
-//! The containment order is also the **execution order**: an action is carried
-//! out by the lowest level that contains everything it affects. A motion
-//! affects one viewport, so the pane's buffer does it. Resizing a border
-//! affects two panes, so the tab must. See D27.
+//! Buffers live in [`View`], referenced by [`BufferId`] (not by `&mut`).
 
 pub mod buffer;
 mod pane;
@@ -45,10 +25,7 @@ use file_types::DiffType;
 use crate::input::KeymapType;
 use crate::syntax::{Store, Syntax, Version};
 
-/// A buffer's place in [`View::buffers`].
-///
-/// An index rather than a reference, so panes can name buffers without
-/// borrowing them and the whole tree stays movable.
+/// An index into [`View::buffers`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BufferId(usize);
 
@@ -66,36 +43,15 @@ pub struct View {
     buffers: Vec<Buffer>,
     tabs: Vec<Tab>,
     active: usize,
-    /// Floating layers, drawn over the tabs, topmost last.
-    ///
-    /// Empty, and the reason it exists now is that event routing changes shape
-    /// when the first one arrives: overlays are offered keys before the
-    /// focused pane. Doing that once is cheaper than doing it twice.
     overlays: Vec<Overlay>,
-    /// Whether the code is coloured by its language.
-    ///
-    /// One switch for the session rather than one per buffer: see
-    /// [`ViewAction::ToggleSyntax`](crate::input::ViewAction::ToggleSyntax).
+    /// Whether syntax highlighting is on for the session.
     syntax: bool,
-    /// Which content the open files are at.
-    ///
-    /// One number for all of them, raised whenever a buffer is replaced.
-    /// **A file's name does not change when its bytes do** — the working tree
-    /// has no id git can give it — so the colour store would otherwise answer
-    /// a re-read with the colours of what the file used to be. That is the
-    /// same fault as the diff cache D51 removed, one layer up.
-    ///
-    /// Raising it for every open discards a little more than it must, since
-    /// only one file was re-read. Colouring one file is what happens on any
-    /// first open, so the cost is a frame; keeping this per file needs a
-    /// watcher to say which file moved, which is S14.
+    /// Incremented when a buffer is replaced, so the colour store discards
+    /// stale spans.
     version: Version,
 }
 
-/// A floating layer over the tabs.
-///
-/// Deliberately uninhabited — help and prompts arrive with the explorer. The
-/// stack and its routing exist first so adding one is an addition.
+/// Uninhabited — reserved for help/prompts.
 #[derive(Debug)]
 pub enum Overlay {}
 
@@ -127,32 +83,13 @@ impl View {
         self.syntax = !self.syntax;
     }
 
-    /// Asks for the colours of everything on screen, and a little beyond.
-    ///
-    /// Called after anything that can change what is visible — opening a
-    /// buffer, scrolling, toggling the layout. Cheap and usually silent: the
-    /// store answers most of the time, and a request goes out only when the
-    /// reader has moved past what has been coloured.
-    ///
-    /// **The margin is what keeps scrolling smooth.** Asking only for the
-    /// screen would mean a request every time a line came into view, each
-    /// waiting on the one before. Two thousand lines is one chunk of the
-    /// worker's work, so an ordinary scroll finds its colours already there.
+    /// Asks the syntax worker to colour everything visible, plus a margin.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store) {
         const MARGIN: u32 = 2_000;
         let version = self.version;
-        // **Every pane, not the focused one.** Both are on screen, and what is
-        // on screen is what needs colouring — a diff beside a list is not
-        // being read any less because the reader's keys are going elsewhere.
-        // Asking only for the focused pane left the diff in plain text for as
-        // long as the list had focus, which is most of the time.
         let panes: Vec<PaneId> = self.tab().ids().collect();
         for id in panes {
             let (buffer, viewport) = self.pane_mut(id);
-            // View lines, not file lines. Filler rows make a view line number
-            // at least its file line number, so this over-asks slightly and
-            // never under-asks; the buffer clamps it to the length of each
-            // side.
             let visible = viewport.visible(buffer.view_lines());
             buffer.request(syntax, store, version, visible.end + MARGIN);
         }
@@ -179,11 +116,7 @@ impl View {
         self.tab().focused()
     }
 
-    /// What the reader is looking at.
-    ///
-    /// The read-only counterpart of [`focused_mut`](Self::focused_mut), which
-    /// has to hand out both halves at once because a buffer acts on a viewport
-    /// it does not own.
+    /// The focused buffer and viewport together (both borrows at once).
     pub fn focused_buffer(&self) -> &Buffer {
         self.buffer(self.focused().buffer)
     }
@@ -203,10 +136,7 @@ impl View {
         tab.pane(id)
     }
 
-    /// The pane showing `buffer`, so a caller can put it back where it was.
-    ///
-    /// By buffer rather than by [`PaneId`], because what a caller has after
-    /// showing something is the buffer it showed.
+    /// The pane showing `buffer`, writable.
     pub fn pane_mut_for(&mut self, buffer: BufferId) -> &mut Pane {
         let tab = &mut self.tabs[self.active];
         let id = tab
@@ -216,27 +146,16 @@ impl View {
         tab.pane_mut(id)
     }
 
-    /// One pane's buffer and viewport, together.
-    ///
-    /// The same pair as [`focused_mut`](Self::focused_mut), for a pane that is
-    /// named rather than focused — which is what drawing needs, since it draws
-    /// every pane and not only the one in use.
+    /// A pane's buffer and viewport together.
     pub fn pane_mut(&mut self, id: PaneId) -> (&mut Buffer, &mut Viewport) {
         let pane = self.tabs[self.active].pane_mut(id);
         let buffer = &mut self.buffers[pane.buffer.0];
         (buffer, &mut pane.viewport)
     }
 
-    /// Puts a buffer beside the list, splitting the tab if it is whole.
-    ///
-    /// The buffer is added to the view and the tab is told which it is. Both
-    /// steps are here because [`View`] owns the buffers and the tab owns the
-    /// arrangement, and this is the lowest level holding the two.
+    /// Puts a buffer beside the list, splitting the tab if needed.
     pub fn show(&mut self, buffer: Buffer) {
-        // The slot the tab is already pointing at, if it has one. Pushing
-        // every time would leave the file the reader has moved on from held
-        // for ever, and a reviewer opening two hundred files would carry all
-        // two hundred.
+        // Reuse the existing slot so we don't accumulate every file ever opened.
         let id = match self.tabs[self.active].shown() {
             Some(id) => {
                 self.buffers[id.0] = buffer;
@@ -247,49 +166,27 @@ impl View {
                 BufferId(self.buffers.len() - 1)
             }
         };
-        // The bytes behind a name may have changed, and the name will not say
-        // so. Raising the version is what makes the store discard what it has
-        // rather than draw the old colours over the new lines.
         self.version = Version(self.version.0 + 1);
         self.tabs[self.active].show(id);
     }
 
-    /// The focused pane's buffer and viewport, together.
-    ///
-    /// Returned as a pair because a buffer acts on a viewport it does not own,
-    /// and both borrows have to be taken at once.
+    /// The focused pane's buffer and viewport together.
     pub fn focused_mut(&mut self) -> (&mut Buffer, &mut Viewport) {
         let pane = self.tabs[self.active].focused_mut();
         let buffer = &mut self.buffers[pane.buffer.0];
         (buffer, &mut pane.viewport)
     }
 
-    /// Reads the focused diff the other way round, keeping the reader's place.
-    ///
-    /// Here rather than on the buffer because the layout decides what a view
-    /// line *is*, so the pane's cursor has to be translated at the same moment
-    /// the buffer changes it. The view is the lowest level holding both.
-    ///
-    /// A buffer with no second version has only one way to be read, and is
-    /// left alone.
+    /// Switches the diff between side-by-side and inline, keeping the cursor
+    /// on the same file line.
     pub fn toggle_layout(&mut self) {
-        // The diff, whichever pane it is in. A list has no layout to flip, so
-        // pressing this with the list focused used to do nothing at all —
-        // a silent key, which is the failure the keymap exists to prevent.
-        // There is only ever one diff on screen, so "the diff" is unambiguous.
         let Some(pane) = self.reading() else {
             return;
         };
         let id = self.tabs[self.active].pane(pane).buffer.0;
         let cursor = self.tabs[self.active].pane(pane).viewport.cursor();
 
-        // The view line the cursor is on means nothing in the other layout;
-        // the file line it shows means the same in both, so that is what is
-        // carried across.
         let anchor = self.line_at(id, cursor);
-        // Taken out and put back rather than mutated: the view-line count and
-        // the changed blocks both follow from the layout, so the buffer is
-        // rebuilt. `BufferId` is an index, so it must land where it was.
         let flipped = self.buffers.remove(id).flipped();
         self.buffers.insert(id, flipped);
 

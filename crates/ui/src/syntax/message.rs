@@ -1,16 +1,6 @@
 //! What crosses between the two threads.
 //!
-//! Plain data in our own vocabulary, and deliberately nothing else. Neither
-//! engine appears here: no `syntect` type, no parser type, nothing holding a
-//! pointer from the C library underneath the matcher. That is not an accident
-//! of what happens to be needed — it is the rule that keeps the seam a seam,
-//! and it is checked by the compiler, since anything from those engines would
-//! fail to be [`Send`].
-//!
-//! A request is **complete on its own**: everything needed to answer it from
-//! scratch is in it. The worker may remember where it got to, but only as a
-//! shortcut — throw its memory away and every answer is the same, which is
-//! what makes it a cache rather than a session.
+//! Plain data only — no engine types. The compiler enforces this via `Send`.
 
 use std::sync::Arc;
 
@@ -18,32 +8,18 @@ use align::DiffVersion;
 use file_types::File;
 use syntax::Span;
 
-/// Which content a request is about.
-///
-/// Compared, never interpreted. Its only job is to let a late answer for a
-/// file that has since changed be told apart from a current one — nothing
-/// can produce a stale answer today, but a file watcher will.
+/// Monotonic counter for detecting stale answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Version(pub u64);
 
 /// Colour these lines.
 pub struct SyntaxRequest {
-    /// What names this content, from [`File::name`].
-    ///
-    /// Compared, never read. It once was `(path, side)`, which said where a
-    /// version was drawn rather than which bytes it was, so the staged and
-    /// the on-disk copy of one file shared a name.
+    /// Identity key from [`File::name`].
     pub key: String,
-    /// The path on *this* side, which is what decides the language.
-    ///
-    /// Beside the key rather than read out of it: a key has no path in it to
-    /// find. `b87b24c…:Makefile` has no `/`, so anything looking for the last
-    /// path component would take the whole string and `Makefile` would stop
-    /// being a language.
+    /// The path on this side — decides the language.
     pub path: String,
     pub version: Version,
-    /// Shared, not copied. A request per scroll would otherwise copy a whole
-    /// file each time.
+    /// Shared, not copied — avoids a copy per scroll.
     pub text: Arc<Vec<String>>,
     /// How many lines from the top the asker already holds.
     ///

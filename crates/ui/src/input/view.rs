@@ -14,34 +14,10 @@ use crate::input::keymap::Binding;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewAction {
     /// Read the focused diff the other way round: side by side, or inline.
-    ///
-    /// Here rather than at the buffer level because it changes what the
-    /// buffer *is* — its view-line count and its whole layout — and a buffer
-    /// cannot be the thing that decides to replace itself. The view owns the
-    /// buffers, so the view is the lowest level that contains the change.
     ToggleLayout,
     /// Colour the code, or stop.
-    ///
-    /// Here rather than at the buffer level because it is the reader's
-    /// preference for the whole session: turning it off in one buffer and
-    /// finding it on in the next would read as a bug. What it is *for* is a
-    /// direct comparison — syntax colour and diff colour share one small
-    /// palette, and being able to remove one of them is how you find out
-    /// whether the other still reads.
     ToggleSyntax,
     /// Open what the list has selected.
-    ///
-    /// Here rather than at the buffer level because it replaces the buffer in
-    /// the *other* pane, which no buffer can do to itself. The row may turn
-    /// out to be a directory, in which case the list folds it and the view is
-    /// untouched — which of the two it is, is the buffer's answer and not the
-    /// key's: one key does the obvious thing on every row, exactly as it does
-    /// in the plugin.
-    ///
-    /// It used to be a `Task`, returned out of the crate for the composition
-    /// root to perform, because performing it meant reaching git. It is
-    /// performed here now: the pipeline answers on a thread of its own, so
-    /// asking costs a `send` and nothing here waits. See D59.
     Open,
 }
 

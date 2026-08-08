@@ -5,8 +5,7 @@
 //! call through the C ABI. And it is the thing to ask for in a bug report, so
 //! that "which build, which engine, which compiler" never costs a round trip.
 //!
-//! Environment checks arrive with the subsystems they test — the watcher at
-//! S15, configuration at S17.
+//! Environment checks arrive with the subsystems they test.
 
 pub fn run() {
     println!("codediff {}", env!("CARGO_PKG_VERSION"));

@@ -2,9 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: does this determine *where* text sits on a terminal
-//! grid, or how to convert between two ways of indexing it? Measurement and
-//! conversion only — never drawing.
 //!
 //! This crate performs no IO.
 

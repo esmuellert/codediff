@@ -1,28 +1,7 @@
-//! Colouring one version of a file, shown alone.
+//! A file shown alone — added, untracked, or deleted.
 //!
-//! A peer of [`SideBySide`] and [`Inline`], not a content type. It is what
-//! both diff layouts fall back to when a file exists on only one side: there
-//! is nothing to lay out against, so neither two columns nor an interleaving
-//! has anything to say.
-//!
-//! No second version means no alignment, no filler and no divider — one column
-//! of numbered lines, in the ordinary colours. Nothing here changed *relative
-//! to* anything, so nothing is highlighted; marking every line of a new file
-//! green says nothing the word "added" does not. VSCode reached the same place
-//! and stopped opening a diff editor for added, untracked and deleted files.
-//! See D23.
-//!
-//! It holds no [`Diff`] for the same reason, which is why that field cannot
-//! move up to the parent: an `Option<Diff>` there would be the empty-model
-//! trap D23 records.
-//!
-//! **The file itself is the pipeline's**, held rather than copied out of. This
-//! used to be a struct of the same two fields, built from the answer on
-//! arrival and adding nothing to it. See D61.
-//!
-//! [`SideBySide`]: super::SideBySide
-//! [`Inline`]: super::Inline
-//! [`Diff`]: pipeline::file::Diff
+//! No alignment, no filler, no divider. One column of numbered lines in
+//! ordinary colours.
 
 use file_types::File;
 use pipeline::file;
