@@ -148,16 +148,7 @@ pub struct Tree {
     nodes: Vec<Node>,
     /// The top level: what is directly under the heading.
     roots: Vec<NodeId>,
-    /// Which node is on each line.
-    ///
-    /// A lookup from line number to node, and a `Vec` because the keys are
-    /// `0, 1, 2 …` with no gaps — the index *is* the key. Three things need
-    /// that direction and none needs the other: the viewport clamps against
-    /// the length, the cursor is a line number, and drawing takes a slice.
-    ///
-    /// Not a property of a node. Folding one directory moves every line below
-    /// it, so this is the tree *plus* what is currently shut — which is why it
-    /// is rebuilt on a fold and nowhere else.
+    /// Line number → node. Rebuilt on fold changes.
     view_lines: Vec<NodeId>,
 }
 

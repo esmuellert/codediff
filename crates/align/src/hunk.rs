@@ -102,16 +102,9 @@ fn build<S: AsRef<str>>(
     }
 }
 
-/// Hashes what the hunk *says*, not where it sits.
-///
-/// Line numbers are excluded: inserting an unrelated function
-/// above a hunk moves it without changing it, and a reviewer should not have to
-/// read it again.
-///
-/// Content alone is not unique, though. The same edit made twice in one file
-/// hashes identically both times, and one review mark would then cover both, so
-/// the number of identical hunks seen so far is mixed in. Ids stay independent
-/// of line numbers while becoming distinct within a file.
+/// Hashes the hunk's content, not its position. Line numbers excluded so
+/// moving code doesn't invalidate review state. A sequence counter makes
+/// duplicate edits in one file distinct.
 fn identity<S: AsRef<str>>(
     original: LineRange,
     modified: LineRange,

@@ -14,16 +14,7 @@ use crate::view::Direction;
 
 /// What the status line says.
 pub struct Status<'a> {
-    /// Which file, as structure rather than a formatted name.
-    ///
-    /// The whole reason this is a [`File`] and not a `&str`: the directory is
-    /// dimmed while the name is not, and the directory is dropped first when
-    /// the row is too narrow. A string could support neither. It used to be
-    /// one — `"old.rs → new.rs   (added)"` — and the `(added)` was rendered
-    /// bold, as though it were part of the path. See D28.
-    /// `None` when the buffer is not one file — the list of them is not any
-    /// of the files it holds, and naming the first would put a name in the
-    /// status line that nothing on screen corresponds to.
+    /// The file being shown, or `None` for the explorer.
     pub file: Option<&'a File>,
     /// Cursor position and document height, in view lines. Both 0-based
     /// internally, shown 1-based.
