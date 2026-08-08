@@ -27,10 +27,7 @@ use crate::repo::Repo;
 #[derive(Debug)]
 pub struct Repository {
     repo: Repo,
-    /// Resolved on first use, so a list-only run never pays for the extra
-    /// process — and resolved **once**, so a commit made while a review is
-    /// open cannot leave half its files named against one `HEAD` and half
-    /// against another.
+    /// Resolved once on first use — a mid-review commit must not split naming.
     revs: Option<Revs>,
     /// The `cat-file --batch` child, opened on first use.
     blobs: Option<cat_file::Batch>,

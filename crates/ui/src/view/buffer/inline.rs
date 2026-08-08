@@ -1,17 +1,7 @@
 //! A diff read one version per view line.
 //!
-//! Holds a [`Diff`] and nothing else, which is the finding rather than an
-//! oversight: reading a diff inline needs no state that reading it in two
-//! columns does not, and it needs one thing *less* — there are no columns, so
-//! there is no divider between them.
-//!
-//! What makes inline different from [`SideBySide`](super::SideBySide) is not
-//! state but the walk: a change is as tall as both its sides together rather
-//! than as tall as the taller one, which is [`DiffType::Inline`] in `align`.
-//! Being a type of its own is what lets the renderer and the keymap dispatch
-//! on a variant the compiler checks, rather than reading a field.
-//!
-//! [`DiffType::Inline`]: file_types::DiffType::Inline
+//! Holds a [`Diff`] and nothing else — inline needs no state that side-by-side
+//! does not, and one thing less (no column divider).
 
 use align::Alignment;
 use file_types::File;

@@ -1,39 +1,13 @@
 //! What a stretch of text is, in words both engines answer in.
 //!
-//! ---
-//!
-//! **A syntax group**, in Vim's sense of the term, and the definition is
-//! theirs: *"a syntax group name is to be used for syntax items that match
-//! the same kind of thing. These are then linked to a highlight group that
-//! specifies the color. A syntax group name doesn't specify any color or
-//! attributes itself."* (`:help group-name`.) VS Code calls the same thing a
-//! semantic token type, and its list is nearly this one.
-//!
-//! **This is what makes two engines one.** The matcher reports
-//! `comment.line.double-slash.rust` and the parser reports `comment`; both
-//! arrive here as [`Group::Comment`], and from that point nothing above knows
-//! which read the file. Two tables do the reducing — [`scopes`] for the
-//! matcher, [`captures`] for the parser — and they are in this crate rather
-//! than the caller's because they hold each engine's own vocabulary, so they
-//! are what changes when an engine changes and nothing else is.
-//!
-//! **A group is not a colour, and this crate still does not know one.** A
-//! group says a stretch of text is a keyword. What a keyword looks like is
-//! taste, and stays in the caller's theme — Vim's *highlight* group to this
-//! *syntax* group. That is why a terminal with no 24-bit colour can still be
-//! coloured, and why changing theme re-reads nothing.
-//!
-//! [`scopes`]: crate::engine::scopes
-//! [`captures`]: crate::engine::captures
+//! A syntax group (Vim's `:help group-name`): what text *is*, not what it
+//! looks like. The matcher's `comment.line.double-slash.rust` and the parser's
+//! `comment` both map to [`Group::Comment`], making the two engines
+//! interchangeable per file.
 
 /// What a stretch of text is, for the purpose of colouring it.
 ///
-/// The groups Catppuccin parts, which is a superset of the ones VS Code's
-/// `dark_plus` parts. Fewer would be simpler and wrong: a theme that cannot
-/// tell a parameter from a field, or a regular expression from a string, is
-/// not the theme people installed.
-///
-/// Source: `catppuccin/nvim`, `lua/catppuccin/groups/{syntax,treesitter}.lua`.
+/// The groups Catppuccin distinguishes — a superset of VS Code's `dark_plus`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     /// A comment or a docstring.

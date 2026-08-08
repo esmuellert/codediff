@@ -23,25 +23,14 @@ fn themes() -> PossibleValuesParser {
     disable_help_subcommand = true
 )]
 pub struct Cli {
-    /// File to review, as given or relative to the repository root
-    ///
-    /// An argument rather than a subcommand, following the Neovim plugin,
-    /// where `:CodeDiff` *is* the diff and arguments say what to compare.
+    /// File to review (relative to cwd or repository root).
     pub path: Option<String>,
 
-    /// Colours to draw with
-    ///
-    /// Defaults to Catppuccin Mocha, or `basic-dark` on a terminal that does
-    /// not advertise 24-bit colour, where Catppuccin's diff backgrounds would
-    /// round into the background and vanish.
+    /// Colour theme.
     #[arg(long, value_name = "NAME", value_parser = themes())]
     pub theme: Option<String>,
 
-    /// Take over the terminal and then panic, to check it is given back
-    ///
-    /// The one failure mode a diff reviewer must never have is leaving the
-    /// shell with no echo and an invisible cursor. Hidden because it is for
-    /// the test suite, not for people.
+    /// Panic after taking over the terminal (for testing terminal restore).
     #[arg(long, hide = true)]
     pub self_panic: bool,
 

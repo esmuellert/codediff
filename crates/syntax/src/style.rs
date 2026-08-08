@@ -8,38 +8,17 @@
 
 use std::ops::Range;
 
-/// Which of the caller's pens a run of text is written with.
+/// An index into the caller's colour table.
 ///
-/// **Not a colour — the number of one.** `ui` hands in rules saying "anything
-/// matching `keyword` is pen 4" and gets back spans saying "bytes 0..2 are
-/// pen 4". What pen 4 looks like stays in the theme, which is what this crate
-/// promises never to know.
-///
-/// Three things fall out of the indirection, and each is the reason for it:
-///
-/// - a terminal with no 24-bit colour can be given `Color::Indexed`, which an
-///   `Rgb` here could not express — and that is the entire reason the `basic`
-///   theme exists;
-/// - changing theme does not invalidate a single span, because no span
-///   mentions a colour;
-/// - the scope-to-pen table is one shared constant instead of one per theme,
-///   since which scopes are keywords is a fact about TextMate, not taste.
-///
-/// VS Code does exactly this: its token metadata packs an index into a
-/// `ColorMap` rather than a colour.
+/// Not a colour — `ui` maps pens to colours per theme. This keeps spans
+/// valid across theme changes and lets terminals without 24-bit colour
+/// use indexed colours.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pen(pub u16);
 
-/// How a run of text looks.
+/// How a run of text looks: a pen and independent flags.
 ///
-/// A pen and four independent flags — no background, and no second colour.
-/// That is the whole composition rule: a diff owns the background of every
-/// line it touches, and syntax may only tint the letters on top. Give syntax a
-/// background and a changed line stops looking changed. See the crate README.
-///
-/// The flags are separate rather than an enum because a theme sets them
-/// independently: `markup.bold` is bold with no pen of its own, and
-/// `markup.italic` is both.
+/// No background — the diff owns backgrounds. Syntax only tints foreground.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {
     pub pen: Option<Pen>,
