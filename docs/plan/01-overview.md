@@ -58,7 +58,7 @@ The MVP is the substrate for the actual goal. Once it lands:
 - "what changed since I last looked" — a diff of the diff
 - agent backend integration (explanations, critique, requested changes)
 - an MCP surface so the agent can query the same diff model the human reviews
-- snapshot bases (`ContentSource::Snapshot`) and jj support for free auto-snapshots
+- snapshot bases and jj support for free auto-snapshots
 
 The architecture is designed so these land additively. See
 [Decisions §D12](05-decisions.md#d12--stress-testing-the-architecture-against-future-features).

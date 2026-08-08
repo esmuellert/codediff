@@ -9,10 +9,10 @@ A standalone, read-only terminal diff reviewer built for reviewing LLM-agent cod
   and linked statically.
 - **Agent-focused.** Built for the workflow where an agent edits while you review.
 
-**Status: S1–S6 complete.** The vendored C engine, the FFI layer, the safe Rust wrapper,
-the text-measurement layer, the line pairing and the git reader build, and are wired together, link and are covered by tests; the
-diff results agree with upstream's own `diff_tool` on every fixture. There is no review
-interface yet — see [docs/plan/04-milestones.md](docs/plan/04-milestones.md).
+**Status: S1–S12 complete.** A working TUI diff reviewer with side-by-side and inline
+views, syntax highlighting (syntect + tree-sitter), a file explorer with tree/flat modes,
+change navigation, and vim-style motions. See [docs/plan/04-milestones.md](docs/plan/04-milestones.md)
+for what remains.
 
 ## Building
 
