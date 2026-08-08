@@ -98,9 +98,6 @@ fn line(file: &file_types::ChangedFile, verbose: bool) -> String {
             ChangeType::Modified => "modified",
         };
         out.push_str(note);
-        if let Some(similarity) = file.similarity {
-            out.push_str(&format!(" ({similarity}% similar)"));
-        }
     }
     out
 }

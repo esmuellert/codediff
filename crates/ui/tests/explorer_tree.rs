@@ -112,7 +112,7 @@ fn at(relative: &str) -> RepoPath {
 }
 
 fn modified(path: &str) -> ChangedFile {
-    ChangedFile::new(File::unchanged_path(at(path), revs()), None)
+    ChangedFile::new(File::unchanged_path(at(path), revs()))
 }
 
 fn untracked(path: &str) -> ChangedFile {
@@ -142,18 +142,19 @@ fn fixture() -> Vec<ChangedFile> {
     files.push(untracked("untracked.txt"));
     files.push(untracked("untracked-dir/inside.txt"));
 
-    files.push(ChangedFile::new(
-        File::deleted(at("deleted.txt"), staged_revs()),
-        None,
-    ));
-    files.push(ChangedFile::new(
-        File::renamed(at("renamed-from.txt"), at("renamed-to.txt"), staged_revs()),
-        Some(100),
-    ));
-    files.push(ChangedFile::new(
-        File::unchanged_path(at("staged-then-edited.txt"), staged_revs()),
-        None,
-    ));
+    files.push(ChangedFile::new(File::deleted(
+        at("deleted.txt"),
+        staged_revs(),
+    )));
+    files.push(ChangedFile::new(File::renamed(
+        at("renamed-from.txt"),
+        at("renamed-to.txt"),
+        staged_revs(),
+    )));
+    files.push(ChangedFile::new(File::unchanged_path(
+        at("staged-then-edited.txt"),
+        staged_revs(),
+    )));
     files
 }
 

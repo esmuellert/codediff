@@ -57,7 +57,7 @@ pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> Changed
     if change.needs_a_backend() {
         ChangedFile::reported(file, change)
     } else {
-        ChangedFile::new(file, entry.score)
+        ChangedFile::new(file)
     }
 }
 
@@ -83,5 +83,5 @@ pub fn to_changed_file(change: Change, root: &std::path::Path, revs: Revs) -> Ch
     if change.letter == 'U' {
         return ChangedFile::reported(file, ChangeType::Conflicted);
     }
-    ChangedFile::new(file, change.score)
+    ChangedFile::new(file)
 }

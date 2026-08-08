@@ -14,7 +14,12 @@ use crate::{ChangeType, File, RepoPath, Stats};
 /// Identity is a [`File`], which every layer above can name. What happened is
 /// **not stored** where the paths already say it: `Added`, `Deleted`, `Moved`
 /// and `Modified` are read from the pair by [`File::change`], so no field here
-/// can contradict them. Only the two a backend alone knows are kept.
+/// can contradict them. Only what a backend alone knows is kept.
+///
+/// Git's rename *score* — how alike the two paths were, which is how git
+/// decided it was a rename at all — is not carried. Nothing a reader can see
+/// showed it, and a field with no way to reach it is not a fact this layer
+/// holds. `vcs` still parses it, because git prints it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedFile {
     /// Where the file is on each side. Absent on one side means added or
@@ -27,8 +32,6 @@ pub struct ChangedFile {
     /// an added one's, and a conflicted file's look like an ordinary
     /// modification.
     reported: Option<ChangeType>,
-    /// How alike the two paths are, 0–100, when the file moved.
-    pub similarity: Option<u8>,
     /// Lines gained and lost, or `None` when nothing counted them — a binary
     /// file, or a backend that was not asked.
     ///
@@ -40,11 +43,10 @@ pub struct ChangedFile {
 
 impl ChangedFile {
     /// A file whose paths tell the whole story.
-    pub fn new(file: File, similarity: Option<u8>) -> Self {
+    pub fn new(file: File) -> Self {
         Self {
             file,
             reported: None,
-            similarity,
             stats: None,
         }
     }
@@ -63,7 +65,6 @@ impl ChangedFile {
         Self {
             file,
             reported: Some(reported),
-            similarity: None,
             stats: None,
         }
     }
@@ -111,11 +112,11 @@ mod tests {
     #[test]
     fn the_ordinary_cases_come_from_the_paths() {
         assert_eq!(
-            ChangedFile::new(File::added(at("new.rs"), revs()), None).change(),
+            ChangedFile::new(File::added(at("new.rs"), revs())).change(),
             ChangeType::Added
         );
         assert_eq!(
-            ChangedFile::new(File::renamed(at("o.rs"), at("n.rs"), revs()), Some(90)).change(),
+            ChangedFile::new(File::renamed(at("o.rs"), at("n.rs"), revs())).change(),
             ChangeType::Moved
         );
     }

@@ -30,12 +30,12 @@ pub fn at(relative: &str) -> RepoPath {
 }
 
 pub fn modified(path: &str) -> ChangedFile {
-    ChangedFile::new(File::unchanged_path(at(path), revs()), None)
+    ChangedFile::new(File::unchanged_path(at(path), revs()))
 }
 
 /// The same file, in the staged comparison instead of the unstaged one.
 pub fn staged(path: &str) -> ChangedFile {
-    ChangedFile::new(File::unchanged_path(at(path), staged_revs()), None)
+    ChangedFile::new(File::unchanged_path(at(path), staged_revs()))
 }
 
 pub fn untracked(path: &str) -> ChangedFile {

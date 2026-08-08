@@ -345,10 +345,10 @@ mod tests {
     use std::path::Path;
 
     fn at(path: &str, revs: Revs) -> ChangedFile {
-        ChangedFile::new(
-            File::unchanged_path(RepoPath::new(path, Path::new("/repo")), revs),
-            None,
-        )
+        ChangedFile::new(File::unchanged_path(
+            RepoPath::new(path, Path::new("/repo")),
+            revs,
+        ))
     }
 
     fn unstaged() -> Revs {

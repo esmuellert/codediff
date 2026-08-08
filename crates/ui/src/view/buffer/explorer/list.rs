@@ -81,13 +81,10 @@ mod tests {
         let files: Vec<ChangedFile> = paths
             .iter()
             .map(|path| {
-                ChangedFile::new(
-                    File::unchanged_path(
-                        RepoPath::new(*path, Path::new("/repo")),
-                        Revs::worktree_against(Oid::new("b87b24c")),
-                    ),
-                    None,
-                )
+                ChangedFile::new(File::unchanged_path(
+                    RepoPath::new(*path, Path::new("/repo")),
+                    Revs::worktree_against(Oid::new("b87b24c")),
+                ))
             })
             .collect();
         let members: Vec<usize> = (0..files.len()).collect();

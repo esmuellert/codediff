@@ -38,10 +38,9 @@ fn find(path: &str) -> Result<file_types::ChangedFile> {
         // Against itself, which is what "unchanged" means and what the
         // ordinary worktree comparison would have said had it been listed.
         let revs = file_types::Revs::worktree_against(file_types::Oid::new("HEAD"));
-        return Ok(ChangedFile::new(
-            file_types::File::unchanged_path(repo_path, revs),
-            None,
-        ));
+        return Ok(ChangedFile::new(file_types::File::unchanged_path(
+            repo_path, revs,
+        )));
     }
     anyhow::bail!("{path} is neither changed nor present")
 }

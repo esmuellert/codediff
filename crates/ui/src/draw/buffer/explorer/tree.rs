@@ -65,13 +65,10 @@ mod tests {
     use std::path::Path;
 
     fn file(path: &str) -> ChangedFile {
-        ChangedFile::new(
-            File::unchanged_path(
-                RepoPath::new(path, Path::new("/repo")),
-                Revs::worktree_against(Oid::new("b87b24c")),
-            ),
-            None,
-        )
+        ChangedFile::new(File::unchanged_path(
+            RepoPath::new(path, Path::new("/repo")),
+            Revs::worktree_against(Oid::new("b87b24c")),
+        ))
     }
 
     /// The prefix of every line, as one string each.
