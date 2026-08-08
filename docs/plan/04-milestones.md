@@ -652,8 +652,9 @@ Open every changed file in turn.
 
 ### S14 — Event loop and async loading
 
-**Build.** Formalise `Event` / `Command` / effect runner. Worker pool. `RequestId`
-generations with stale-drop. Loading states. `--debug-events`.
+**Build.** The file worker and syntax worker already load asynchronously with
+stale-drop (comparing `selected`). What remains: loading indicators, a
+`--debug-events` replay log, and verifying the latency targets.
 
 **Check.** Run in a repository with 200+ changed files.
 

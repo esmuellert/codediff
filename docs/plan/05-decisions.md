@@ -1,3348 +1,770 @@
 # 05 — Decisions
 
-A log of decisions made during design, with the options rejected and why. The purpose is to
-avoid relitigating them. When a decision changes, edit it here and mark what superseded it.
+A log of decisions made during design. The purpose is to avoid relitigating them.
+When a decision changes, edit it here and mark what superseded it.
 
 ---
 
 ## D1 — Why a rewrite rather than a port
 
-**Decision.** Rewrite the frontend in Rust rather than translating the Lua.
+The Neovim plugin (`codediff.nvim`, 20,634 lines of Lua) cannot be extracted
+because its domain logic and its host are fused: 53 of 79 files call `vim.api`
+directly, 19 `require` calls work around cycles in `explorer/render.lua` alone,
+and there is no layer that can be lifted out intact.
 
-**Evidence from `codediff.nvim` (20,634 lines of Lua).**
-
-| measurement | value |
-|---|---|
-| files calling `vim.api` / `vim.fn` directly | 53 of 79 (67%) |
-| `require` calls inside function bodies (cycle workarounds) | 19 in `explorer/render.lua` alone |
-| modules `explorer/render.lua` depends on | 14, including `git`, `view`, `side_by_side`, `lifecycle` |
-| parameters to `create_session` | 14 positional |
-| `lifecycle/accessors.lua` | 645 lines, 37 getters and setters over a global table |
-| directories repeating the `{init, keymaps, render, refresh, actions, nodes}` shape | 4 |
-
-**Root causes, in order of consequence.**
-
-1. **Split by verb, not by noun.** `explorer/` is ten files each representing a *phase* of
-   the same thing. Every phase file must import every other, and state cannot live in any of
-   them — so it goes into a global. *Verb-splitting does not merely cause coupling; it
-   necessitates a global.*
-2. **Lua rewards creating cycles.** `require` is lazy and cached, so a cycle "works" if you
-   defer it into a function body. There is no failure signal, so the architecture degrades
-   silently and monotonically.
-3. **No type system.** A node is "group", "directory", "commit" or a file — but in
-   `explorer/` file nodes carry no `type` field at all and file-ness is inferred from its
-   *absence*, while `history/`, using the same tree implementation, sets `type = "file"`
-   explicitly. Two subsystems sharing one tree **disagree about their own data contract**
-   and nothing detects it.
-4. **No module privacy.** Every `M.foo` is public, so the dependency graph accretes rather
-   than being designed.
-5. **The host is never abstracted.** 67% of files call `vim.api`, so domain logic and
-   presentation live in the same functions. There is no layer that can be lifted out intact
-   — which is precisely why this is a rewrite.
-6. **State keyed by host identity.** Sessions keyed by tabpage, watchers by buffer number.
-   When the host changes something underneath, state is orphaned — the source of both the
-   cleanup complexity and the refresh races.
-
-**Fairness.** This is a normal trajectory, not incompetence. Every decision is reasonable at
-3,000 lines and a liability at 20,000. Lua and the plugin model actively push this way: no
-types, no privacy, no acyclicity, `vim.api` always in scope, and a runtime where the cheap
-workaround always works. The plugin is feature-rich, well tested, and ships a hand-ported
-VSCode algorithm in C.
-
-**Could Lua be fixed?** Roughly 80% — a require-graph cycle linter (~50 lines, the highest
-value item by far), LuaLS in strict mode with `---@class` and `---@enum`, an import-boundary
-linter, a host adapter, and a session object with a metatable. But all of it is opt-in and
-all of it must be adopted *before* the damage. In Rust these are defaults.
+Root causes: split by verb rather than noun, Lua's lack of enforced module
+privacy, no type system, and no acyclicity check. These are all defaults in
+Rust.
 
 ---
 
 ## D2 — Reuse the C engine, compiled from source
 
-**Decision.** Copy `libvscode-diff` source into `vendor/`, pinned to an upstream tag, and
-compile it with the `cc` crate. Do **not** consume the prebuilt `.so` from releases.
+Copy `libvscode-diff` into `vendor/`, compile with `cc`, OpenMP disabled.
 
-**Why the prebuilt library was rejected.** A `.so` / `.dylib` / `.dll` is by definition a
-*dynamic* library; it cannot be statically linked into a standalone executable. Measured on
-the target machine:
+The prebuilt `.so` was rejected because it requires dynamic linking, which means
+shipping three files, needing `libgomp`, and breaking `cargo install`. Upstream
+issues #48 and #58 are both runtime linking failures of that `.so`.
 
-| | prebuilt `.so` | compiled from source |
-|---|---|---|
-| files to ship | 3 (exe + `.so` + `libgomp`) | **1** |
-| runtime deps | `libgomp.so.1`, `libpthread` + RPATH setup | libc, libm |
-| `cargo install` works | ✗ | ✓ |
-| cross-compilation | ✗ | ✓ |
-| build cost | 0 | **2.1 s** |
-| offline / air-gapped build | ✗ | ✓ |
-| ABI drift | silent memory corruption | **compile error** |
-
-The shipped `.so` declares `NEEDED libgomp.so.1` and only resolves because the plugin bundles
-a copy of libgomp beside it — which is why `installer.lua` contains ~130 lines of ldconfig
-probing, `$ORIGIN` RPATH and Nix workarounds. Compiling from source with OpenMP disabled
-removes that entire problem.
-
-**This failure mode is not hypothetical.** Two upstream user reports:
-
-- **#48** — `GLIBC_2.38 not found (required by /lib/x86_64-linux-gnu/libgomp.so.1)`;
-  installation fails outright on a snap-provided glibc.
-- **#58** — `libgomp.so.1: cannot open shared object file`; a Nix-installed Neovim cannot
-  see the system libgomp, requiring the user to patch `LD_LIBRARY_PATH` through Home
-  Manager.
-
-Upstream's own issue #482 draws the same conclusion: *"the libgomp saga (#48, #58) taught us
-that dynamically linked C++ runtime deps are the failure mode. Static linking closes that
-entire class."*
-
-The library is 12 C files, 7,538 lines, with no external dependencies (utf8proc is
-vendored). It builds to a 446 KB static archive in **2.1 seconds**. There is no build cost
-worth avoiding.
-
-Disabling OpenMP removes the libgomp dependency entirely. That is a convenience rather than
-the reason: the upstream failures were runtime dynamic-linking failures of a *prebuilt* `.so`,
-which does not apply to a build from source. The measured case for disabling it is in
-`crates/vscode-diff-sys/build.rs` — on realistic files the difference is noise, on a
-pathological 20,000-line file it is ~21% wall clock at 1.31x parallelism, and diffs are
-computed concurrently across files anyway, which scales better and would oversubscribe if
-combined.
+The library is 12 C files, 7,538 lines, builds in 2.1 seconds, and produces a
+446 KB static archive with no external dependencies.
 
 ---
 
-## D3 — Copy the C source, do not submodule (for now)
+## D3 — Copy the C source, do not submodule
 
-**Decision.** `vendor/libvscode-diff/` is a copy from a pinned upstream tag, refreshed by
-`cargo xtask sync-c` and guarded by `cargo xtask verify-c` in CI.
+`vendor/libvscode-diff/` is a copy from a pinned upstream tag. `cargo xtask
+sync-c` refreshes it; `cargo xtask verify-c` detects drift in CI.
 
-**Context.** Git submodules are in fact the dominant pattern for `-sys` crates bundling C —
-verified: `libgit2-sys` (rust-lang), `libz-sys` (rust-lang), `curl-sys`, `openssl-src`,
-`zstd-sys` and `harfbuzz-sys` all use them. `libsqlite3-sys` is the exception, copying the
-amalgamation.
-
-**Why copy anyway, for now.** Submodule friction is real — `clone --recursive`, CI checkout
-configuration, confusing errors for contributors — and the C changes rarely while the Rust
-project will iterate fast. `verify-c` gives drift *detection* where a submodule gives drift
-*prevention*; both are adequate, and detection costs less day to day.
-
-**Reframing.** This is not vendoring. Vendoring means keeping a copy of someone else's code
-you do not control. This C is first-party, shared between two first-party consumers.
-
-**Superseded when.** The C stabilises or a third consumer appears. Then extract
-`libvscode-diff` into its own repository and submodule it from both projects, so that
-codediff.nvim and codediff become **peer consumers of one upstream** rather than one being a
-satellite of the other. Publishing `vscode-diff-sys` to crates.io is a later, optional step,
-and is not a prerequisite for anything.
+Submodules are the norm for `-sys` crates, but the C rarely changes and
+submodule friction (recursive clone, CI config, confusing errors) costs more
+than it saves during fast iteration. Switch to a submodule when the C
+stabilises or a third consumer appears.
 
 ---
 
 ## D4 — Crate boundaries as the architectural firewall
 
-**Decision.** Split the project into ten crates with a strictly acyclic dependency graph
-declared in `Cargo.toml` **before any logic is written**.
+Ten+ crates with a strictly acyclic dependency graph, declared before logic is
+written. Rust modules within a crate can reference each other freely, so module
+structure alone enforces nothing. Crate boundaries enforce separation by making
+cycles a compile error and providing real package-private visibility
+(`pub(crate)`).
 
-**Rationale.** Rust modules within a crate may reference each other freely, so module
-structure alone enforces nothing — exactly the situation Lua was in. Crates cannot form
-cycles, and `pub(crate)` provides genuine package-private visibility, which TypeScript and
-Lua both lack. Splitting is free: everything statically links into one binary, and
-incremental builds get faster because only changed crates recompile.
-
-The critical missing edge is `ui → vcs`. Because that dependency is not declared, a
-renderer that shells out to git is a compile error — preventing by construction the failure
-that produced a 674-line `explorer/render.lua`.
+The critical missing edge is `ui → vcs`. Because that dependency is not
+declared, a renderer that shells out to git is a compile error.
 
 ---
 
 ## D5 — Crate naming
 
-**Decision.** No `codediff-` prefix. Crates named after the thing they contain, never after
-a layer.
-
-```
-vscode-diff-sys  vscode-diff  metrics  syntax  align  explorer  vcs  runtime  ui  codediff
-```
-
-**Rationale.** `core`, `common`, `utils` and `model` are banned not on aesthetic grounds but
-because they are **unfalsifiable**. "Does this belong in `align`?" has an answer. "Does this
-belong in `core`?" is always yes. A crate name should state an admission criterion that can
-be applied in code review.
-
-`line-index` covers measurement and coordinate mapping — the established term for both.
-`align` is named for its algorithm, not its data, because the alignment builder and the
-projections are the valuable part. `runtime` states its criterion: things that exist only
-while the application is running. `vcs` rather than `git` leaves room for jj and avoids the
-crates.io name.
-
-Registry uniqueness is irrelevant for path dependencies. If publishing ever happens, add
-`package = "codediff-align"` to the dependency line — one line per dependent, at that time.
+No `codediff-` prefix. Named after what the crate contains, never after a layer.
+`core`, `common`, `utils` and `model` are banned because they have no admission
+criterion — "does this belong in `align`?" has an answer; "does this belong in
+`core`?" is always yes.
 
 ---
 
-## D6 — `runtime` and `ui` state split
+## D6 — Presentation is fast; data crosses threads
 
-**Decision.** `runtime` owns domain state; `ui` owns presentation state. Events that
-change *data* go to `runtime`; events that change *presentation* never leave `ui`.
+Keys that change what is on screen (scrolling, cursor, folds, focus) are handled
+synchronously inside `ui` — sub-millisecond, no channel. Only file selection and
+file reading cross to worker threads (`pipeline`, `syntax`).
 
-**Consequence.** `j`, `k`, scrolling, folds and focus are handled entirely within `ui`
-— synchronous, sub-millisecond, no channel. Only file selection, refresh and watcher events
-reach `runtime`. This is the two-loop model, and it is the whole performance story.
-
-**The follow-on problem** — preserving cursor and selection across a refresh — is solved by
-keying presentation state to **stable domain identity** (`path`, `HunkId`) that the model
-provides. `ui` re-resolves its own position after any refresh without `runtime` ever
-knowing what a cursor is.
-
-**Expect** to redraw this line once, around S12, over questions like whether the explorer's
-expanded-set is domain or presentation state. (It is presentation, keyed by path.)
+Preserving cursor position across a file reload is done by keying position to
+stable identity (`path`, `HunkId`) rather than to row indices.
 
 ---
 
 ## D7 — `HunkId` is a content hash
 
-**Decision.** Hunks are identified by a hash of their content, not by index.
-
-**Rationale.** Agents rewrite files constantly; line numbers move while hunk content often
-does not. Content-hash identity buys three things at once:
-
-1. cursor and selection survive a refresh
-2. review state survives an agent rewriting the file
-3. "what changed since I last looked" becomes pure set arithmetic —
-   `new_hunks − old_hunks` is exactly the newly appeared hunks
-
-The third was not the reason for the decision but falls out of it, which is good evidence
-the decision is right.
+Hunks are identified by a hash of their content, not by index. Agents rewrite
+files constantly; line numbers move while hunk content often does not.
+Content-hash identity means cursor and review state survive a refresh, and "what
+changed since I last looked" is set arithmetic.
 
 ---
 
 ## D8 — No async runtime
 
-**Decision.** Threads and channels — `crossbeam-channel`, `rayon`, a watcher thread. No
-`tokio`.
+`std::sync::mpsc` channels and `std::thread`. No tokio, no rayon.
 
-**Rationale.** No network IO, bounded concurrency, and every operation is either a blocking
-subprocess or CPU-bound. An async runtime would add coloured functions and
-`Send + 'static` constraints on model types for no benefit.
-
-**When an agent backend arrives**, if its client needs `tokio`, the runtime lives *inside*
-that crate with a bridge onto the sync channel. The async runtime becomes an implementation
-detail of one adapter rather than a property of the application — a direct dividend of the
-adapter shape.
+No network IO, bounded concurrency, and every operation is either a blocking
+subprocess or CPU-bound. If an agent backend later needs tokio, it lives inside
+that crate with a bridge to the sync channel.
 
 ---
 
 ## D9 — A deliberately thin motion set
 
-**Decision.** `j k h l Ctrl-D Ctrl-U gg G ]c [c Tab Enter / n N q ?` and counts. Nothing
-else.
-
-**Rationale.** Cursor, viewport and motions are entirely net-new work that Neovim previously
-supplied for free; it is 500–1,000 lines to do convincingly. Reimplementing Vim is an
-unbounded commitment that contributes nothing to the core thesis. Additional motions can be
-added on demand, from evidence.
+`j k h l Ctrl-D Ctrl-U gg G ]c [c Tab Enter / n N q ?` and counts. Nothing
+else. Additional motions added on demand from evidence.
 
 ---
 
 ## D10 — `git status --porcelain=v2 -z`
 
-**Decision.** Porcelain v2 with NUL separators, not v1.
+Porcelain v2 with NUL separators. v1 requires hand-parsing `old -> new` rename
+arrows and quoted paths, which breaks on spaces and unicode. v2 with `-z`
+eliminates that class of bug. `--no-optional-locks` on every invocation to avoid
+index.lock contention.
 
-**Rationale.** The plugin hand-parses `old -> new` rename arrows and quoted paths from
-porcelain v1, which is fragile with spaces, unicode and unusual filenames. v2 with `-z`
-eliminates that entire class of bug. `--no-optional-locks` on every invocation — upstream
-already learned this ("stop E211 noise and index.lock contention from diff views").
-
-Blob reads go through a long-lived `git cat-file --batch` process rather than one
-`git show` spawn per file.
+Blob reads go through a long-lived `git cat-file --batch` process rather than
+spawning one `git show` per file.
 
 ---
 
-## D11 — Syntax highlighting is in the MVP, via `syntect`
+## D11 — Syntax highlighting via both syntect and tree-sitter
 
-**Decision.** Included, at S11, using `syntect` (with `two-face` for bat's extended syntax
-set) behind the `Syntax` trait in `crates/syntax` (see [D17](#d17--syntax-highlighting-is-its-own-crate-with-an-engine-free-interface)).
+Included in the MVP. Two engines: a parser (tree-sitter, 25 languages) for
+accuracy, and a matcher (syntect + two-face, ~183 languages) for coverage. One
+engine is picked per file — parse where we have a grammar, match where we don't.
 
-**Why it is in scope at all.** An earlier draft deferred syntax highlighting entirely, on
-the grounds that it is the largest single net-new subsystem and contributes nothing to
-proving the core thesis. That reasoning still holds for *ordering* but not for *scope*: the
-MVP is defined as one narrow scenario experienced completely, and a diff reviewer without
-syntax highlighting is not complete.
+syntect was chosen over tree-sitter-only because ~200 languages work with no
+per-language effort. tree-sitter-only was rejected because each language needs a
+grammar crate, a `highlights.scm`, and a mapping. Both are used because the
+matcher leaves ~35% of identifiers unscoped where the parser leaves ~21%.
 
-### Why `syntect` rather than tree-sitter
-
-**The usual objection to tree-sitter no longer applies.** Grammar crates historically pinned
-incompatible `tree-sitter` cores. Verified as of 2026-07, `tree-sitter-rust` (v0.24),
-`tree-sitter-typescript` (v0.23), `tree-sitter-python` (v0.25) and `tree-sitter-go` all
-depend only on the `tree-sitter-language ^0.1` shim, so despite the version spread they
-coexist cleanly. This decision does not rest on that argument.
-
-The reasons that do hold:
-
-1. **We do not need tree-sitter's headline feature.** Incremental parsing exists so an
-   editor can reparse on every keystroke. We highlight static snapshots — a committed blob
-   and a worktree file. Nothing is being typed.
-2. **~200 languages immediately, with no per-language work.** With tree-sitter each language
-   needs a crate, a `highlights.scm`, and a mapping from *its own* capture names to our
-   theme. Capture names vary between grammars; that mapping is the real tax.
-3. **Binary size.** syntect uses one serialized syntax blob of a few megabytes. Bundled
-   tree-sitter grammars are large generated C parsers — `tree-sitter-typescript` alone is
-   roughly 10 MB — plus the compile time that implies.
-4. **Precedent from the closest comparable tools.** `delta` — Rust, terminal, git diff
-   viewer, the nearest analog that exists — uses `syntect 5.0`. `bat` uses syntect with a
-   prebuilt `syntaxes.bin`. Helix and Zed use tree-sitter, but both are editors, and Helix
-   ships grammars as **runtime-fetched shared libraries**, which is precisely the
-   single-static-binary property we are protecting.
-
-### What tree-sitter would buy, and the trigger to switch
-
-Tree-sitter is more accurate on nested and injected languages (JavaScript in HTML, SQL in
-strings) and recovers better from files that do not parse. Neither is decisive.
-
-The decisive one would be **structure**: answering *"which function is this hunk in?"* and
-rendering hunk context as `impl Config > fn merge`. For reviewing a sixty-file agent diff
-that is genuinely valuable, and syntect cannot do it at all — there is no parse tree.
-
-**The trigger is therefore: when we want structural features, not better colours.** The
-`Syntax` trait makes the swap possible per-language rather than wholesale.
-
-### Composition
-
-The `SpanSet` compositor with priorities is built at S7, before any syntax spans exist, so
-that compositing syntax foregrounds with diff and inner-change backgrounds is never
-retrofitted.
-
-### Languages covered by S11 acceptance
-
-syntect supplies roughly 200 languages with no work, so the question is what to *test*. S11
-fixtures cover twelve, chosen as the realistic distribution of agent-edited code plus the
-configuration and markup formats that exercise composition edge cases:
-
-```
-Rust · TypeScript · JavaScript · Python · Go · Java
-C · C++ · JSON · YAML · Markdown · Bash
-```
+The trigger to drop syntect entirely: when all languages a reviewer encounters
+have maintained grammars.
 
 ---
 
-## D12 — Stress-testing the architecture against future features
+## D12 — Future features tested against the architecture
 
-The architecture was tested against six planned agent-review features. Five require no
-structural change; one forced a decision that is now made.
-
-| test | outcome |
-|---|---|
-| connect to an agent backend (streaming, cancellable) | **clean** — new crate beside `vcs`, plus event variants. `RequestId` already handles cancellation |
-| agent comments displayed inline against hunks | **required a decision**: `ui`'s `VisualRow` must be an enum wrapping `align::ViewLine` with room for non-diff rows, and projections must take a context struct. Due at S7 |
-| "what changed since I last looked" | **free** — falls out of `HunkId` being a content hash |
-| MCP server so the agent queries the diff | **clean** — everything except `ui` and `codediff` is already headless |
-| base revision = "when the agent started" | **clean** — `ContentSource::Snapshot` reserved; free if the repo is jj-backed |
-| agent writes files while you review | **clean** — read-only means *codediff* never writes, not that nothing changes; the watcher already covers it |
-
-### Risks that would force a genuine rewrite
-
-| risk | insurance taken now |
-|---|---|
-| review state becomes primary and diff secondary, making `align` the wrong centre | watch for annotations gaining more fields than hunks |
-| multiple simultaneous diffs (three-way, tabs, comparing two revisions) | `AppState.docs: HashMap<DocId, Document>` from the start, with one entry |
-| a GUI or web frontend | already covered by the `ui` split |
-| crash recovery, session replay, server-side review | `AppState` is `serde`-serializable from the start |
-| `runtime` becomes a god object | `update/` submodules touch only their own sub-state; line count tracked in CI |
+Six planned agent-review features were checked against the crate structure. Five
+require no structural change; one (agent comments inline against hunks) requires
+`ui`'s row type to be an enum with room for non-diff rows (not yet built).
 
 ---
 
-## D13 — jj support is a feature, not a nicety
+## D13 — jj support
 
-**Note, not yet a decision.** jj auto-snapshots the working copy on every operation, so its
-operation log answers "what did the agent change since T" **for free** — the single feature
-that would otherwise require building a content-addressed snapshot store. This is the
-strongest argument for the `VcsBackend` trait existing from S5 rather than being retrofitted.
+Not yet a decision. jj auto-snapshots the working copy on every operation, so
+its operation log answers "what did the agent change since T" for free. This is
+the strongest argument for the `vcs` layer being backend-agnostic.
 
 ---
 
-## D14 — Split `vscode-diff-sys` and `vscode-diff`, following the `-sys` convention
+## D14 — Split `vscode-diff-sys` and `vscode-diff`
 
-**Decision.** Two crates: `vscode-diff-sys` holding the build script and the raw FFI, and
-`vscode-diff` holding the safe API. This is the standard Rust `-sys` split.
+Standard Rust `-sys` convention. `vscode-diff-sys` holds raw FFI + build script
+(~150 lines of unsafe). `vscode-diff` holds the safe API. The seven other crates
+carry `#![forbid(unsafe_code)]`.
 
-*An earlier draft of this decision argued for merging them into one crate. That is
-superseded — the convention wins, principally on unsafe containment.*
-
-**What `-sys` is.** A documented Cargo convention: a `foo-sys` crate holds only raw
-`extern "C"` declarations, `#[repr(C)]` types and the build script — everything unsafe and
-1:1 with the C API — with a safe crate `foo` layered on top providing ownership, `Result`
-and `Drop`. It declares `links = "foo"` in its manifest, and Cargo enforces that **only one
-package in a dependency graph may link a given native library**, which prevents
-duplicate-symbol failures when two crates independently build the same native code.
-
-**Why we follow it.**
-
-1. **Unsafe containment is absolute rather than conventional.** With the split, the seven
-   crates that touch neither the C nor its raw pointers carry `#![forbid(unsafe_code)]` — a
-   hard compiler guarantee that cannot be overridden from within the crate. In a merged
-   crate the best available anywhere is `#![deny]` plus a module-level `#[allow]`, which any
-   future edit can quietly widen.
-2. **The unsafe surface becomes countable and auditable.** One crate, ~150 lines, that a
-   reviewer can read in full. "How much unsafe does codediff contain?" has an exact answer.
-3. **It is what every Rust developer expects.** `libgit2-sys`, `libz-sys`, `curl-sys`,
-   `zstd-sys`, `openssl-src` all follow it. Deviating costs explanation forever.
-4. **Different rebuild triggers.** `vscode-diff-sys` recompiles when the C changes;
-   `vscode-diff` when the Rust changes. Splitting keeps incremental builds sharp.
-5. **Publishing stays open** without restructuring, and with it the `links` guarantee.
-
-**Layout.**
-
-```
-crates/vscode-diff-sys/
-  Cargo.toml      links = "vscode_diff"
-  build.rs        cc compiles vendor/libvscode-diff, OpenMP off
-  src/lib.rs      #[repr(C)] structs + extern "C" declarations, 1:1 with the C API
-
-crates/vscode-diff/
-  src/lib.rs      #![deny(unsafe_code)] — public safe API
-  src/convert.rs  #[allow(unsafe_code)] — ~40 lines; C → owned Rust, frees immediately
-  src/types.rs    LinesDiff, LineRange, CharRange, MovedText
-  src/options.rs  DiffOptions builder
-```
-
-Naming a binding after the library it binds is itself the convention (`zstd`, `curl`,
-`git2`).
-
-**Note.** `convert.rs` dereferences the raw pointers returned by `vscode-diff-sys`, so a
-narrow `#[allow(unsafe_code)]` is still required there. The conversion is eager: C memory is
-walked once into owned `Vec`s and freed immediately, so **no C pointer ever escapes into
-application types**. That is what keeps the unsafe surface at roughly 40 lines rather than
-spreading a lifetime obligation across the whole program.
+The unsafe surface is countable: one crate, ~150 lines of declarations, ~40
+lines of pointer-to-owned conversion in `convert.rs`. No C pointer ever escapes
+into application types.
 
 ---
 
 ## D15 — File watcher: `notify`, not Watchman
 
-**Decision.** `notify` + `notify-debouncer-full` as the default and only implementation for
-MVP, behind a `WatcherBackend` trait. Watchman is an optional backend to be built only on
-demand, auto-detected from `PATH`.
+**Not yet built.**
 
-**Why Watchman was rejected as primary.**
-
-| crate | version | last updated | recent 90d downloads |
-|---|---|---|---|
-| `watchman_client` | 0.9.0 | 2024-06-18 | 425,754 |
-| `notify` | 8.2.0 | 2026-05-02 | 34,564,519 |
-
-1. **It is a daemon the user must install.** That contradicts the core value proposition of
-   a single static binary that works over SSH with nothing else present.
-2. **The Rust client is over two years stale**, against an actively maintained `notify` with
-   81× the usage.
-3. **It is tokio-based**, conflicting with [D8](#d8--no-async-runtime).
-4. **The scale problem it solves has largely evaporated on Linux** — the modern
-   `max_user_watches` default is 524,288, not the 8,192 that produced the exhaustion
-   folklore.
-5. It is heavy machinery — a per-user daemon with its own state directory, lifecycle and
-   version-skew modes — for watching one repository.
-
-Watchman genuinely wins on 1M+ file monorepos and with its `since <clock>` queries, but
-anyone on such a repository already has it installed and running, which is exactly what
-auto-detection exploits.
-
-**Note.** codediff.nvim independently reached the same conclusion for a different reason.
-Upstream issue #482 evaluates the same landscape and rejects the Rust `notify` crate solely
-because it *"adds Rust toolchain to the release pipeline (currently just C++)"* — a
-packaging constraint of being a Lua/C plugin, not a technical judgement. Their analysis
-otherwise endorses this class of solution.
+`notify` + `notify-debouncer-full` as the default. Watchman rejected because it
+is a daemon the user must install (contradicts single-binary), its Rust client is
+stale, it requires tokio, and modern Linux `max_user_watches` defaults (524,288)
+eliminate the scale problem it solves.
 
 ---
 
-## D16 — Watcher design, informed by upstream production failures
+## D16 — Watcher design
 
-Upstream issue #482 and PR #480 document three successive watcher designs in production,
-with measurements. Every lesson below is earned, not theorised, and is adopted directly.
+**Not yet built.**
 
-### The three states upstream went through
+Key decisions from upstream production failures (codediff.nvim #480, #482):
 
-| design | measured outcome |
-|---|---|
-| watch `.git/` only | **self-triggering loop.** Their own `git status` momentarily writes `.git/index.lock`, which wakes the watcher, which runs `git status`. ~20 refreshes / 10 s forever, **~120 git subprocesses/min, ~290 ms nvim CPU / 10 s while completely idle** |
-| add a `*.lock` event filter (#480) | loop fixed — 0 idle refreshes, ~6 ms CPU / 10 s. But it **silently removed detection of working-tree changes**, because the loop had been *accidentally functioning as a poller*, and the filter also suppressed the `index.lock → index` rename that carries the real signal |
-| explicit 500 ms poll (current) | correct behaviour restored, but the subprocess and CPU cost returns |
-
-### Decisions adopted from this
-
-**1. Watch both the worktree and `.git/`.** Watching only `.git/` cannot see
-`touch new_file.txt`. This is exactly the #480 regression. VSCode does both — a `.git/`
-watcher plus a workspace-wide recursive watcher — and so will we.
-
-**2. Filter lock files by *destination*, not by path substring.** A `*.lock` path means only
-that a git operation is in flight; the state change arrives afterwards. But git writes
-`index.lock` and then **renames it onto `index`** — that rename *is* the signal. A naive
-"path contains `.lock` → ignore" rule drops it, which is precisely what broke #480. With
-`notify-debouncer-full` a rename arrives as `RenameMode::Both` with `from = index.lock`,
-`to = index`: **filter on the destination path.**
-
-**3. Prevent self-triggering structurally, not heuristically.** We know when we spawn a git
-subprocess. Suppress watcher-driven refresh for its duration rather than trying to recognise
-its side effects after the fact. This closes the feedback loop by construction.
-
-**4. Watch directories, not files.** inotify watches are per-directory and cover every file
-directly inside. Measured: codediff.nvim is 58 non-ignored directories against 332 tracked
-files; a 165,000-file tree is ~28,000 directories, against a 524,288 watch limit. Recursive
-directory watching is therefore cheap *and* gives instant new-file detection.
-
-**5. Watch `.git/` non-recursively.** Recursive would place watches across `.git/objects/`'s
-256 fan-out directories and produce an event storm on every git operation. Note the notify
-caveat that a directory deletion is only observed by watching its *parent*, so to see
-`.git/rebase-merge/` disappear we watch `.git/` itself.
-
-**6. No routine polling.** Upstream's acceptance criterion is **zero git subprocesses while
-idle**, which an interval poll cannot satisfy. This supersedes the safety-net poll proposed
-in an earlier draft of this plan. Instead:
-   - handle `EventKind::Other` with `Flag::Rescan` (inotify queue overflow) as a full status
-     re-read
-   - fall back to `PollWatcher` only when the native watcher fails to initialise or reports
-     too many watches — matching watchexec's native-or-poll model
-   - offer an explicit opt-out for battery-sensitive users
-
-**7. Debounce ~50 ms** so `git checkout`-scale bursts collapse into one refresh, while
-staying inside the 100 ms latency target.
-
-**8. Exclusions.** Upstream chose glob-based `watcher_exclude`, following VSCode's
-`files.watcherExclude`. We can do better cheaply: respect `.gitignore` via the `ignore`
-crate *and* accept globs.
-
-### Acceptance criteria — adopted verbatim from #482
-
-These are upstream's, and they are measurable:
-
-- working-tree edit (`touch`, `echo x >> file`) surfaces within **100 ms**
-- external `git commit` surfaces within **100 ms**
-- idle CPU **≤ 5 ms per 10 s**
-- **zero git subprocesses fired while idle**
-- graceful fallback to polling on watcher failure or watch-limit exhaustion
-- opt-out configuration
-- reliable cleanup on exit; no orphaned threads
-
-### What this costs us versus upstream
-
-Upstream's plan (issue #482, labelled `Size/XL`, ~1 week focused) is: vendor the `efsw` C++
-library, write a ~200 LOC C shim, write a ~150 LOC Lua FFI binding, extend the release
-matrix to build and ship a **second** native binary for six platforms, extend
-`installer.lua` to fetch it, statically link `libstdc++`/`libgcc`, and build on
-manylinux2014 for glibc compatibility — then inherit efsw's ~50 open issues.
-
-Ours is two lines of `Cargo.toml`.
-
-This is one of the clearest single wins of the rewrite, and it exists only because the whole
-project is already Rust — the exact reason upstream could not take this path.
+- Watch both worktree and `.git/`
+- Filter lock files by destination, not by path substring
+- Prevent self-triggering by suppressing refresh during our own git calls
+- Watch directories, not individual files
+- Watch `.git/` non-recursively (avoid `.git/objects/` event storm)
+- No routine polling — zero git subprocesses while idle
+- Debounce ~50 ms
+- Respect `.gitignore` via the `ignore` crate
 
 ---
 
-## D17 — Syntax highlighting is its own crate, with an engine-free interface
+## D17 — Syntax highlighting is its own crate
 
-**Decision.** Highlighting lives in `crates/syntax/`, not as a module inside `ui`, and
-its public interface never names a syntax engine.
+Highlighting lives in `crates/syntax/`, not inside `ui`. Its public interface
+never names a syntax engine.
 
-> **Revised at S11 by [D36](#d36--what-to-take-from-vs-code-delta-and-bat).** The separation
-> and the engine-free interface both stand. What does not is the *ten abstract token kinds*
-> below: a real theme needs scope paths, not ten names. The crate still says what text is and
-> `ui` still owns colour.
-
-**Why not a module in `ui`.**
-
-1. It is not a rendering concern. Highlighting is text *analysis* — text plus language
-   produces spans; rendering *consumes* spans. Conflating them is the same category error
-   that produced a 674-line `explorer/render.lua`.
-2. `ui` would carry a heavy dependency (syntect and two-face, or tree-sitter and N
-   grammars) that nothing else in the workspace needs.
-3. Other consumers are coming — agent export and `--dump-frames` want syntactic information
-   without rendering anything.
-
-It also meets the extraction rule stated in [D4](#d4--crate-boundaries-as-the-architectural-firewall):
-extract when a module acquires a distinct dependency set. This one does, decisively.
-
-### The interface must sit above the engines' computation models
-
-The obvious trait leaks the engine and is unswappable:
+The interface is whole-file-in, spans-out:
 
 ```rust
-// BAD
-fn highlight_line(&self, line: &str, state: &mut syntect::ParseState) -> Vec<(Style, &str)>;
+pub fn spans(text: &[&str], lang: Language) -> Vec<Vec<Span>>
 ```
 
-syntect and tree-sitter compute differently in kind:
+This hides the difference between syntect (stateful, line-by-line) and
+tree-sitter (parse whole file, then query). Both engines map into a shared
+`Group` enum (~31 values like `Keyword`, `Type`, `Function`, `String`). `ui`
+maps `Group → Color`.
 
-| | syntect | tree-sitter |
-|---|---|---|
-| model | stateful, line by line, carrying a parse stack | parse the whole file to a tree, then query |
-| access | must process lines in order | random access to any node |
-
-A line-oriented interface bakes in syntect's model, and tree-sitter cannot implement it. So
-the interface is whole-file-in, spans-out:
-
-```rust
-pub trait Syntax: Send + Sync {
-    fn spans(&self, text: &FileText, lang: Language) -> SpanSet;
-}
-```
-
-### The crux: a normalized `Class`, not engine scopes
-
-This matters more than the crate boundary. syntect emits Sublime scopes
-(`keyword.control.rust`); tree-sitter emits capture names (`@keyword.control`). Passing
-either through raw couples the **theme** to the engine, so swapping engines would break
-every colour in the application.
-
-`syntax` therefore owns a normalized vocabulary of roughly sixteen classes:
-
-```rust
-pub enum Class {
-    Keyword, Type, Function, Variable, Constant,
-    String, Number, Comment, Operator, Punctuation,
-    Attribute, Namespace, Property, Tag, Escape, Error,
-}
-
-pub struct Span { pub line: LineIdx, pub range: Range<ByteOff>, pub class: Class }
-```
-
-Both engines map *into* it. `ui`'s theme maps `Class → Style`. The split is clean:
-**`syntax` says what something is, `ui` says how it looks.**
-
-### The three conditions that make the swap free
-
-Replacing syntect with tree-sitter touches only files inside `crates/syntax/` — if and only
-if:
-
-1. the trait is whole-file-in / spans-out, hiding stateful versus tree-based computation
-2. `Class` is normalized; no engine scope string ever escapes the crate
-3. no engine type appears in any public signature
-
-Condition 3 is mechanically checkable: `cargo xtask lint-arch` fails if `syntect::` or
+The engine is swappable per-language because no engine type appears in any
+public signature. `cargo xtask lint-arch` fails if `syntect::` or
 `tree_sitter::` appears outside `crates/syntax/src/engine/`.
 
-```
-crates/syntax/
-  lib.rs          Syntax trait, SpanSet, Class — public, engine-free
-  language.rs     detection by extension, shebang, content
-  engine/
-    mod.rs
-    syntect.rs    the ONLY file permitted to import syntect
-  map.rs          engine scopes → Class
-```
+---
 
-### Caching lives in `runtime`, not in `syntax`
+## D18 — `align` matches VSCode's model: nothing stored per row
 
-syntect on a 5,000-line file takes 50–200 ms, far too slow for a frame. So `syntax` stays
-pure and stateless — its syntax set is `include_bytes!`, not IO, so it joins the pure tier —
-while `runtime` owns a cache keyed by `(path, content_hash)` and runs highlighting as a
-Loop B effect.
+`Alignment` borrows the `LinesDiff` and both files and computes every answer on
+demand. It stores no rows and no text. A change of `original 2..3, modified 2..2`
+already says "one original line, no modified line" — that is the filler.
 
-The first frame therefore paints unhighlighted and repaints when spans arrive, which is how
-editors behave. All caching stays in one place, and highlighting stays off the render path.
+This is VSCode's design: its `DiffState` is a thin wrapper over the engine
+result. Ours drops the two pixel-height fields it carries for line wrapping.
+
+The old design (`AlignedDoc { rows: Vec<Row> }`) was replaced because it grew
+with file size rather than edit count, could disagree with the diff, and baked
+left/right layout into the model.
 
 ---
 
-## D18 — `align` matches VSCode's model: nothing per row, nothing copied
+## D19 — One row index, no scroll sync
 
-**Decided at S4.** The pairing is `Alignment`, which borrows the `LinesDiff` and both files and
-computes every answer on demand. It stores no rows, no text and no derived index.
+A single `Viewport` owns one vertical position. Side-by-side draws row *n* in
+both panes — left takes `row.original`, right takes `row.modified`. They cannot
+drift.
 
-The design it replaced was `AlignedDoc { rows: Vec<Row> }` with `Row { left, right, kind }`
-and `ViewLineType::MovedFrom/MovedTo`. That was written before reading either reference
-implementation, and reading them collapsed it:
+The plugin spent 415 lines on scroll synchronisation fighting Neovim's separate
+`topline`/`topfill`. Here a row index means the same thing on both sides.
 
-- **VSCode's `DiffState` is four fields** — the engine's mappings, its moves, `identical`,
-  `quitEarly`. Its alignment entries are `{ originalRange, modifiedRange }` plus two pixel
-  heights that exist only for line wrapping and plugin-inserted view zones. Strip those and
-  what remains is already in our `LinesDiff`.
-- **VSCode emits alignment entries only at changes.** Unchanged stretches are implicit,
-  carried by a running offset.
-- **`DiffMapping.movedTo` / `movedFrom` are commented out in the VSCode source.** They tried
-  attaching moves to changes and abandoned it.
-
-Four defects in the replaced design, in order of severity:
-
-| defect | consequence |
-|---|---|
-| `MovedFrom`/`MovedTo` as row kinds | **wrong output.** In `comprehensive_move` a move covers original 32..89 while a change covers 37..139. Move ranges need not agree with change ranges, so a move cannot be a property of one |
-| `left` / `right` | bakes layout into the model; inline view draws both sides in one column and contradicts it |
-| one entry per row | grows with file size, not edit count. Most entries were `Unchanged` — pure derivable padding |
-| stored beside `LinesDiff` | two structures that can disagree, rebuilt on every save by a watcher-driven tool |
-
-**What we add that VSCode does not need.** Its editor answers "what is on screen row *n*";
-we have no editor, so `view_lines()` expands ranges into lines at draw time — a walk, not a stored
-structure. And the engine reports UTF-16 columns, which JavaScript takes for granted and
-Rust does not, so inner changes go through `line_index::utf16_range_to_bytes`.
-
-**Ownership.** `Alignment` borrows the `LinesDiff` and both files, so it is a view and never a
-stored field. Every link in the chain — file contents, then line vectors, then the
-`LinesDiff`, then the alignment — borrows from the one before it, so nothing can return the
-whole chain: each link would have to outlive the value returned with it. The pipeline
-therefore returns everything **owned** and lends the borrowed part to a closure
-(`Runner::run`), rather than making the caller sequence three locals correctly. See D26.
-
-**Cost accepted.** Locating a row is a walk over the changes rather than an array index.
-Rendering asks for consecutive rows, so this is one pass per frame — seven iterations on
-`comprehensive_move`. A prefix sum would make it `O(log n)`, is derivable from the changes,
-and can be added without changing the interface if a file with thousands of changes ever
-makes a scrollbar drag feel slow.
+Wrapping (when built) will make pairing depend on pane width, so wrap-aware
+alignment will live in `ui`, not `align` — the same split VSCode makes.
 
 ---
 
-## D19 — the container owns the row index, so scroll sync cannot exist
+## D20 — Type names mirror the C header
 
-**Decided at S4, before building `ui`.** A `View` owns one vertical position; a `Pane`
-owns only its width, gutter and row source.
-
-```rust
-enum Layout { SideBySide { left: Pane, right: Pane, split: u16 }, Inline { pane: Pane } }
-struct View { layout: Layout, row: u32, subrow: u16, h_scroll: CellCol, cursor: Cursor }
-```
-
-Side-by-side draws row *n* in both panes — left takes `row.original`, right `row.modified`.
-They cannot drift.
-
-VSCode instead gives each side a `CodeEditorWidget` that owns its own `scrollTop`, pads the
-shorter side with view zones until the heights match, then holds the two scroll values in a
-bidirectional constraint with write guards to stop feedback. It needs two editors because
-each side is *editable* and wants its own cursor, selection, find and folding. Read-only,
-none of that applies. The plugin spent 415 lines (`scrollsync.lua`) on the same problem and
-got it wrong twice.
-
-**Alignment with heights belongs in `ui`, not `align`.** Once wrapping exists a line is
-no longer one row, so pairing depends on pane width — which is why VSCode computes
-`ILineRangeAlignment` in its *view* while `DiffState` stays width-independent. `align` keeps
-the width-independent pairing; `ui` computes row counts at the current width and pads
-after a range on the shorter side. `LineRangeAlignment { original, modified, original_rows,
-modified_rows }` is the right name for that, in `ui`, at S10a.
-
-**Costs accepted.**
-
-- **Draggable split.** Unequal panes mean identical unchanged text wraps to different heights
-  on each side, so wrapping needs VSCode's `handleAlignmentsOutsideOfDiffs` checkpoints. Only
-  under wrap, which is opt-in.
-- **No auto-switch to inline.** VSCode flips to inline below 900px by default; we do not.
-  Horizontal scroll is the answer to a narrow terminal, matching the plugin, which sets
-  `wrap = false` in all six of its windows. `DiffLayout::Inline` is built and reachable with
-  `t` as of S10b, but only ever because the reader asked.
-
-**Also settled:** folding does not feed back into alignment either — VSCode calls
-`setHiddenAreas` on the editors and leaves `computeRangeAlignment` alone. Folding and inline
-are both projections over the same pairing. Inline must group by hunk, emitting a hunk's
-deletions then its insertions; a row-by-row walk of side-by-side pairs would interleave them
-wrongly.
-
----
-
-## D20 — type names mirror the C header
-
-The C engine is a faithful port and already carries VSCode's vocabulary, so one rule settles
-naming in `vscode-diff`: **our Rust types mirror `vendor/libvscode-diff/include/types.h`,
-which mirrors VSCode.**
-
-| was | now | C header |
-|---|---|---|
-| `LinesDiff` | `LinesDiff` | `LinesDiff` |
-| `Change` | `DetailedLineRangeMapping` | `DetailedLineRangeMapping` |
-| `Move` | `MovedText` | `MovedText` |
-| `change.inner` | `inner_changes` | `inner_changes` |
-| `LineRange { start, end }` | `{ start_line, end_line }` | `{ start_line, end_line }` |
-
-`CharRange` and `RangeMapping { original, modified }` already matched. The rule also settles
-what *not* to add: VSCode's `IDocumentDiff` has an `identical` flag, the C header does not,
-and it is derivable from `changes.is_empty()`.
-
-In `align`, `Region` became `UnchangedRegion`, matching VSCode. `ViewLine`, `Slot`, `Hunk` and
-`Side` have no counterpart in either and keep their own names. `Alignment` is deliberately
-*not* renamed to `LineRangeAlignment`: there that name means one entry of an array, here it
-would mean the whole model.
-
-The cost is verbosity — `DetailedLineRangeMapping` is a mouthful. The rule is worth more than
-the keystrokes, and it is checkable rather than a matter of taste.
+Our Rust types mirror `vendor/libvscode-diff/include/types.h`, which mirrors
+VSCode. `LinesDiff`, `DetailedLineRangeMapping`, `MovedText`, `RangeMapping`,
+`LineRange`, `CharRange` — all match the header. The cost is verbosity; the
+benefit is that VSCode's source directly explains our behaviour.
 
 ---
 
 ## D21 — `vcs` runs `git` rather than linking a git library
 
-**Decided at S5.** `gix` and `git2` are real options — `gix` has 40M downloads and ships
-regularly — so this is a choice, not an absence of one.
+`gix` and `git2` exist but were not used. The reason is not speed (4.5 ms for
+`git status` on 340 files). The reason is that git's own binary honours the
+user's config, `.gitignore`, sparse checkout and clean filters — rules that
+decide which files appear at all. A reimplementation that differs anywhere shows
+the wrong list.
 
-**Speed is not the reason.** Measured: `git --no-optional-locks status --porcelain=v2 -z`
-on a 340-file repository is **~4.5 ms**, twenty runs in 91 ms. That is far below the
-refresh rate a watcher will ask for.
+Two layers: a `git/` module that runs commands and parses output in git's own
+words, and `repository/` that translates into our standard types.
 
-The reason is that git's own binary already honours the user's config, `.gitignore` rules,
-linked worktrees, sparse checkout and clean filters. Those rules decide **which files
-appear at all**, so a reimplementation that differs anywhere shows the wrong list — the one
-kind of wrong a review tool cannot afford. `Diff` is a trait, so this is reversible, and a
-future `jj` backend needs one anyway.
-
-**Two layers, each in its own language.** The `Diff` trait is in the reviewer's terms —
-`files()`, `before(file)`, `after(file)` — and names no git concept, because a system need
-not have one: jj has no index and no `HEAD`. Underneath, `git/` keeps every git word, with
-modules named for the commands they run, and `git::to_file_diff` is the single point the
-two vocabularies meet.
-
-**One folder per capability, each holding its trait and the types in its signatures.**
-`changes/` today; `staging/` and `history/` when something needs them. `repo` and `error`
-sit above them all. A crate named for a whole domain otherwise becomes a place to put
-anything, which is how the Lua explorer got to 674 lines in one file.
-
-It was called `Diff` rather than `Change` because the engine already reports **line**-level
-changes. That was the wrong trade: the name was borrowed from the one git command the crate
-never runs. It is `Changes` now, and `ChangedFile` carries no such ambiguity —
-[D29](#d29--vcschanges-because-nothing-there-diffs-anything).
-
-Forcing one vocabulary on both would go wrong in either direction — inventing fake-neutral
-names for git things, or making a jj backend pretend it has a staging area.
-
-**Capabilities that only some systems have get their own traits.** `Staging` and `History`
-would sit beside `Diff`, so a backend lacking one fails to compile rather than answering
-"unsupported" at runtime. Only `Diff` exists today. Note that staging is *not* excluded for
-being a write: it never changes file content, so it stays within what this tool does.
-Restoring, discarding and resolving a merge do change content, and those are the line.
-
-The equivalent layer in the plugin has 26 functions. Thirteen — comparing arbitrary
-revisions, history browsing, rename following — are real reads we will want later but not
-for worktree-vs-HEAD.
-
-**Three details that break naive implementations,** all found by running git rather than
-reading about it:
-
-| | |
-|---|---|
-| a **rename record spans two NUL-terminated fields** | splitting the stream on NUL and treating each piece as a record turns one rename into a record plus a garbage entry |
-| **`--no-optional-locks` goes before the subcommand** | as a `status` flag it is rejected. It stops git taking `.git/index.lock` for the optional index refresh, which would both fail a concurrent `git add` and wake the watcher that asked for the status |
-| **field offsets differ per record type** | `1` has two hashes, `2` adds a similarity score, `u` has three stages and so three modes and three hashes. Counting wrong puts a hash in the path, which the fixture caught |
-
-**Blobs come from one long-lived `cat-file --batch`.** A sixty-file diff is a hundred and
-twenty reads; at a process spawn each that is most of a second in `fork`. The child is
-stateful, so it gets its own thread rather than a slot in a pool sized for computation.
-
-**The `fixtures` crate has no workspace dependencies** so `vcs` tests and, later, end-to-end
-tests can dev-depend on it without a cycle. Its manifest is written by hand from
-`git-status(1)`; one generated from our own output would only prove the parser agrees with
-itself.
+Blobs come from one long-lived `cat-file --batch` child, not one process spawn
+per file.
 
 ---
 
-## D22 — Catppuccin by arithmetic, with a theme that cannot fail beside it
+## D22 — Catppuccin by arithmetic
 
-The plugin has no palette. Its diff colours are read out of whatever colourscheme Neovim is
-running — `DiffAdd`, `DiffDelete`, `DiffChange`. Standing alone, we have to choose.
+The diff backgrounds are derived from the palette by blending:
 
-**A theme is a table of `Style`s, one per role.** Not colours: a `Style` also carries bold
-and reversed, which is what lets a theme work on a terminal that has no colour to give.
-They compose by `Style::patch`, which overrides only the fields that are set, so a role
-supplies a background and inherits the foreground, and priority is the order the patches
-are written in rather than a table of numbers nobody can read.
-
-**Catppuccin is reproduced by its arithmetic.** Its diff backgrounds *are* a function of
-its palette:
-
-```text
+```
 out = round(alpha × accent + (1 − alpha) × base)
-
-DiffAdd  18% green    DiffChange   7% blue
-DiffDelete 18% red    DiffText    30% blue    CursorLine 64% surface0
 ```
 
-So `theme/catppuccin.rs` holds four 26-colour palettes and one `const fn` derivation, and
-a flavour is 26 numbers rather than 26 plus fourteen more that must be kept in step. A test
-asserts the derivation still reproduces Catppuccin's own published values, so a theme
-claiming to be Catppuccin stays one.
+So a flavour is 26 palette colours plus one derivation function. A test asserts
+the derivation still reproduces Catppuccin's published values.
 
-Two consequences worth stating:
+A `basic` theme family exists for terminals without 24-bit colour. It uses
+`Color::Reset` for backgrounds and the 256-colour cube for diff highlights. A
+test asserts it never emits a 24-bit colour.
 
-- **Inner changes use `DiffText`'s ratio, not the plugin's multiply.** The plugin brightens
-  the line colour by 1.4 — a direct RGB multiply, no alpha — which on a light background
-  darkens rather than brightens and on a saturated one clips. A second blend at a higher
-  opacity behaves the same way on all four flavours, and a test checks that on each.
-- **There is no "modified" colour.** A modification is red on the original side and green
-  on the modified one, which is what a side-by-side view means: each side says what
-  happened to *it*.
-
-**`basic` exists because Catppuccin's subtlety is also its failure mode.** Eighteen percent
-of an accent is a few points of lightness. A terminal without 24-bit colour quantises that
-straight back into the background, and the result is a diff viewer with no visible diff in
-it — the worst possible failure, because it looks like it worked. So there is a second
-family that names nothing exactly: `Color::Reset` for the background, so it inherits
-whatever scheme the reader already runs, and the 256-colour cube for the diff backgrounds.
-A test asserts it never emits a 24-bit colour at all.
-
-**Detection is from the environment, and one-way.** `COLORTERM` is what every terminal
-supporting 24-bit colour sets, and `COLORFGBG` is the existing convention for light
-backgrounds; unset means "not sure", and being unsure is a reason to pick the theme that
-cannot fail. There *is* a real way to ask — an OSC 11 query — but it needs a round trip the
-terminal may never answer, and a reviewer waiting on a timeout before the first frame is
-worse than a wrong guess they can override with `--theme`. `codediff doctor` prints what
-was detected, because "my colours are wrong" is otherwise unanswerable by looking.
+Detection: `COLORTERM` for 24-bit support, overridable with `--theme`.
 
 ---
 
-## D23 — a file with only one side is shown in one pane, not diffed against nothing
+## D23 — A one-sided file is shown in one pane
 
-The engine models an empty file as **one empty line**, so `compute(&[], x)` is normalised to
-`compute(&[""], x)`. `align` normalises identically, or an `Alignment` would disagree with
-its own diff — found by proptest, which shrank to `original = []`.
+An added, untracked or deleted file is not diffed against nothing. It gets one
+pane at full width. Nothing is highlighted because nothing changed relative to
+anything.
 
-That is right for a file that exists and is empty. It is wrong for a file that does not
-exist. An added file rendered that way gets a phantom blank line paired against its first
-real line, and reports as *modified* rather than added. It bit us twice, at S4 and S6.
+VSCode does the same: `getLeftResource` returns a URI only for modified/renamed
+files; added and deleted fall through to a single editor.
 
-**VSCode hit exactly this bug and fixed it the same way.** From the maintainer who closed
-[microsoft/vscode#239914](https://github.com/microsoft/vscode/issues/239914) as
-*as-designed*:
-
-> the file system provider that handled the `git` scheme used to return an "empty string"
-> for a file that did not exist. This implementation made it impossible to differentiate
-> between a file that did not exist and an empty file… Untracked files previously used to
-> open in the diff editor with the left hand side being empty. As [it] did not provide much
-> value, untracked files are now opened in the normal editor instead of the diff editor.
-> This matches the behaviour for deleted files.
-
-The rule in their source is one line, `git/src/repository.ts:535`:
-
-```ts
-if (!leftUri) → vscode.open   // one pane
-else          → vscode.diff   // two panes
-```
-
-and `getLeftResource` returns a left side only for `MODIFIED`, `INDEX_MODIFIED`,
-`INDEX_RENAMED`, `INTENT_TO_RENAME`, `TYPE_CHANGED` and the two conflict cases. Added,
-untracked and deleted all fall through to `return {}`.
-
-**So we do the same.** A one-sided file is not compared against anything:
-
-| | |
-|---|---|
-| `Opened::compare` | returns an **empty diff** when a side is absent — no engine call |
-| `Opened::lines_to_show` | the present side stands in for both, so every row is unchanged |
-| `Layout::Single(Side)` | one pane at full width; the other side is never read |
-
-Nothing is highlighted, because nothing changed relative to anything — there is no other
-side to be relative to. Marking every line of a new file green says nothing that the word
-"added" does not.
-
-Three consequences worth stating:
-
-- **The decision is `absent`, never `empty`.** A tracked file emptied to zero bytes still
-  has a side to compare against, so it gets a real two-pane diff showing every line
-  deleted. Verified on a terminal, alongside the one-pane cases.
-- **A deleted file shows its HEAD content** — what was removed — which is what VSCode's
-  `getRightResource` does for `DELETED`.
-- **The status line says `(added)` or `(deleted)`.** VSCode does not need to: it leaves the
-  diff editor for an ordinary tab, and the tab is the cue. We have nowhere else to go, so
-  the single pane *is* that, and it needs a label or it reads as an unchanged file.
-
-An earlier attempt made the one-sided file into a *diff* — `LinesDiff::one_sided` plus
-`Alignment::try_verbatim` — and rendered it as two panes with a column of fillers. Both
-were reverted. The data was defensible; drawing it as two panes was not.
+An empty tracked file (zero bytes) still gets a two-pane diff — "absent" is
+different from "empty".
 
 ---
 
-## D24 — a key resolves to one of three kinds of command, and resolving is not dispatching
+## D24 — Keys resolve to three kinds of command
 
-`ui` had one flat `Intent` enum whose variants were answered by four different owners.
-The symptoms were measurable: `Intent::Quit` was answered **twice** — the view returned
-`false` for it while the loop intercepted it first — `Intent::Redraw` was a no-op that
-worked only because the loop redrew unconditionally, and `View::focus` was a field nothing
-outside its own file ever read.
-
-**The split is by who answers, and how long they take** — not by whether there is a side
-effect, because that question does not tell the loop what to do:
-
-| | answered by | can fail | latency |
-|---|---|---|---|
-| `View` | `ui`, in this frame | no | µs |
-| `Program` | whoever owns the terminal | no | µs |
-| `Task` | the composition root, off-thread | **yes** | ms |
-
-**A `Task` is a request, not a call.** `ui` names what it wants; something above
-performs it and returns the answer as an event. That is the only way staging can exist
-without `ui → vcs`, which `lint-arch` forbids. It is deliberately uninhabited: after
-startup this binary performs no IO, so nothing a key could ask for exists yet. The variant
-and its dispatch arm are written now so the explorer *adds* one rather than reshaping the
-loop.
-
-**Resolving and dispatching are separate.** `input/` turns keys into a `Command` and
-returns; `app.rs` sends it to whichever of the three can answer. A single "engine" doing
-both would need references to the viewport, the terminal and the task runner at once —
-exactly the coupling the split exists to prevent. The payoff is that the resolver is a
-**pure function of its own state and one key**: no clock, no IO, no view, and a test is a
-string of keys.
-
-**The table is data, not closures.** `crokey`'s `key!()` is const-capable, which is the
-reason to depend on it: the bindings are a `const` list that can be printed into a help
-screen, walked by a test, and checked for prefixes. A closure could do none of those, and
-would capture references to everything it might touch.
-
-**crokey covers what a key *is*; sequences are ours.** Its "combination" means keys pressed
-together (`Ctrl-Alt-g`); `gg` is keys pressed one after another. Different axis. It also
-supplies `KeyEvent` conversion, help-screen formatting and — later — config parsing, and it
-shares our crossterm 0.29 so nothing duplicates.
-
-**No binding may be a proper prefix of another.** Commands live only at the leaves of the
-trie. This is what vim's own built-ins already do — `g`, `d`, `z`, `[`, `]` are unbound
-alone — and it is why the resolver needs no clock. Ambiguity has no good resolution: firing
-immediately makes the longer binding unreachable, and waiting makes the shorter one feel
-broken for half a second every time. Vim needs `timeoutlen` only because user mappings
-*may* create ambiguity. Enforced by a test rather than assumed by the resolver, so relaxing
-it later means adding an injected clock and deleting one test.
-
-Two rules fall out of that, both vim's:
-
-- **Escape cancels what is in flight, and only then.** With nothing pending it reaches the
-  table, where it quits. Without the interception, pressing `g` and changing your mind
-  exits the program — and `5` then Escape quits *with a count of five attached*.
-- **`0` is a digit once a count has started and a motion otherwise** — the only point at
-  which counts and bindings interact.
-
-`View` was renamed `Viewport`, which is what it holds, freeing the name for the command
-kind. `Tab` and `focus` were deleted rather than left dead; they return when focus is real.
-
----
-
-## D25 — what a diff *is* lives apart from the engine that computes one
-
-`align` never calls the diff engine. It is handed a result and works out where the fillers
-go — pure, no IO, proptest-tested. But it has to *name* that result, and while the six
-structs lived in `vscode-diff`, naming them meant this:
-
-```text
-align → vscode-diff → vscode-diff-sys → cc → libvscode-diff.a
-```
-
-So a clean `cargo build -p align` compiled C. Measured: **4.2s, versus 0.7s now.**
-
-The structs moved to **`diff-types`** — `LinesDiff`, `LineRange`,
-`DetailedLineRangeMapping`, `RangeMapping`, `MovedText`, `CharRange` — with no
-dependencies, no build script and no `unsafe`. `vscode-diff` depends on it, keeps
-`compute`, and re-exports the types so an existing caller needs only one dependency.
-
-**The counter-argument, and why it was wrong.** [D20](#d20) says our type names mirror the
-C header, so the types are engine-shaped rather than neutral — which sounds like a reason
-to leave them in the engine's crate. It is not. Mirroring the header is about *naming*, so
-that a question about our behaviour can be answered by reading VSCode's source. Nothing in
-those structs mentions C, and a second engine — a pure-Rust fallback, or a WASM build where
-`cc` cannot run — would produce these same values.
-
-**Tests may use the engine; the library may not.** `align`'s tests feed real engine output
-through the aligner: twelve vendored fixture pairs, and proptest cases built from actual
-diffs. Those are the tests worth having, so `vscode-diff` is a **dev-dependency**. Dev
-dependencies do not propagate, so consumers still get no C.
-
-That distinction needed a new kind of lint rule. `FORBIDDEN_SHIPPED_EDGES` checks
-`[dependencies]` and `[build-dependencies]` only, while the existing `FORBIDDEN_EDGES`
-checks all three tables. Sabotage-verified in both directions: moving `vscode-diff` into
-`align`'s `[dependencies]` fails, and leaving it in `[dev-dependencies]` passes.
-
-## D26 — one pipeline, five stages, and the interface `ui` receives
-
-Assembly used to be `open.rs` plus `review.rs`: three free functions, two methods, and four
-locals the caller had to sequence in the right order with nothing checking it. Every stage
-existed, but there was no pipeline — it was a toolkit.
-
-**The five stages, named and in order:**
-
-| | file | |
+| kind | answered by | latency |
 |---|---|---|
-| 1 | `resolver` | which file, in which repository |
-| 2 | `contents` | read both sides |
-| 3 | `diff` | call the C engine |
-| 4 | `diff` | pair the lines up |
-| 5 | `runner` | hand over a `ui::Diff` |
-
-Five stages, five files, and `mod.rs` holds only the signpost. The first
-attempt left stage five inside `mod.rs`, where the folder listing did not show
-it — the same defect as burying the key resolver in `input/mod.rs`, made twice
-in one session.
-
-The files are **nouns**, per the hard rule in
-[02-architecture.md](02-architecture.md) — a type owns its logic, and
-verb-splitting is what produced the plugin's `actions`/`render`/`refresh`
-triplets. The first attempt named two of the four after verbs (`resolve.rs`,
-`compare.rs`) and the third after nothing in particular (`sources.rs` — sources
-of what?). `resolver` also matches `ui/src/input/resolver.rs`: same word,
-same job, one convention.
-
-Stage 5 did not exist before; the work was scattered through `review.rs`, which is why
-`ui` needed two constructors and the caller had to know which to call.
-
-**It lives in the binary.** `codediff` is the only crate allowed to name `vcs`,
-`vscode-diff`, `align` and `ui` together — `lint-arch` forbids those edges everywhere
-else. A renderer that could assemble its own input is a renderer that can shell out to git,
-which is what produced a 674-line `explorer/render.lua` in the plugin.
-
-**`ui` defines what it consumes.** `ui::Diff { label, alignment, sides }`, with
-`Sides = Both | Only(Side)`. The consumer defining its own input is the direction that
-keeps the graph acyclic: the composition root already depends on `ui`, whereas
-`ui` naming a type from the pipeline would be a cycle. `Session::new` and
-`Session::single` collapse into one constructor, since how many panes to draw now follows
-from `sides` rather than from which function was called.
-
-`Sides` is a **fact**, not a layout: `ui` turns `Only(s)` into `Layout::Single(s)`
-itself. It cannot work this out from the alignment, because a one-sided file is
-deliberately paired with itself and so looks exactly like an unchanged comparison (D23).
-
-**The last stage took a closure, and no longer does.** Every link borrowed the one before
-it — contents, line vectors, `LinesDiff`, alignment — so nothing could return the whole
-chain, and `Runner::run` lent its result out instead. An intermediate `Prepared → Ready →
-Diff` was tried first and was worse than the four locals it replaced.
-
-That was a symptom, and it was misread as a constraint for a long time: **a stage that
-cannot return its own output is not a stage.** [D27](#d27--a-neovim-shaped-view-view--tab--pane--buffer)
-removed the cause — `Alignment` now owns the two files it describes — so every stage
-returns, and the five stages are five again.
-
-```rust
-let runner = pipeline::Runner::new(&request)?;
-let mut session = ui::Session::new(runner.run()?, theme);
-```
-
-**`Alignment::diff()` is gone.** It read like a verb — "alignment computes a diff" — when it
-was a getter handing out the borrowed engine result. VSCode has no equivalent because
-`DiffState.fromDiffResult` *unpacks* the four values and drops the result, so there is
-nothing left to reach into. We borrow rather than copy, but the surface now matches:
-`changes()`, `moves()`, `hit_timeout()`, replacing seven `alignment.diff().field`
-reach-throughs.
-
-**`codediff <path>`, not `codediff review <path>`.** The plugin has no `review` command:
-`:CodeDiff` *is* the diff, arguments say what to compare, and subcommands are other modes
-(`history`, `merge`, `install`). `review` was scaffolding invented because the explorer
-does not exist yet, and it had leaked into the CLI surface. One consequence, caught by a
-test: a bare word is now a path, so `codediff not-a-command` exits **1** (no such file)
-rather than **2** (bad command line).
-
-## D27 — a Neovim-shaped view: View → Tab → Pane → Buffer
-
-**The problem.** One `Session` held one `Diff` and one `Viewport`. An explorer needs a
-second thing on screen with its own position, its own keys, and its own contents, and there
-was nowhere to put any of it. Adding a field per feature is what produced the plugin's
-20-field session struct and Zellij's acknowledged 80-field `Tab`.
-
-**The shape.** Four levels, each containing the next:
-
-```text
-View     tabs, and every buffer any of them can show
-└ Tab    a layout of panes, and which has focus
-  └ Pane one buffer, and one Viewport onto it
-    └ Viewport   top, cursor, left, split
-```
-
-Buffers live in `View`, referenced by `BufferId`, never by reference: a pane holding `&mut
-Buffer` makes the whole structure self-referential. Helix does exactly this with
-`DocumentId`/`ViewId`. Zellij's `Box<dyn Pane>` is the counter-example and forced
-`Rc<RefCell<_>>` throughout, because two panes cannot be borrowed mutably through trait
-objects.
-
-**The module tree is the diagram.** Four levels, four files, in containment order:
-`view/{mod,tab,pane,viewport}.rs` with `view/buffer/` inside. `buffer/` began as a sibling
-of `view/` and that was an accident of the order the files were written — the tell was that
-`view` named `crate::buffer` while all three files of `buffer` named `crate::view`. Two
-siblings each reaching for the other are one thing that got split.
-
-Neovim's buffers are global and Helix keeps `documents` beside its `tree`, so a sibling
-arrangement has precedent — but in both cases a third thing above (the editor) owns both.
-`View` owns `buffers` directly, so nesting is what the code already says. The alternative
-was inventing an owner to justify a directory.
-
-An id lives with the collection it indexes: `BufferId` beside `View::buffers`, `PaneId`
-beside `Tab::panes`.
-
-Position lives on the **pane**, not the buffer, so two panes over one buffer scroll
-independently — the same reason Neovim splits window-local options (`wrap`, `number`,
-`cursorline`) from buffer-local ones (`filetype`, `tabstop`).
-
-**A buffer is a sequence of rows you can scroll through.** That is the whole definition, and
-it settles a question that had been open since S7: side-by-side and inline are *different
-buffers* over the same diff, not one buffer with a flag. They emit different row sequences,
-so with a flag "row 40" would mean different things depending on a field stored elsewhere.
-
-> **Upheld at S10b, and extended.** Inline is a separate kind, not a flag. What building it
-> added is a *parent*: everything true of any buffer — row count, changed blocks, change
-> navigation — lives on `Buffer`, and `BufferType` holds only what differs. See
-> [D31](#d31--a-row-space-is-a-layout-and-align-owns-both-of-them).
-With two kinds, layout is fully determined by the buffer.
-
-Which is why a buffer is a **projection** and not the data. `ui::Diff` — what the
-pipeline delivers — is one file's two versions and the pairing between them, and carries no
-row count: an `align::ViewLine` is a *pair*, so a row count is already an answer to "how would
-this look side by side". `SideBySide` holds that answer next to the decision that produced
-it, and nothing else can hold a number that depends on a layout it did not choose.
-
-The kinds are an `enum`, not a trait. Exhaustive `match` means adding one breaks the build
-until it is handled everywhere — the same property that stops the keymap growing dead
-commands.
-
-### The borrow that shaped four layers, and how it was removed
-
-`Alignment` used to borrow: `&LinesDiff`, `&[&str]`, `&[&str]`. That single fact reached
-further than any other decision in the project.
-
-A borrowed alignment cannot outlive the function that builds it, so **stage 5 of the
-pipeline could not return its own result.** It took a closure instead — "I cannot hand you
-this, but I will call you while I still hold it":
-
-```rust
-pub fn run<R>(&self, f: impl FnOnce(Diff<'_>) -> R) -> R
-```
-
-And every type that held one inherited the lifetime:
-
-```text
-Alignment<'a> → Diff<'a> → Session<'a> → View<'a> → Tab<'a> → Pane<'a>
-```
-
-The first attempt at this decision worked *around* that: buffers held plain data and the
-renderer rebuilt an alignment each frame. It was measured and cheap — 2–58 µs, O(changes)
-rather than O(file size) — and it was still wrong, for reasons no measurement could show:
-
-- **The pipeline stopped being a pipeline.** Stage 4 was deleted and its work scattered into
-  `DiffData::new` and `render::diff`, in another crate. Four stages produced something the
-  renderer then had to finish.
-- **The work was done twice and thrown away once.** `DiffData::new` computed the hunks, read
-  two numbers off them, and dropped them; the renderer recomputed them every frame.
-- **Its own justification was circular.** The measurement was of waste, reported as a budget.
-
-The fix is at the source. `Alignment` **owns** its two files and the diff:
-
-```rust
-pub struct Alignment {          // no lifetime
-    diff: LinesDiff,
-    original: Vec<String>,
-    modified: Vec<String>,
-    tab_width: u8,
-    hunks: Vec<Hunk>,
-}
-```
-
-Every consequence unwinds. `ui::Diff` is the original struct minus `<'a>`. Stage 4
-returns to `pipeline/diff.rs`; stage 5 returns rather than lends; the closure is gone; no
-type in `ui` has a lifetime; and drawing a frame does no derivation at all.
-
-The price is one copy of each file, once, at open — a few hundred microseconds for a 20k-line
-file. `align`'s original reason for borrowing survives: the lines are copied *in* and the
-caller's are dropped, so there is still exactly one copy to fall out of step with nothing.
-
-The four public functions that take lines are now generic over `S: AsRef<str>`, so tests
-still write `&["a", "b"]` while `Alignment` holds `Vec<String>`.
-
-**What a walk is still needed for** — the row count and where the changed blocks sit — is
-computed once in `Diff::new` and remembered, beside the `hunks` the alignment computed at
-construction.
-
-### The executor rule
-
-> An action is executed by the **lowest level that contains everything it affects.**
-
-A motion affects one viewport → the focused pane's buffer does it. The split between a
-diff's two columns is inside one pane → the buffer again. Resizing a pane border affects
-**two** panes → only the tab contains both, so the tab must. That is why resize felt awkward
-to place: it is the first command affecting more than one thing.
-
-### The arm invariant
-
-> An arm of `Action` exists iff it has an executor no other arm has.
-
-This deleted an arm. `Action::View(View::Down)` and a proposed `Action::Buffer(..)` both
-routed to `self.focused()`, so they were one thing written twice; motions became
-`Action::Buffer(BufferAction::Motion(..))`. `Tab` stays separate when it arrives because it routes
-to the layout, not to a buffer. The full future set is `Program`, `Buffer`, `Pane`
-(window-local settings), `Tab` (focus, resize, zoom), `App` (tabs), `Task` — six executors,
-six arms, and no arm invented for a feature.
-
-Each arm's payload is that executor's own commands, named `<Executor>Action`:
-`Buffer(BufferAction)`, `Program(ProgramAction)`, `Task(TaskAction)`. The payload was once
-called `Verb`, borrowed from vim's grammar, which matched neither the other two arms nor
-vim — there a verb *takes* a motion, while `BufferAction` *contains* one.
-
-### Each level owns its commands and binds them
-
-One file per executor, holding that level's actions *and* the keys bound to them:
-
-```text
-input/buffer.rs    motions, and whatever a buffer kind adds   ← innermost
-input/pane.rs      one pane, about its own view of a buffer
-input/tab.rs       a tab, about its panes: focus, resize, zoom
-input/view.rs      the whole view, about its tabs             ← outermost
-input/program.rs   quit, suspend, redraw — below every level
-input/task.rs      what leaves the crate
-```
-
-**Lookup walks that order, innermost first.** One mechanism, two jobs: it puts each level's
-bindings where the level is, and it makes *shadowing* the answer to scoping. A buffer kind
-that binds `<` claims it; anywhere else the same key falls through to the tab. Exactly how
-Neovim's buffer-local mappings shadow global ones.
-
-I argued against this at the time, on the grounds that per-level lists lose the ability to
-scope a key — the explorer's `<` (collapse the sidebar, a *tab* action) would sit in the tab
-list, live everywhere, colliding with a diff's `<` (narrow the split, a *buffer* action).
-That was wrong: with innermost-first lookup the diff's `<` shadows it, and in the explorer,
-which binds no `<`, the chain falls through. Both work, and no third concept is needed.
-
-Two rules follow, and both are tested:
-
-- **Exact shadowing across levels is legal** — it is the mechanism above.
-- **A proper prefix anywhere in the chain is not.** `g` on a buffer would make `gg` on the
-  tab unreachable in that buffer, silently and only there.
-
-`Context` is what remains of the old design: it names which *buffer kind* has focus, and so
-selects only the innermost list. Every level above binds the same keys whatever has focus.
-
-### Two dividers, two owners
-
-The rule is scale-free, and applying it twice settles a question that had been left open:
-
-| divider | between | lowest container | owner |
-|---|---|---|---|
-| the `│` in a side-by-side diff | two **columns** | one buffer draws both | the **buffer** |
-| a pane border | two **panes** | one tab holds both | the **tab** |
-
-So `SideBySide` owns a `divider: u16` — the share of the width given to the original — and
-`>`/`<` are `BufferAction::WidenOriginal`/`NarrowOriginal`. It sat on `Viewport` at first,
-where its own comment admitted the problem: *"meaningless unless the buffer draws two"*. A
-`Text` buffer had a column divider. Position is pane state because every buffer kind has a
-position; a two-column ratio is not.
-
-That also decides what was listed as open — whether the ratio is per-buffer or per-pane.
-Per-buffer: two panes on one diff scroll together only if we want them to, but they drag
-their dividers independently, because the divider is part of how the buffer draws itself.
-
-The word is deliberately not *split*. In a Neovim-shaped model a split is what makes a new
-pane, which arrives at S8; using it for a divider inside one buffer would collide exactly
-when both exist. `Column`, `Pane` and `Side` are likewise kept apart: a column is a region
-inside a buffer, a pane is a rectangle in a tab, and a `Side` is `Original` or `Modified` —
-a *version*, not a place, since inline mode puts both in one column.
-
-### What this deletes
-
-- `Sides` from `ui`. Which kind of buffer to build is decided by the pipeline, the last
-  thing that knows how many sides were read; `Sides` moved there, where it describes what
-  was *read* rather than what is drawn.
-- `Layout::Single(Side)`, and then `Columns::One(Side)` after it. A diff always has two
-  columns — a file with one side is a `Text` buffer, not a degenerate diff — so `Frame`'s
-  fields are no longer `Option`. The compiler found this: the variant became unconstructed
-  the moment one-sided files stopped being diffs.
-- `Runner::run(|diff| …)`, and with it every `<'a>` in `ui`. D26's note about the
-  closure is superseded.
-
-### Deliberately not built
-
-`Layout` has one variant, `Full`. Every arrangement we know of — a diff alone, explorer
-beside a diff, history beside a diff — is one pane or two. Helix's `Tree` is ~600 lines with
-climb-and-descend directional focus and buys nothing until a third arrangement exists. The
-seam is a single enum in one file; `Overlay` is uninhabited for the same reason, but its
-routing exists now because event dispatch changes shape when the first overlay arrives, and
-doing that once is cheaper than doing it twice.
-
-## D28 — one vocabulary for a file, so its identity cannot degrade
-
-**The problem.** Fourteen types touched "a file"; five of them claimed to *be* one, and the
-file's identity got worse at every step:
-
-```text
-RelPath(String)                          typed
-FileDiff { path, previous_path, kind }   typed, structured
-"old.rs → new.rs   (added)"              a String — three facts fused
-Status { path: &str }                    called path; is not one
-```
-
-The last step is the damage, and it was irreversible. The status line rendered the whole
-string in the path's bold style — including `(added)`, which is not part of any path — and
-could not shorten a long path, because nothing could find where the path ended.
-
-**The cause was a rule we wrote ourselves.** `lint-arch` forbids `ui → vcs`, so `ui` could
-not name `vcs::RelPath`. Identity was therefore re-declared, and then flattened to a
-`String` to smuggle it across a boundary the lint enforces. The `String` was the smuggling;
-the lost facts were the toll.
-
-### Not another layer — a vocabulary
-
-A layer would add a step to the flow. This adds none: `crates/file-types` is a leaf with no
-dependencies that `vcs`, `codediff` and `ui` all name.
-
-```text
-RepoPath      where a file lives — both spellings, one constructor
-File          which file this is: a version on each side, either absent
-FileContent   what one version holds — text, a binary blob, or nothing
-DiffVersion   which of the two: Original or Modified
-```
-
-Only `File` is new; the other three were moved from where one layer happened to own them.
-`vcs::RelPath` gained the absolute form and became `RepoPath`, `vcs::Content` became
-`FileContent`, and `align::Side` became `DiffVersion` — that one had never been about
-pairing, and `ui` was reaching into `align` to say which column it was drawing.
-
-### Everything a reader is told is derived
-
-```rust
-pub struct File {
-    original: Option<RepoPath>,   // None = added
-    modified: Option<RepoPath>,   // None = deleted
-}
-```
-
-`is_renamed()`, `only()`, `previous_path()` and the `(added)`/`(deleted)` note are computed
-from that pair, never stored beside it. A `kind` field could disagree with the paths; a
-`label` field already did.
-
-This is VSCode's `MultiDiffEditorItem`, which is a pair of `Option<URI>` and whose renderer
-recomputes "renamed" at paint time from `modifiedUri.path !== originalUri.path`. Its label
-port is typed `setUri(uri, options)` — a string label is impossible by type.
-
-### What the research actually showed
-
-Neither reference passes one object through. VSCode has **eight** types between `git status`
-and pixels; `codediff.nvim` has **nine**. Both convert explicitly at every boundary. What
-they do have is one identity token that survives unchanged — VSCode's `URI`, welded onto
-`ITextModel.uri` so identity and content travel together; the plugin's `Path`, one type
-carrying both spellings from a single constructor.
-
-Both also have our bug. VSCode filed it as #110694 — *"the tab title … is too long:
-`very/long/path/file1.js <-> very/long/path/file2.js`"* — and the fix works, in the
-maintainer's own framing, precisely because it truncates the two paths **while they are
-still separate values**. He conceded the limit of the flat `(name, description)` pair:
-*"The ideal solution would be `labelA | descriptionA ↔ labelB | descriptionB` but that is a
-lot more work."*
-
-The plugin went further and lost the facts outright: `status` and `old_path` are consumed as
-control flow when a diff is opened (`explorer/render.lua:257-509`) and never stored, so its
-diff view cannot answer "is this a rename?" — `history/render.lua:309` has to re-derive it
-from the tree node. It also fuses root, revision and path into a `codediff://` buffer name
-that needs four regexes to reverse.
-
-So we are not copying either. We keep all three facts structured to the renderer, which is
-the step both of them skip.
-
-### What it fixed on screen
-
-The status line formats from structure, dropping parts in the order a reviewer can afford
-to lose them — directory first, then the rename source, never the file name:
-
-```text
-70 cols   deep/nested/dir/demo.rs → deep/nested/dir/renamed.rs   1 change  1/3
-34 cols   renamed.rs                                             1 change  1/3
-```
-
-A test asserts `(added)` no longer carries the path's style, and fails if the note is drawn
-with `status_path` again.
-
-### One more thing it settled
-
-`ui::Text` was a **presentation mode named after a content type**, sitting beside
-`SideBySide`, which is named after a layout — two different questions on one enum, one line
-apart. It is now `SingleFile`, and the axis is uniform:
-
-```rust
-enum Buffer {
-    SideBySide(..),   // two versions, two columns
-    Inline(..),       // two versions, interleaved      (later)
-    SingleFile(..),   // one version — from either mode
-}
-```
-
-Both diff modes fall back to `SingleFile` when a file exists on one side, because there is
-nothing to lay out against. Under the old name that had no obvious answer, and the plugin's
-version of not-answering-it is four near-identical `show_*_file` wrappers funnelling into
-one function.
-
-## D29 — `vcs::Changes`, because nothing there diffs anything
-
-`vcs` exposed a `Diff` trait in a `diff/` folder holding `FileDiff` and `DiffKind`. The name
-was defended in the crate's README as *"what git and jj both call it"* — but it was borrowed
-from the one git command this crate never runs. The three it does run are:
-
-```text
-files()          git status --porcelain=v2       what changed
-before(file)     git cat-file --batch           one version
-after(file)      std::fs::read                  the other
-```
-
-List, then fetch. Computing the difference between two versions happens two stages later, in
-the C engine. `FileDiff` was likewise not a diff — it is a status entry with a `kind`.
-
-So: `trait Changes`, `changes/`, `ChangedFile`, `ChangeType`, and the field is `change`
-rather than `kind` — a `kind: ChangeType` would repeat the same mismatch one level down.
-Each says what it is, and the
-word "diff" is left to the four things that genuinely are one — `diff-types` (what a diff
-is), `vscode-diff` (what computes one), `pipeline/diff.rs` (the stage that calls it) and
-`ui::Diff` (what gets drawn).
-
-`ChangeType`'s doc no longer has to explain why it is not called `Change`, because the
-conflict was with the *trait* name and that is gone.
-
-### Two scopes in one trait, worth knowing
-
-`files()` is repository-scoped; `before`/`after` are file-scoped. That is why no single word
-fit, and why the old name managed to describe neither. `Changes` names the listing, which is
-what the trait is *for*; reading one file's versions is how you follow it up.
-
-What flows downstream is always **one file**: a `ChangedFile` plus up to two
-`FileContent`s. A file present on one side is the same shape with one `Absent`, which is
-also what `File`'s `Option` pair says — so the single-file unit never needs a flag.
-
-### Caught while doing it
-
-Renaming `align::Side` to `DiffVersion` (D28) had been done with a blanket substitution, and
-`vscode-diff` had its own private `Side` enum for error reporting. The substitution renamed
-that too, producing a **second, unrelated `DiffVersion`** in a different crate — exactly the
-duplication D28 existed to remove, introduced by the commit that removed it.
-
-`vscode-diff` now names `file_types::DiffVersion`, and there is one definition in the
-workspace. `DiffVersion` deliberately has no `Display`: it is a selector, and how to spell it
-belongs to whatever is printing — an error says "original", a status line might say "before".
-
-## D30 — the contract is the types, so the trait went
-
-`vcs` exposed `trait Changes` with `files`, `before`, `after` and `repo`. Its stated job was
-neutrality: *"no index, no `HEAD`, no blob and no object id, because a system need not have
-any of them"*.
-
-It was not doing that job. One implementor, zero generic uses, and every call site importing
-it as `Changes as _` — the idiom for "I just want the methods in scope". An inherent `impl`
-wearing a trait's clothes.
-
-**The neutrality came from the types in its signatures, not from the trait.** `ChangedFile`,
-`File`, `RepoPath`, `FileContent` are all in `file-types`, which `cargo xtask lint-arch`
-forbids from naming `vcs`. A lint is not opt-in; a trait is — nothing stopped someone adding
-a `Git` method returning an `Oid`, and the trait would not have objected.
-
-Better still, the guard turned out to be structural. `vcs` depends on `file-types`, so an
-edge back is a **dependency cycle**: cargo refuses it before any lint runs. The rule is not
-merely enforced, it is unrepresentable.
-
-**What checks a backend has met the contract is the pipeline that calls it**, and that is
-the stricter test. A trait proves four methods exist with the right signatures; the pipeline
-proves they are the methods actually *needed* and that their results compose. A backend
-returning a `ChangedFile` the pipeline could not use would satisfy the trait and still not
-build.
-
-So `trait Changes` is gone, `Git`'s methods are inherent, and `vcs/src/changes/` with it.
-A second backend earns a trait extracted from two real implementations rather than guessed
-from one.
-
-### What moved, and the rule that decided it
-
-| | |
-|---|---|
-| **nouns** — `RepoPath`, `File`, `ChangeType`, `ChangedFile`, `FileContent`, `DiffVersion` | `file-types` |
-| **verbs and failures** — `Git`, `Repo`, `Error` | `vcs` |
-
-`Repo` stays because it is a property of the *repository*, not of a file: `control_dir` is
-where git keeps its own state, which the S15 watcher needs and no file has. The root is
-different — `RepoPath` carries both spellings, so `RepoPath::root()` recovers it by
-stripping the relative tail off the absolute, with no IO and no way for the two to disagree.
-That removed the last reason for `repo()` to be in the signatures.
-
-### The thing I got wrong three times
-
-Asked whether all of this could live in one crate, I twice answered with edits instead of an
-answer, and twice defended the split on "who names it today". That test is a snapshot: it
-would have kept `RepoPath` in `vcs` before `ui` existed. The rule that survives is **nouns
-below, verbs above** — a crate every layer names can hold no capability, because a
-capability needs an error type and an error type is a layer's own.
+| Buffer/View action | `ui`, this frame | µs |
+| Program action | terminal owner (quit, suspend) | µs |
+| Task | composition root, off-thread | ms |
+
+Resolving (turning keys into a command) and dispatching (sending it to the right
+executor) are separate. The resolver is a pure function of its own state and one
+key — no clock, no IO.
+
+The binding table is `const` data (using `crokey`'s `key!()` macro), so it can
+be printed into a help screen and walked by tests. No binding may be a proper
+prefix of another — this removes the need for a timeout.
 
 ---
 
-## D31 — a layout is a layout, and `align` owns both of them
+## D25 — `diff-types` is separate from the engine
 
-**Decision.** `align` exposes two layouts — `DiffLayout::SideBySide` and `DiffLayout::Inline`
-— behind one vocabulary shared with `ui`, and its admission criterion is amended from "never
-what it looks like" to **never what a row *looks* like**. Which row a line lands on is
-admitted; a style, a width or a cell is not.
+`align` needs to name a diff result but must not depend on the C engine (or it
+would require a C toolchain to build). The six diff structs live in `diff-types`
+— no dependencies, no build script. `vscode-diff` depends on it and re-exports.
 
-**Why it could not stay out.** `align::rows()` already *was* a layout: it pairs the two
-versions across a row, which is the definition of side by side. [D19](#d19) had already
-conceded as much — "a row count is already an answer to *how would this look side by
-side*". Keeping the pretence meant the second layout had nowhere to live but a renderer,
-where it would have been invisible to every test that does not draw.
+Result: `cargo build -p align` takes 0.7s, not 4.2s.
 
-**Why one vocabulary rather than two.** The alternative was `align::paired` / `align::unified`
-alongside `ui`'s side-by-side and inline: layout-free naming at the cost of two words for one
-concept. That is precisely what [D28](#d28) removed, one milestone earlier. A second name is
-a second thing to keep in step, and nothing keeps it.
+---
 
-**What the split bought.** `row.rs` holds the vocabulary — `ViewLine`, `Slot`, `ViewLineType` — and one
-generic `blocks(rows)`; `side_by_side.rs` and `inline.rs` are peers that walk the changes.
-Their entire difference is one line:
+## D26 — One pipeline, sequential stages
+
+The file pipeline: resolve → read both sides → diff → align → return. Five
+stages, five files, in `pipeline/`. The pipeline lives in `codediff` (now
+`pipeline` crate) because it is the only place that names `vcs`, `vscode-diff`
+and `align` together.
+
+`ui` defines what it consumes (`pipeline::file::DiffContent`). The consumer
+defining its own input keeps the dependency graph acyclic.
+
+---
+
+## D27 — View → Tab → Pane → Buffer
+
+Four levels, each containing the next. Buffers live in `View` referenced by
+`BufferId`, never by `&mut` reference (that would make the structure
+self-referential).
+
+Position lives on the pane, not the buffer — two panes over one buffer scroll
+independently.
+
+Side-by-side and inline are different buffer kinds, not one buffer with a flag.
+They emit different row sequences, so "row 40" would mean different things with
+a flag.
+
+`Alignment` owns its two files (no lifetime parameter). The earlier borrowed
+version forced a closure-based API and propagated `<'a>` through every type in
+`ui`.
+
+---
+
+## D28 — One vocabulary for a file: `file-types`
+
+`crates/file-types` is a leaf with no dependencies. It defines `RepoPath`,
+`ChangedFile`, `FileContent`, `DiffVersion`, `DiffType`. Every layer — `vcs`,
+`pipeline`, `ui` — names these same types, so a file's identity never degrades
+across boundaries.
+
+The status line formats from structure (dropping directory first, then rename
+source, never the file name) rather than from a pre-rendered string.
+
+---
+
+## D29 — `vcs::Changes` → `vcs::Repository`
+
+The crate runs `git status`, `git cat-file`, `git diff --numstat`. It does not
+compute diffs. So the types are `Repository`, `ChangedFile`, `ChangeType` — not
+`Diff` or `FileDiff`, which describe what happens two stages later in the
+pipeline.
+
+---
+
+## D30 — No trait for the VCS backend
+
+One implementor (git), zero generic uses, every call site importing the trait
+just for method resolution. The neutrality comes from the types in the
+signatures (`ChangedFile`, `FileContent` — all in `file-types`), not from a
+trait. A trait is added when a second backend exists to extract it from.
+
+---
+
+## D31 — `align` owns both layouts
+
+`align` exposes `DiffType::SideBySide` and `DiffType::Inline`. The difference
+is one line of arithmetic:
 
 ```rust
 let height = original.len().max(modified.len());   // side by side
 let height = original.len()  +  modified.len();    // inline
 ```
 
-Everything else is shared verbatim, because an inline row *is* a `ViewLine`: a deleted line is
-`(Line, Filler)` and an inserted one is `(Filler, Line)`, shapes the paired space already
-emits. So `ViewLineType` is derived unchanged, inner-change spans are looked up unchanged, and
-the cursor, `]c` and the status line needed no branch at all.
-
-**The property that makes a second walk trustworthy.** Almost nothing about the two spaces is
-comparable — different row counts, and row *n* of one is not row *n* of the other. Exactly
-one thing must hold: **each version reads back as its own file, in order, in either space.**
-Checked over the twelve vendored pairs plus twelve edge shapes. Three sabotages — insertions
-indexed without subtracting the deletions, insertions emitted before deletions, and the sum
-written as a max — were each caught by three or more of these tests.
-
-**A position is not portable, a line is.** Switching spaces translates the cursor through
-`line_at` then `row_at`. Carrying the row number instead would silently land the reader
-somewhere else, which is the failure a review tool can least afford.
-
-### The shape of a buffer, and one wrong turn
-
-[D27](#d27) had settled that side by side and inline would be *different buffer kinds*, "not
-one buffer with a flag", because a flag would let "row 40" mean different things depending on
-a field stored elsewhere. That holds, and the built code honours it: `BufferType::SideBySide`
-and `BufferType::Inline` are separate variants, so **the variant is the layout** and there
-is no field for a row count to fall out of step with. Both the renderer and the keymap
-dispatch on it without reading one.
-
-I first built it the other way — one kind holding a `DiffLayout` field — on my own initiative,
-mid-build, against an agreed plan. It was wrong twice over: wrong as process, and wrong in
-substance, because it needed a name and the only one available was a synonym for "diff",
-which is the second-vocabulary bug [D28](#d28) had just removed. That a design cannot be
-named without inventing a synonym is usually the design talking.
-
-What was true in it was the complaint that produced it: everything except the divider was
-identical between the two kinds, so two kinds meant two copies of change navigation with one
-field's difference between them. Rust has no inheritance and traits cannot carry fields, so
-the answer is composition:
-
-```rust
-struct Buffer { rows, blocks, exhausted, buffer_type: BufferType }   // written once
-enum BufferType { SideBySide(…), Inline(…), SingleFile(…) }          // only what differs
-```
-
-`SideBySide` adds the column divider. **`Inline` adds nothing**, which is the finding rather
-than an oversight: reading a diff inline needs no state that reading it in two columns does
-not. `SingleFile` has no `Diff` at all — which is also why that field cannot be lifted to the
-parent, since an `Option<Diff>` there is the empty-model trap [D23](#d23) records.
-
-One consequence, accepted rather than worked around: **the divider does not survive a trip
-through inline.** It belongs to `SideBySide`, and inline has no columns to divide, so there is
-nowhere for it to wait. The alternatives were a field `Inline` never reads, or a percentage on
-the parent that is meaningless for a lone file.
+Everything else (fillers, change types, inner-change spans) is shared. Both
+yield the same `ViewLine` type.
 
 ---
 
-## D32 — one word per idea, and a lint that keeps it
+## D32 — One word per idea
 
-**Decision.** A view line is a `ViewLine`, never a `Row`. A type that classifies uses the
-suffix `Type`, never `Kind`. `cargo xtask lint-arch` refuses `Kind`, `Data`, `Info`,
-`Manager`, `Helper` and `Handler` in any type **we declare**.
-
-**`ViewLine` over `Row`.** The distinction it protects is real and load-bearing: a **file
-line** is content, a **view line** is a position it can appear at. One file line can occupy
-two view lines — inline shows a modified line's old and new versions separately — and one
-view line can hold two file lines, side by side. The same file was 100 view lines in one
-layout and 147 in the other. VSCode names this exact pair `modelLineNumber` and
-`viewLineNumber`; Neovim calls it buffer-line versus screen-line.
-
-**The caveat, recorded rather than discovered later.** At **S10a** wrapping arrives, and then
-one `ViewLine` may occupy several *screen* lines. `ViewLine` survives that — a view line is a
-position in the laid-out document, not a row of the terminal — but `ScreenLine` would not
-have, which is why that candidate was rejected.
-
-**`Type` over `Kind`.** Not taste: `ChangeType` (63 uses) and `BufferType` (33) were already
-here, against one `RowKind` (44) that I wrote by importing `std::io::ErrorKind`'s convention.
-A second word for one idea is the failure [D28](#d28) removed, and it had come back within a
-milestone.
-
-**Why a lint and not a note.** The convention had already been broken once by someone who
-knew it — the same failure mode as the size cap, which is why that is a lint too. The check
-reads *declarations only*, so `std::io::ErrorKind` and crossterm's `KeyEventKind` pass
-untouched: other people's vocabulary arriving through a `use` is not ours to rename.
-Sabotage-checked in both directions.
-
-**What the banned words have in common** is that they classify without saying anything. The
-`enum` keyword already announces that a thing has variants; `Kind` repeats it. The word that
-carries meaning is the noun beside it.
+A view line is `ViewLine`, never `Row`. A classifying enum uses the suffix
+`Type`, never `Kind`. `cargo xtask lint-arch` refuses `Kind`, `Data`, `Info`,
+`Manager`, `Helper`, `Handler` in any type we declare.
 
 ---
 
-## D33 — one definition of `SideBySide` and `Inline`
+## D33 — `DiffType` defined once
 
-**Decision.** `DiffLayout { SideBySide, Inline }` is defined once, in `align`. Everything
-else holds a *value* of it rather than restating the words.
-
-**What it was.** Four definitions of one idea:
-
-```text
-align::ViewSpace::{SideBySide, Inline}                picks a walk
-ui::input::Context::{SideBySide, Inline}              picks a keymap
-ui::view::buffer::BufferType::{SideBySide, Inline}    carries data
-ui::view::buffer::{SideBySide, Inline}                the data
-```
-
-**What it is.**
-
-```rust
-pub enum DiffLayout { SideBySide, Inline }        // align — the only definition
-
-pub enum BufferType { SideBySide(..), Inline(..), SingleFile(..) }   // selects a layout
-pub enum KeymapType { Diff(DiffLayout), SingleFile }                 // holds one
-```
-
-**Where a shared word lives.** *The lowest crate that every crate naming it can reach — and
-no lower.* `DiffLayout` is named by `align` and `ui`, and `ui → align`, so `align` is that
-crate. `DiffVersion` is also named by `vscode-diff`, which cannot see `align` in either
-direction, so it had to sink to `file-types`. A leaf crate exists for words shared by layers
-that *cannot* see each other; sinking this one would claim a sharing that does not exist.
-
-**Why not a crate called `types`.** It was proposed, and refused for the reason
-[D32](#d32) bans `Data` and `Info` in type names: a name describing a thing's Rust-ness
-rather than its subject has **no admission criterion**, so nothing can ever be refused from
-it. Every other crate here has one — `align` asks "does this say which line appears where",
-`file-types` asks "is this part of what a file under review is". `types` would ask "is this a
-type", which everything passes. That is how a junk drawer forms, and it is the crate-scale
-version of the flat structure this project exists to escape.
-
-**Why `KeymapType` is not `Option<DiffLayout>`.** Tempting — a diff has a layout, a lone file
-has none. But the explorer at S12 is a *third* answer, not an absent one, and under
-`Option` it would silently inherit the lone file's keys. The enum exists to name buffers that
-are not diffs.
-
-**What it does not mean.** Two buffer *types* naming `SideBySide` and `Inline` is not a second
-definition — they select which `DiffLayout` to walk with, and cannot disagree about what the
-words mean, because they hold no meaning of their own. [D35](#d35) settles that shape.
-
-**`Context` went with it.** VSCode jargon — "context" of what? It selects a keymap, so
-`KeymapType`, matching `BufferType`.
+`DiffType { SideBySide, Inline, Single }` is defined once in `file-types`.
+Everything else holds a value of it rather than restating the variants.
 
 ---
 
-## D34 — a brick may not know the model
+## D34 — Render bricks don't know the model
 
-**Decision.** `ui/src/render` puts characters and colour on a cell grid and **may not name
-`crate::view`**; `ui/src/draw` is what knows that a side-by-side diff is two of those columns
-with a divider between them. `cargo xtask lint-arch` enforces it.
-
-**What it was.** One `render/` folder holding two unrelated jobs, which its own imports gave
-away:
-
-```text
-cells · gutter · layout · column · line     names `view` 0 times
-screen · side_by_side · inline · single_file · status   names it 1–3 times
-```
-
-The first group can be handed a rectangle and some text by anything. The second cannot exist
-without knowing what a buffer is. Mixing them meant a brick could quietly grow a dependency
-on the model, and nothing would have noticed.
-
-**Why the words are not synonyms.** **Render** turns a value into marks; **draw** composes
-marks into what a buffer type looks like. `draw` names `render`, never the other way round,
-and the entry point reads `draw::render(...)` — the outer layer asking the inner one to put
-it on the screen.
-
-**What it protects.** A brick stays testable without a model, and reusable by a buffer type
-that does not exist yet — the explorer at S12 needs gutters and cells and knows nothing about
-diffs. It also keeps the drawing out of `view/`, which was the alternative considered: putting
-each buffer type's drawing beside its state would have given `view/buffer/inline.rs` real
-content, at the cost of a model that can no longer be tested without a terminal. Today
-`type_keys(&mut s, "]c]c")` needs no screen.
-
-**Checked as text**, because Rust cannot say "this module may not import that one" within a
-crate. Sabotage-checked both ways: a brick naming `crate::view` fails, and so does the
-directory going missing — the failure mode that silently disabled the clock-free rule when
-`display` was renamed to `ui`.
+`ui/src/render/` (cells, gutter, column, line, layout) puts characters on a
+grid. It may not name `crate::view`. `ui/src/draw/` composes those bricks into
+what a buffer type looks like. Enforced by `lint-arch`.
 
 ---
 
-## D35 — the divider is what makes them two types
+## D35 — The divider belongs to `SideBySide`
 
-**Decision.** `BufferType` has three variants, not two: `SideBySide { diff, divider }`,
-`Inline { diff }`, `SingleFile { file, lines }`. The divider does **not** survive a switch to
-inline and back.
-
-**The argument.** The divider is the *only* difference between the two layouts at the buffer
-level — everything else was already lifted to the `Buffer` parent. So there are exactly two
-consistent shapes, and no third:
-
-| the divider lives on | can they be two types? | survives a switch? |
-|---|---|---|
-| `SideBySide` only | **yes** | no |
-| both types, the parent, or the viewport | no — they would be identical | yes |
-
-An intermediate `DiffBuffer { diff, layout, divider }` was built first and rejected: it kept
-the divider, but at the price of an extra level nobody expected, dispatch on a field rather
-than a variant, and a type whose two halves — a layout selector and a column setting — have
-nothing to do with each other.
-
-**Why forgetting it is the right behaviour, not merely the cheap one.** Pressing `t` is a
-reader saying they do not want columns. Coming back to the default split answers that, and it
-is what an editor does with a panel you closed. The alternative is a field `Inline` carries
-and never reads.
-
-**What it buys.** `draw/screen.rs` and the keymap match a variant the compiler checks. A third
-buffer type — the explorer at S12 — cannot be silently absorbed into an existing arm, which is
-exactly what `Option<DiffLayout>` would have allowed.
+`BufferType` has three variants: `SideBySide { diff, divider }`,
+`Inline { diff }`, `SingleFile { file, lines }`. The divider does not survive a
+switch to inline and back — inline has no columns to divide.
 
 ---
 
-## D36 — what to take from VS Code, `delta` and `bat`
+## D36 — What to take from VS Code, delta, and bat
 
-**Decision.** For syntax highlighting, a feature is **included unless it exists only to
-support editing**. Nothing is left out for being inconvenient, and every exclusion is written
-down. The full audit lives in [`crates/syntax/README.md`](../../crates/syntax/README.md).
+A feature is included unless it exists only to support editing. The audit is in
+`crates/syntax/README.md`.
 
-**Why the rule.** An earlier pass of mine classified three things as "editing" that are not —
-the background pass, viewport-first rendering, and size limits — and dropped them. All three
-exist for reasons a read-only viewer has too. The rule inverts the burden of proof onto
-whoever wants to leave something out.
-
-**Why an inventory rather than questions.** The first research pass answered *my* questions,
-so it could only cover what I thought to ask, and it silently missed unicode/confusable
-highlighting, the theme-fidelity problem, and `bat`'s entire input-hardening layer. The second
-pass **enumerated** — every file, every setting, every constant — and cross-checked against
-the two read-only syntect tools. Completeness is a property of the method, not of the summary.
-
-**The three findings that changed the design:**
-
-1. **Ten abstract token kinds is materially lossy.** `dark_plus` resolves 65 rules over ~190
-   scope selectors and needs 20–25 colours to look like itself; `keyword` ≠ `keyword.control`,
-   `meta.template.expression` resets interpolated code back to the code colour, and rules are
-   language-qualified and parent-scope-contextual. `delta` and `bat` both use `.tmTheme` at
-   full fidelity. This **revises [D17](#d17)**: the crate still reports what text *is* and `ui`
-   still owns colour, but a scope is a path, not one of ten names.
-
-2. **`delta`'s six-year-old bug is an artefact of its input, not of syntect.** It resets the
-   highlighter per hunk, so multi-line constructs are highlighted wrongly — issues #117, #162,
-   #316, #509, #577, #886, #1091. We read whole file snapshots, so the class does not exist
-   for us. It is worth a test rather than a workaround.
-
-3. **`bat`'s input layer is not optional.** Tab stops must be computed *before* highlighting or
-   spans and columns disagree; bidi and zero-width sanitisation is a security control on a tool
-   that shows untrusted branches; long lines must be cut `bat`'s way (swap in `"\n"`,
-   preserving parse state) rather than `delta`'s (truncate, corrupting it).
-
-**Measured, not assumed.** syntect with `onig` runs at **~45 000 lines/sec** (114 ms for 5 000
-lines; 82 ms for a real 3 857-line file). `fancy-regex` is **four times slower** and ships a
-reduced grammar set, so `onig` it is — the same Oniguruma VS Code compiles to WASM. This is
-what makes VS Code's *guessed* start state unnecessary for us: their guess exists to avoid
-freezing on an exact prefix parse, and can be wrong.
-
-**Deferred, not dropped.** Bracket-pair colourisation, indent guides, whitespace rendering and
-sticky scroll are not edit-specific and are therefore in scope for the product — as their own
-milestone, not as part of S11.
-
-**Corrected by building it.** The 45 000 lines/sec above was measured with a *two-rule*
-palette. With the real 78-selector table it is **18 500 lines/sec**, because every scope
-change is matched against every selector — which is what `bat` pays too. The conclusion that
-`onig` beats `fancy-regex` fourfold is unaffected; the conclusion that an exact prefix parse
-is cheap enough to never need VS Code's guessed start state survives, but only because of
-`limits::LEAP` — see [D38](#d38--a-frame-colours-at-most-a-leap-of-lines).
+Key findings: ten abstract token kinds is lossy (a real theme needs ~25
+colours); delta's per-hunk reset is a bug we avoid by reading whole files; bat's
+tab/bidi/long-line handling is a security control we adopt.
 
 ---
 
-## D37 — a span carries a pen, not a colour
+## D37 — A span carries a pen, not a colour
 
-**Decision.** `syntax::Span` reports `Pen(u16)` — an index into a table `ui` supplies — rather
-than an `Rgb`. The scope-to-pen table (`ui::theme::scopes`) is one shared constant; the
-pen-to-colour table (`ui::theme::code`) is per theme.
-
-**What forced it.** The first draft put `Rgb` in a `Rule`, and it did not survive contact with
-`basic-dark`. That theme exists *because* its terminal has no 24-bit colour: Catppuccin's diff
-backgrounds are eighteen percent of an accent, and a terminal that quantises them rounds them
-straight back into the background, leaving a diff with no visible diff in it. Handing that
-theme RGB syntax colours would have broken the one invariant it has — and its own test, which
-asserts that nothing in it names a 24-bit colour, would not have caught it, because a syntax
-colour is not one of the `Style` fields it walks.
-
-An index cannot express the mistake. `basic` answers `Color::Indexed`, and the test now walks
-the syntax table too.
-
-**Two things fell out that were not the reason but are worth as much:**
-
-- **Changing theme re-reads nothing.** No span mentions a colour, so a theme switch is a table
-  lookup rather than an invalidation. Had the colour been baked in, every span in every open
-  file would have had to be recomputed.
-- **The scope table is shared.** Which scopes are keywords is a fact about TextMate, not a
-  choice a theme makes, so it is one constant rather than one per theme — and adding a theme
-  is 31 colours rather than 78 rules.
-
-**Precedent.** VS Code's token metadata packs an index into a `ColorMap` for the same reason:
-it renders `class="mtk5"`, a numbered class, not a colour.
-
-**The cost.** A `Span` is meaningless without the palette that produced it. That coupling is
-real but was already there — a span is meaningless without the *file* it describes too — and
-`Code::pen` answers `None` for a pen it does not recognise, so the failure mode is an
-uncoloured character rather than a panic.
+`syntax::Span` reports `Pen(u16)` — an index into a table `ui` supplies. This
+means changing theme invalidates no span, the `basic` theme can use indexed
+colours safely, and the scope table is one shared constant rather than one per
+theme.
 
 ---
 
-## D38 — a frame colours at most a leap of lines
+## D38 — Frame-based colouring budget (superseded)
 
-> **Superseded by [D41](#d41--colouring-happens-on-a-thread-of-its-own).** The problem was
-> real and the reasoning below still explains why; the answer was wrong. Slicing work against
-> frames cannot survive an engine whose smallest unit is indivisible, and `tree_sitter` has
-> two of those. `LEAP` and the idle pass are gone.
+> Superseded by D41. The reasoning explains why; the answer (thread) replaced it.
 
-
-**Decision.** `Highlighted::reach` stops after `limits::LEAP` (2 000) lines and returns. What
-it could not reach is drawn plainly and finished by the idle pass, which redraws once when it
-catches up.
-
-**Why.** Colouring line N requires parsing every line above it — the state is sequential, and
-no cache changes that. `limits::MAX_LINES` is VS Code's 300 000, and at the 18 500 lines a
-second measured, `G` in such a file would freeze the interface for **sixteen seconds**. VS
-Code has exactly this problem and answers it by time-slicing and showing untokenized text
-meanwhile.
-
-**Why lines rather than milliseconds.** VS Code budgets in milliseconds because it has a
-clock. `cargo xtask lint-arch` forbids `ui` a clock — the reason snapshots are reproducible —
-so the budget is a line count instead. 2 000 lines is about a ninth of a second and is longer
-than almost every file anyone reviews, so in the ordinary case nothing is ever deferred and
-the cap costs nothing.
-
-**Why the idle pass needs no thread.** `crossterm::event::poll` with a 2 ms timeout is a
-background tokenizer with no thread, no channel and no clock: an idle terminal is idle for
-whole seconds, and a slice is 64 lines. It redraws **only** when what is on screen is not
-coloured yet, which happens after a leap and at no other time — otherwise it would repaint an
-identical screen five hundred times a second. Once the file is read the loop blocks properly
-rather than spinning.
-
-## D39 — two engines, one file each
-
-**Decision.** `syntax` carries **both** a parser (`tree-sitter`, 25 languages) and the matcher
-(`syntect` + `two-face`, 183). The seam picks **one per file**: parse where we have a grammar,
-match where we do not. Never both on the same file.
-
-**What forced it.** A TextMate grammar recognises *shapes*, not *references*. Measured on this
-repository's own source, Sublime's Rust grammar leaves **35% of identifiers with no scope at
-all** — `Rect`, `Cells`, `DiffVersion`, `Painter` all come back as bare `source.rust
-meta.block.rust`. `bat` on the same files leaves exactly the same words uncoloured, which is
-how we know it is the grammar's ceiling and not our theme's. A parser knows `Rect` is a
-`type_identifier`; the same measurement is **21%**, and what remains is plain locals, which
-Catppuccin draws in the ordinary text colour anyway.
-
-**Why not layer them, as VS Code does.** VS Code runs TextMate *and* a language server and
-paints the server's tokens on top. Measured here, the union of both engines colours **93%** of
-identifiers against the parser's **92%** — one point, for 34 junk words (`range`, `_`, `h`,
-`n`), at the price of the slower engine's whole pass. The two disagree on ~370 words and the
-parser is systematically right (`.len()` is a method, not a builtin; `self` is a language
-builtin). **VS Code layers because its upper layer is sparse** — a language server resolves
-what it can and the grammar fills the gaps. Ours is dense and strictly better, so there is
-nothing left for a lower layer to fill.
-
-**Why the matcher stays.** 183 languages against 40 maintained grammars. Dropping it would
-lose Dockerfile, Makefile, `.patch`, Kotlin, Dart, Perl, INI, LaTeX and the rest of the long
-tail — for a tool whose job is "show me whatever the agent touched", that is the wrong trade.
-It is a permanent half of the design, not a transition.
-
-**What makes it cheap.** [D37](#d37--a-span-carries-a-pen-not-a-colour)'s pen. Both engines
-emit `Span { bytes, style: Style { pen } }`, and the pen space is shared — scope selectors
-first, capture names after — so `Code::pen` resolves a span without knowing which engine
-produced it. The indirection was added for `basic-dark`; that it also makes two engines
-interchangeable was luck.
-
-**What it costs, honestly.**
-
-- **The binary is 3.6 MB → 40 MB.** 36 MB of it is `.rodata`: generated parse tables. Four
-  grammars are more than half (C# 11 MB, Scala 10, Haskell 8, Swift 8). It is memory-mapped,
-  so a session reviewing Rust pages in Rust's 2 MB and never touches Scala's — measured
-  resident memory after startup is **5 MB**, and 9 MB after colouring a file.
-- **Two tables that must agree.** A TextMate selector and a capture name must land on the same
-  `Token`, or one file looks different from another. Dispatch makes this a per-language
-  property rather than a per-byte one, and `ui/tests/languages.rs` checks every language
-  through the real seam without naming an engine.
-- **Known disagreements are written down**, in `the_two_engines_differ_where_the_grammars_do`.
-  C's grammar calls `int` a type where TextMate calls it storage; the matcher picks format
-  specifiers out of a string where no grammar does. Neither is a bug, and a difference nobody
-  recorded is a difference nobody notices.
-
-**Three traps found while building, all silent.**
-
-1. **A query can be an *increment*, not a whole query.** TypeScript ships five captures and C++
-   six, because upstream expects them composed with JavaScript's and C's. Nothing in the crate
-   says so; the symptom is a language that comes back entirely plain.
-2. **An unrecognised capture still wins.** Three grammars write `(comment) @comment @spell`.
-   `@spell` is Neovim metadata, resolves to nothing here, and *suppresses* the `@comment` next
-   to it — so Swift, Haskell and SQL had no comments at all. `without_metadata` strips them.
-3. **The later pattern wins**, which is the opposite of TextMate. JSON captures keys and then
-   captures every string, so its own key rule never fires. Overrides are therefore *appended*,
-   which is the same thing Helix and nvim-treesitter do by forking the whole file.
-
-**Why not nvim-treesitter's queries.** The only thing they add over the crates' own is
-`(identifier) @variable`, which Catppuccin paints in the ordinary text colour — no visible
-difference — and they use Neovim-only predicates (`#lua-match?`) that `tree-sitter-highlight`
-**silently ignores**, turning `((identifier) @type (#lua-match? @type "^[A-Z]"))` into an
-unconditional `(identifier) @type` and painting every word as a type. All cost, no benefit.
+Slicing work against frames cannot survive an engine whose smallest unit is
+indivisible, and tree-sitter has two of those (`Query::new`, `highlight`).
 
 ---
 
-## D40 — a frame never prepares a language
-
-> **Superseded by [D41](#d41--colouring-happens-on-a-thread-of-its-own).** This bought
-> ten-millisecond text at the price of a 186 ms keypress, which is the same bug moved rather
-> than fixed. Kept because it is the measurement that forced the thread.
-
-
-**Decision.** `Moment::Frame` may colour only with a language already prepared;
-`Moment::Idle` prepares. A file in a language not yet seen draws plainly for one frame and
-colours a moment later.
-
-**Why.** `tree_sitter` builds an index from a query's text against the grammar, and it is not
-free: **16 ms for Rust, 90 ms for Swift, 100 ms for Scala, 180 ms for Haskell** — measured on
-0.26, once per language for the life of the process. Doing that while a frame waits is a
-visible stall on the first file of a session.
-
-**Why it cannot be done at build time.** A compiled query is an opaque C structure full of
-pointers; there is no serialisation API, and `ts_query_new` is the only constructor. Upstream
-tracks this as [tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942),
-open since November 2022 with a 1.0 milestone. **Nothing is compiled on the reader's machine** —
-the C grammars are compiled when *we* build, and the shipped binary links only libc — but the
-index cannot be prebuilt and shipped.
-
-**Why this is the same bargain as [D38](#d38--a-frame-colours-at-most-a-leap-of-lines).** Both
-say: a frame does what is cheap, draws the text regardless, and the idle pass finishes.
-`caught_up` already existed to say when that had happened, and `read_more` already existed to
-do it. The change is one enum through the seam.
-
-**Measured on the real binary**, cold start, release:
-
-| | first text | first colour |
-|---|---|---|
-| Rust | 9 ms | 30 ms |
-| Haskell | 12 ms | 226 ms |
-
-The text appears in about ten milliseconds whatever the language, which is the property worth
-having. What remains is that the idle pass itself blocks for the length of one preparation, so
-a keypress in the first 200 ms of a Haskell file can wait — one time, per language, per
-session. Moving it to a thread would fix that and cost a thread; it is not worth it yet.
-
-**A latent bug this exposed.** `read_more` returned `true` unconditionally when unfinished. If
-an engine ever appends nothing — a query that cannot be built — the idle loop would spin
-forever, redrawing at full speed. It now ends the file when an idle pass achieves nothing.
-`every_language_in_the_table_compiles_its_query` proves the condition is currently
-unreachable, and the guard is written down as defensive rather than tested.
-
-## D41 — colouring happens on a thread of its own
-
-**Decision.** A worker thread colours; the interface asks and installs. `ui` never
-computes a colour, and there is no path by which it can wait for one. `std::thread` and
-`std::sync::mpsc`; no runtime, no locks, no shared state.
-
-**What forced it.** Two engines, and the parser has no unit of work small enough to hide
-between keystrokes:
-
-- **`Query::new` is indivisible** — 16 ms for Rust, 247 ms for Haskell, once per language per
-  process. There is no serialisation API, so it cannot be prebuilt and shipped
-  ([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942), open since
-  2022 with a 1.0 milestone). We use 119 of Haskell's 120 patterns, so there is nothing to
-  trim either.
-- **`highlight` has no range API** — the whole document, every call.
-
-[D38](#d38--a-frame-colours-at-most-a-leap-of-lines) and
-[D40](#d40--a-frame-never-prepares-a-language) were both attempts to schedule that against
-frames, and both were workarounds for the same fact. D40's measured result was the tell: text
-in 12 ms, and a keypress during the first Haskell file answered in **186 ms**. The text was
-never the problem.
-
-**Measured, before and after**, on the real binary, cold start:
-
-| | text | colour | keypress during painting |
-|---|---|---|---|
-| D40 (idle pass) | 9–12 ms | 30 / 226 ms | 10 ms … **186 ms** |
-| D41 (thread) | 12–18 ms | 46–62 ms | **0–13 ms** |
-
-**Why threads and not `async`.** One job, and it is processor-bound. A runtime would add a
-scheduler with nothing to schedule, and ~100 crates. `mpsc` is multi-producer,
-single-consumer, which is the shape.
-
-**The loop, and why "poll" no longer means what it did.**
-
-```text
-loop {
-    collect()                  // whatever the painter finished; never waits
-    wait for a key             // 16 ms while painting, for ever otherwise
-    handle, draw
-}
-```
-
-The old `poll(2ms)` was a *work* interval — the loop did 64 lines in the gaps, so it had to
-stay small. The new 16 ms is a *collection* interval: one frame at sixty hertz, past which
-nobody can see the difference. A keypress ends the wait immediately either way, so it never
-paces the answer to a key. With nothing being painted the loop blocks on `read()` at no cost,
-exactly as it did before any of this.
-
-**What crosses the boundary.** [`Highlighted`] holds a raw pointer from the regex engine
-underneath `syntect` and is **not `Send`** — so it never leaves the worker. Text goes in,
-spans come back, both plain data, and the compiler enforces it. That is why the model now
-holds `Colours` (spans) rather than a highlighter: not a preference, a requirement.
-
-> **Partly superseded by [D42](#d42--the-interface-keeps-every-colour-the-worker-keeps-only-its-place).**
-> The thread is right and stays. What this got wrong is that it made the worker read whole
-> files eagerly and left the interface with nowhere to keep a second file's colours. D42 puts
-> the cache back on this side and the laziness back in the worker, and stores nothing twice.
-
-**Deleted:** `Moment`, `limits::LEAP`, `limits::MAX_PARSED_LINES`, `SLICE`, `read_more`,
-`caught_up`, and `Highlighted`'s stored `reading`. **Kept:** `MAX_BYTES`, `MAX_LINES`,
-`MAX_LINE_CHARS` — those say "this file is not worth colouring", which has nothing to do with
-scheduling.
-
-**Two things that fell out.**
-
-- `MAX_PARSED_LINES` sent long files to the matcher because a whole-file parse would hold a
-  frame. There is no frame to hold now, and on a long file the parser is ten times faster — so
-  the cap was not merely unnecessary, it was backwards.
-- A **layout toggle keeps its colours**. Spans are keyed by file line and `flipped` carries
-  the whole diff across, so toggling does not repaint. Pinned by a test, because it is exactly
-  the sort of thing that would regress silently.
-
-**Staleness, built in before it is needed.** A [`Version`] rides on every request and returns
-on every answer. Nothing today can invalidate a file mid-paint — but the file watcher at S13
-can, and the explorer at S12 can outrun one. Retrofitting that after the first wrong-colours
-bug is how you get a heisenbug.
-
-**Tests stay deterministic.** `Session::settle` blocks until everything outstanding has
-arrived, using the same two calls the loop uses — so a test exercises the real path rather
-than a shortcut past it, and waits exactly as long as the work takes.
-
-**One thread, and a lint that keeps it that way.** `cargo xtask lint-arch` refuses
-`thread::spawn` anywhere but `crates/ui/src/syntax/mod.rs`, so "which thread owns this?" keeps
-an obvious answer. Tests are exempt: proving two things do not block each other takes two things.
-
-[`Version`]: crate::syntax::Version
-[`Highlighted`]: syntax::Highlighted
-
-## D42 — the interface keeps every colour; the worker keeps only its place
-
-**S11d.** [D41](#d41--colouring-happens-on-a-thread-of-its-own) moved colouring to a thread
-and, in doing so, quietly threw two things away. Both are back, and the model that brings them
-back is smaller than the one that lost them.
-
-**What was lost.** Before the thread, `Highlighted` was the cache: the drawer borrowed spans
-straight out of it, so scrolling back was free, and it read only as far as anyone had looked.
-After the thread it became neither. The worker read whole files eagerly — nothing else was
-possible with `reach` called in a loop to the end — and its stored spans were copied out and
-then never read again, so a 300,000-line file held roughly 24 MB twice. And with one buffer and
-no explorer there was nowhere for a *second* file's colours to live at all.
-
-**Where things live now, and why each has no choice.**
-
-| | interface thread | syntax worker |
-|---|---|---|
-| every span, for every file open | ✓ | |
-| the engine's position in an unfinished file | | ✓ |
-
-Drawing cannot wait: to draw line 100 the frame needs line 100's spans *now*, so the spans must
-be on this side. Resuming cannot cross: `Highlighted` holds a raw pointer from the C regex
-library underneath `syntect`, so the bookmark must be on that side. Neither placement is a
-preference. Both are forced, and together they mean **nothing is stored twice** — `Highlighted`
-now keeps a count and writes its spans into a buffer the worker hands straight on.
-
-**The worker has no session.** A request carries everything needed to answer it from scratch,
-so the memos it keeps are a cache in the strict sense: delete them and every answer is
-identical, only slower. That is what lets the interface evict whatever it likes without telling
-anyone.
-
-```rust
-struct SyntaxRequest  { key, version, text: Arc<Vec<String>>, have: u32, want: u32 }
-struct SyntaxResponse { key, version, from: u32, spans: Vec<Vec<Span>>, more: bool }
-```
-
-No engine type appears in either — checked by the compiler, since anything from those engines
-would fail to be `Send`. `have` is the field that makes eviction safe: it says how much the
-asker still holds, so a bookmark further down a file the asker has forgotten is recognised as
-answering a question nobody asked, and reading starts again.
-
-**Identity is the path plus the side, and the path is also the language.** One string doing
-both jobs is not a shortcut — the language must be read from the path on *that* side, because a
-`.py` renamed to a `.rs` is Python on the left and Rust on the right. This is enough while a
-review is one comparison, since then a path has exactly one original and one modified.
-Comparing arbitrary revisions will want git's object id instead, which is better still: an id
-*is* the content hash, so two files sharing one could share an entry.
-
-**Eviction is least-recently-used, capped by lines rather than files.** Files differ by three
-orders of magnitude, so counting them measures nothing; spans run about 80 bytes a line, so the
-800,000-line budget is roughly 64 MB. The file being read is never dropped — it is touched
-every frame, so it is never the least recent, and that falls out of the ordering rather than
-needing a rule.
-
-**Nothing is queued behind a request, and that is the interesting part.** The obvious design
-holds the newest request for a busy file and sends it when the current one finishes. It is
-wrong, and a test caught it: a request says how much the asker already has, and that number
-moves every time an answer lands — so a held request is answered from a starting point that has
-gone stale, and its lines are refused on arrival, and the file silently stops being coloured.
-Nothing is held. A second request for a busy file is dropped, and the interface re-asks after
-the next answer with a number that is current. Asking is a lookup, so asking again is free.
-
-**Only one engine is actually lazy.** The matcher stops where it is asked and carries on later;
-the parser has no range API and reads a whole file however little was wanted. `reach` says how
-far the caller would like to get and `done` says how far it got, which is the entire seam
-between them — and a parsed file is never remembered, because there is never anything left
-over. So laziness is real for the long tail and inert for the 25 parsed languages, which is a
-limit of the engine rather than of this design.
-
-**Read-ahead of 2,000 lines.** Asking only for the screen would mean a request every time a
-line scrolled into view, each waiting on the last. Two thousand lines is one chunk of the
-worker's work, so an ordinary scroll finds its colours already there. View lines are used
-rather than file lines: filler rows only ever make a view line number larger, so this
-over-asks slightly and can never under-ask.
-
-**Measured, on a 20,000-line Perl file in a debug build:** coloured on open in 0.91 s, worst
-keypress 10.2 ms while the worker was busy.
-
-**One thing this found by accident.** `Session::settle` could spin for ever if the store and
-the worker disagreed about how far a file had been read. It cannot happen while `have` is
-honest, but a sabotage test hung instead of failing, which is the worse failure. It now stops
-after eight answers in a row that install nothing.
-
-[`Store`]: crate::syntax::Store
-[`Syntax`]: crate::syntax::Syntax
-
-## D43 — the engines' own words live in `syntax`, not in the theme
-
-**S11e.** Two tables translate what an engine reports into what we call it: the matcher's
-`comment.line.double-slash.rust` and the parser's `comment` both become `Group::Comment`. Both
-tables lived in `ui/src/theme/`. Both have moved to `syntax/src/engine/`, beside the engine
-whose words they hold.
-
-**Why they were in the wrong place.** Three tests, all failed by the old position.
-
-*Replace tree-sitter with a different parser.* `captures.rs` is rewritten entirely — every row
-is a name from a grammar's `highlights.scm`. `Code`, `catppuccin.rs` and `basic.rs` do not
-change at all. A file that changes only when the engine changes belongs with the engine.
-
-*Read the lint.* `lint-arch` says a syntax engine "may only be named inside
-`crates/syntax/src/engine`, so that swapping engines touches nothing else". It looks for the
-words `syntect` and `tree_sitter`. `theme/captures.rs` never wrote `tree_sitter`; it wrote
-tree-sitter's *vocabulary*, several hundred lines of it. It passed the rule and defeated its
-purpose.
-
-*Ask what the crate is for.* `syntax` exists to make two engines look like one. Two engines
-look like one only if they answer in the same words. Those words are `Group` — so it is the
-crate's output vocabulary, not the theme's input vocabulary. Under the old arrangement the two
-engines agreed only because `ui` built two tables carefully; a word in one and not the other
-would have gone unreported.
-
-**The pens are now assigned once.** Before, `scopes.rs` numbered itself from zero,
-`captures.rs` numbered itself from `BASE = SCOPES.len()`, and `theme::token()` read both back
-with matching arithmetic — three files, one agreement, held by a test. Now `Palette::new`
-numbers both tables and `role()` reads them back ten lines away. The tables carry no `Pen` at
-all; they carry a selector, a role, and their emphasis. `BASE` is gone.
-
-**This does not weaken what `Pen` is for.** `style.rs` promises the crate never learns what a
-colour is, and it still does not: a role says a stretch of text is a keyword, not that it is
-mauve. All three reasons the indirection exists survive — a terminal without 24-bit colour
-still gets `Color::Indexed` from `ui`, changing theme still invalidates no span, and the table
-is still one shared constant rather than one per theme.
-
-**What `ui` is left with:**
-
-```
-theme/
-├── mod.rs          Theme
-├── code.rs         Code — Group → Color       ← taste, and nothing else
-├── colour.rs       Rgb, blend
-├── basic.rs        one theme
-└── catppuccin.rs   four themes
-```
-
-and two calls: `syntax::Palette::new()` and `syntax::group(pen)`.
-
-**A new lint keeps it there.** `crates/ui/src` may not name `syntax::engine`, so the interface
-cannot start assembling its own palette again. Sabotage-checked.
-
-**Also renamed: `Token` → `Group`, which is Vim's word for exactly this.** `:help group-name`:
-
-> *"A syntax group name is to be used for syntax items that match the same kind of thing.
-> These are then linked to a highlight group that specifies the color. **A syntax group name
-> doesn't specify any color or attributes itself.**"*
-
-That last sentence is the seam this decision draws, written by someone else thirty years ago.
-Our thirty-one are syntax groups; a `Code` is the highlight group they link to. Vim's own list
-is nearly ours — `Comment`, `Constant`, `String`, `Character`, `Keyword`, `Operator`, `Type`,
-`Function`, `Label`, `Tag`, `Error`.
-
-`Token` had real precedent — VS Code's semantic **token types**, and Pygments and chroma — but
-eight of the thirty-one are not tokens in any lexer's sense: `Heading`, `Link`, `List`,
-`Quote`, `Emphasis`, `Raw`, `Inserted`, `Deleted`. A heading is a structure and an inserted
-line is a patch. This project already refuses to use one word for two ideas (see `draw/mod.rs`:
-"render turns a value into marks, draw composes those marks"), and the plugin this descends
-from speaks Vim's vocabulary throughout — `hl_group`, `Comment`, `CodeDiffAdd`.
-
-The prefix is dropped because the crate is already called `syntax`: `syntax::Group`, not
-`syntax::SyntaxGroup`. `ui`'s other `role` — which diff row a line is — keeps its name, and is
-a different idea entirely.
-
-**One thing this costs.** `syntax` now decides there are thirty-one roles, where `ui` decided
-before. That is the same kind of decision as which twenty-five languages the parser knows, and
-it is the one that makes the two engines interchangeable rather than merely parallel.
-
-[`Group`]: syntax::Group
-
-## D44 — a file's content is named by which version it is, not which column
-
-**S11f.** Every version of a file a reviewer can look at is now named the way git names it,
-and that name is what the colour store keys on.
-
-**The bug this closes before it can happen.** The store's key was `(path, DiffVersion)`, and
-`DiffVersion` is `Original | Modified` — which **column** a version is drawn in. The moment an
-explorer lets one path be viewed two ways, that is one name over two different sets of bytes:
-
-| viewing | old key | bytes |
-|---|---|---|
-| working tree vs `HEAD`, right column | `("src/main.rs", Modified)` | unsaved edits |
-| staged vs `HEAD`, right column | `("src/main.rs", Modified)` | what `git add` stored |
-
-Whichever was coloured first would have answered for the other. It cannot happen today only
-because a second file cannot be opened. It is pinned by a test, and by sabotage: naming a side
-by its path alone makes three store entries collapse into one.
-
-**What git can name, and the one thing it cannot.** `gitrevisions(7)` gives five spellings,
-and a reviewer needs a sixth:
-
-```text
-<rev>:<path>   a blob in a commit          :2:<path>   merge stage 2, ours
-:0:<path>      the index                   :3:<path>   merge stage 3, theirs
-:1:<path>      merge stage 1, the ancestor  (the file)  on disk — git has never hashed it
-```
-
-Merge stages were the ones easy to forget, and `codediff.nvim` already needs them: its
-conflict view is `:2:` against `:3:`.
-
-**A name, not a hash — and worktree is not the odd one.** The expectation is that the working
-tree is special because it changes under a reader. It is not: `Index` changes on `git add` and
-`Conflict` changes when the merge is resolved. **Three of the four are mutable**, and only
-`Commit` is not. So none of them carries a timestamp: stamping one and not the others would be
-arbitrary, and stamping all of them would make this a hash rather than a name, which is what a
-status line prints and an explorer groups by. Staleness stays a separate question with a
-separate answer, and `Rev::can_change` is where the two meet.
-
-Git itself stores mtime, size and inode to spot a changed working file. Three reasons not to
-copy that: `file-types` does no IO, mtime races (git has the bug and works around it), and a
-file watcher is a better signal and is coming.
-
-**Revisions sit beside the paths, not inside them.** `File` keeps `Option<RepoPath>` per side
-and adds `before`/`after`. That looks like it allows nonsense — a revision for a side the file
-is not on — and does not: for an added file, `original: None` with `before: Commit(…)` says
-*we looked at that commit and it was not there*, which is exactly what an added file is. Two
-facts, both true, and folding them into one would lose the half that says where.
-
-**The key is a string, and it is git's string.** `File::name(side)` gives
-`b87b24c…:src/main.rs`, `:0:src/main.rs`, `:2:src/main.rs`, or `worktree:src/main.rs` for the
-one version git has no name for — safe, because a resolved id is forty hex characters and
-cannot collide with a word. `ui::syntax::Key` is deleted; the store is keyed by `String`.
-
-Two files reviewed against the same commit now **share** their before entry, which the old key
-could not express.
-
-The path travels beside the key rather than inside it, because a key cannot be read back:
-`b87b24c…:Makefile` has no `/`, so anything looking for the last path component takes the whole
-string and `Makefile` stops being a language.
-
-**The before side is resolved once.** `HEAD` becomes an id when the review opens, so a commit
-made while it is open cannot leave half the files named against one `HEAD` and half against
-another.
-
-**Two functions became one.** `Git::before` and `Git::after` each had the answer written into
-them — `after` could not be anything but the working tree. Now `read(file, side)` asks
-`Rev::stored()`, and a side the file is not on returns nothing without a round trip. That
-deleted a `ChangeType` check on each: an added file has no original path, which is the same
-fact the paths already stated.
-
-**`Oid` moved down** from `vcs` into `file-types` — a `String` in a wrapper, no dependencies,
-and a content hash is a fact about a file. `file-types` now names things jj does not have,
-which its README used to promise it would not. That promise is the one that gave way, and the
-reasoning is written down beside it: every layer above must be able to say which version it is
-looking at, and putting `Rev` in `vcs` would mean `ui` depending on `vcs` — the edge this crate
-exists to make unnecessary. A second backend widens the enum. It is the same bargain
-`ChangeType` already struck.
-
-## D45 — a change is split before its fillers are placed
-
-**S11g.** A change is not one block with its fillers at the bottom. Where the engine found
-character-level detail, the lines it matched are pulled level with each other and the fillers go
-around them.
-
-**What it looked like.** Reviewing `crates/syntax/src/highlighted.rs` at `3b05181`, **22 of 301
-rows** sat opposite the wrong line. The clearest one:
-
-```text
-OURS                                              codediff.nvim
-39  /// How far it has got…  │ 44  /// Written…   39  /// How far it has got…  │     ╱╱╱╱╱
-41  /// Written out rather…  │     ╱╱╱╱╱          41  /// Written out rather…  │ 44  /// Written…
-```
-
-The plugin pairs original 41 with modified 44 — the same sentence. We paired 41 with a filler
-and put its match two rows up.
-
-**It was not a bug in our rule. We had no rule.** The whole algorithm was one function that
-emitted a line while the range lasted and a filler after: every filler at the bottom of the
-block, whatever the engine had said about what matched.
-
-**The rule, from `codediff.nvim`'s `calculate_fillers`, and VS Code before it.** A change is
-cut into runs that line up, and each run places its own fillers at its end:
-
-- a cut **before** an inner change that starts part way into both lines
-- a cut **after** an inner change that ends before the end of its line
-- a cut that would leave one side empty is dropped, except the first
-
-Either kind of cut says the text around it corresponds, so the lines carrying it can be pulled
-level. A change with no inner detail has nothing to pull level, and puts its fillers at the
-**start** of the block — where a reader looks for the line it replaced. This engine never
-produces that shape when both sides have text, so that branch is exercised by a hand-built diff.
-
-**A split can make a change taller than either side**, so `view_line_count` can no longer be
-`max(original, modified)` and comes from the same walk. The layout also had to be handed the
-original side's text: one of the two cuts asks whether an inner change stops before the end of
-its line, which the engine's columns alone cannot answer.
-
-**Checked against the plugin, not against taste.** The plugin loads the same
-`libvscode_diff.so` we link, so the input is byte-identical and every difference was ours.
-A harness runs both over a corpus and compares what each draws — filler runs, line marks and
-character marks — and the target file went from 22 disagreeing rows to **0 of 301**, with
-**35 of 35** real changes matching.
-
-**One test lied first.** The first regression test passed with the fix removed, because the
-input I invented made the engine emit two separate changes rather than one split change. It now
-uses the real text from the diverging region, and fails without the fix.
-
-## D46 — what the parity harness found, and has not fixed
-
-**S11g.** Two differences from `codediff.nvim` are measured, understood, and left standing.
-Written down because a measured difference nobody has decided about is worse than either
-fixing it or accepting it.
-
-The harness builds 168 cases — 30 awkward ones by hand, 60 real changes from this repository,
-80 randomly generated — and runs both tools over all of them. One Neovim serves every case,
-which is what makes the corpus affordable: half a second each rather than seven.
-
-**The phantom trailing line.** We split text on newlines and keep the empty piece after the
-last one; the plugin uses a Neovim buffer, which has no such line.
-
-```rust
-lines("a\nb\n") → ["a", "b", ""]     // ours, three
-nvim_buf_get_lines() → ["a", "b"]      // the plugin, two
-```
-
-So every file ending in a newline draws one extra blank row, and the engine sees one more line
-than the plugin gives it. **Every** filler and line-mark difference in the corpus traces to it:
-removing it takes both from 163/168 and 167/168 to **168/168**. It also found a case the
-history corpus never did — a random one where an insertion at the very end landed a row low.
-
-**A character run that reaches past the last line.** The plugin drops it:
-
-```lua
-if start_line > buf_line_count or end_line > buf_line_count then return end
-```
-
-All 210 character differences are ours only, never the reverse, and each is an inner change
-ending one line past the file. So a wholly inserted line gets only its background from the
-plugin, while we also mark its text. That check is written as a defence against a buffer
-changing under a stale diff rather than as a rule about what to draw, so copying it would be
-adopting an accident. Left alone until someone decides which is right.
+## D39 — Two engines, one file each
+
+The parser (tree-sitter) colours 79% of identifiers on this codebase; the
+matcher (syntect) colours 65%. Both resolve to the same `Group` enum through
+shared `Pen` indices, so a file looks the same regardless of which engine
+coloured it.
+
+The binary cost: 3.6 MB → 40 MB (36 MB is `.rodata` — generated parse tables,
+memory-mapped, only the used language is paged in).
+
+---
+
+## D40 — Lazy language preparation (superseded)
+
+> Superseded by D41. Kept because it has the measurement that forced the thread.
+
+`Query::new` takes 16 ms for Rust, 247 ms for Haskell. Doing that on the
+drawing thread was a visible stall. The idle-pass workaround bought 12 ms text
+at the price of a 186 ms keypress — the same bug moved.
+
+---
+
+## D41 — Colouring on a worker thread
+
+A worker thread colours; the interface asks and installs. `std::thread` and
+`std::sync::mpsc`. The interface never waits for a colour.
+
+What forced it: tree-sitter's `Query::new` (up to 247 ms) and `highlight` (no
+range API — whole file every call) are both indivisible. No frame-slicing scheme
+can work.
+
+Measured: worst keypress dropped from 186 ms to 13 ms.
+
+The worker holds the engine state (not `Send`). Text goes in, spans come back,
+both plain data.
+
+---
+
+## D42 — The interface keeps spans; the worker keeps its place
+
+Spans live on the interface thread (drawing needs them immediately). The engine
+bookmark lives on the worker thread (it holds a non-`Send` pointer). Nothing is
+stored twice.
+
+Eviction is LRU by line count (~800k lines budget ≈ 64 MB). The file on screen
+is never evicted. A stale request (sent before the last answer arrived) is
+dropped and re-asked with a current offset.
+
+Read-ahead: 2,000 lines beyond the viewport, so scrolling finds colours already
+there.
+
+---
+
+## D43 — Engine vocabularies live in `syntax`, not the theme
+
+The matcher's `comment.line.double-slash.rust` and the parser's `comment` both
+map to `Group::Comment`. Those mapping tables live in `syntax/src/engine/`,
+beside the engine whose words they hold.
+
+The theme never sees engine-specific strings. Adding a theme is 31 colours, not
+78 scope rules. `lint-arch` refuses `syntax::engine` imports from `ui`.
+
+Renamed: `Token` → `Group`, following Vim's `:help group-name`.
+
+---
+
+## D44 — File versions named the way git names them
+
+Every version is keyed by its git name: `b87b24c…:src/main.rs`,
+`:0:src/main.rs` (index), `:2:path` (ours in a merge), or `worktree:path`.
+
+This prevents a bug where two comparisons of the same path (staged vs HEAD,
+worktree vs HEAD) would collide in the colour store. The key is a string that
+cannot be confused because a resolved commit id is 40 hex characters.
+
+`HEAD` is resolved to an id once at startup, so a commit made during the review
+cannot split the before-side naming.
+
+---
+
+## D45 — A change is split before fillers are placed
+
+Where the engine found character-level matches within a change, the matching
+lines are pulled level and fillers go around them. This matches how codediff.nvim
+and VSCode place fillers.
+
+Checked against the plugin: 168 cases, filler/mark parity on all of them once
+the phantom-trailing-line difference is accounted for.
+
+---
+
+## D46 — Known parity differences with the plugin
+
+Two measured differences, understood and left standing:
+
+1. We keep the empty piece after a trailing newline (3 lines vs plugin's 2).
+2. A character-level highlight that reaches past the last line — we show it, the
+   plugin drops it as a stale-diff defence.
+
+---
+
+## D47 — A staged-then-edited file is listed twice
+
+Git reports `MM` as two comparisons of one path: index vs commit, and worktree
+vs index. They are two rows in the explorer, each with its own diff. This
+matches VS Code's SCM view.
+
+---
+
+## D48 — The list starts on the first file
+
+The cursor starts on the first file, not on the group heading above it. A
+heading folds but cannot be opened, so starting there would make the first
+keypress do nothing.
+
+---
+
+## D49 — A binding's list and its executor differ
+
+Where a key is defined (which level's binding table) and where it is executed
+(which level handles it) are separate questions. `>` is bound by the focused
+buffer but executed by the tab (it affects two panes). `t` is bound by the view
+but executed on whichever pane shows a diff.
+
+---
+
+## D50 — Rows measured in cells, cut in cells
+
+A CJK character is one `char` but two terminal columns. Measuring with
+`chars().count()` causes misalignment. Everything that truncates or measures a
+row for the terminal uses `line-index` (cell/column width), not character count.
+
+---
+
+## D51 — Nothing is kept when a file is opened twice
+
+Three of the four revisions (worktree, index, conflict stage) are mutable. A
+cache keyed by revision + path cannot tell fresh from stale. So nothing is
+cached — reading two versions and pairing them takes milliseconds.
+
+---
+
+## D52 — The file list has its own colour table
+
+The explorer's colours are separate from the diff's. `theme::Tree` colours rows
+that nest (headings, directories, guides). `theme::Change` colours a file by
+what happened to it (added, modified, deleted, etc.) — reusable anywhere a
+changed file is named.
+
+---
+
+## D53 — A viewport belongs to a pane
+
+A viewport is a position in a buffer. Repointing a pane at a new buffer while
+keeping its viewport would show the new file at the old file's scroll offset. So
+opening a file installs a fresh pane.
+
+---
+
+## D54 — Anchor by name, not by row number
+
+Toggling view mode renumbers rows. The cursor is anchored by (section, path),
+looked up after the rebuild. Same principle as carrying a file line across a
+layout toggle.
+
+---
+
+## D55 — A key must not be silently dead
+
+`t` (toggle layout) was bound at the view level but acted on the focused buffer.
+When the list had focus, it did nothing silently. Now it acts on whichever pane
+shows a diff, regardless of focus.
+
+---
+
+## D56 — Git switches are forced
+
+Every git command forces the flags it depends on. A reader's `diff.renames=false`
+must not make the status say "rename" while the line counts say "new file."
+
+Also handled: unborn HEAD (use the empty tree), symlinks (use `read_link` to
+match git), submodules (content is a commit id, shown as unreadable).
+
+---
+
+## D57 — A group is a revision pair
+
+"Staged Changes" is not a category — it is the name for comparing the index
+against a commit. A group is `{ name, revs, files }`. Adding a new comparison
+mode touches one file (`pipeline/list`), not the explorer or the drawing code.
+
+---
+
+## D58 — The list is the search
+
+The file pipeline no longer searches for a file by path. A `ChangedFile` carries
+its revisions, so the row *is* the request. `codediff <path>` is a pathspec
+filter on the list, not a different mode — same code path either way.
+
+---
+
+## D59 — The interface asks, never computes
+
+Opening a file runs on a worker thread (measured: up to 1057 ms for a 50k-line
+file). `ui` sends a `ChangedFile` to the file worker, draws whatever it already
+has, and installs the response when it arrives. No callback, no `Flow::Task`.
+
+---
+
+## D60 — `DiffType` instead of `Option<DiffLayout>`
+
+One enum in `file-types`: `DiffType { SideBySide, Inline, Single }`. The old
+code spelled the same fork five different ways, four of them using `None` to mean
+"single file." A third answer (the explorer) is not an absent one.
+
+---
+
+## D62 — No revision arguments on the command line
+
+`codediff` takes a path and a theme. No `--rev`, `--staged`. The model is
+lazygit's: open with one word, change what you're comparing from inside the
+review.
+
+---
+
+## D63 — The rule is about blocking, not about crate names
+
+The old rule (`ui` may not name `vcs`) was false — `ui → pipeline → vcs`
+already exists. The real rule: nothing reached from inside the event loop may
+block. `lint-arch` checks four directories (`input`, `draw`, `render`, `view`)
+for `std::fs`, `std::process`, `vcs::`, `recv()`, `join()`.
+
+`try_recv` is allowed — it is how the loop collects answers without waiting.
+
+---
+
+## D64 — `ui::start` owns setup; `main` is minimal
+
+`main` parses arguments and calls `ui::start(cwd, paths, theme)`. Everything
+else (opening git, reading the file list, constructing the session) lives inside
+`ui::start`, which runs before the terminal is opened and may block.
+
+---
+
+## D65 — The model reports facts; only the terminal picks characters
+
+`align` reports that a view line is a gap. It never says a gap is drawn `╱`.
+`explorer` reports that a file was renamed. It never builds `"← old-name.rs"`.
+
+The split: `explorer` emits structured `Content` (heading/directory/file with
+fields). `ui/draw/` turns those into characters and colours.
+
+---
+
+## D66 — Colour tables named for what they colour
+
+`theme::Tree` — rows that nest (heading, guide, directory, name, count).
+`theme::Change` — what happened to a file (indexed by `ChangeType`).
+
+Separated because `Change` colours are reusable anywhere a changed file is
+named (status line, tabs), not just in the explorer.
+
+---
+
+## D67 — The backend runs commands; the layer above makes a review
+
+`vcs` exports `Repository` — open, list changes, count changes, read a version.
+`git/` is private. Two layers:
+
+- `git/` runs one command, parses its output in git's own vocabulary
+- `repository/` translates into the standard types (`ChangedFile`, etc.)
+
+The list pipeline collapsed from two stages to one once planning logic moved
+into `git/`.
+
+---
+
+## D68 — A feature must not add a file to `render`
+
+Every file in `render/` arrived with the terminal itself. Files that arrive with
+a feature belong beside that feature. `list.rs` and `fit.rs` were moved out of
+`render/` into `draw/buffer/explorer/` when it was clear they were the file list
+wearing a brick's name.
+
+The `explorer` crate is now separate from `ui`. A tree with nesting and folds is
+the model; rows with text and colour are the drawing. What both use is
+`line-index` for column measurement.
+
+---
+
+## D69 — A heading is what an arrangement sits under
+
+A heading is not part of a tree or a flat list — it is what either arrangement
+sits under. `Explorer` owns the groups, headings, counts and heading folds. A
+`Style` (tree or list) is handed one group's files and produces lines without
+knowing what a heading is.
+
+Sort order matches VS Code: shallower paths first, numeric comparison for digit
+runs. The sort key is built once per path (not per comparison), making 20k paths
+sort in 1.2 ms vs 81 ms with inline case-folding.
+
+---
 
 ## Open questions
 
-| # | question | needed by |
-|---|---|---|
-| 4 | binary / symlink / mode-change / submodule presentation | S8 — one-sided files are settled in [D23](#d23--a-file-with-only-one-side-is-shown-in-one-pane-not-diffed-against-nothing); binary is refused with a message |
-| 5 | licensing and `ATTRIBUTION.md` — the C is VSCode-derived and vendors utf8proc | S1 |
-
-*Question 1 (explorer grouping) is settled in [04-milestones.md](04-milestones.md): one list, worktree vs HEAD, conflicts marked but not resolvable.
-Question 2 (syntax engine) is settled in [D11](#d11--syntax-highlighting-is-in-the-mvp-via-syntect).
-Question 3 (inline mode) was put out of the MVP by [D19](#d19--the-container-owns-the-row-index-so-scroll-sync-cannot-exist); built at S10b anyway, in about the two days that answer estimated — see [D31](#d31--a-row-space-is-a-layout-and-align-owns-both-of-them). Still no auto-switch.*
-
----
-
-## D47 — a file staged and then edited again is listed twice
-
-Git compares three things: a commit, the index, and the working tree. A file it reports as
-`MM` differs from the index *and* the index differs from the commit, so there are **two
-diffs** of one path. The milestone said the file should appear once, carrying both codes.
-That is not possible: one row opens one comparison, and a row carrying `MM` could not say
-which of the two it would open.
-
-Capturing the plugin settled it — it lists the file twice, once under **Changes** and once
-under **Staged Changes** — and the reason it is right is not that the plugin does it. Each
-row carries the revisions of its own comparison (`Rev::Index` against `Rev::Worktree`, or the
-commit against `Rev::Index`), so a row that has been opened already knows which two versions
-to read. That is what [`Rev`](#d44) was built for, and this is its first real use.
-
-The consequence is that `explorer::Entry` is one per **(file, section)** and not one per file,
-and that `vcs::Changes` returns three lists rather than one with a code on each record.
-
-## D48 — the list starts on the first file, not on the first row
-
-Row zero is a section heading. It can be folded, but it cannot be opened, so a reader arriving
-there and pressing the key that opens a file sees nothing happen — which reads as a broken key
-rather than as a row that has nothing to open.
-
-The answer is a `Buffer::start_row`, asked once by `View::single` and set on the viewport
-before the first frame. It is not a property of the explorer's own state: the cursor **is** the
-selection, and there is exactly one of it, on the pane. The model carries a selection too, but
-only so it can be used without a viewport at all; the interface overwrites it from the cursor
-before reading anything from it.
-
-The plugin does the same, which its capture states directly: `cursor 2` on the first frame.
-
-## D49 — a binding's list and its executor are different questions
-
-Widening the list moves the border between two panes, so the **tab** executes it — D27's rule,
-unchanged. But the binding cannot live in the tab's list, because a tab-level binding is live
-in every buffer, and a plain file has no border beside it. `>` there would be a key that
-silently does nothing, which is the failure the keymap was built to prevent.
-
-So `>` and `<` sit in the *list's* binding table and name `Action::Tab`. The keymap already
-said this was allowed — "a key's list and a key's executor need not be tied together" — and
-this is the first case that needs it. A diff claims the same two keys at the buffer level for
-its own column divider, and shadowing does the rest: one key, three meanings, none of them
-silent.
-
-`<Tab>` stays at the tab level, because "the next pane" means something wherever it is pressed.
-
-## D50 — a row is measured in cells, and cut in cells
-
-`ünïcodé-ファイル.txt` lost its status letter off the right-hand edge. The row was measured by
-counting characters, and every Japanese character is **two columns**, so the row was eight
-columns wider than it was thought to be.
-
-Both the width and the cut go through `line-index`, the crate that already answers this
-question for the diff. A cut lands on a character boundary and never inside one: asking for
-three columns of `ファイル` gives back `フ` and two columns, not half a glyph. The row is then a
-column short rather than corrupt, which is the right way to be wrong.
-
-## D51 — nothing is kept when a file is opened twice
-
-Opening a file reads both versions, pairs them, and builds a buffer. This first said the two
-texts were worth keeping, since reading them is the only part that leaves the process. **That
-was wrong, and an audit found it.**
-
-Three of the four revisions a row can name — the working tree, the index, and a conflict
-stage — are mutable. [D44](#d44) says so in as many words. Their bytes change while the review
-is open and *nothing in their name changes with them*, so a cache keyed by the revision and the
-path cannot tell a fresh read from a stale one. A reader who edits a file and opens it again
-would be shown what it used to be, with nothing on screen to say so.
-
-The alternatives were to key by content — which means reading the content, which is the thing
-being avoided — or to cache only immutable revisions, which today means caching nothing while
-leaving the machinery in place to be misread later. So nothing is kept. Reading two versions
-and pairing them takes milliseconds, and that is the whole price of being right.
-
-The buffer is not kept either, for a separate reason that still holds: it carries the reader's
-place, so handing the same one to two panes would give them one scroll position.
-
----
-
-## D52 — a list has its own colour table, for the same reason code does
-
-Every row of the explorer came out in the ordinary text colour. Three separate faults, and all
-three had one cause: the renderer borrowed styles that were built for somewhere else.
-
-```rust
-status_path: Style::new().add_modifier(Modifier::BOLD)   // no fg — a patch over `status`
-inserted_text: over(blend(p.green, base, opacity::TEXT)) // no fg — a diff background
-warning: ink(p.red).add_modifier(Modifier::BOLD)         // red, whatever happened
-```
-
-So a heading and a directory got bold and no colour; `+7 -4` got *nothing*, because the style
-carried only a background and the renderer copies only the foreground; and every status letter
-was red, whether the file was added, deleted or renamed.
-
-The fix is the shape `Code` already has. `explorer::RegionType` says **what** a piece of a row
-is — and `Status` now carries the `ChangeType`, so a deletion is distinguishable from an
-addition without the theme knowing what a section is. `theme::List` says what each looks like.
-Between them there is nothing to get wrong.
-
-`List` holds `Color`, not `Style`, exactly as `Code` does, and for the same reason: the
-background of a row says which row the reader is on, so a region that could set one would be
-able to hide the selection. Bold is not in the table either — a heading is bold in every theme,
-so it is structural and is applied where the row is drawn.
-
-The six status colours are separate fields rather than one because that column is what a
-reviewer scans down. A screen where a deletion and an addition look alike has to be read a word
-at a time, which is the thing a list exists to avoid.
-
----
-
-## D53 — what a viewport belongs to, and why opening a file must not keep one
-
-A viewport is `top`, `cursor` and `left`. Those are places **in the buffer it was looking at**,
-and they mean nothing in another one. Repointing a pane at a new buffer and keeping its
-viewport opened the new file at the old file's line and horizontal offset — a file that opened
-blank, scrolled off its own text, which is how an audit found it.
-
-So `Tab::show` installs a **fresh `Pane`** rather than assigning `pane.buffer`. The pane is the
-thing that pairs a buffer with a place in it, and replacing one half of a pair is what produced
-a pair that did not go together.
-
-The buffer *slot* is reused, which is the opposite decision about a different thing. `View`
-owns the buffers and nothing removes from that list, so pushing on every open held every file a
-reader had ever visited. `Tab::shown()` names the slot already beside the list, and the second
-open writes over it.
-
-## D54 — a row number does not survive a rebuild, so the reader is anchored by name
-
-Toggling the view mode renumbers every row: tree mode has directory rows that list mode does
-not. Toggling the counts does not renumber anything, but nothing in the code said so. Both used
-to send the reader to row zero — a section heading, which folds but cannot be opened, so the
-next key did nothing.
-
-`explorer::Anchor` is a **section and a path**, which is what the reader actually chose, and
-`Explorer::reshape` takes the anchor before the change and looks it up after. A file that is
-gone — hidden by a filter — leaves the cursor where it was, clamped.
-
-This is the same shape as `View::toggle_layout`, which carries a *file line* across a change of
-layout because a view line means different things in each. Both say: when a rebuild renumbers
-things, carry the thing the reader named, not the number it happened to have.
-
-## D55 — a key must not be silently dead in a context that binds it
-
-`t` flips a diff between two columns and inline. It is bound at the view level, so it is live
-everywhere — and it flipped **the focused buffer**, which while the list has focus is the list,
-which has no layout. The key did nothing, silently, in the context a reader spends most of
-their time in.
-
-`View::reading()` now names the pane showing a diff: the focused one when it is a diff, and
-otherwise the only other one. There is never more than one diff on screen, so this is not a
-guess. When there is no diff at all — the list before anything is opened — the key does
-nothing, which is correct rather than merely quiet, and a test says so.
-
-The general rule this joins is [D49](#d49): a binding's list and its executor are different
-questions. `>` is bound by the list and executed by the tab. `t` is bound by the view and
-executed on whichever pane the word "diff" refers to.
-
-## D56 — git's own switches are forced, never left to the reader's config
-
-The status is read with `--find-renames`. The line counts were not, so a reader with
-`diff.renames=false` saw a row that called a file a rename *and* counted it as a whole new
-file: the two commands were describing different sets of changes, and the row put both on one
-line.
-
-Every git command this program runs must force what it depends on. A setting that changes what
-one command reports and not another is not a preference, it is a disagreement, and the reader
-is the one who has to notice it.
-
-Two more of the same kind, found together:
-
-- **An unborn `HEAD`.** `git init` then `git add` is the moment a reviewer has the most to look
-  at, and it failed outright because there was no commit to resolve. `resolve_or_empty` answers
-  with the **empty tree** — an id git carries in every version — so the first commit is
-  reviewable before it exists.
-- **A symlink.** `std::fs::read` follows one; git stores the *target path* as the content. An
-  unchanged link therefore looked like a whole file rewritten. `symlink_metadata` and
-  `read_link` are what agree with git. A directory found the same way is a submodule, whose
-  content is a commit id rather than bytes; it reads as absent, so the row says it cannot be
-  shown rather than failing to read a directory as a file.
-
-## D57 — a group is a revision pair, not a category a file belongs to
-
-The explorer held a fixed `{unstaged, staged}` pair, so comparing two revisions had nowhere to
-put its files. The plugin this replaces met the same wall and wrote its way past it:
-
-```lua
--- For revision comparison, we treat everything as "unstaged" for explorer compatibility
-```
-
-A group is now `{ name, revs, files }`. "Staged Changes" is not a category — it is the *name*
-for comparing the index against a commit, which every file in it already carries in its own
-`Revs`. `--rev A B` is one group named after its two revisions, and needs no pretending.
-
-What this buys is measurable: adding a way to compare touches **one file**,
-`pipeline/list/resolver.rs`, plus its arm of `ExplorerDiffType` and a command-line flag.
-Nothing in the explorer, the view or the drawing code learns a new word.
-
-## D58 — the file pipeline does not search; the list is the search
-
-The file pipeline had a first stage that found a file in git by path. That was the list
-pipeline written a second time, and worse: a search cannot know *which comparison* the reader
-chose, so it answered `HEAD → worktree` for everything. One path then had up to three different
-diffs depending on how it was reached — `codediff staged-then-edited.txt` compared 6 bytes that
-neither of that file's two rows compared.
-
-The stage is gone. A `ChangedFile` carries the revisions of both its sides, so the row *is* the
-request, and the two pipelines join at that type:
-
-```text
-list ──▶ Groups ──▶ (a row) ──▶ file ──▶ Comparison
-```
-
-`codediff <path>` is therefore a **pathspec on the list**, not a different mode: one code path,
-so a file reached by naming it and the same file reached by pressing enter on its row are the
-same comparison.
-
-## D59 — the interface asks, and never computes
-
-Opening a file used to leave the crate. `ui` could not reach git, so `Flow::Task` named the
-request and `run`'s caller performed it — a callback pointing *up*, out of the loop.
-
-The reason for the seam was real, and it was not the dependency. Measured on a 50,000-line file
-with one line in ten changed, the four stages take **1057 ms**, of which the C engine is 718 ms;
-and `max_computation_time_ms` puts the engine's own ceiling at 5 s. Every one of those
-milliseconds was a terminal that answered no keys.
-
-So the pipeline moved to a thread, exactly as colouring did in [D41](#d41):
-
-| thread | file | what it does off the drawing thread |
-|---|---|---|
-| syntax | `ui/src/syntax/mod.rs` | colours text |
-| file | `pipeline/src/file/service.rs` | reads two versions and pairs them |
-
-Both are one long-lived worker asleep on `recv`, one request in flight, nothing queued behind
-it. Asking costs a `send` on an unbounded channel, which std documents as never blocking, so
-`Flow::Task`, the `Tasks` trait and the `Open` callback are all gone and `ui::run` takes one
-argument again. `Open` is an ordinary `ViewAction` now, executed where it lands.
-
-**Which meant `pipeline` could stop naming `ui`.** It answers with an `align::Comparison` —
-data, not a projection — and `ui` decides which buffer kind to build from it, which inverts
-[D23](#d23)'s "the last place that knows": the answer carries what it knew. Without that
-inversion `ui → pipeline → ui` would be a Cargo cycle.
-
-**And it cost a lint rule its meaning.** `("ui", "vcs")` reads a `Cargo.toml`, so it says
-nothing once a crate sits between the two — `ui → pipeline → vcs` passes it. The rule that
-replaced it checks the *text* of `crates/ui/src` for `vcs::`, `vscode_diff::` and `std::fs`,
-which no intermediate crate can defeat, and which catches what the manifest rule never could.
-
-## D60 — one file has a `DiffType`, and it is never spelled as an absence
-
-One fork — *is there a second version to lay this against?* — was spelled five
-different ways, in four crates, and four of them said "no" by being empty:
-
-```rust
-File::only()          -> Option<DiffVersion>   // file-types
-BufferType::layout()  -> Option<DiffLayout>    // ui: None meant single file
-BufferType::alignment()-> Option<&Alignment>   // ui: None meant single file
-KeymapType            { Diff(DiffLayout), SingleFile, Explorer }
-align::Comparison     { OneSide, Both }        // a fifth, added and removed the same day
-```
-
-An `Option` is the wrong shape for it, and the keymap had already worked that out
-in its own doc comment — *"the explorer is a third answer, not an absent one"* —
-without noticing that `SingleFile` beside it was the same mistake it was warning about.
-
-**One enum, in `file-types`:**
-
-```rust
-pub enum DiffType { SideBySide, Inline, Single }
-```
-
-`align::DiffLayout` is gone; `DiffType` is what `Alignment::view_lines` and its
-five siblings take. `KeymapType` collapsed from three variants to two —
-`File(DiffType)` and `Explorer` — which is what the fork always was. The three
-`Buffer` constructors collapsed to two: `Buffer::diff` takes what the pipeline
-read and decides the kind from it, `Buffer::explorer` takes a list.
-
-**It is in `file-types` rather than `align` because every layer names it**, and
-the crate's own criterion had to widen to admit it: *"never how one is read,
-diffed, or drawn"* was written when nothing below `ui` had to say how a file is
-shown. `align`'s criterion — *does this say which line appears where* — refused
-it on inspection: every other file in that crate names only `DiffVersion`, and
-the one holding this reached for `File`. Neither `align` nor `ui` re-exports it;
-there is one name for it and one place to import it from.
-
-**What it cost.** `DiffType` is wider than `align`'s question. The old
-`DiffLayout` *was* that question — two variants, both a way of walking a
-pairing, both live — so its matches had no dead arm. `Single` is not a walk,
-and an `Alignment` is built only for a file with two sides, so four functions
-in `align/src/layout.rs` now carry an arm that cannot be reached. Each says so
-with an `unreachable!`, which is what `debug/diff_file.rs` already does for the
-same kind of invariant.
-
-Measured, by replacing all four with a panic and running the suite: **606
-tests, none reached one.** A `ViewLines::Unpaired` variant returning an empty
-iterator was tried first and removed — it added a public variant nothing can
-construct, and would have drawn an empty pane in silence if the invariant ever
-broke. Four unreachable arms is a smaller price than four `Option`s that each
-had to be read as a sentence.
-
-**What it caught.** Making the type total made the compiler name every site that
-had been hiding the fork — including `Diff::version` and `SingleFile::version`,
-two fields written on every request and read nowhere, which had been used to
-argue that these types belonged to `ui`.
-
-## D62 — the command line says nothing about revisions; the review does
-
-`codediff` takes a path and a theme. It does not take `--rev`, `--staged`, or
-any other way of saying what to compare against. It briefly did, and that was
-scope taken without being asked for.
-
-**Two reasons, and the second is the real one.**
-
-The first is bugs. Argument parsing that grows a mode per comparison is how the
-Neovim plugin's command grew, and every combination is a path nothing tests.
-
-The second is who the reader is. `a...b` means "compare `b` against where it
-parted from `a`". That is exact, it is git's own spelling, and almost nobody
-outside a Neovim configuration knows it. A reviewer should not have to know
-git's revision syntax to open a review — and if they do know it, they still
-have to know it *before the review opens*, when they have seen nothing to base
-the choice on.
-
-So the model is lazygit's: **open with one word, then change what you are
-looking at from inside.** What is being compared is a state of the review, shown
-on screen, not an argument recalled from memory.
-
-**The five comparisons stay** — `list::resolver` resolves all of them and
-`tests/diff_types.rs` drives each through `codediff debug list`, which is
-hidden plumbing rather than a command. They are what the interface will switch
-between when the keys for it arrive. What was removed is the *only* way a
-reader could have reached them, which was the wrong way.
-
-## D63 — the rule is about the thread, not about the crate
-
-`("ui", "vcs")` said *"a renderer must not be able to reach git"*. It was false
-when it was written, and [D59](#d59) made it worse by adding a text rule that
-repeated the claim more loudly.
-
-**Measured.** This compiles inside `crates/ui`:
-
-```rust
-pipeline::list::run(&ExplorerDiffRequest::worktree(root))
-```
-
-It opens a repository, spawns git and blocks — 29 ms on this repository, 296 ms
-on five thousand changed files. `ui` depends on `pipeline`, and `pipeline`
-depends on `vcs`, so the manifest rule cannot see it and the text rule does not
-look for it. What the two rules did stop was the word `vcs::`, whose only use
-would have been `git rev-parse` once at startup: the cheapest call in the
-program, and the one that matters least.
-
-**The question is not which crate a call comes from. It is when it runs.**
-
-| when | may block |
+| # | question |
 |---|---|
-| once, before the terminal is opened | **yes** — there is nothing to stay responsive with |
-| inside the loop, on a key or a frame | **no** |
-
-That is the same reasoning that keeps the file list synchronous while a diff
-runs on a thread, and it is the principle D59 should have written down instead
-of a crate name.
-
-So the text rules are gone and `NON_BLOCKING_DIRS` replaces them: four
-directories — `input`, `draw`, `render`, `view` — reached only from inside the
-loop, in which nothing may name `std::fs`, `std::process`, `std::net`, `vcs::`,
-`vscode_diff::`, `recv()` or `join()`. `try_recv` is deliberately allowed: it
-is how the loop collects an answer without waiting.
-
-**`app.rs` is not covered**, because it holds the loop *and* the startup that
-precedes it, and a directory rule cannot separate them. Splitting those into
-different files is what would let the rule reach it.
-
-The manifest edges stay, with honest reasons: `ui` still must not name `vcs`
-directly, not because it could reach git — it can — but because git is reached
-through `pipeline`, which owns the thread it runs on. One seam, not two.
-
-## D64 — the interface starts itself; the binary hands it a place to look
-
-`main` used to run the review: resolve the theme, open the repository, build
-the request, run the list pipeline, refuse an empty one, construct a session,
-ask for the first file, and start the loop. Eight steps, of which two were the
-binary's and six were the interface's.
-
-It is `ui::start` now, and `main` is:
-
-```rust
-let cwd = std::env::current_dir()?;
-ui::start(cwd, path.into_iter().collect(), cli.theme.as_deref())
-```
-
-**A file of its own, not part of `app.rs`**, because the two obey opposite
-rules. `start` runs once, before the terminal is opened, so it may block —
-there is nothing to stay responsive with, which is why the file list is read
-rather than asked for. The loop may not block at all. [D63](#d63) could not
-reach `app.rs` while it held both; with the split it does, as a file rule.
-
-**And `vcs` was never needed.** `main` opened the repository to put its root in
-the request. But `list::resolver` opens git again from that path, and every
-path it builds comes from the root git *discovered*, not from the one it was
-handed. So the request carries a place to start looking, `git rev-parse
---show-toplevel` does the rest, and `ui` names no version control at all.
-
-`main.rs` fell from 85 lines to 41, and stopped naming `vcs`, `explorer` and
-`pipeline`. It parses arguments and picks a subcommand; everything else it used
-to do belonged to somebody else.
-
-`ui` gained `anyhow`, because "nothing has changed here" is not an IO error and
-`run` returns `std::io::Result`. Every crate here is `publish = false`, so the
-usual objection to `anyhow` in a library does not apply.
-
-## D65 — a model reports facts; only a terminal picks characters
-
-**Superseded in part by [D68](#d68)**: the split of facts from characters holds,
-but `render` was the wrong side of the line to put `list.rs` and `fit.rs` on.
-
-`align` reports that a view line is a gap. It never says a gap is drawn `╱` —
-that word lives in `ui::render::column`, beside the theme that colours it.
-
-`explorer` did the opposite. `rows.rs` built `"│ └ "`, `"▾ "`, `"+4"`, `" -1"`,
-`" (2 · "` and `"M"`, and handed over finished strings. Its own admission
-criterion, at the top of `lib.rs`, said *"never how they look"*. Five places in
-one file broke it.
-
-So the two halves of the screen were built by opposite rules, and only one
-followed the rule the code claimed.
-
-**What it cost, measured.** A `Region` — text plus a droppable priority — is a
-general idea: *here are the pieces of a row, drop the cheap ones and cut the
-longest*. But it was `explorer::Region`, so the one function built on it took a
-slice of them, and nothing that was not a file list could call it without
-pretending to be one.
-
-The status line needs exactly that rule — it drops a directory, then a rename,
-to keep the file name — and `draw/status.rs::name()` writes it again by hand in
-forty lines. The two copies do not agree: `name()` counts `chars()` where
-`fit` counts columns, so it measures a Japanese path at two-thirds of the
-columns it takes. Driven through a pty with two paths **eighteen terminal
-columns wide**, at width 36:
-
-```text
-abcdef/filename.rs  →  " filename.rs      3 changes   1/100 "
-なまえ/ファイル.rs    →  " なまえ/ファイル.rs                 "
-```
-
-The ASCII path drops its directory and keeps the position. The CJK path keeps
-the directory and silently loses `3 changes 1/100`.
-
-**That is left as it is**, and recorded as [B9](06-known-bugs.md). It is a
-behaviour change, and this is a refactor: `fit` is reachable from the status
-line now, which is what this decision is about. Making it call it is a commit
-of its own.
-
-One rule, written twice, and the copy that could not reuse the original is the
-one that is wrong.
-
-**The split.** A `Row` is now three facts — which node, where it sits, what it
-is:
-
-```rust,ignore
-Row { node, guides: Option<Guides>, content: Content }
-Content::{ Heading { title, files, stats },
-           Directory { name, open },
-           File { name, moved_from, stats, change } }
-```
-
-`guides` is `Option` rather than an empty `Vec`: a heading is what the tree
-hangs from rather than a line in it, and "no indent to describe" is a different
-statement from "at the top level". Inside it, `ancestors: Vec<bool>` says for
-each level above whether that ancestor was the last of its siblings — the exact
-question "does this column need a guide, or blank space".
-
-And in `ui`, two files where there was one:
-
-| file | what it is |
-|---|---|
-| `render/fit.rs` | a `Piece` is text, a style and a priority. Knows nothing else. |
-| `render/list.rs` | facts plus a theme, in text and colour. |
-
-`render/list.rs` is the same brick as `render/line.rs`: each takes what its own
-crate reports, adds a theme, and answers in text and colour. `line` is the
-diff's, `list` is the file list's. Neither decides what fits.
-
-**Both names were wrong before this.** The file was `render/explorer.rs` —
-named for the buffer type that called it, while every other brick is named for
-the terminal thing it makes. `render/mod.rs` listed five bricks when there were
-six, and never listed that one: the list is written in terminal words and the
-name did not fit it. `row.rs` was considered and refused — `cells.rs` already
-calls one row of the grid `row: Rect`, and this codebase has already paid for
-that collision once, when `align`'s `Row` became `ViewLine`. `list` was already
-the word in `ui` for the thing on screen, which is what the theme tables are
-named after — and [D66](#d66) then split those tables by the same test this
-decision applies to `render`.
-
-**What is checked where.** `explorer/tests/tree.rs` spells the facts with a
-helper of its own, so its 360 lines of assertions about the *shape* of the tree
-survive unchanged. The characters are asserted in `ui/tests/explorer_rows.rs`,
-against a real screen — where they can be wrong.
-
-Sabotage: a changed guide, a changed fold triangle and a changed status letter
-each fail three or more tests. Bold on a heading failed nothing at all, having
-been moved on trust; `a_heading_and_a_status_letter_are_bold_in_every_theme`
-now covers it.
-
-## D66 — a colour table is named for what it colours, not for who draws it
-
-`theme::List` held fourteen colours, and they answered two different questions.
-
-Five need rows that nest to mean anything: `heading`, `marker`, `directory`,
-`name`, `count`. An indent guide is nothing where nothing indents.
-
-The other nine are about a **file**, and mean the same wherever one is named:
-six for what happened to it — added, modified, deleted, renamed, untracked,
-conflicted — and `added`/`removed` for the lines it gained and lost. A tab of
-open files would want them. So would a header over a diff, or the bottom row.
-None of those is a list, and none would think to look inside a table named for
-one.
-
-The table's own doc said as much without noticing: *"the letters follow the
-diff's own colours where they exist — green for what arrived, red for what
-went, so the list and the file beside it agree about what green means."* That
-is a claim about the whole screen, written inside one buffer type's table.
-
-So:
-
-| table | what it colours | indexed by |
-|---|---|---|
-| `theme::Tree` | a tree drawn in rows | what a row *is* |
-| `theme::Change` | a file that changed | `file_types::ChangeType` |
-
-`Change::of(ChangeType)` is on the table rather than at each caller, so a
-seventh kind of change is a field and one arm rather than a search for
-everywhere six were spelled out. `render/list.rs` had that `match` inline and
-was the only place it existed; now it has none.
-
-**Two fields were renamed on the way, both because they collided.**
-
-`List::moved` was grey, and meant *where a file came from*. `Theme::moved` is
-faint blue, and means *a block the engine judged to have moved within a file*.
-One word, two meanings, one struct apart. It is `Tree::previous` now, which is
-what the row beside it says: `← old-name.rs`.
-
-`List::new_file` was the odd one of the six — five named for a `ChangeType`
-variant and one not, because `added` was taken by the line count in the same
-struct. With the two tables apart, `Change::added` is the change and
-`Change::gained`/`Change::lost` are the counts, so nothing is named around a
-clash that no longer exists.
-
-**Why not `theme/explorer.rs`.** The theme files are named for what a reader
-sees — `code`, `colour`, `catppuccin` — never for the code that draws it;
-`code.rs` is not called `syntax.rs`. And `Explorer` already means three things
-in `ui`: the crate, the buffer, and the `BufferType` variant. A fourth would be
-the collision [D65](#d65) had just removed one layer down.
-
-The split is what makes the question moot. `Change` is not the explorer's, and
-`Tree` is named for the shape it colours rather than the buffer that has one.
-
-## D67 — the backend runs commands; the layer above turns them into a review
-
-`vcs` exported `Git` — eleven methods — and also `pub mod git`, so everything
-under it was reachable. Three places outside took that door: two for a return
-type they could not avoid naming, and `debug status`, which printed git's raw
-`XY` codes.
-
-**The measured surface was much wider than the use.** Of nine modules under
-`git/`, six were `pub` and nothing outside touched any of them. Of the eleven
-methods, `files()`, `with_before()` had no callers at all, and five of the
-remainder existed only for `debug`.
-
-**What a review actually needs is four things.** Open a repository, ask what
-changed, ask how much, read one side of one file. That is `Repository`, and
-`git` is private behind it.
-
-### Two layers, and the test for each
-
-**A file in `git/` runs one command and parses what it printed into git's own
-words.** It decides nothing. So it is named as git spells the command:
-
-```text
-run · rev_parse · status · diff/{name_status,numstat} · merge_base · cat_file · worktree
-```
-
-`name_status` and `numstat` used to be top-level, named after *flags* while
-`cat_file` and `rev_parse` were named after commands — so `numstat.rs` did not
-say which command it was a flag of. They are `diff/` now, and the path reads
-`git diff --numstat`. Their shared arguments moved to `diff/mod.rs`, where the
-forced `--find-renames` is one constant rather than three literals: one saying
-a file is a rename while the other counted it as a whole new file would put a
-`+400` beside a move.
-
-**A file in `repository/` turns those into the standard format**, and is named
-for what a reviewer would call it:
-
-```text
-mod.rs          Repository — open, changes, counts, read
-diff_type.rs    DiffType — the five ways to compare
-changes.rs      Changes — files that share a comparison
-changed_file.rs git's records, in the reviewer's terms
-```
-
-`worktree.rs` is the one file in `git/` that is not a command — it is
-`std::fs`. It stays, because the working tree is one of the three things git
-compares, and its own doc says what it is.
-
-### What moved, and why each move was forced
-
-**`Plan` came down.** Turning `DiffType::Staged(rev)` into `["--cached", rev]`
-is git knowledge, and it lived in `pipeline/list/resolver.rs` — so a crate two
-levels above the backend held a `Vec<String>` of git's flags. It is
-`git/mod.rs` now, the door to the directory, which is the one piece of git
-knowledge that is not itself a command.
-
-**The list pipeline collapsed from two stages to one.** With planning gone,
-what was left was a translation: the repository answers in its own words and
-the explorer needs them in its. `resolver.rs` is deleted.
-
-**The request came out of `explorer`.** `ExplorerDiffRequest` was declared
-there and **never used there** — measured: zero references outside its own
-file. A request is what *produces* the files that crate is handed. It is
-`pipeline::list::Request`, and `ExplorerDiffType` became `vcs::DiffType`, named
-after the crate that acts on it.
-
-Two `DiffType`s now exist, and they do not collide: `file_types::DiffType` is
-how a file is *read* — two columns, one column, alone — and `vcs::DiffType` is
-what is being compared. The crate in front of the name says which.
-
-### `debug status` stopped printing what it had no business knowing
-
-It took `vcs::git::Entry` and called `to_file_diff` itself, to print `XY`
-against a hand-written manifest — S5's acceptance check. An agnostic layer
-cannot print `XY`, so the check moved to where the letters live: `git/status.rs`,
-beside the parser that produces them, as a `#[cfg(test)]` module. Sixteen
-parser tests moved inline with it from `tests/git_status.rs`, which is where
-they belonged anyway — they parse bytes and need no repository.
-
-`Code::letter` is `#[cfg(test)]` now. It is the inverse of the parse, and
-nothing draws an `XY` code because nothing outside the crate can see one.
-
-`debug status` prints our model. `debug show` needed a way to name a version no
-comparison mentions, which is `Repository::at` — S6's byte-for-byte check
-against `git show`, verified still passing through the new layer.
-
-### Verification
-
-611 tests pass, up from 610, with the same five known failures.
-
-Sabotage: forcing `--no-renames` fails the test written for exactly that
-(`a_rename_is_counted_the_same_whatever_the_reader_has_configured`); mapping an
-unmerged record to `Modified` fails two, one of them a parser test that moved
-inline. Mapping a renamed record to `Modified` fails **nothing** — and that is
-correct: the paths already say it moved, and `to_file_diff` deliberately reads
-`Added` and `Moved` back off them so there is exactly one source. The rename
-test now asserts the change type as well as the paths, since it had checked
-only half of what it names.
-
-**Cargo did not rebuild** when an edit landed in the same second as the test
-command, so the first sabotage falsely passed. Edits and tests as separate
-commands is not enough — check for `Compiling` in the output.
-
-## D68 — a feature must not add a file to `render`
-
-**Extended by [D69](#d69)**, which keeps the rule and corrects where the file
-list's own pieces sit.
-
-[D65](#d65) split what was `render/explorer.rs` into `render/list.rs` (facts plus
-a theme, in text and colour) and `render/fit.rs` (drop the cheap pieces, cut the
-longest). It asked the right question of each — *is this general?* — and got
-yes, twice. The drop-then-cut rule really is general; the status line needs
-exactly it.
-
-It asked the wrong question. The right one is **did this arrive with a
-feature?**, and git answers it without argument:
-
-| commit | files added to `render/` |
-|---|---|
-| `290175c` draw the diff in a terminal | `cells.rs`, `gutter.rs` |
-| `cba7e18` one file renders one thing | `column.rs`, `layout.rs` |
-| `7f1d035` read a diff inline | — |
-| `64fa04e` D65, the file list | **`list.rs`, `fit.rs`** |
-
-Every other brick arrived with the terminal itself. Those two arrived with the
-explorer, and `render/list.rs` opened `use explorer::{Content, Guides, Row}` and
-matched on `Heading | Directory | File`. `render/mod.rs` says a brick "can be
-handed a rectangle and some text by anything", and `lint-arch` enforced that by
-banning `crate::view` — the file list's vocabulary walked in through a *crate*
-import instead, so the rule never fired. `list.rs` was the file list wearing a
-brick's name.
-
-**A tree is not a row.** The thing that kept `render/tree.rs` from being written
-as a reusable component is that two unrelated ideas were in one box. Nesting —
-who contains whom, what is open, what is therefore visible — has no width and no
-colour. A row — content from the left edge, content pinned to the right, and a
-rule for what goes when it will not fit — has no idea anything nests. The tree
-contributes a *prefix* to a row and nothing else.
-
-Which of the two generalises is settled by naming the second caller, not by
-inspection. The row has one: the status line drops a directory, then a rename,
-to keep the file name. The nesting does not — a commit graph is a DAG drawn as
-**lanes**, `│ ├ ─ ╮ ╰` weaving sideways, with no depth, no ancestors and nothing
-to collapse. So the row is what a second view would reuse, and the tree is a
-model.
-
-**The shape**, as this decision left it — [D69](#d69) then found the heading
-was in the wrong half and moved it, so the files below are not what is there
-now:
-
-```text
-view/buffer/explorer/     ←→   draw/buffer/explorer/
-├ mod.rs   the state           ├ mod.rs   which rows are on screen
-├ tree.rs  nests, folds,       ├ tree.rs  guides and fold arrows
-│          flattens            ├ list.rs  the flat view — no indent
-├ order.rs the two sorts       └ node.rs  one line: text, colour, placing
-└ filter.rs the glob
-```
-
-The flattening is recorded in the tree rather than walked at drawing time,
-because the viewport needs the row count before a frame to clamp the cursor —
-a walk that only ran while drawing would be a second answer to how many rows
-there are. It records **only which nodes**: `rows: Vec<NodeId>`.
-
-**A visible line is a node, not a `Row` beside one.** The first version of this
-kept both, the `Row` carrying the indent — `ancestors: Vec<bool>`, `is_last`,
-`is_heading` — on the inherited grounds that a guide is *"a fact about the walk
-and not a property of the node"*. That sentence is false, and it survived
-because it was moved rather than reread. Folding changes which nodes are
-*shown*; it never changes which children a node has. So once `sort` has run,
-both "am I the last of my siblings" and "was my ancestor at depth *d*" are
-permanent, and `is_heading` was never anything but `node_type == Heading`
-written twice.
-
-They live on the node now — `parent: Option<NodeId>` and `is_last: bool`,
-recorded once by `Tree::place` — and `draw` walks up the parents to build the
-indent. That is a handful of steps for the rows that fit on a screen, against a
-`Vec<bool>` allocated per row on every fold, and three fields that could
-contradict the tree they described.
-
-The `explorer` crate is gone, and with it `Entry`, `Group`, `Groups`, `Content`
-and `vcs::Changes::name`. A file already carries the two revisions it compares,
-so which group it is in is a field on it, and what the heading says is
-`Revs::heading()` — derived, so nothing can disagree with it. That is
-[D57](#d57) finally applied all the way down: the backend used to report
-`"Staged Changes"` *and* the revision pair that means it.
-
-**What is *not* shared.** `draw/buffer/explorer/node.rs` places one row and
-narrows it, and a commit list would write its own. What both use is
-`line_index`, which counts columns for everyone — and miscounting is what
-[B9](06-known-bugs.md) actually is: `draw/status.rs:110` says
-`path.file_name().chars().count()`. Characters, where a terminal counts columns.
-Sharing `fit` was never the fix for that; asking `line_index` is.
-
-### Verification
-
-612 tests pass, up from 610, with the same five pre-existing failures — three in
-`codediff/tests/terminal.rs` and two in `codediff/tests/pipeline.rs`, all
-confirmed failing on the parent commit in a clean worktree.
-
-Sabotage, counting tests that fail:
-
-| break | tests failed |
-|---|---|
-| `Rev::Index` heads "Changes" instead of "Staged Changes" | 19 |
-| every file put in one group instead of grouped by revision pair | 10 |
-| the gap takes one column instead of every spare one | 11 |
-| a guide drawn where an ancestor was the last of its siblings | 4 |
-| `is_last` recorded as `false` for every node | 17 |
-| `parent` never recorded, so the indent has no chain to walk | 13 |
-
-The guide row failed **one** test at first. The shared fixture has no directory
-that is both last among its siblings and has children, so every guide column in
-it is a `│` and a renderer that drew `│ ` at every depth passed everything.
-`an_ancestor_that_was_last_leaves_blank_space_and_not_a_guide` is that tree, on
-a real screen. D65 claimed this case failed three tests; it did not.
-
-## D69 — a heading is what an arrangement sits under, not part of one
-
-[D68](#d68) moved the file list out of `render` and into `view` and `draw`. It
-left one thing wrong, and the wrongness was visible as dead code: there was a
-`draw/buffer/explorer/list.rs` whose whole body asked whether a node was a
-directory, in a mode that has none. It could not fire. Nothing noticed, because
-there was no screen test of list mode at all — and `explorer_tree.rs` still
-asserted `├ ` before a flat path, because its helper built the indent itself
-instead of asking the renderer. The test and the screen disagreed and both
-passed.
-
-**The cause was that both arrangements owned the heading.** `Tree` made it a
-root node with everything hanging off it; the flat mode made it a `Line::
-Heading`. So each knew what a heading was, each counted files and summed stats
-for it, each held its fold — and each was a *tree* either way, since the flat
-one built an arena in order to walk it straight back into one line per file.
-
-A heading is not part of an arrangement. It is what an arrangement sits under.
-
-```text
-Explorer
-├ "Changes"         ── Style: a Tree, or a List, of that group's files
-└ "Staged Changes"  ── the same, arranged the same way
-```
-
-```text
-view/buffer/explorer/            draw/buffer/explorer/
-├ mod.rs     the state           ├ mod.rs        which lines are on screen
-├ group.rs   which comparison    ├ tree.rs       guides and fold arrows
-├ style.rs   asking whichever    └ view_line.rs  one line: text and placing
-├ tree.rs    the nested one
-├ list.rs    the flat one
-├ order.rs   what comes first
-└ filter.rs  the glob
-```
-
-Two functions in `group.rs` carry the numbering, because the groups are drawn
-one after another and the screen counts every line from zero while a style
-counts only its own: `get_heading_line` says which group's heading a line is,
-and `get_line_style` translates a screen line into a style and a line within
-it. Exactly one of them answers for any line — which was an enum until it was
-clear that three of its four callers wanted the same arm every time.
-
-`Explorer` owns the groups, the headings, the counts, the fold on a heading,
-and the numbering of lines across groups. A `Style` is handed one group's files
-and produces lines; it cannot name a heading because it is never given one.
-That is what makes a third arrangement a new variant and nothing else.
-
-An enum rather than a trait, for the reason `BufferType` is one: the set is
-closed, so adding a variant breaks the build until it is handled everywhere.
-
-**The order is VS Code's; the method is not.** `SCMTreeSorter` sorts the flat
-mode with `comparePaths`, whose one surprising rule is that a shallower file
-comes first — `a/z.rs` before `a/b/c.rs` — because the walk runs out of
-segments on one side and returns there. Ours did the opposite, since it
-compared whole paths as strings and `/` is below every letter. Names now
-compare numerically too, so `file9` precedes `file10`.
-
-VS Code folds case *inside* the comparison. Sorting twenty thousand paths makes
-about 287,000 comparisons, so that is 570,000 foldings of a forty-character
-string; transliterated to Rust it measured **81 ms**, against **25 ms** for the
-comparator it replaces. So `order.rs` builds a sort key once per path — twenty
-thousand foldings — and the sort is then a memcmp: **1.2 ms**. A key is
-deliberately *not* a total order, since two spellings of one name fold
-together; whatever sorts carries the path beside it as the tie-break, which is
-what a collator's own fallback does.
-
-**A measurement that corrected a claim.** The flat mode was thought to be
-avoiding the cost of building a tree. It was not: building the two shapes takes
-about the same time, and both are noise beside the 296 ms git spends before
-either runs ([D63](#d63)). What cost 19 ms of a 30 ms flat build was the
-comparator, in *both* modes. The split is worth making because the flat
-arrangement has no directories, no parents and nothing foldable — not because
-it is faster.
-
-**A node is what every node has, then what only its kind has.** `NodeType` was
-`Heading | Directory | File`. Once the heading left, the honest shape was the
-one gitui's `FileTreeItem` and broot's `TreeLine` — the two closest programs to
-this — already use: shared fields in the struct, the differing half in an enum
-beside them.
-
-```rust,ignore
-struct Node { name, parent, is_last, node_type: NodeType }
-enum NodeType {
-    File { index: usize },
-    Folder { children: Vec<NodeId>, open: bool },
-}
-```
-
-`name` and `parent` are asked of every node while drawing, so they are read
-without asking which kind it is. A folder's children and a file's index are
-each unreachable from the other — not because a constructor is careful, but
-because there is nowhere to put them. An intermediate version used
-`file: Option<usize>` with the children beside it, and that was strictly worse:
-it made "a file with children" writable, and it took two constructors and 22
-tests to forbid what the type above cannot express.
-
-It also caught a real fault immediately. `sort` and `place` descended into
-every node writing through a "give me your children" call that a file now has
-no answer to, and four tests panicked. The `Option` shape had accepted it in
-silence.
-
-And `Content` is now `ViewLine`, the counterpart of [`align::ViewLine`] — one
-line of a buffer as facts, before anything draws it. Two crates naming one idea
-alike is not the collision [D28](#d28) removed; that was one idea with two
-names. `draw/…/node.rs` became `view_line.rs` for the same reason: it draws
-headings too, and a heading has no node behind it.
-
-[`align::ViewLine`]: ../../crates/align/src/view_line.rs
-
-**Also gone: `flatten`.** A `bool` on the explorer with no key, no config and
-no caller, always `true`. Collapsing a chain of single-child directories is
-what `Tree` does; a switch nobody can reach is not a setting.
-
-### Verification
-
-627 tests pass, up from 612, with the same five pre-existing failures — three in
-`codediff/tests/terminal.rs` and two in `codediff/tests/pipeline.rs`, all
-confirmed failing on the parent commit in a clean worktree.
-
-Sabotage, counting tests that fail:
-
-| break | tests failed |
-|---|---|
-| a shallower path sorts last instead of first | 8 |
-| a run of digits compares as text | 2 |
-| a heading's fold does nothing | 3 |
-| a heading occupies no line | 4 |
-
-The last one hung, before there was a test for it. Dropping the heading's own
-line sends every lookup to a heading, and the scan in `first_file` then never
-advances — so the failure was a test run that did not terminate rather than an
-assertion. `every_line_resolves_to_a_different_place` names it instead: every
-line maps to its own place, and there is exactly one heading line per group. It
-fails in both arrangements.
+| 4 | binary / symlink / mode-change / submodule presentation |
+| 5 | licensing and `ATTRIBUTION.md` — the C is VSCode-derived and vendors utf8proc |
