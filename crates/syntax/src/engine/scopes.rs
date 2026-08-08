@@ -1,39 +1,15 @@
-//! Which TextMate scope path is which [`Group`].
+//! Which TextMate scope path maps to which [`Group`].
 //!
-//! ---
+//! One shared table — which scopes are keywords is a fact about TextMate, not
+//! a theme choice. Precedence is the engine's (deeper + more specific wins).
 //!
-//! One table, shared by every theme, because which scopes are keywords is a
-//! fact about TextMate rather than a choice a theme makes. What a keyword
-//! *looks like* is the caller's business, and this crate never learns it.
-//!
-//! **The pens are not here.** [`engine::palette`](super::palette) numbers both
-//! tables, because a number assigned in two files is a number two files have
-//! to keep in step.
-//!
-//! **Every selector here has to claim something real.** The engine accepts a
-//! selector it can never use — `"keywrod"` parses happily and then matches
-//! nothing — so a typo costs a colour and says nothing. `crates/ui/tests/
-//! scopes.rs` runs each of these against real source in seventeen languages
-//! and fails on any that claims nothing, which is the only guard there is.
-//!
-//! **Precedence is the engine's, and it is not the order written here.** A
-//! selector scores by how much of the scope path it claims and how deep in the
-//! stack it claims it, so `keyword.control` beats `keyword` without either
-//! knowing about the other, and `string.regexp punctuation.definition.string`
-//! beats `string punctuation.definition.string` — which is how a regular
-//! expression's slashes stop being green. The order below is for a reader:
-//! general first, then the exceptions.
+//! Every selector is tested against real source in seventeen languages; a typo
+//! that matches nothing fails the build.
 
 use crate::group::Group;
 use crate::style::Style;
 
 /// One entry of the scope table.
-///
-/// The flags are here rather than in the caller's theme because they are
-/// structural: a
-/// heading is bold and a comment is italic in every theme worth shipping, and
-/// they are the only way a rule with no colour of its own — `markup.bold` —
-/// can say anything at all.
 #[derive(Debug, Clone, Copy)]
 pub struct Scope {
     pub selector: &'static str,

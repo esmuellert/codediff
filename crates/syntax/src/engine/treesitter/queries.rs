@@ -1,22 +1,8 @@
-//! Turning a grammar's query into something the engine can match with.
+//! Compiling a grammar's query for the highlight engine.
 //!
-//! A query arrives as *text* — `highlights.scm`, shipped by the grammar crate —
-//! and has to be compiled against both the grammar and the caller's list of
-//! capture names before anything can be coloured with it. That is what a
-//! [`Palette`] holds, and it is why one cannot be built until the caller has
-//! said which captures it recognises.
-//!
-//! **Compiling is not free and cannot be avoided.** It is an index built from
-//! every pattern against a parse table of several megabytes: 16 ms for Rust,
-//! 247 ms for Haskell, once per language for the life of the process. There is
-//! no serialisation API — a compiled query is an opaque C structure full of
-//! pointers, so it cannot be built when *we* build and shipped
-//! ([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942),
-//! open since 2022). It is also indivisible, which is half the reason
-//! colouring happens on a thread of its own. See D41.
-//!
-//! Done on first use, then kept: a reader who never opens a Haskell file never
-//! pays Haskell's quarter of a second.
+//! Compilation costs 16 ms (Rust) to 247 ms (Haskell), is indivisible, and
+//! cannot be serialized ([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942)).
+//! Done on first use and kept for the life of the process.
 
 use std::sync::OnceLock;
 

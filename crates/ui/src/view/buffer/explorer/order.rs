@@ -1,37 +1,10 @@
 //! What comes before what.
 //!
-//! ---
+//! Sort order matches VS Code's `SCMTreeSorter`: case-insensitive, numeric
+//! (`file9` < `file10`), shallower paths first in flat mode.
 //!
-//! The orders are VS Code's, and the method is not.
-//!
-//! **The orders.** `SCMTreeSorter` in `scmViewPane.ts` answers two questions,
-//! and so does this. A tree sorts each directory's own children, directories
-//! above files — otherwise a folder could sit between two files that are not
-//! in it, and the indent guides would cross unrelated rows. A flat list sorts
-//! whole paths with `comparePaths`, whose one surprising rule is that **a
-//! shallower file comes first**: `a/z.rs` before `a/b/c.rs`, because the walk
-//! runs out of segments on one side and returns there.
-//!
-//! Names compare as `compareFileNames` does — case-insensitively, and
-//! *numerically*, so `file9` comes before `file10` rather than after it.
-//!
-//! **The method.** VS Code folds case inside the comparison, once per pair.
-//! Sorting twenty thousand paths makes about 287,000 comparisons, so that is
-//! 570,000 foldings of a forty-character string. Transliterated to Rust it
-//! measured **81 ms**; the comparator this replaces measured **25 ms**.
-//!
-//! So the folding happens *once per path* instead, into a byte string that
-//! sorts the way the comparison would have. Twenty thousand foldings rather
-//! than 570,000, and the sort itself is then a memcmp: **1.2 ms**, measured
-//! the same way.
-//!
-//! A key is one comparable value rather than a tuple of parts, because a key
-//! made of parts can disagree with itself about which part wins.
-//!
-//! **A key is not a total order**, deliberately: two spellings of one name
-//! fold to one key. Whatever sorts must carry the original beside it as the
-//! tie-break, which is what a collator's own fallback does. Without that, two
-//! files differing only in case would swap places between refreshes.
+//! A sort key is built once per path (not per comparison) — 1.2 ms for 20k
+//! paths vs 81 ms with inline case-folding.
 
 /// Marks the last segment of a path, and sorts below [`SEGMENT`].
 ///
