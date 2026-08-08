@@ -122,23 +122,13 @@ impl<'a> LineIndex<'a> {
         }
     }
 
-    /// Byte range covering a half-open span of UTF-16 columns.
+    /// Byte range for a half-open span of UTF-16 columns.
     ///
-    /// This is the conversion the diff engine's inner-change spans need.
-    /// The engine compares individual UTF-16 code units, so it can report a
-    /// span that begins or ends *inside* a character: `😀` and `🨀` differ only
-    /// in their high surrogate, and the engine reports a one-unit change.
-    /// Rounding both ends down would collapse that to an empty byte range and
-    /// the change would be highlighted nowhere at all, so the start rounds down
-    /// and the exclusive end rounds up. A partly covered character is covered
-    /// whole.
+    /// Converts the engine's inner-change spans (UTF-16) to byte offsets.
+    /// Start rounds down, end rounds up — a partly covered character is
+    /// covered whole. An empty span stays empty.
     ///
-    /// An empty span stays empty — a caret between two characters marks no
-    /// text — so a caller can still distinguish "nothing changed here".
-    ///
-    /// Rounding is to whole *characters*. A caller that needs to highlight
-    /// whole grapheme clusters, so that a combining mark travels with its base,
-    /// can widen the result using [`graphemes`].
+    /// To widen to grapheme cluster boundaries, use [`graphemes`] on the result.
     pub fn utf16_range_to_bytes(
         &self,
         cols: std::ops::Range<Utf16Col>,

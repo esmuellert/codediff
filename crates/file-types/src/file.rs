@@ -42,18 +42,9 @@ impl ChangeType {
 
 /// A file under review: where it is on each side of the comparison.
 ///
-/// `None` on a side means the file does not exist there — added on the left,
-/// deleted on the right. Two `Some` with different paths is a rename.
-///
-/// Everything a reader is told about a file is derived from this pair,
-/// never stored beside it. That is the point: a `kind` field could disagree
-/// with the paths, and a formatted `label` field already did — it fused the
-/// path, the previous path and the added/deleted note into one string, after
-/// which nothing could style or shorten them separately.
-///
-/// VSCode's `MultiDiffEditorItem` is the same pair, and its renderer likewise
-/// recomputes "renamed" at paint time from `modifiedUri.path !=
-/// originalUri.path` rather than storing a flag.
+/// `None` on a side means the file does not exist there (added/deleted).
+/// Two `Some` with different paths means a rename. Change type, labels, etc.
+/// are all derived from the paths — never stored separately.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
     original: Option<RepoPath>,

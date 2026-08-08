@@ -36,20 +36,8 @@ pub use store::{Colours, Spans, Store};
 pub struct Syntax {
     requests: Sender<SyntaxRequest>,
     answers: Receiver<SyntaxResponse>,
-    /// One request in flight per file, and no queue behind it.
-    ///
-    /// Scrolling changes what is wanted on every frame, and sending each
-    /// change would put sixty requests a second behind one that takes a
-    /// quarter of a second to answer — the queue would grow for as long as
-    /// the reader kept scrolling, and every response would be for a screen
-    /// already gone.
-    ///
-    /// Holding the newest one back would be worse, not better. A request
-    /// says how much of the file the asker already has, and that number moves
-    /// every time a response lands — so a request waiting its turn is answered
-    /// from a starting point that has since gone stale, and its lines are
-    /// refused on arrival. Nothing is held. The asker re-asks on the next
-    /// frame with a number that is current, and asking is a lookup.
+    /// Files with a request in flight. At most one per file — newer scrolls
+    /// replace the previous request rather than queueing behind it.
     outstanding: HashSet<String>,
 }
 

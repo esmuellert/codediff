@@ -17,19 +17,10 @@ use crate::theme::Code;
 /// A byte range of the line to draw in the emphasis style.
 pub type Emphasis = std::ops::Range<u32>;
 
-/// How a line is coloured.
+/// How a line is coloured: diff background + syntax foreground.
 ///
-/// One parameter rather than five because they only ever travel together, and
-/// a caller that got their order wrong would silently paint the changed
-/// characters in the unchanged style.
-///
-/// Two independent layers, and the order between them is the whole rule.
-/// The diff owns the background: `base` for the line, `emphasis` for the
-/// characters within it that differ. Syntax owns the foreground and nothing
-/// else, and is patched on top. That is why [`Code`] holds colours rather than
-/// styles — a syntax background would hide which lines changed, and this way
-/// it cannot be expressed. VS Code composes exactly these two layers, and
-/// `delta` treats "syntax as a background" as a fatal error.
+/// The diff owns the background (`base` for the row, `emphasis` for inner
+/// changes). Syntax is patched on top as foreground only.
 #[derive(Debug, Clone, Copy)]
 pub struct Ink<'a> {
     /// The whole row, including past the end of the text.

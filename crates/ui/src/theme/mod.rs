@@ -110,19 +110,10 @@ impl Theme {
         Self::ALL.into_iter().find(|theme| theme.name == name)
     }
 
-    /// What to use when the reader has not said.
+    /// Picks a theme based on the terminal's colour support.
     ///
-    /// Catppuccin unless the terminal cannot show it. Its diff backgrounds are
-    /// eighteen percent of an accent over the base — a few points of
-    /// lightness — and a terminal without 24-bit colour rounds them straight
-    /// back into the background, leaving a diff with no visible diff in it.
-    /// Where that is a risk, [`basic`] is used instead: it is less pretty and
-    /// it always works.
-    ///
-    /// Detection is by environment variable because there is no way to ask.
-    /// `COLORTERM` is what every terminal that supports 24-bit colour sets,
-    /// and the check is deliberately one-way — an unset variable means "not
-    /// sure", and being unsure is a reason to pick the theme that cannot fail.
+    /// Uses Catppuccin if `COLORTERM` says 24-bit is available, otherwise
+    /// falls back to [`basic`] which uses only indexed colours.
     pub fn detect(environment: impl Fn(&str) -> Option<String>) -> Self {
         let truecolor = environment("COLORTERM")
             .is_some_and(|value| value.eq_ignore_ascii_case("truecolor") || value == "24bit");
