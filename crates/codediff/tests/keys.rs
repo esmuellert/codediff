@@ -35,7 +35,6 @@ fn cursor_after(keys: &str) -> u32 {
     cursor(&s)
 }
 
-
 #[test]
 fn a_count_reaches_the_viewport() {
     assert_eq!(cursor_after("j"), 1);

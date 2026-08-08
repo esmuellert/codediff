@@ -4,14 +4,14 @@
 
 use pipeline::file::{Files, Response};
 use ratatui::backend::Backend;
+use ratatui::layout::Rect;
 
 use crate::draw;
 use crate::input::{Action, Command, ProgramAction, Resolution, Resolver, TabAction, ViewAction};
 use crate::syntax::{Store, Syntax};
 use crate::terminal::Screen;
 use crate::theme::Theme;
-use crate::view::Buffer;
-use crate::view::View;
+use crate::view::{Buffer, BufferType, Layout, PaneId, View};
 
 /// Bail-out for [`Session::settle`] if the worker and store disagree.
 const IDLE_ANSWERS: u32 = 8;
@@ -26,6 +26,17 @@ pub enum Flow {
 }
 
 /// One review session.
+/// Where each pane was drawn, so a mouse click can say which one it hit.
+///
+/// Updated after every frame, and read only on a click. There is no stale
+/// risk: a click between frames hits what was on screen, which is what the
+/// reader pointed at.
+#[derive(Debug, Default, Clone)]
+struct HitMap {
+    panes: Vec<(PaneId, Rect)>,
+    body: Rect,
+}
+
 pub struct Session {
     view: View,
     theme: Theme,
@@ -38,6 +49,8 @@ pub struct Session {
     store: Store,
     /// Error from the last file open, cleared on the next key.
     notice: Option<String>,
+    /// Where each pane landed on the last frame.
+    hit_map: HitMap,
 }
 
 impl Session {
@@ -62,6 +75,7 @@ impl Session {
             selected: None,
             store,
             notice: None,
+            hit_map: HitMap::default(),
         }
     }
 
@@ -123,13 +137,14 @@ impl Session {
             &self.store,
             self.notice.as_deref(),
         );
+        self.update_hit_map(area);
     }
 
     pub fn draw<B: Backend>(
         &mut self,
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
-        terminal.draw(|frame| {
+        let completed = terminal.draw(|frame| {
             let area = frame.area();
             draw::render(
                 frame.buffer_mut(),
@@ -140,6 +155,7 @@ impl Session {
                 self.notice.as_deref(),
             );
         })?;
+        self.update_hit_map(completed.area);
         Ok(())
     }
 
@@ -227,7 +243,7 @@ impl Session {
         let buffer = self.view.buffer(pane.buffer);
         let cursor = pane.viewport.cursor();
         match buffer.buffer_type() {
-            crate::view::BufferType::Explorer(explorer) => Some(explorer.file(cursor)?.clone()),
+            BufferType::Explorer(explorer) => Some(explorer.file(cursor)?.clone()),
             _ => None,
         }
     }
@@ -243,10 +259,106 @@ impl Session {
 
     /// Applies one terminal event.
     pub fn handle(&mut self, event: &crossterm::event::Event) -> Flow {
-        let Some(key) = crate::input::press(event) else {
-            return Flow::Continue;
+        use crossterm::event::Event;
+
+        match event {
+            Event::Key(_) => {
+                let Some(key) = crate::input::press(event) else {
+                    return Flow::Continue;
+                };
+                self.press(key)
+            }
+            Event::Mouse(mouse) => {
+                self.handle_mouse(*mouse);
+                Flow::Continue
+            }
+            _ => Flow::Continue,
+        }
+    }
+
+    /// Handles a mouse event: scroll moves the focused pane, click focuses
+    /// and positions.
+    fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
+        use crossterm::event::MouseEventKind;
+
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                let (buffer, viewport) = self.view.focused_mut();
+                buffer.act(
+                    crate::input::BufferAction::Motion(crate::input::Motion::Up),
+                    3,
+                    viewport,
+                );
+            }
+            MouseEventKind::ScrollDown => {
+                let (buffer, viewport) = self.view.focused_mut();
+                buffer.act(
+                    crate::input::BufferAction::Motion(crate::input::Motion::Down),
+                    3,
+                    viewport,
+                );
+            }
+            MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                let col = mouse.column;
+                let row = mouse.row;
+                // Which pane was clicked?
+                if let Some((pane_id, area)) = self.hit_map.panes.iter().find(|(_, rect)| {
+                    col >= rect.x
+                        && col < rect.x + rect.width
+                        && row >= rect.y
+                        && row < rect.y + rect.height
+                }) {
+                    let pane_id = *pane_id;
+                    let area = *area;
+                    // Focus the clicked pane.
+                    self.view.tab_mut().set_focus(pane_id);
+                    // Position the cursor at the clicked line within the pane.
+                    let line_in_pane = (row - area.y) as u32;
+                    let (buffer, viewport) = self.view.focused_mut();
+                    let target = viewport.top() + line_in_pane;
+                    let clamped = target.min(buffer.view_lines().saturating_sub(1));
+                    viewport.jump(clamped, buffer.view_lines());
+                    // If it's the explorer and the click is on a file, open it.
+                    if matches!(buffer.buffer_type(), BufferType::Explorer(_)) {
+                        self.open();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Records where each pane landed, so a click can say which one it hit.
+    fn update_hit_map(&mut self, area: Rect) {
+        use crate::render::layout;
+
+        self.hit_map.panes.clear();
+        let Some((body, _status)) = layout::screen(area) else {
+            self.hit_map.body = Rect::default();
+            return;
         };
-        self.press(key)
+        self.hit_map.body = body;
+
+        let places = match self.view.tab().layout() {
+            Layout::Split { left } => layout::split(body, left),
+            Layout::Full => None,
+        };
+        let panes: Vec<PaneId> = self.view.tab().ids().collect();
+        match places {
+            Some((left_area, _border, right_area)) => {
+                if let Some(&id) = panes.first() {
+                    self.hit_map.panes.push((id, left_area));
+                }
+                if let Some(&id) = panes.get(1) {
+                    self.hit_map.panes.push((id, right_area));
+                }
+            }
+            None => {
+                if let Some(&id) = panes.first() {
+                    self.hit_map.panes.push((id, body));
+                }
+            }
+        }
     }
 
     /// Routes a command to its executor.

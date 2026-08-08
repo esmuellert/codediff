@@ -119,6 +119,13 @@ impl Tab {
         self.focus = PaneId((self.focus.0 + 1) % self.panes.len());
     }
 
+    /// Focuses a specific pane, if it exists.
+    pub fn set_focus(&mut self, id: PaneId) {
+        if id.0 < self.panes.len() {
+            self.focus = id;
+        }
+    }
+
     /// Moves the border between the panes.
     ///
     /// Executed here, not by a pane: growing one shrinks the other, and a pane

@@ -78,6 +78,7 @@ fn take() -> io::Result<()> {
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(terminal::EnterAlternateScreen)?;
+    stdout.execute(event::EnableMouseCapture)?;
     stdout.execute(cursor::Hide)?;
     Ok(())
 }
@@ -86,6 +87,7 @@ fn take() -> io::Result<()> {
 pub fn restore() {
     let mut stdout = io::stdout();
     let _ = stdout.execute(cursor::Show);
+    let _ = stdout.execute(event::DisableMouseCapture);
     let _ = stdout.execute(terminal::LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
     let _ = stdout.flush();
