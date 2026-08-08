@@ -45,7 +45,7 @@ pub struct Parser {
 
 /// Rules appended after a grammar's own.
 ///
-/// **Appended, never inserted.** Where two patterns cover one node this engine
+/// Appended, never inserted. Where two patterns cover one node this engine
 /// resolves in favour of the *later*, which is why a shipped query sometimes
 /// loses its own more specific rule — JSON captures keys and then captures
 /// every string, so the key rule never wins. Appending is how a rule wins, and
@@ -101,7 +101,7 @@ mod overrides {
 /// out is duller than a macro and survives the next crate that is different
 /// again.
 ///
-/// **Order is meaning.** A [`Grammar`] is an index into this, so rows may be
+/// Order is meaning. A [`Grammar`] is an index into this, so rows may be
 /// added or edited but are read by position at runtime — which is fine,
 /// because the same build produces both ends.
 pub static LANGUAGES: &[Parser] = &[

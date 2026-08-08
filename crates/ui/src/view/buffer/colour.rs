@@ -1,14 +1,7 @@
-//! Asking for colour, and reading the answer back.
+//! Asking the syntax worker for colour and reading the answer back.
 //!
-//! Every buffer showing a file needs this, and each one used to hold its own
-//! copy: the two copies had already drifted, one clamping `upto` before asking
-//! whether the worker was busy and the other after. Neither order is wrong,
-//! which is the point — two copies of a rule drift in ways nothing fails on.
-//!
-//! It lives beside the buffers that call it rather than in `syntax`, because
-//! none of it is about colouring: it is what a *buffer* does to get its file
-//! coloured. A diff has two versions to ask about and a lone file one, so
-//! there are two entry points over one implementation. See D61.
+//! Shared by all buffer types showing a file. A diff asks about two
+//! versions, a single file about one.
 
 use std::sync::Arc;
 
@@ -75,9 +68,8 @@ pub fn spans_single_file<'a>(read: &file::SingleFile, store: &'a Store) -> Spans
 
 /// Asks for one version of one file, up to `upto`.
 ///
-/// **Sends nothing** when the store already holds enough, which is the
-/// ordinary case after the first screen and the whole reason the store is
-/// on this side of the thread; when a request for that version is still
+/// Sends nothing when the store already holds enough (the ordinary case
+/// after the first screen); when a request for that version is still
 /// outstanding, since what was wanted meanwhile is asked for again on the
 /// next frame from a starting point that is current by then; or when the
 /// file does not exist on the side asked about, which has no text and so

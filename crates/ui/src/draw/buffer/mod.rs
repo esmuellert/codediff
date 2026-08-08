@@ -1,4 +1,4 @@
-//! What each buffer type looks like.
+//! Drawing dispatch: one file draws one buffer type.
 //!
 //! ```text
 //! view/buffer/side_by_side.rs  ←→  draw/buffer/side_by_side.rs

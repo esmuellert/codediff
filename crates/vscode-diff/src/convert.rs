@@ -1,4 +1,4 @@
-//! The single place that dereferences pointers returned by the C engine.
+//! Converting C results to owned Rust types and freeing C memory.
 //!
 //! The rule is *convert eagerly, free immediately*: the result is walked once
 //! into owned Rust values and released before returning, so no raw pointer ever

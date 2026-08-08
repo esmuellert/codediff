@@ -15,7 +15,7 @@ impl Repository {
     /// A path that is staged and then edited again appears twice — one per
     /// comparison, each carrying its own revision pair.
     ///
-    /// **A flat list.** What a repository owes its caller is the files; how
+    /// A flat list. What a repository owes its caller is the files; how
     /// they are grouped, ordered or drawn is not its question.
     pub fn get_changed_files(
         &mut self,

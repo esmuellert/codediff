@@ -14,7 +14,7 @@ use syntax::{Clues, Engine, Highlighted, Palette};
 
 /// The token covering the first occurrence of `needle`.
 ///
-/// **Deliberately does not say which engine.** These assertions are about the
+/// Deliberately does not say which engine. These assertions are about the
 /// language — in Rust, `fn` is a keyword — and a reader does not care which
 /// machinery reached that answer. Asking through the seam means each case is
 /// checked against whatever actually runs, and that a language moving from one

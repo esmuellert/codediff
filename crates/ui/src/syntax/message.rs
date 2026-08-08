@@ -1,4 +1,4 @@
-//! What crosses between the two threads.
+//! Request and response types for the syntax worker thread.
 //!
 //! Plain data only — no engine types. The compiler enforces this via `Send`.
 

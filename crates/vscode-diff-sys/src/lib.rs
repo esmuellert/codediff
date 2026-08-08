@@ -120,7 +120,7 @@ unsafe extern "C" {
     ///
     /// # Representing an empty file
     ///
-    /// An empty file is **one empty line**, `[""]`, not zero lines. The engine
+    /// An empty file is one empty line, `[""]`, not zero lines. The engine
     /// mirrors VSCode's document model, in which every document has at least
     /// one line, and it has a dedicated full-file path keyed on
     /// `count == 1 && strlen(lines[0]) == 0`.

@@ -1,7 +1,7 @@
 //! Compiles the vendored libvscode-diff C sources into a static archive and
 //! links it into this crate.
 //!
-//! OpenMP is deliberately disabled, for measured reasons rather than by analogy
+//! OpenMP is disabled. Measured reasons:
 //! with upstream's libgomp packaging troubles — those were a *runtime dynamic
 //! linking* failure of a prebuilt `.so`, which does not apply to a build from
 //! source.

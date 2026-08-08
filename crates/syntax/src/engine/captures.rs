@@ -1,24 +1,8 @@
-//! Which tree-sitter capture is which [`Group`].
+//! Which tree-sitter capture maps to which [`Group`].
 //!
-//! ---
-//!
-//! The exact twin of [`scopes`]: that file maps TextMate scope paths, this one
-//! maps the capture names a grammar's own `highlights.scm` uses. Both land on
-//! the same [`Group`]s, which is what lets one theme serve two engines and a
-//! file look the same whichever read it.
-//!
-//! **Shorter than [`scopes`], and that is the point.** A capture is what the
-//! grammar's author already decided; there is no precedence to arrange, no
-//! contextual selector to get right, and no typo to hunt — a name that matches
-//! nothing simply never appears. Most of the work in `scopes` was fighting
-//! TextMate's matching rules, and none of it exists here.
-//!
-//! Matching is by **longest dotted prefix**, done by the engine: a query that
-//! captures `@keyword.function` finds `keyword` here if `keyword.function` is
-//! not listed. So only the names that need a *different* answer from their
-//! prefix appear below, plus the prefixes themselves.
-//!
-//! [`scopes`]: super::scopes
+//! The twin of [`scopes`](super::scopes) for the parser engine. Simpler
+//! because captures have no precedence rules — the engine matches by longest
+//! prefix, so only names that need a different answer from their prefix appear.
 
 use crate::group::Group;
 use crate::style::Style;

@@ -1,4 +1,4 @@
-//! What colour a theme gives each part of a piece of code.
+//! Pen-to-colour mapping for syntax highlighting.
 //!
 //! ---
 //!
@@ -12,7 +12,7 @@
 //! that a keyword is mauve. That is why a terminal with no 24-bit colour can
 //! still be highlighted, and why changing theme does not re-read a line.
 //!
-//! **A [`Code`] holds `Color`, not `Style`.** Not a detail: syntax may only
+//! A [`Code`] holds `Color`, not `Style`. Not a detail: syntax may only
 //! tint the letters, because a diff owns the background of every line it
 //! touches and a syntax background would hide which lines changed. Storing a
 //! colour rather than a style means a theme *cannot* express the mistake.
@@ -107,10 +107,9 @@ impl Code {
 
     /// The colour a span asks for, or nothing if no rule claimed it.
     ///
-    /// **Either engine's pen.** The two tables share one numbering — scope
+    /// Either engine's pen. The two tables share one numbering — scope
     /// selectors first, capture names after — so this resolves a span without
-    /// knowing which engine produced it, which is the whole reason a diff of a
-    /// parsed file and a matched file can wear one theme.
+    /// knowing which engine produced it.
     ///
     /// A pen out of range is not an error worth failing a frame over — it can
     /// only mean spans outlived the palette that made them — so it draws

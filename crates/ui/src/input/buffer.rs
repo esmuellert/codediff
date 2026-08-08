@@ -1,4 +1,4 @@
-//! What the focused buffer can do, and the keys that ask for it.
+//! Buffer-level actions and their keybindings.
 //!
 //! The innermost level of the view model, and so the first consulted: a
 //! binding here shadows the same keys at every level above. That is how a

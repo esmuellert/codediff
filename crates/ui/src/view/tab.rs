@@ -6,7 +6,7 @@
 //! contains both sides of a border — the rule from D27, in its first
 //! non-obvious application.
 //!
-//! [`Layout`] is deliberately not a general tree. Every arrangement we know of
+//! [`Layout`] is not a general tree. Every arrangement we know of
 //! — a diff alone, explorer beside a diff, history beside a diff — is one pane
 //! or two. Helix's `Tree` is around 600 lines with climb-and-descend
 //! directional focus, and buys nothing until a third arrangement exists. The

@@ -1,18 +1,6 @@
 //! The flat arrangement: one line per file, showing its whole path.
 //!
-//! ---
-//!
-//! **There is nothing here but an order.** No nodes, no directories, no
-//! parents, nothing foldable. A flat list is a list of *paths*, and building a
-//! tree in order to walk it back into one line per file would be building a
-//! structure whose only distinguishing property is that it is not used — which
-//! is what this codebase did, and the dead `draw/…/explorer/list.rs` that
-//! resulted is what gave it away. See D69.
-//!
-//! **One group's files, and nothing about groups**, the same as [`Tree`]. A
-//! heading is what an arrangement sits under, not part of one.
-//!
-//! [`Tree`]: super::Tree
+//! No nodes, no directories, no folds — just paths in sorted order.
 
 use file_types::File;
 
@@ -33,7 +21,7 @@ impl List {
     ///
     /// A key per path built once, then a plain sort — see
     /// [`order`](super::order). The path is carried beside the key as the
-    /// tie-break the key deliberately leaves out.
+    /// tie-break the key leaves out.
     pub fn build(files: &[File], members: &[usize]) -> Self {
         let mut keyed: Vec<(Vec<u8>, &str, usize)> = members
             .iter()

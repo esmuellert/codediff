@@ -75,9 +75,8 @@ pub fn entries(repo: &Repo, untracked: Untracked, pathspec: &[String]) -> Result
         "--porcelain=v2",
         "-z",
         untracked.flag(),
-        // Renames are the whole point of the `2` record; without this a moved
-        // file appears as an unrelated add and delete. Forced for the same
-        // reason `diff` forces it — the two are read together. See D56.
+        // Without --find-renames a moved file appears as an unrelated add
+        // and delete. Forced for the same reason `diff` forces it.
         "--find-renames",
     ];
     if !pathspec.is_empty() {
@@ -107,7 +106,7 @@ pub fn read(
             // Against the working tree, the stored side is converted the way a
             // checkout would convert it. A repository with `core.autocrlf`
             // stores LF and checks out CRLF, so comparing the stored bytes
-            // with the bytes on disk marked **every line** changed — measured,
+            // with the bytes on disk marked every line changed — measured,
             // on a file where one line had been edited. The same is true of
             // any clean/smudge filter.
             if file.rev(version.other()) == &Rev::Worktree {

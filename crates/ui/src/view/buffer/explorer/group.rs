@@ -1,23 +1,11 @@
 //! Which comparison a file is in, and which one a line falls in.
 //!
-//! **A group is a revision pair.** "Staged Changes" is not a category a file
-//! belongs to — it is the name for comparing the index against a commit, and
-//! every file already carries that pair. So grouping reads a field rather than
-//! consulting a category a file was put in, and the heading is derived rather
-//! than stored. See D57.
+//! A group is a revision pair (e.g. "Staged Changes" = index vs commit).
+//! Grouping reads the pair off each file rather than putting files into
+//! categories.
 //!
-//! The Neovim plugin kept it twice, as a struct of `unstaged` and `staged`
-//! lists, and its own source records what that cost: comparing two revisions
-//! produced files that were neither, and it wrote
-//!
-//! ```text
-//! -- For revision comparison, we treat everything as "unstaged" for explorer
-//! -- compatibility
-//! ```
-//!
-//! **A heading occupies a line.** That is what [`locate`] is for: the groups
-//! are drawn one after another, so a line number has to be resolved to a group
-//! and a line within it before anything can be asked about it.
+//! A heading occupies a line, so [`locate`] resolves a line number to a
+//! group and an offset within it.
 
 use file_types::{File, Revs};
 

@@ -1,4 +1,4 @@
-//! Asking the repository, and attaching what it counted.
+//! Reads the file list from git and attaches line counts.
 //!
 //! Every file the request found, flat and carrying its line counts. How they
 //! are grouped is not decided here: a file already knows which two revisions

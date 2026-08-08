@@ -1,4 +1,4 @@
-//! Which of the two.
+//! Original vs modified: which version of a file.
 
 /// Which version of a file a line, a column or a lookup refers to.
 ///

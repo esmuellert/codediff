@@ -2,8 +2,8 @@
 //!
 //! Index conventions (inherited from the C engine, which mirrors VSCode):
 //!
-//! - lines are **1-based**, ranges are **end-exclusive**
-//! - columns are **1-based** in **UTF-16 code units**
+//! - lines are 1-based, ranges are end-exclusive
+//! - columns are 1-based in UTF-16 code units
 
 /// A range of lines: 1-based, `start_line` inclusive, `end_line` exclusive.
 ///

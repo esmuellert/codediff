@@ -1,54 +1,25 @@
-//! Colouring a file, on a thread that is not the one drawing.
+//! Colouring a file on a separate thread.
 //!
-//! ---
-//!
-//! **Why a thread at all.** Colouring cannot be divided into pieces small
-//! enough to hide between keystrokes. Preparing a language costs
-//! `tree_sitter` a single indivisible 16–250 ms, and a parse has no range API,
-//! so "do a little now and the rest later" is not on offer. The previous
-//! design tried anyway — a frame did what it could and an idle moment did a
-//! little more — and the result was that pressing a key during the first
-//! Haskell file of a session waited 186 ms. Measured, not feared.
-//!
-//! So the work moves off the drawing thread entirely, and the rule becomes
-//! simple enough to state in one line: **the interface never computes a
-//! colour.** It asks for one, draws whatever it has, and installs the response
-//! when it arrives.
-//!
-//! ---
+//! The drawing thread never computes a colour — it asks, draws what it has,
+//! and installs responses as they arrive.
 //!
 //! ```text
 //!  drawing thread                        syntax worker
 //!  ──────────────                        ─────────────
-//!  Store  — every colour                 Engine — both engines
-//!                                        memos  — places in unfinished files
+//!  Store  — every span                   Engine — both engines
 //!
 //!  need lines 0..50
-//!    hit  → draw. nothing is sent.
-//!    miss → send ─────────────────────►  recv     ← asleep until sent to
-//!  draw, with what there is              colour it
+//!    hit  → draw
+//!    miss → send ─────────────────────►  recv
+//!  draw with what there is               colour it
 //!                                        send ─────┐
 //!  loop {                                          │
 //!    take() ◄──────────────────────────────────────┘
 //!    install, draw
-//!    wait for a key                     (asleep again)
 //!  }
 //! ```
 //!
-//! One thread, one queue each way. Not `async`: there is one job and it is
-//! processor-bound, so a runtime would add a scheduler with nothing to
-//! schedule.
-//!
-//! **What crosses.** Text going in and spans coming back, both plain data in
-//! our own vocabulary. No engine type appears in [`message`] — which is not
-//! only tidiness, since `Highlighted` holds a pointer from the C regex library
-//! underneath the matcher and would fail to be [`Send`]. The seam is checked
-//! by the compiler rather than by a comment.
-//!
-//! **Staleness.** A [`Version`] rides on every request and comes back on every
-//! response. Nothing today can invalidate a file mid-read, but a file watcher
-//! can, and an explorer can outrun one — so the answer to "is this still what
-//! was asked for" is built in rather than retrofitted after the first bug.
+//! No engine type crosses the boundary — enforced by `Send`.
 
 mod message;
 mod store;
@@ -73,7 +44,7 @@ pub struct Syntax {
     /// the reader kept scrolling, and every response would be for a screen
     /// already gone.
     ///
-    /// **Holding the newest one back would be worse, not better.** A request
+    /// Holding the newest one back would be worse, not better. A request
     /// says how much of the file the asker already has, and that number moves
     /// every time a response lands — so a request waiting its turn is answered
     /// from a starting point that has since gone stale, and its lines are

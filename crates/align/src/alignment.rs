@@ -1,4 +1,4 @@
-//! The layer's one public entry point.
+//! `Alignment`: borrows a diff and two files, answers positional queries.
 
 use std::sync::Arc;
 
@@ -29,23 +29,10 @@ impl std::fmt::Display for Malformed {
 
 impl std::error::Error for Malformed {}
 
-/// A diff paired up with the two files it came from.
+/// A diff paired with the two files it describes. Owns all three.
 ///
-/// **Owns** all three, and is therefore a plain value: it can be returned from
-/// a function, stored in a struct, and moved into a collection. That is the
-/// whole reason it owns them. A borrowing version cannot be returned by the
-/// stage that builds it — the texts it points at die when that function ends —
-/// so the pipeline had to lend it through a closure, and every type that held
-/// one grew a lifetime parameter: `Diff<'a>`, `Session<'a>`, `View<'a>`, and so
-/// on down. See D27.
-///
-/// The cost is one copy of each file, once, when the alignment is built. There
-/// is still exactly one copy in existence — the lines are copied *in* and the
-/// caller's can be dropped — so the original reason for borrowing, that no
-/// second copy can fall out of step with the first, still holds.
-///
-/// Everything below is computed when asked, except [`hunks`](Self::hunks),
-/// which is O(changes) and built once here.
+/// Everything is computed on demand except [`hunks`](Self::hunks), which is
+/// built once at construction.
 #[derive(Debug, Clone)]
 pub struct Alignment {
     diff: LinesDiff,

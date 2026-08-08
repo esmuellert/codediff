@@ -1,4 +1,4 @@
-//! What the program can do, and the keys that ask for it.
+//! Program-level actions (quit, suspend, redraw) and their keybindings.
 //!
 //! Not a level of the view model — it is below all of them, and consulted
 //! last, because these are the keys that must work whatever is on screen.

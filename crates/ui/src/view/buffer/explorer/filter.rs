@@ -36,7 +36,7 @@ fn glob(pattern: &str, text: &str) -> bool {
     let text: Vec<char> = text.chars().collect();
     // One `seen` for the whole match. Plain backtracking re-tries the same
     // (pattern, text) pair once per path through the stars above it, which a
-    // pattern like `a**a**a**a**z` turns into minutes of work on a short path
+    // pattern like `aaaaz` turns into minutes of work on a short path
     // — measured at seventeen seconds for eight groups. Remembering which
     // pairs have already failed makes it the product of the two lengths.
     let mut seen = vec![false; (pattern.len() + 1) * (text.len() + 1)];

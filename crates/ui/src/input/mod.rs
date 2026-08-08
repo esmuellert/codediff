@@ -1,27 +1,16 @@
 //! Keys to commands.
 //!
-//! ---
-//!
-//!
-//! One file per **executor**, each holding that executor's commands *and* the
-//! keys bound to them — so a new command is one file, not two:
+//! One file per executor, each holding commands and keybindings:
 //!
 //! ```text
 //! buffer.rs    motions, and whatever a buffer kind adds   ← innermost
 //! pane.rs      one pane, about its own view of a buffer
-//! tab.rs       a tab, about its panes: focus, resize, zoom
+//! tab.rs       a tab, about its panes: focus, resize
 //! view.rs      the whole view, about its tabs             ← outermost
 //! program.rs   quit, suspend, redraw — below every level
 //! ```
 //!
-//! The first four are the view model, and lookup walks them in that order, so
-//! an inner level shadows an outer one. The machinery is the rest:
-//!
-//! | file | question it answers |
-//! |---|---|
-//! | [`command`] | what was asked for, and who will do it |
-//! | [`keymap`] | how a sequence is looked up |
-//! | `resolver` | how a stream of keys becomes one command |
+//! Lookup walks innermost-first, so inner levels shadow outer ones.
 
 pub mod buffer;
 pub mod command;

@@ -145,7 +145,7 @@ fn a_one_sided_file_is_drawn_in_one_pane() {
     // An untracked file has no original to compare against, so it is drawn in
     // one column with nothing to separate. See D23.
     //
-    // **The absence of a divider cannot show that any more.** `codediff
+    // The absence of a divider cannot show that any more. `codediff
     // <path>` is a pathspec on the list (D58), so the screen is always split —
     // list on the left, file on the right — and there is one `│` whatever the
     // file. What a second *column* would add is a second gutter, so that is

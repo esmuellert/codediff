@@ -1,44 +1,18 @@
-//! The list of changed files, as something a pane can show.
-//!
-//! ---
-//!
+//! The list of changed files.
 //!
 //! ```text
-//! mod.rs     the state, and every key that changes it
-//! group.rs   which comparison a file is in, and which one a line falls in
-//! style.rs   how one group's files are arranged, and asking whichever it is
+//! mod.rs     state and key handling
+//! group.rs   which comparison a file is in
+//! style.rs   tree or flat arrangement
 //! tree.rs    the nested arrangement — directories and folds
-//! list.rs    the flat arrangement — an order, and nothing else
-//! order.rs   what comes before what
-//! filter.rs  hiding files by a glob
+//! list.rs    the flat arrangement — paths only
+//! order.rs   sort order
+//! filter.rs  glob filtering
 //! ```
 //!
-//! **A group is a revision pair, and it belongs here.** "Staged Changes" is
-//! not a category a file belongs to — it is the name for comparing the index
-//! against a commit, and every file already carries that pair. So the heading,
-//! how many files are under it, and whether it is open are all *this* file's,
-//! and an arrangement is handed one group's files and knows nothing about
-//! groups at all. See D57 and D69.
-//!
-//! ```text
-//! Explorer
-//! ├ "Changes"         ── Style: a Tree, or a List, of that group's files
-//! └ "Staged Changes"  ── the same, arranged the same way
-//! ```
-//!
-//! That is what makes a third arrangement a new variant of [`Style`] and
-//! nothing else: it is handed files and produces lines, and every question
-//! about headings is already answered above it.
-//!
-//! What a line looks like is [`draw::buffer::explorer`], which is where the
-//! theme is. Nothing here spells `▾`, `│ ` or `+4`.
-//!
-//! **The cursor is the selection.** There is one number, on the pane's
-//! viewport. A second one here would be a second answer to "which line is the
-//! reader on", and the two would part company the first time a fold changed
-//! the line count.
-//!
-//! [`draw::buffer::explorer`]: crate::draw
+//! A group is a revision pair (e.g. "Staged Changes" = index vs commit).
+//! An arrangement is handed one group's files and knows nothing about groups.
+//! Drawing (characters, colours) is in `draw::buffer::explorer`.
 
 mod filter;
 mod group;

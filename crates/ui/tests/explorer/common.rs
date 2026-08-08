@@ -133,7 +133,7 @@ pub fn open_selected(session: &mut Session) {
     assert!(session.opened(), "nothing was installed");
 }
 
-/// The **column** `needle` starts at, which is not where `str::find` puts it.
+/// The column `needle` starts at, which is not where `str::find` puts it.
 ///
 /// `find` answers in bytes, and the divider between the panes is three of
 /// them. Reading a cell at a byte offset lands one column left of the text and

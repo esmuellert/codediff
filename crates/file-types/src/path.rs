@@ -2,24 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-/// A file's location, in both spellings that anything needs.
+/// A file's location: git's relative path and the absolute path on disk.
 ///
-/// Git reports forward slashes on every platform, relative to the repository
-/// root and never to the current directory. The filesystem wants an absolute
-/// path. Both are carried because a path that leaves the layer holding the
-/// root cannot derive the other form later — and passing the root alongside
-/// as a second value is a mismatch waiting to happen.
-///
-/// `codediff.nvim` reached the same conclusion and for the same reason: one
-/// type carrying both, built in a single place that "knows the absolute ⇄
-/// relative mapping" (`lua/codediff/core/path.lua:96`). What is *not* copied
-/// from it is the empty string: there, `relative = ""` means no file, or the
-/// file is the root, or the file is outside the root, and nothing can tell
-/// which. Here the fields are private, there is one constructor, and absence
-/// is [`Option<RepoPath>`] at the level above.
-///
-/// Equality covers both forms, so the same relative path under two different
-/// roots is two different files — which is what it is.
+/// Both forms are needed at different layers, and passing them separately
+/// risks them going out of sync. One constructor, private fields.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RepoPath {
     relative: String,
@@ -76,7 +62,6 @@ impl RepoPath {
     ///
     /// Separate from [`file_name`](Self::file_name) so a status line can style
     /// them differently and drop the directory first when the width runs out.
-    /// That is the whole reason this type exists rather than a `String`.
     pub fn directory(&self) -> &str {
         match self.relative.rfind('/') {
             Some(at) => &self.relative[..at],

@@ -1,20 +1,8 @@
 //! Colours.
 //!
-//! ---
-//!
-//! A [`Theme`] is a table of `Style`s, one per group, and nothing else. It has
-//! no idea what a hunk is, and the renderer has no idea what Catppuccin is;
-//! the two meet at the field names below.
-//!
-//! Each field is a **complete** style rather than a colour, so a theme can say
-//! bold or reversed where a colour would not carry — which is what lets
-//! [`basic`] work on a terminal that has no 24-bit colour to give.
-//!
-//! Styles compose by [`Style::patch`], which overrides only the fields that
-//! are set. A row is `normal` patched with its role; its gutter is that
-//! patched with `line_number`, which sets a foreground and so keeps the row's
-//! background. Priority is therefore the order of the patches, written out at
-//! each use rather than encoded in a table nobody can read.
+//! A [`Theme`] is a table of `Style`s. Styles compose by [`Style::patch`]
+//! (override only the fields that are set), so a row is `normal` patched with
+//! its role, and a gutter is that patched with `line_number`.
 
 pub mod basic;
 pub mod catppuccin;

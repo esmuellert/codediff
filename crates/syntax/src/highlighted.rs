@@ -1,31 +1,13 @@
-//! A file being coloured from the top, as far as anyone has looked.
+//! Progress state for colouring one file top-to-bottom.
 //!
-//! This is the whole of what VS Code needs a state store, an invalidation
-//! queue and a convergence check for — and it is two fields, because we never
-//! invalidate. A file under review is a snapshot: a git blob, or a worktree
-//! file as it was when we read it. Nothing is typed into it, so the answer for
-//! line 40 never changes, and a prefix once read is read for good.
+//! Two fields: the engine's position and how far it got. Nothing is
+//! invalidated — a file under review is a snapshot. Line 40's answer never
+//! changes, so a prefix once read is read for good.
 //!
-//! What remains is that the answer for line 500 depends on lines 1 to 499, so
-//! reading can only ever go **forwards**. Jumping ahead costs the gap, once.
+//! Spans go straight to the caller; only the engine's position is held here.
 //!
-//! **This keeps a count, not a corpus.** The spans go straight to the caller's
-//! buffer and are never held here, because the one caller that wants them is
-//! sending them somewhere else and the one thing only this can hold is the
-//! engine's position. Keeping both would be storing every span twice for the
-//! life of the read. See D42.
-//!
-//! **Both engines fit here, and only one of them is lazy.** The matcher stops
-//! where it is asked and resumes later; the parser has no way to read part of
-//! a file and returns the whole thing on the first ask. Nothing in this file
-//! branches on which: [`reach`](Self::reach) says how far it would like to get
-//! and [`done`](Self::done) says how far it actually got.
-//!
-//! **Nothing here is scheduled against frames.** It once was — a frame read
-//! what it could and an idle moment read a little more — and that could not
-//! survive an engine whose smallest unit of work is an indivisible quarter of
-//! a second. Colouring now happens on a thread of its own, so this may take as
-//! long as it takes. See D41.
+//! Both engines fit: the matcher resumes from where it stopped, the parser
+//! reads the whole file on the first ask. `reach`/`done` is the interface.
 
 use crate::engine::{Engine, Grammar, Palette, Reading};
 use crate::limits;
@@ -94,7 +76,7 @@ impl Highlighted {
     /// costs nothing because it does not happen: a line already read is a line
     /// the caller already has.
     ///
-    /// May read **further** than asked. The parser has no range API, so it
+    /// May read further than asked. The parser has no range API, so it
     /// answers with the whole file however little was wanted;
     /// [`done`](Self::done) says what actually happened.
     pub fn reach(

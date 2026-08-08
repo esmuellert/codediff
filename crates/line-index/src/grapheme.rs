@@ -55,7 +55,7 @@ impl Position {
 }
 
 /// Grapheme clusters of a line, with their position in every coordinate
-/// system, **without building an index**.
+/// system, without building an index.
 ///
 /// Drawing a line needs only a forward walk, so paying for a
 /// [`LineIndex`](crate::LineIndex) table that nothing queries is waste —

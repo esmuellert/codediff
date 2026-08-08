@@ -1,7 +1,7 @@
 //! Git repositories in known states, for tests and for looking at by hand.
 //!
 //! Built by `cargo xtask fixture-repo <dir>`, and used directly by `vcs`'s
-//! tests. It lives in its own crate with **no workspace dependencies** so that
+//! tests. It lives in its own crate with no workspace dependencies so that
 //! any crate can dev-depend on it without forming a cycle.
 //!
 //! Emits the repository *and* a manifest of what git should say about it, so a

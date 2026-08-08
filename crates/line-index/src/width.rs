@@ -40,7 +40,7 @@ pub fn grapheme_width(grapheme: &str) -> u32 {
 /// and the placeholder needs a column — which is why they are measured as one
 /// here rather than as zero.
 ///
-/// Deliberately not all of Unicode's format category. `U+200D ZERO WIDTH
+/// Not all of Unicode's format category. `U+200D ZERO WIDTH
 /// JOINER` and the variation selectors build ordinary emoji and reorder
 /// nothing; mangling those would corrupt legitimate text to no benefit.
 pub fn is_bidi_control(c: char) -> bool {

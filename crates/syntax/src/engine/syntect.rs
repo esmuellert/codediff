@@ -1,15 +1,7 @@
-//! The only file that may name a syntax engine.
+//! The syntect (TextMate regex) engine.
 //!
-//! `cargo xtask lint-arch` refuses `syntect` anywhere else in the workspace,
-//! so everything above this file is written against [`Span`], [`Style`] and
-//! [`Rule`] and would survive the engine being replaced.
-//!
-//! **Theme matching is syntect's, not ours.** A scope selector is matched with
-//! TextMate's precedence rules — a longer path wins, and a rule may name an
-//! enclosing scope. That is a great deal of subtle comparison syntect has
-//! already tested against real themes, and rewriting it to avoid a dependency
-//! we have already taken would be work with no reader-visible result. What we
-//! keep is the *choice of colours*, which arrives as [`Rule`]s from `ui`.
+//! `lint-arch` refuses `syntect` outside this file. Theme matching (scope
+//! precedence) is syntect's own — we supply the colour choices as [`Rule`]s.
 
 use syntect::highlighting::{
     Color, FontStyle, HighlightState, Highlighter, RangedHighlightIterator, ScopeSelectors,
@@ -48,8 +40,7 @@ pub struct Palette {
 /// Two states, not one: `ParseState` knows which grammar contexts are open —
 /// whether this line is inside a block comment — and `HighlightState` knows
 /// which theme rules those contexts resolved to. Both must be carried from one
-/// line to the next, which is the whole reason a highlighter cannot be asked
-/// about line 500 on its own.
+/// line to the next, so a highlighter cannot be asked about line 500 alone.
 pub struct Reading {
     parse: ParseState,
     highlight: HighlightState,
@@ -122,7 +113,7 @@ impl Engine {
     ///
     /// A batch rather than one line at a time for one measured reason: the
     /// engine's matcher is built from the theme, and building it costs a pass
-    /// over every rule. Per line that was **two thirds of the total** — 15 000
+    /// over every rule. Per line that was two thirds of the total — 15 000
     /// lines a second became 45 000 by moving one constructor out of the loop.
     /// The caller already has the whole slice, so there is nothing to give up.
     pub fn read(
@@ -143,7 +134,7 @@ impl Engine {
     ///
     /// Must be called in order from the first line: the answer for this line
     /// depends on every line before it. A line too long to be worth colouring
-    /// is **still parsed** — its state is carried forward — but reported as
+    /// is still parsed — its state is carried forward — but reported as
     /// having no spans, so a minified bundle cannot corrupt the lines after
     /// it. That is `bat`'s answer; `delta` truncates the text and loses the
     /// state.

@@ -1,7 +1,7 @@
 //! Character-level changes, resolved from the engine's columns to byte ranges.
 //!
 //! The engine reports an inner change as a pair of [`CharRange`]s, each a
-//! **two-dimensional** position pair — `(line, column)` to `(line, column)`,
+//! two-dimensional position pair — `(line, column)` to `(line, column)`,
 //! like a selection dragged across an editor. One inner change can therefore
 //! cover the tail of one line, several whole lines, and the head of another.
 //!

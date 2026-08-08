@@ -4,7 +4,7 @@
 //! lines were captured by running the plugin headless over it. Anything that is
 //! deliberately not the same is marked where it appears.
 //!
-//! **[`spell`] below is this file's own.** A line is facts — a heading, a
+//! [`spell`] below is this file's own. A line is facts — a heading, a
 //! directory, or a file — and the characters live in `draw`, beside the theme
 //! that colours them. These tests are about which lines exist and in what
 //! order, so they spell that the way a reader recognises it. What is really
@@ -121,7 +121,7 @@ fn untracked(path: &str) -> File {
 
 /// Every changed file in the fixture repository, as the backend reports them.
 ///
-/// `staged-then-edited.txt` appears **twice**, which is not a duplicate: git
+/// `staged-then-edited.txt` appears twice, which is not a duplicate: git
 /// reports it as `MM`, so there is an unstaged diff and a staged diff of the
 /// same path, and one row could not show both. The two are told apart by the
 /// revisions they carry, which is also what puts them in different groups.

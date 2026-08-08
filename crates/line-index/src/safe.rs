@@ -1,7 +1,7 @@
 //! Making text safe to put on a terminal.
 //!
 //! Here rather than in a renderer on purpose. [`width::grapheme_width`] gives
-//! control and bidirectional characters **one column** precisely because they
+//! control and bidirectional characters one column precisely because they
 //! are drawn as a placeholder; if the substitution lived somewhere else, one
 //! could change without the other and every column after it would be wrong.
 //!
@@ -14,9 +14,9 @@ use crate::width::is_bidi_control;
 /// Two families, for the same reason: both let a file decide what the reviewer
 /// sees rather than what it contains.
 ///
-/// - **Control characters.** `ESC` starts a sequence the terminal *obeys* —
+/// - Control characters. `ESC` starts a sequence the terminal *obeys* —
 ///   recolour, move the cursor, erase what is already drawn.
-/// - **Bidirectional formatting.** `U+202E RIGHT-TO-LEFT OVERRIDE` and the
+/// - Bidirectional formatting. `U+202E RIGHT-TO-LEFT OVERRIDE` and the
 ///   isolates reorder a line on screen, so it reads as something other than
 ///   what it executes. This is the Trojan Source attack, and `char::is_control`
 ///   does not cover it: those are format characters, category `Cf`, not `Cc`.

@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 
 /// Runs `git` in `cwd` and returns stdout.
 ///
-/// `--no-optional-locks` is passed **before** the subcommand, where git accepts
+/// `--no-optional-locks` is passed before the subcommand, where git accepts
 /// it — as a subcommand flag it is rejected. It tells git to skip the optional
 /// index refresh that read-only queries perform, which would take
 /// `.git/index.lock`. Without it a status running while the user stages a hunk

@@ -1,4 +1,4 @@
-//! The stretches nothing happened in.
+//! Unchanged regions between changes.
 //!
 //! Derived by inverting the changes, which is how VSCode builds the same thing
 //! (`UnchangedRegion.fromDiffs`). A long run of untouched lines can then be

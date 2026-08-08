@@ -1,4 +1,4 @@
-//! What each buffer type looks like.
+//! Composing render bricks into complete buffer drawings.
 //!
 //! Nothing here holds state. A frame is a function of the view and the theme.
 //!

@@ -35,7 +35,7 @@ impl std::error::Error for Error {}
 
 /// What to call a version in a message.
 ///
-/// `DiffVersion` deliberately has no `Display`: it is a selector, and how to
+/// `DiffVersion` has no `Display`: it is a selector, and how to
 /// spell it is the caller's business — a status line might say "before".
 fn name(version: DiffVersion) -> &'static str {
     match version {

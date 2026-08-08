@@ -1,4 +1,4 @@
-//! What a resolved key sequence asks for, and who will do it.
+//! The `Command` and `Action` types dispatched by the event loop.
 //!
 //! One arm per executor level. The rule: an action is executed by the lowest
 //! level that contains everything it affects.

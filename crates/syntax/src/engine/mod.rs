@@ -1,28 +1,11 @@
-//! The seam, and the choice between two engines.
+//! The choice between two engines.
 //!
-//! Everything above this module is written against [`Span`](crate::Span),
-//! [`Style`](crate::Style), [`Rule`](crate::Rule) and [`Capture`]; everything
-//! below it knows what a grammar is. `cargo xtask lint-arch` refuses the name
-//! of a syntax engine anywhere outside this directory, which is what makes the
-//! claim checkable rather than merely stated.
+//! `lint-arch` refuses engine names outside this directory.
 //!
-//! ---
+//! - [`treesitter`] parses (knows types/functions, 25 languages)
+//! - [`syntect`] matches regexes (183 languages, resumable)
 //!
-//! **Two engines, one file each, and one per file.**
-//!
-//! [`treesitter`] parses, so it knows that `Rect` in `area: Rect` is a type.
-//! [`syntect`] matches regular expressions against lines, so it does not — but
-//! it knows 183 languages against the parser's twenty-five, and it can colour
-//! *part* of a file, which the parser cannot.
-//!
-//! So: parse where we have a grammar, match where we do not. Never both. That
-//! was measured rather than assumed — running both and layering the parser
-//! over the matcher, as VS Code layers semantic tokens over TextMate, colours
-//! 93% of identifiers against the parser's 92%, and buys that one point at the
-//! price of the slower engine's whole pass. VS Code layers because its upper
-//! layer is *sparse*: a language server resolves what it can and the grammar
-//! fills the rest. Ours is dense and strictly better, so there is nothing left
-//! for a lower layer to fill. See D39.
+//! One engine per file: parse where we have a grammar, match otherwise.
 
 pub mod captures;
 pub mod scopes;
@@ -127,7 +110,7 @@ pub struct Palette {
 impl Palette {
     /// The colours both engines answer in.
     ///
-    /// **The only place a pen is given a number.** Both tables are numbered
+    /// The only place a pen is given a number. Both tables are numbered
     /// here, one after the other, and [`group`] reads them back with the same
     /// arithmetic ten lines away. Numbering assigned in two files is an
     /// agreement two files have to keep; numbered here it is one function that
@@ -216,7 +199,7 @@ impl Engine {
 
     /// Reads the lines in `want`, appending the spans for each.
     ///
-    /// **The range is a request, not a promise.** The matcher honours it, which
+    /// The range is a request, not a promise. The matcher honours it, which
     /// is what lets a frame stop halfway through a long file. The parser has no
     /// range API at all, so it reads everything and the caller gets more than
     /// it asked for — which is why [`Highlighted`] checks how far it actually

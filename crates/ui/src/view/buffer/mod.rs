@@ -1,4 +1,4 @@
-//! What a pane can show.
+//! Buffer types: side-by-side, inline, single file, explorer.
 //!
 //! [`Buffer`] holds what every buffer has (rows, changed blocks, navigation).
 //! [`BufferType`] holds only what differs between kinds.

@@ -1,26 +1,7 @@
-//! Which way the view lines run.
+//! Side-by-side vs inline: two ways to turn a diff into view lines.
 //!
-//! A diff can be walked in more than one way, and the choice changes what
-//! "view line 40" means — so it cannot be a detail hidden inside a renderer.
-//! The choice itself is [`DiffType`], in `file-types`, because every layer
-//! from the pipeline to the renderer has to name it. What is here is the walk:
-//! the iterator that lets both of them be returned from one function.
-//!
-//! The choice used to live here, as `DiffLayout`, on the grounds that it is
-//! the parameter to the question this crate answers. It also had to say
-//! "single file", and could not: a single file is not a way of walking a
-//! pairing. Four `Option`s in three crates spelled that absence instead. See
-//! D60.
-//!
-//! The cost of that move is here, and it is four lines: an [`Alignment`] is
-//! built only for a file with two sides, so `DiffType::Single` cannot reach a
-//! walk — but the type permits it, and each function says so with an
-//! `unreachable!`. Measured: the whole suite runs without reaching one.
-//!
-//! [`Alignment`]: crate::Alignment
-//!
-//! The pane arrangement `ui` calls a `Layout` is a different thing at a
-//! different scale, settled long after this one.
+//! Parameterised by [`DiffType`]. `Single` has no pairing, so it never
+//! reaches here.
 
 use diff_types::LinesDiff;
 use file_types::{DiffType, DiffVersion};

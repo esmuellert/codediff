@@ -1,4 +1,4 @@
-//! What a highlighter may refuse.
+//! Size thresholds: files or lines too large to highlight.
 //!
 //! Every threshold in one file, because the alternative is a constant beside
 //! the code that trips over it and no way to see the policy as a whole.
@@ -32,7 +32,7 @@ pub const MAX_LINES: usize = 300_000;
 /// of two hundred thousand characters, and a backtracking regex over it can
 /// take longer than the rest of the file put together.
 ///
-/// The line is still **shown** — only its colour is skipped, and the parse
+/// The line is still shown — only its colour is skipped, and the parse
 /// state is carried across it unchanged, which is `bat`'s approach rather than
 /// `delta`'s. Truncating the text would corrupt the state for every line
 /// after it.

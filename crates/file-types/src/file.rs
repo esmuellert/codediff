@@ -1,20 +1,11 @@
-//! Which file this is.
+//! A file under review: its path, revisions, and change type.
 
 use crate::{DiffVersion, RepoPath, Rev, Stats};
 
 /// What happened to a file between the two versions being compared.
 ///
-/// Two groups, and the difference matters:
-///
-/// - `Added`, `Deleted`, `Moved` and `Modified` are **readable from the paths
-///   alone**, which is what [`File::change`] does.
-/// - `Untracked` and `Conflicted` are not. An untracked file looks exactly
-///   like an added one, and a conflicted file looks like an ordinary
-///   modification; only a version control system can tell.
-///
-/// So the first four are never stored anywhere — storing them would let a
-/// field contradict the paths beside it — and a backend supplies only the two
-/// it alone knows.
+/// `Added`, `Deleted`, `Moved`, `Modified` are derived from the paths — never
+/// stored. `Untracked` and `Conflicted` can only come from a VCS backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeType {
     /// Exists only as the modified version.
@@ -54,7 +45,7 @@ impl ChangeType {
 /// `None` on a side means the file does not exist there — added on the left,
 /// deleted on the right. Two `Some` with different paths is a rename.
 ///
-/// Everything a reader is told about a file is **derived** from this pair,
+/// Everything a reader is told about a file is derived from this pair,
 /// never stored beside it. That is the point: a `kind` field could disagree
 /// with the paths, and a formatted `label` field already did — it fused the
 /// path, the previous path and the added/deleted note into one string, after

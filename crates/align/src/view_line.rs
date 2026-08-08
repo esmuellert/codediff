@@ -1,6 +1,6 @@
-//! What a view line is, whichever way the diff is laid out.
+//! The `ViewLine` type shared by both layouts.
 //!
-//! The vocabulary only. The two **layouts** that use it live beside this
+//! The vocabulary only. The two layouts that use it live beside this
 //! file — [`side_by_side`] pairs the versions across a view line, [`inline`] gives
 //! each version a view line of its own — and they share these types precisely so
 //! that everything downstream of a view line works in both without a branch.
@@ -40,7 +40,7 @@ impl Slot {
 
 /// What a view line shows, which follows from its two slots.
 ///
-/// A move is deliberately absent. A moved block is reported by the engine as an
+/// A move is not a variant here. A moved block is reported by the engine as an
 /// ordinary deletion and an ordinary insertion whose ranges need not line up
 /// with either, so it cannot be a kind of row; ask [`crate::Alignment::moved`]
 /// instead. VSCode reached the same conclusion and deleted the equivalent
@@ -135,7 +135,7 @@ pub fn is_well_formed(diff: &LinesDiff, original_lines: u32, modified_lines: u32
 /// while navigation stepped through changed view lines, so a file could say "1
 /// change" and still stop twice.
 ///
-/// Deliberately **not** [`crate::Hunk`]. A hunk merges changes a few lines
+/// Not [`crate::Hunk`]. A hunk merges changes a few lines
 /// apart so they can be shown with shared keymap_type, which is right for reading
 /// and wrong for navigation, where it would make two nearby edits one stop.
 ///
