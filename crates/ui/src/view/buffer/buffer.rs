@@ -1,4 +1,4 @@
-//! What every buffer has, whatever it is showing.
+//! The shared `Buffer` struct and its `BufferType` enum.
 //!
 //! What differs between kinds lives in [`BufferType`]. Position lives on
 //! the pane's [`Viewport`] (two panes on one buffer scroll independently).

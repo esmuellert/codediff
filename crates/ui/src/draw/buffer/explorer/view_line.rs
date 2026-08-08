@@ -1,25 +1,7 @@
-//! One line of the file list: what is on it, and where it sits.
+//! Drawing one line of the file list.
 //!
-//! Named for what it draws — a [`ViewLine`] — and not for a node, because a
-//! heading has no node behind it. That is D69: a heading is what an
-//! arrangement sits under, so it is the explorer's and never a tree's. One
-//! function here per variant, so this file's shape is the enum's.
-//!
-//! The file list reports facts — this row is a directory, it is the last of
-//! its siblings, its second ancestor was not. This file turns those into text
-//! and colour: `▾`, `+4`, `M`. That `align` reports a gap and never says a gap
-//! is drawn `╱` is the same division. See D65.
-//!
-//! Arranging is part of drawing a line, not a brick of its own. Where each
-//! piece goes, and which of them survive a pane too narrow to hold them, is
-//! one question with one answer, and it is asked here because this is where
-//! the pieces are. A tree of commits would arrange its own rows: a graph
-//! prefix, a subject, an author pinned right — the same shape, different
-//! contents, and nothing shared but `line_index`, which is what counts columns
-//! for everyone.
-//!
-//! There is no cached layout, so a resize needs no invalidation: a row is
-//! arranged against the width it is being drawn into, every frame.
+//! One function per [`ViewLine`] variant. Arranges pieces against the current
+//! pane width each frame (no cached layout).
 
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;

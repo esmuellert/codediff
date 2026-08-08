@@ -1,4 +1,4 @@
-//! Every colour the interface has, kept until memory says otherwise.
+//! LRU cache of syntax spans for open files.
 //!
 //! All of the cache is on this side. A frame that finds what it needs here
 //! draws and sends nothing, so switching between two files costs one lookup

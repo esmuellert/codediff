@@ -1,4 +1,4 @@
-//! What a tab can do, and the keys that ask for it.
+//! Tab-level actions and their keybindings.
 //!
 //! Focus, resize, zoom — everything affecting more than one pane. An action
 //! is executed by the lowest level containing everything it affects.

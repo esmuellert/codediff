@@ -1,4 +1,4 @@
-//! The whole surface: open a repository, ask what changed, read a file.
+//! The public API: open, list changes, count lines, read a file.
 //!
 //! ```text
 //! mod.rs    Repository — open, repo_path, and private helpers

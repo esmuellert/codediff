@@ -1,4 +1,4 @@
-//! What the whole view can do, and the keys that ask for it.
+//! View-level actions and their keybindings.
 //!
 //! Tabs and buffers: the level that owns them both, and so the level where
 //! anything replacing a buffer has to live. The outermost level of the view

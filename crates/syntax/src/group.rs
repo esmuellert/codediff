@@ -1,4 +1,4 @@
-//! What a stretch of text is, in words both engines answer in.
+//! The normalized token kinds both engines map into.
 //!
 //! A syntax group (Vim's `:help group-name`): what text *is*, not what it
 //! looks like. The matcher's `comment.line.double-slash.rust` and the parser's

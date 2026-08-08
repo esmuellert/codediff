@@ -1,4 +1,4 @@
-//! What colour a theme gives each part of a piece of code.
+//! Pen-to-colour mapping for syntax highlighting.
 //!
 //! ---
 //!

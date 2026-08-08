@@ -1,4 +1,4 @@
-//! What goes in front of a line of the nested arrangement.
+//! Indent guides and fold arrows for the tree view.
 //!
 //! A guide at a given depth means *an ancestor at that depth has more children
 //! after it* — read off the node's own parents, and blank space rather than a

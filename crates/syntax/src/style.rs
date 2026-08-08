@@ -1,4 +1,4 @@
-//! What a highlighter says about text, and what a caller says about colour.
+//! Pen, Style, Span, Rule, Capture — the types that cross the crate boundary.
 //!
 //! The two travel in opposite directions. A [`Rule`] goes in: `ui` says
 //! "anything matching `keyword.control` is mauve and italic". A [`Span`] comes

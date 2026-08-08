@@ -1,4 +1,4 @@
-//! What comes before what.
+//! Sort order for the file list.
 //!
 //! Sort order matches VS Code's `SCMTreeSorter`: case-insensitive, numeric
 //! (`file9` < `file10`), shallower paths first in flat mode.

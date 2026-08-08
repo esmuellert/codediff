@@ -1,4 +1,4 @@
-//! The thread that colours, and nothing else.
+//! The syntax worker thread.
 //!
 //! No file is read here, no repository consulted, no character drawn. Text
 //! arrives, spans leave.

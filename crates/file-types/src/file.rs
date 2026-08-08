@@ -1,4 +1,4 @@
-//! Which file this is.
+//! A file under review: its path, revisions, and change type.
 
 use crate::{DiffVersion, RepoPath, Rev, Stats};
 

@@ -1,24 +1,10 @@
-//! Where a pane is looking.
+//! Where a pane is looking: one `top`, one `cursor`, one `left`.
 //!
-//! One `top` and one `cursor` for the whole pane, whatever the buffer draws in
-//! it. That is why a side-by-side diff needs no scroll synchronisation: its
-//! two columns are not two scrollable things kept in agreement, they are two
-//! columns of one position, and there is nowhere for them to disagree.
+//! One position for the whole pane. A side-by-side diff's two columns share
+//! it, so they cannot drift apart — no scroll synchronisation needed.
 //!
-//! Neovim's `win_T` has a single `w_buffer`, so showing two files means two
-//! windows, two `w_topline`s, and a reconciliation between them. `scrollbind`
-//! is that reconciliation, and it is documented-broken four ways — virtual
-//! lines (neovim#29751), winbar offsets (neovim#22189), window-local folds
-//! (neovim#29518), and mouse scrolling of an unfocused window. The plugin
-//! wrote 415 lines of `scrollsync.lua` to replace it. None of that has a
-//! counterpart here, and none can acquire one without first adding a second
-//! position field.
-//!
-//! Everything below is arithmetic over a row count, which the buffer
-//! supplies. That is what makes a motion generic: nothing here knows what a
-//! row contains — and nothing here may know, which is why the divider of a
-//! side-by-side diff lives on that buffer and not in this struct. A pane
-//! holds what is true of *any* view of *any* buffer.
+//! Everything here is arithmetic over a row count the buffer supplies.
+//! Nothing here knows what a row contains.
 
 use crate::input::{Motion, SCROLL_STEP};
 

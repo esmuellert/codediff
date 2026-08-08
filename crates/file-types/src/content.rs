@@ -1,4 +1,4 @@
-//! What one version of a file holds.
+//! `FileContent`: text, binary, or absent.
 //!
 //! A repository holds pictures as readily as source, so raw bytes are not
 //! something a caller can use. Classifying them here means every caller does

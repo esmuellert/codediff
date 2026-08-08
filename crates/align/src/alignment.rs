@@ -1,4 +1,4 @@
-//! The layer's one public entry point.
+//! `Alignment`: borrows a diff and two files, answers positional queries.
 
 use std::sync::Arc;
 

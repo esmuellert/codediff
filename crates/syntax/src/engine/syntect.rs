@@ -1,4 +1,4 @@
-//! The only file that may name a syntax engine.
+//! The syntect (TextMate regex) engine.
 //!
 //! `cargo xtask lint-arch` refuses `syntect` anywhere else in the workspace,
 //! so everything above this file is written against [`Span`], [`Style`] and

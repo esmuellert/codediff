@@ -1,4 +1,4 @@
-//! Everything on screen, and where it sits.
+//! The view model: View → Tab → Pane → Buffer.
 //!
 //! ```text
 //! view/            View     tabs, and every buffer

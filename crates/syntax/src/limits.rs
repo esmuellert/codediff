@@ -1,4 +1,4 @@
-//! What a highlighter may refuse.
+//! Size thresholds: files or lines too large to highlight.
 //!
 //! Every threshold in one file, because the alternative is a constant beside
 //! the code that trips over it and no way to see the policy as a whole.

@@ -1,4 +1,4 @@
-//! A file being coloured from the top, as far as anyone has looked.
+//! Progress state for colouring one file top-to-bottom.
 //!
 //! Two fields: the engine's position and how far it got. Nothing is
 //! invalidated — a file under review is a snapshot. Line 40's answer never

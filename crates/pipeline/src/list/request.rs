@@ -1,4 +1,4 @@
-//! What set of files to show, and where from.
+//! The list pipeline's input: a root path, comparison mode, and pathspec.
 //!
 //! Moved out of the file list, which declared it and never used it: nothing in
 //! that crate reads a request, because a request is what produces the files it

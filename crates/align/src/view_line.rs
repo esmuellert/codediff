@@ -1,4 +1,4 @@
-//! What a view line is, whichever way the diff is laid out.
+//! The `ViewLine` type shared by both layouts.
 //!
 //! The vocabulary only. The two layouts that use it live beside this
 //! file — [`side_by_side`] pairs the versions across a view line, [`inline`] gives
