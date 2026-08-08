@@ -13,6 +13,8 @@ use crate::input::keymap::Binding;
 pub enum TabAction {
     /// Move the focus to the next pane.
     FocusNext,
+    /// Move the focus to the previous pane.
+    FocusPrev,
     /// Give the left-hand pane more columns, and its neighbour fewer.
     WidenLeft,
     NarrowLeft,
@@ -36,7 +38,10 @@ const fn tab(keys: &'static [KeyCombination], action: TabAction) -> Binding {
 /// key that silently does nothing. The two resize keys are bound by the list
 /// instead — they still name [`TabAction`], because the tab is what executes
 /// them, and a binding's list and its executor need not be the same level.
-pub const BINDINGS: &[Binding] = &[tab(&[key!(tab)], TabAction::FocusNext)];
+pub const BINDINGS: &[Binding] = &[
+    tab(&[key!(right)], TabAction::FocusNext),
+    tab(&[key!(left)], TabAction::FocusPrev),
+];
 
 pub const fn resize(keys: &'static [KeyCombination], action: TabAction) -> Binding {
     tab(keys, action)

@@ -6,7 +6,6 @@ use pipeline::file::{Files, Response};
 use ratatui::backend::Backend;
 
 use crate::draw;
-use crate::input::tab::RESIZE_STEP;
 use crate::input::{Action, Command, ProgramAction, Resolution, Resolver, TabAction, ViewAction};
 use crate::syntax::{Store, Syntax};
 use crate::terminal::Screen;
@@ -260,17 +259,13 @@ impl Session {
                 Flow::Continue
             }
             Action::Pane(action) => match action {},
-            Action::Tab(TabAction::FocusNext) => {
+            Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
                 self.view.tab_mut().focus_next();
                 Flow::Continue
             }
-            Action::Tab(action @ (TabAction::WidenLeft | TabAction::NarrowLeft)) => {
-                let step = match action {
-                    TabAction::WidenLeft => RESIZE_STEP,
-                    _ => -RESIZE_STEP,
-                };
-                let by = i32::from(step).saturating_mul(command.repeat() as i32);
-                self.view.tab_mut().resize(by);
+            Action::Tab(TabAction::WidenLeft | TabAction::NarrowLeft) => {
+                // Resize is unbound for now; kept so the enum stays
+                // exhaustive and adding it back is one binding.
                 Flow::Continue
             }
             Action::View(ViewAction::ToggleLayout) => {
@@ -294,7 +289,6 @@ impl Session {
             }
             Action::Program(ProgramAction::Quit) => Flow::Quit,
             Action::Program(ProgramAction::Suspend) => Flow::Suspend,
-            Action::Program(ProgramAction::Redraw) => Flow::Continue,
         }
     }
 }

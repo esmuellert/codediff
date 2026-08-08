@@ -15,8 +15,6 @@ pub enum ProgramAction {
     Quit,
     /// Hand the terminal back until the reader brings us forward.
     Suspend,
-    /// Repaint everything, for a terminal something else has written over.
-    Redraw,
 }
 
 const fn program(keys: &'static [KeyCombination], action: ProgramAction) -> Binding {
@@ -34,5 +32,4 @@ pub const BINDINGS: &[Binding] = &[
     program(&[key!(esc)], ProgramAction::Quit),
     program(&[key!(ctrl - c)], ProgramAction::Quit),
     program(&[key!(ctrl - z)], ProgramAction::Suspend),
-    program(&[key!(ctrl - r)], ProgramAction::Redraw),
 ];

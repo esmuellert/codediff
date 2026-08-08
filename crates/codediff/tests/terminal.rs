@@ -192,7 +192,7 @@ fn a_change_key_with_nowhere_to_go_says_so_on_a_real_terminal() {
     // reader lands on the list with the file open beside it, and `]c` is the
     // diff's key rather than the list's.
     let fixture = Fixture::new("exhausted");
-    let (output, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\t]c]cq");
+    let (output, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\x1b[C]c]cq");
     assert!(ok);
     assert!(
         output.contains("change 1/1"),
@@ -216,7 +216,7 @@ fn the_layout_key_is_delivered_by_a_real_terminal() {
     // `Tab` first, for the reason `]c` needs one: the list has focus at
     // startup, and the status line counts its rows until the diff takes it.
     let fixture = Fixture::new("inline");
-    let (columns, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\tq");
+    let (columns, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\x1b[Cq");
     assert!(ok);
     // The fourth gutter, not the status line's `1/4`. Taking focus rewrites
     // only the cells that changed, and the count goes from the list's `2/2` to
@@ -228,7 +228,7 @@ fn the_layout_key_is_delivered_by_a_real_terminal() {
         "not four view lines:\n{columns:?}"
     );
 
-    let (toggled, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\ttq");
+    let (toggled, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\x1b[Ctq");
     assert!(ok, "toggling then quitting failed");
     assert!(
         toggled.len() > columns.len(),

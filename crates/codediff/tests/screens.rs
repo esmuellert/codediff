@@ -127,17 +127,6 @@ fn an_inner_change_keeps_its_highlight_on_its_character_when_scrolled() {
 }
 
 #[test]
-fn dragging_the_divider_moves_it() {
-    let mut s = demo();
-    let first = screen(&mut s, 44, 8);
-    let before = column_of(first.lines().next().unwrap(), '│');
-    s.handle(&key(KeyCode::Char('>')));
-    let second = screen(&mut s, 44, 8);
-    let after = column_of(second.lines().next().unwrap(), '│');
-    assert!(after > before, "{before:?} -> {after:?}");
-}
-
-#[test]
 fn a_terminal_too_small_says_so_instead_of_drawing_rubbish() {
     let mut s = demo();
     let rendered = screen(&mut s, 12, 4);

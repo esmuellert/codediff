@@ -10,7 +10,6 @@ use file_types::DiffType;
 
 use crate::input::command::Action;
 use crate::input::keymap::{Binding, KeymapType};
-use crate::input::tab::{self, TabAction};
 use crate::input::view::ViewAction;
 
 /// Something the focused buffer does.
@@ -19,13 +18,10 @@ pub enum BufferAction {
     Motion(Motion),
     NextChange,
     PrevChange,
-    /// Drag the divider between a side-by-side diff's two columns.
-    WidenOriginal,
-    NarrowOriginal,
     /// Switch tree/flat mode in the explorer.
     ToggleViewMode,
-    /// Show or hide the line counts in the explorer.
-    ToggleStats,
+    /// Open or fold the selected row in the explorer.
+    Toggle,
 }
 
 /// Movement that needs only the number of rows.
@@ -41,8 +37,6 @@ pub enum Motion {
     Bottom,
     ScrollLeft,
     ScrollRight,
-    /// Back to column zero.
-    ScrollHome,
 }
 
 /// Cells `ScrollLeft` and `ScrollRight` move, per repeat.
@@ -50,9 +44,6 @@ pub enum Motion {
 /// There is no cursor column in a read-only view, so a single column would be
 /// uselessly slow. `5l` scrolls five times this.
 pub const SCROLL_STEP: u32 = 4;
-
-/// Percentage points `WidenOriginal` and `NarrowOriginal` move, per repeat.
-pub const DIVIDER_STEP: u16 = 5;
 
 /// The buffer-level lists live for one kind of buffer, in order.
 ///
@@ -102,13 +93,6 @@ pub const MOTIONS: &[Binding] = &[
     motion(&[key!(home)], Motion::Top),
     motion(&[key!(shift - g)], Motion::Bottom),
     motion(&[key!(end)], Motion::Bottom),
-    motion(&[key!(h)], Motion::ScrollLeft),
-    motion(&[key!(left)], Motion::ScrollLeft),
-    motion(&[key!(l)], Motion::ScrollRight),
-    motion(&[key!(right)], Motion::ScrollRight),
-    // A motion when no count is in progress, a digit when one is — vim's own
-    // rule, and the only place counts and bindings interact.
-    motion(&[key!('0')], Motion::ScrollHome),
 ];
 
 /// What the list of changed files adds to the motions.
@@ -119,23 +103,18 @@ pub const MOTIONS: &[Binding] = &[
 /// not what "close all folds" says, and one key that opens and shuts the row
 /// under the cursor is the whole of what a read-only list needs.
 pub const LIST: &[Binding] = &[
-    // Both, because one is what a list looks like it wants and the other is
-    // what a reader coming from the plugin will press.
     Binding {
         keys: &[key!(enter)],
         action: Action::View(ViewAction::Open),
     },
+    // `l` opens the selected row — the same as Enter, and the same as vim's
+    // netrw. `h` folds it shut if it is foldable.
     Binding {
-        keys: &[key!(o)],
+        keys: &[key!(l)],
         action: Action::View(ViewAction::Open),
     },
+    buffer(&[key!(h)], BufferAction::Toggle),
     buffer(&[key!(i)], BufferAction::ToggleViewMode),
-    buffer(&[key!(s)], BufferAction::ToggleStats),
-    // The border beside the list. Bound here rather than at the tab, so that
-    // it is live only where there is a border — a diff claims the same two
-    // keys for its own column divider, and a plain file has neither.
-    tab::resize(&[key!('>')], TabAction::WidenLeft),
-    tab::resize(&[key!('<')], TabAction::NarrowLeft),
 ];
 
 /// What any diff adds to the motions, however it is laid out.
@@ -148,12 +127,19 @@ pub const CHANGES: &[Binding] = &[
     // leaves `n` and `N` free for search — see D9.
     buffer(&[key!(']'), key!(c)], BufferAction::NextChange),
     buffer(&[key!('['), key!(c)], BufferAction::PrevChange),
+    // Horizontal scroll — the diff pane's meaning of h/l. Inline has no
+    // TWO_COLUMNS list, so these are here to cover both layouts.
+    motion(&[key!(h)], Motion::ScrollLeft),
+    motion(&[key!(l)], Motion::ScrollRight),
 ];
 
-/// What only two columns can offer: moving the divider between them.
+/// What only two columns can offer.
+///
+/// `h`/`l` are horizontal scroll here — unlike in the explorer, where they
+/// mean fold/open — because a diff's lines can be wider than the pane.
 pub const TWO_COLUMNS: &[Binding] = &[
-    buffer(&[key!('>')], BufferAction::WidenOriginal),
-    buffer(&[key!('<')], BufferAction::NarrowOriginal),
+    motion(&[key!(h)], Motion::ScrollLeft),
+    motion(&[key!(l)], Motion::ScrollRight),
 ];
 
 // A plain file adds nothing: there are no changes to step through and no

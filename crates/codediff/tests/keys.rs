@@ -35,11 +35,6 @@ fn cursor_after(keys: &str) -> u32 {
     cursor(&s)
 }
 
-fn left_after(keys: &str) -> u32 {
-    open!(s);
-    type_keys(&mut s, keys);
-    s.view().focused().viewport.left()
-}
 
 #[test]
 fn a_count_reaches_the_viewport() {
@@ -50,17 +45,13 @@ fn a_count_reaches_the_viewport() {
 }
 
 #[test]
-fn zero_is_a_digit_mid_count_and_a_motion_otherwise() {
-    // The single point where counts and bindings interact, so both halves have
-    // to be observed. `50j` must be fifty downs rather than "scroll home" then
-    // one down — and a bare `0` must still scroll, or it would be a digit that
-    // silently starts a count of nothing.
+fn zero_is_a_digit_mid_count_and_not_a_motion() {
+    // `50j` must be fifty downs, not five downs with a stray zero. `0` on its
+    // own is unbound now, so it does nothing — which is the whole test: a bare
+    // digit that starts no sequence must not become a lingering count that
+    // silently multiplies the next key.
     assert_eq!(cursor_after("5j"), 5);
     assert_eq!(cursor_after("50j"), 9, "fifty downs, clamped");
-
-    assert!(left_after("lll") > 0, "scrolled right");
-    assert_eq!(left_after("lll0"), 0, "a bare 0 goes back to column zero");
-    assert_eq!(cursor_after("lll0"), 0, "and is not a motion");
 }
 
 #[test]
@@ -195,22 +186,6 @@ fn the_divider_keys_do_nothing_inline() {
     let before = screen_line(&mut s);
     type_keys(&mut s, ">><<");
     assert_eq!(screen_line(&mut s), before, "a divider key drew something");
-}
-
-#[test]
-fn the_divider_does_not_survive_a_trip_through_inline() {
-    // It belongs to `SideBySide`, and inline has no columns to divide, so
-    // there is nowhere for it to wait. Keeping it would mean a field `Inline`
-    // carries and never reads, at which point the two are one type and neither
-    // name means anything. Pressing `t` is a reader saying they do not want
-    // columns; coming back to the default split answers that. See D35.
-    let mut s = session("f.rs", BEFORE, AFTER);
-    measure(&mut s);
-    let default = screen_line(&mut s);
-    type_keys(&mut s, ">>");
-    assert_ne!(screen_line(&mut s), default, "`>` did nothing");
-    type_keys(&mut s, "tt");
-    assert_eq!(screen_line(&mut s), default);
 }
 
 #[test]

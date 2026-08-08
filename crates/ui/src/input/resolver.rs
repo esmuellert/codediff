@@ -218,18 +218,6 @@ mod tests {
     }
 
     #[test]
-    fn zero_is_a_motion_until_a_count_has_started() {
-        // vim's rule, and the only place counts and bindings meet.
-        assert_eq!(
-            command(&[key!('0')]).action,
-            Action::Buffer(BufferAction::Motion(Motion::ScrollHome))
-        );
-
-        let command = command(&[key!('5'), key!('0'), key!(j)]);
-        assert_eq!(command.repeat(), 50);
-    }
-
-    #[test]
     fn a_count_is_dropped_along_with_the_key_that_failed() {
         let outcomes = run(&[key!('5'), key!(ctrl - alt - x), key!(j)]);
         assert_eq!(outcomes[1], Resolution::Unbound);

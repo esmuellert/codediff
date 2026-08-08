@@ -33,10 +33,7 @@ pub enum Plan {
     /// `git status` — yields two comparisons (index vs HEAD, worktree vs index).
     Worktree,
     /// `git diff <args>` — one comparison.
-    Diff {
-        args: Vec<String>,
-        revs: Revs,
-    },
+    Diff { args: Vec<String>, revs: Revs },
 }
 
 /// Resolves revision names to ids and picks the command shape.

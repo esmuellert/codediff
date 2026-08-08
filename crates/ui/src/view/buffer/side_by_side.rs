@@ -8,12 +8,7 @@ use file_types::File;
 use pipeline::file;
 
 use super::colour;
-use crate::input::{BufferAction, DIVIDER_STEP};
 use crate::syntax::{Spans, Store, Syntax, Version};
-
-/// The narrowest either column may be squeezed to, in percent.
-const MIN_DIVIDER: u16 = 15;
-const MAX_DIVIDER: u16 = 85;
 
 /// A diff shown in two columns, and where the line between them sits.
 #[derive(Debug)]
@@ -67,25 +62,4 @@ impl SideBySide {
     pub fn divider(&self) -> u16 {
         self.divider
     }
-
-    /// Moves the divider, which touches no viewport: it is this buffer's own
-    /// rendering, not a position within it.
-    pub fn drag(&mut self, action: BufferAction, count: u32) {
-        match action {
-            BufferAction::WidenOriginal => {
-                self.divider = self.divider.saturating_add(step(count)).min(MAX_DIVIDER);
-            }
-            BufferAction::NarrowOriginal => {
-                self.divider = self.divider.saturating_sub(step(count)).max(MIN_DIVIDER);
-            }
-            // Reached only through the two arms above.
-            _ => {}
-        }
-    }
-}
-
-/// Percentage points a repeat moves the divider, saturating so a large count
-/// cannot wrap the width back around.
-fn step(count: u32) -> u16 {
-    u16::try_from(count.saturating_mul(u32::from(DIVIDER_STEP))).unwrap_or(u16::MAX)
 }

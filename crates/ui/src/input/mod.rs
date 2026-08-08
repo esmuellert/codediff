@@ -35,7 +35,7 @@ pub mod view;
 use crokey::KeyCombination;
 use crokey::crossterm::event::{Event, KeyEventKind};
 
-pub use buffer::{BufferAction, DIVIDER_STEP, Motion, SCROLL_STEP};
+pub use buffer::{BufferAction, Motion, SCROLL_STEP};
 pub use command::{Action, Command};
 pub use keymap::{Binding, KeymapType, Match};
 pub use pane::PaneAction;

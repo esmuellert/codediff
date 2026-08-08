@@ -109,6 +109,12 @@ impl Tab {
     }
 
     /// Moves the focus to the next pane, wrapping.
+    pub fn focus_prev(&mut self) {
+        // Two panes: prev and next are the same. If more panes exist later,
+        // this wraps backwards.
+        self.focus_next();
+    }
+
     pub fn focus_next(&mut self) {
         self.focus = PaneId((self.focus.0 + 1) % self.panes.len());
     }

@@ -174,17 +174,16 @@ impl Buffer {
             BufferAction::Motion(motion) => view.motion(motion, count, self.view_lines),
             BufferAction::NextChange => self.step(Direction::Next, count, view),
             BufferAction::PrevChange => self.step(Direction::Previous, count, view),
-            BufferAction::WidenOriginal | BufferAction::NarrowOriginal => {
-                if let BufferType::SideBySide(data) = &mut self.buffer_type {
-                    data.drag(action, count);
+            BufferAction::Toggle => {
+                if let BufferType::Explorer(explorer) = &mut self.buffer_type {
+                    explorer.toggle(view.cursor());
+                    self.recount();
                 }
             }
-            BufferAction::ToggleViewMode | BufferAction::ToggleStats => {
+            BufferAction::ToggleViewMode => {
                 if let BufferType::Explorer(explorer) = &mut self.buffer_type {
-                    let landing = explorer.reshape_around(view.cursor(), |model| match action {
-                        BufferAction::ToggleViewMode => model.toggle_mode(),
-                        _ => model.toggle_stats(),
-                    });
+                    let landing =
+                        explorer.reshape_around(view.cursor(), |model| model.toggle_mode());
                     self.recount();
                     view.jump(landing, self.view_lines);
                 }

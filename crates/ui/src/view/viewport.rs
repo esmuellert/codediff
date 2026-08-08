@@ -110,7 +110,6 @@ impl Viewport {
             Motion::Bottom => self.cursor = named.unwrap_or(view_lines.saturating_sub(1)),
             Motion::ScrollRight => self.left = self.left.saturating_add(count * SCROLL_STEP),
             Motion::ScrollLeft => self.left = self.left.saturating_sub(count * SCROLL_STEP),
-            Motion::ScrollHome => self.left = 0,
         }
         self.clamp(view_lines);
     }
@@ -283,8 +282,8 @@ mod tests {
         assert_eq!(v.left(), SCROLL_STEP);
         v.motion(Motion::ScrollRight, 5, 10);
         assert_eq!(v.left(), SCROLL_STEP * 6);
-        v.motion(Motion::ScrollHome, 1, 10);
-        assert_eq!(v.left(), 0);
+        v.motion(Motion::ScrollLeft, 1, 10);
+        assert_eq!(v.left(), SCROLL_STEP * 5);
     }
 
     #[test]

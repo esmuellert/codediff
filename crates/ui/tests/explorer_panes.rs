@@ -144,15 +144,15 @@ fn opening_the_file_already_shown_re_reads_it_and_keeps_the_readers_place() {
     let area = Rect::new(0, 0, 80, 8);
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
-    session.press(crokey::key!(tab));
+    session.press(crokey::key!(right));
     session.press(crokey::key!(shift - g));
     let far = session.view().focused().viewport.cursor();
     assert!(far > 400, "the cursor did not reach the end: {far}");
 
     // Back to the list, and enter on the row that is already open.
-    session.press(crokey::key!(tab));
+    session.press(crokey::key!(right));
     open_selected(&mut session);
-    session.press(crokey::key!(tab));
+    session.press(crokey::key!(right));
     assert_eq!(
         session.view().focused().viewport.cursor(),
         far,
@@ -182,9 +182,9 @@ fn re_opening_a_file_that_has_grown_shorter_lands_inside_it() {
         ],
     );
     open_selected(&mut session);
-    session.press(crokey::key!(tab));
+    session.press(crokey::key!(right));
     session.press(crokey::key!(shift - g));
-    session.press(crokey::key!(tab));
+    session.press(crokey::key!(right));
 
     open_selected(&mut session);
     let id = session

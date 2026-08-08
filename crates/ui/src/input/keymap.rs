@@ -263,27 +263,6 @@ mod tests {
     }
 
     #[test]
-    fn a_buffer_command_is_live_only_where_it_means_something() {
-        // `>` drags the divider between a side-by-side buffer's columns. A plain file has
-        // no second column, so the key is simply not live there — which is
-        // what stops it being a silent no-op.
-        assert!(matches!(
-            lookup(KeymapType::File(DiffType::SideBySide), &[key!('>')]),
-            Match::Exact(_)
-        ));
-        assert_eq!(
-            lookup(KeymapType::File(DiffType::Single), &[key!('>')]),
-            Match::None
-        );
-        // The list claims the same key for the border beside it, which is a
-        // different border and a different executor.
-        assert_eq!(
-            lookup(KeymapType::Explorer, &[key!('>')]),
-            Match::Exact(Action::Tab(crate::input::TabAction::WidenLeft))
-        );
-    }
-
-    #[test]
     fn every_binding_is_written_in_normalised_form() {
         // Incoming events are normalised, so an entry that is not would simply
         // never match — silently, and only for that one key.
