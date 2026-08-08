@@ -92,7 +92,7 @@ pub struct Runner {
 
 impl Runner {
     /// Runs stage one: open the repository, read both sides.
-    pub fn new(file: &file_types::ChangedFile) -> Result<Self> {
+    pub fn new(file: &file_types::File) -> Result<Self> {
         Ok(Self {
             contents: contents::read(file)?,
         })

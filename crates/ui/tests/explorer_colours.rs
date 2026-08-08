@@ -55,14 +55,11 @@ fn every_status_letter_has_a_colour_of_its_own() {
     let change = theme.change;
     let files = vec![
         untracked("new.txt"),
-        ChangedFile::reported(
-            File::unchanged_path(at("clash.rs"), revs()),
-            ChangeType::Conflicted,
-        ),
-        ChangedFile::new(File::added(at("added.rs"), staged_revs())),
-        ChangedFile::new(File::unchanged_path(at("edited.rs"), staged_revs())),
-        ChangedFile::new(File::deleted(at("gone.rs"), staged_revs())),
-        ChangedFile::new(File::renamed(at("was.rs"), at("now.rs"), staged_revs())),
+        File::unchanged_path(at("clash.rs"), revs()).set_change_type(ChangeType::Conflicted),
+        File::added(at("added.rs"), staged_revs()),
+        File::unchanged_path(at("edited.rs"), staged_revs()),
+        File::deleted(at("gone.rs"), staged_revs()),
+        File::renamed(at("was.rs"), at("now.rs"), staged_revs()),
     ];
     let mut session = Session::new(Buffer::explorer(files), theme);
     let letters = colours(&mut session, 40, 12, 39);

@@ -2,7 +2,7 @@
 //!
 //! The seam, and the one file that names both vocabularies. Everything in
 //! `git` speaks git — `XY` codes, status letters, similarity scores — and
-//! everything above `vcs` speaks [`ChangedFile`]. This is where one becomes
+//! everything above `vcs` speaks [`File`]. This is where one becomes
 //! the other.
 //!
 //! **This is the file a second backend forks**, not [`Repository`]. A
@@ -12,7 +12,7 @@
 //!
 //! [`Repository`]: super::Repository
 
-use file_types::{ChangeType, ChangedFile, File, RepoPath, Revs};
+use file_types::{ChangeType, File, RepoPath, Revs};
 
 use crate::git::diff::name_status::Change;
 use crate::git::status::{Code, Entry};
@@ -24,7 +24,7 @@ use crate::git::status::{Code, Entry};
 /// reviewer looking at "what changed since the last commit" wants one answer.
 /// The index code wins where they differ, since it is the one that describes
 /// the file's relationship to `HEAD`.
-pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> ChangedFile {
+pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> File {
     let change = match (entry.xy.index, entry.xy.worktree) {
         // Unresolved merges first: nothing else about the codes matters.
         (Code::Unmerged, _) | (_, Code::Unmerged) => ChangeType::Conflicted,
@@ -43,7 +43,7 @@ pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> Changed
     // The one place a path gains its absolute form, because this is the first
     // place that has both git's spelling and the root. Which versions exist is
     // recorded here, in the paths themselves — `File`'s pair *is* that fact,
-    // and `ChangedFile` stores nothing that could contradict it.
+    // and `File` stores nothing that could contradict it.
     let path = RepoPath::new(entry.path, root);
     let file = match (change, entry.original) {
         (ChangeType::Added | ChangeType::Untracked, _) => File::added(path, revs),
@@ -55,9 +55,9 @@ pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> Changed
     // Only the two the paths cannot express are carried; the rest is read back
     // off `file`, so `Added` and `Moved` have exactly one source.
     if change.needs_a_backend() {
-        ChangedFile::reported(file, change)
+        file.set_change_type(change)
     } else {
-        ChangedFile::new(file)
+        file
     }
 }
 
@@ -66,7 +66,7 @@ pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> Changed
 /// The counterpart of [`to_file_diff`], which does
 /// the same for a status record. Both live in this crate because it is the
 /// only one allowed to know both vocabularies.
-pub fn to_changed_file(change: Change, root: &std::path::Path, revs: Revs) -> ChangedFile {
+pub fn to_changed_file(change: Change, root: &std::path::Path, revs: Revs) -> File {
     let path = RepoPath::new(change.path, root);
     let file = match (change.letter, change.original) {
         ('A', _) => File::added(path, revs),
@@ -81,7 +81,7 @@ pub fn to_changed_file(change: Change, root: &std::path::Path, revs: Revs) -> Ch
     // here needs a backend: added, deleted and moved are all readable from
     // the pair of paths.
     if change.letter == 'U' {
-        return ChangedFile::reported(file, ChangeType::Conflicted);
+        return file.set_change_type(ChangeType::Conflicted);
     }
-    ChangedFile::new(file)
+    file
 }

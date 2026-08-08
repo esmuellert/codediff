@@ -54,7 +54,7 @@ pub use list::List;
 pub use style::Style;
 pub use tree::{Node, NodeId, Tree};
 
-use file_types::{ChangedFile, Revs, Stats};
+use file_types::{File, Revs, Stats};
 
 /// Which arrangement the reader has chosen.
 ///
@@ -95,10 +95,7 @@ pub enum ViewLine<'a> {
     Directory { name: &'a str, open: bool },
     /// One changed file. Its own name in the nested arrangement, and its whole
     /// path in the flat one, where nothing above it says where it is.
-    File {
-        name: &'a str,
-        file: &'a ChangedFile,
-    },
+    File { name: &'a str, file: &'a File },
 }
 
 /// One file, named so it can be found again after the lines are rebuilt.
@@ -116,12 +113,12 @@ pub struct Anchor {
 pub struct Explorer {
     /// Every file, whatever a pattern is hiding. What a cleared pattern
     /// brings back, and so never narrowed in place.
-    files: Vec<ChangedFile>,
+    files: Vec<File>,
     /// The files the groups were built from — everything, or what a pattern
     /// left. Kept apart from [`Self::files`] because an arrangement holds
     /// places in *this* list, and narrowing the other one would silently
     /// renumber them.
-    shown: Vec<ChangedFile>,
+    shown: Vec<File>,
     groups: Vec<Group>,
     mode: ViewMode,
     /// Whether the line counts are shown. A drawing choice, remembered here
@@ -133,7 +130,7 @@ pub struct Explorer {
 
 impl Explorer {
     /// Builds the explorer over a set of files, everything open.
-    pub fn new(files: Vec<ChangedFile>) -> Self {
+    pub fn new(files: Vec<File>) -> Self {
         let mut explorer = Self {
             files,
             shown: Vec::new(),
@@ -181,7 +178,7 @@ impl Explorer {
                     group
                         .files
                         .iter()
-                        .map(|&index| self.shown[index].stats.unwrap_or_default())
+                        .map(|&index| self.shown[index].get_stats().unwrap_or_default())
                         .sum()
                 } else {
                     Stats::default()
@@ -205,7 +202,7 @@ impl Explorer {
     }
 
     /// The file under the cursor, or `None` on a heading or a directory.
-    pub fn file(&self, cursor: u32) -> Option<&ChangedFile> {
+    pub fn file(&self, cursor: u32) -> Option<&File> {
         let (group, line) = group::get_line_style(&self.groups, cursor)?;
         self.shown.get(self.groups[group].style.file_on(line)?)
     }
@@ -285,7 +282,7 @@ impl Explorer {
     /// because they are the reader's choices, while the folds do not, because
     /// a node means nothing once the arrangement has been rebuilt from
     /// different files.
-    pub fn refresh(&mut self, files: Vec<ChangedFile>) {
+    pub fn refresh(&mut self, files: Vec<File>) {
         self.files = files;
         self.reshape();
     }
@@ -294,7 +291,7 @@ impl Explorer {
     fn anchor(&self, line: u32) -> Option<Anchor> {
         let file = self.file(line)?;
         Some(Anchor {
-            revs: file.file.revs(),
+            revs: file.revs(),
             path: file.path().as_str().to_owned(),
         })
     }
@@ -303,7 +300,7 @@ impl Explorer {
     fn line_of(&self, anchor: &Anchor) -> Option<u32> {
         (0..self.view_lines()).find(|&line| {
             self.file(line).is_some_and(|file| {
-                file.file.revs() == anchor.revs && file.path().as_str() == anchor.path
+                file.revs() == anchor.revs && file.path().as_str() == anchor.path
             })
         })
     }
@@ -312,7 +309,7 @@ impl Explorer {
     /// has to come through: a fold lives inside an arrangement and does not
     /// survive it.
     fn reshape(&mut self) {
-        let kept: Vec<ChangedFile> = match &self.pattern {
+        let kept: Vec<File> = match &self.pattern {
             None => self.files.clone(),
             Some(pattern) => self
                 .files
@@ -344,11 +341,8 @@ mod tests {
     use file_types::{File, Oid, RepoPath, Rev};
     use std::path::Path;
 
-    fn at(path: &str, revs: Revs) -> ChangedFile {
-        ChangedFile::new(File::unchanged_path(
-            RepoPath::new(path, Path::new("/repo")),
-            revs,
-        ))
+    fn at(path: &str, revs: Revs) -> File {
+        File::unchanged_path(RepoPath::new(path, Path::new("/repo")), revs)
     }
 
     fn unstaged() -> Revs {

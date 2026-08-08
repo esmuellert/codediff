@@ -36,7 +36,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 use crate::file::runner::{DiffContent, Runner};
-use file_types::ChangedFile;
+use file_types::File;
 
 /// What one request produced.
 ///
@@ -48,13 +48,13 @@ pub struct Response {
     /// Carried back so a late response for a file the reader has since moved off
     /// can be told apart and dropped. Nothing today can invalidate a file
     /// mid-read, but a watcher can, and an explorer can outrun one.
-    pub file: ChangedFile,
+    pub file: File,
     pub content: Result<DiffContent, String>,
 }
 
 /// The worker, the two queues to it, and whether one is outstanding.
 pub struct Files {
-    requests: Sender<ChangedFile>,
+    requests: Sender<File>,
     answers: Receiver<Response>,
     /// One request in flight, and no queue behind it.
     ///
@@ -73,7 +73,7 @@ impl Files {
     /// One thread for the life of the program. It sleeps whenever there is
     /// nothing to compare, which is nearly always.
     pub fn start() -> Self {
-        let (requests, incoming) = channel::<ChangedFile>();
+        let (requests, incoming) = channel::<File>();
         let (finished, answers) = channel::<Response>();
         thread::Builder::new()
             .name("file".to_owned())
@@ -95,7 +95,7 @@ impl Files {
     /// replaced. A request past the end of the script is refused, which is how
     /// a test that opens more often than it meant to is told.
     pub fn canned(script: Vec<Result<DiffContent, String>>) -> Self {
-        let (requests, incoming) = channel::<ChangedFile>();
+        let (requests, incoming) = channel::<File>();
         let (finished, answers) = channel::<Response>();
         thread::Builder::new()
             .name("file-canned".to_owned())
@@ -124,7 +124,7 @@ impl Files {
     /// Does nothing while a response is outstanding, which is what keeps the
     /// queue at one. A worker that has stopped, which can only happen if it
     /// panicked, leaves the request unanswered rather than failing the review.
-    pub fn request(&mut self, file: &ChangedFile) {
+    pub fn request(&mut self, file: &File) {
         if self.outstanding {
             return;
         }
@@ -170,7 +170,7 @@ impl Files {
 }
 
 /// Answers requests until the asker goes away.
-fn run(requests: &Receiver<ChangedFile>, answers: &Sender<Response>) {
+fn run(requests: &Receiver<File>, answers: &Sender<Response>) {
     // Blocks. A worker with nothing to do costs nothing at all — no timer, no
     // spin, no wake-ups — which is its ordinary state.
     while let Ok(file) = requests.recv() {
@@ -193,7 +193,7 @@ fn run(requests: &Receiver<ChangedFile>, answers: &Sender<Response>) {
 /// changes with them. A cache keyed by those names cannot tell a re-read from
 /// a stale one. Reading two versions and pairing them takes milliseconds,
 /// which is the whole cost of getting this right. See D51.
-fn compare(file: &ChangedFile) -> Result<DiffContent, String> {
+fn compare(file: &File) -> Result<DiffContent, String> {
     let path = file.path().as_str().to_owned();
     let runner = Runner::new(file).map_err(|why| format!("{path}: {why:#}"))?;
     if runner.is_binary() {

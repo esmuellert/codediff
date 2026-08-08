@@ -25,7 +25,7 @@ use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
-use file_types::{ChangeType, ChangedFile, Stats};
+use file_types::{ChangeType, File, Stats};
 
 use crate::render::cells;
 use crate::theme::Theme;
@@ -180,14 +180,9 @@ fn directory(name: &str, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<P
 }
 
 /// A file: its name, where it came from, what it gained, and what happened.
-fn file(
-    name: &str,
-    file: &ChangedFile,
-    theme: &Theme,
-    background: Style,
-) -> (Vec<Piece>, Vec<Piece>) {
+fn file(name: &str, file: &File, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<Piece>) {
     let mut left = vec![Piece::fixed(name, background.fg(theme.tree.name))];
-    if let Some(previous) = file.file.previous_path() {
+    if let Some(previous) = file.previous_path() {
         left.push(Piece::droppable(
             format!(" ← {previous}"),
             background.fg(theme.tree.previous),
@@ -198,7 +193,7 @@ fn file(
     let mut right = Vec::new();
     // A file that gained and lost nothing says nothing, rather than `+0 -0` in
     // a column the eye is scanning.
-    if let Some(stats) = file.stats.filter(|s| !s.is_empty()) {
+    if let Some(stats) = file.get_stats().filter(|s| !s.is_empty()) {
         push_stats(&mut right, stats, priority::STATS, theme, background);
         // The space between the counts and the letter, which goes with them
         // rather than staying behind as a lone column.
@@ -209,9 +204,9 @@ fn file(
         ));
     }
     right.push(Piece::fixed(
-        letter(file.change()),
+        letter(file.get_change_type()),
         background
-            .fg(theme.change.of(file.change()))
+            .fg(theme.change.of(file.get_change_type()))
             .add_modifier(Modifier::BOLD),
     ));
     (left, right)

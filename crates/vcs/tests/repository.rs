@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use file_types::{ChangeType, ChangedFile, DiffVersion, FileContent, RepoPath};
+use file_types::{ChangeType, DiffVersion, File, FileContent, RepoPath};
 use vcs::{DiffType, Repository, Untracked};
 
 /// A fixture repository in a temporary directory, removed on drop.
@@ -30,15 +30,15 @@ impl Fixture {
     ///
     /// A path staged and then edited again is in two groups, and so appears
     /// twice: they are two comparisons of it, not a duplicate.
-    fn files(&self) -> Vec<ChangedFile> {
+    fn files(&self) -> Vec<File> {
         self.flat(self.git())
     }
 
-    fn with_untracked(&self, untracked: Untracked) -> Vec<ChangedFile> {
+    fn with_untracked(&self, untracked: Untracked) -> Vec<File> {
         self.flat(self.git().with_untracked(untracked))
     }
 
-    fn flat(&self, mut repository: Repository) -> Vec<ChangedFile> {
+    fn flat(&self, mut repository: Repository) -> Vec<File> {
         repository
             .changes(&DiffType::Worktree, &[])
             .expect("status runs")
@@ -64,14 +64,14 @@ fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
         .find(|e| e.path().as_str() == "renamed-to.txt")
         .expect("the renamed file is reported");
     assert_eq!(
-        renamed.file.previous_path().map(RepoPath::as_str),
+        renamed.previous_path().map(RepoPath::as_str),
         Some("renamed-from.txt")
     );
     // Both halves, because they come from different fields: the paths say
     // where it went, and the change says what happened. Asserting only the
     // paths let a rename read as an ordinary modification, which draws the
     // wrong letter in the wrong colour.
-    assert_eq!(renamed.change(), ChangeType::Moved);
+    assert_eq!(renamed.get_change_type(), ChangeType::Moved);
     assert!(
         !entries
             .iter()
@@ -138,7 +138,11 @@ fn untracked_directories_collapse_when_asked() {
     );
 
     let without = fixture.with_untracked(Untracked::No);
-    assert!(!without.iter().any(|e| e.change() == ChangeType::Untracked));
+    assert!(
+        !without
+            .iter()
+            .any(|e| e.get_change_type() == ChangeType::Untracked)
+    );
 }
 
 #[test]
@@ -164,7 +168,7 @@ fn a_path_outside_a_repository_is_reported_as_such() {
 }
 
 /// Finds one changed file by path.
-fn file(entries: &[ChangedFile], path: &str) -> ChangedFile {
+fn file(entries: &[File], path: &str) -> File {
     entries
         .iter()
         .find(|e| e.path().as_str() == path)
@@ -262,9 +266,9 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
     let entries = fixture.files();
     let moved = file(&entries, "renamed-to.txt");
 
-    assert_eq!(moved.change(), ChangeType::Moved);
+    assert_eq!(moved.get_change_type(), ChangeType::Moved);
     assert_eq!(
-        moved.file.on(DiffVersion::Original).map(RepoPath::as_str),
+        moved.on(DiffVersion::Original).map(RepoPath::as_str),
         Some("renamed-from.txt")
     );
     assert!(
@@ -357,7 +361,7 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
     for group in &groups {
         for file in &group.files {
             if file.path().as_str() == "staged-then-edited.txt" {
-                assert_eq!(file.change(), ChangeType::Modified);
+                assert_eq!(file.get_change_type(), ChangeType::Modified);
                 found.push(group.revs.heading());
             }
         }

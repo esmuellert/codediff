@@ -19,7 +19,7 @@
 //! are drawn one after another, so a line number has to be resolved to a group
 //! and a line within it before anything can be asked about it.
 
-use file_types::{ChangedFile, Revs};
+use file_types::{File, Revs};
 
 use super::Style;
 
@@ -43,10 +43,10 @@ pub struct Group {
 /// order is the backend's: it knows that what is unstaged is reviewed before
 /// what is staged, and a comparison of two revisions has only one group to
 /// order.
-pub fn of(files: &[ChangedFile]) -> Vec<(&'static str, Vec<usize>)> {
+pub fn of(files: &[File]) -> Vec<(&'static str, Vec<usize>)> {
     let mut groups: Vec<(Revs, Vec<usize>)> = Vec::new();
     for (index, file) in files.iter().enumerate() {
-        let revs = file.file.revs();
+        let revs = file.revs();
         match groups.iter_mut().find(|(seen, _)| *seen == revs) {
             Some((_, members)) => members.push(index),
             None => groups.push((revs, vec![index])),
@@ -125,11 +125,8 @@ mod tests {
     use file_types::{File, Oid, RepoPath, Rev};
     use std::path::Path;
 
-    fn at(path: &str, revs: Revs) -> ChangedFile {
-        ChangedFile::new(File::unchanged_path(
-            RepoPath::new(path, Path::new("/repo")),
-            revs,
-        ))
+    fn at(path: &str, revs: Revs) -> File {
+        File::unchanged_path(RepoPath::new(path, Path::new("/repo")), revs)
     }
 
     fn unstaged() -> Revs {

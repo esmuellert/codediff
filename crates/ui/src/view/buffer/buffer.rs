@@ -81,7 +81,7 @@ impl Buffer {
     }
 
     /// The list of changed files.
-    pub fn explorer(files: Vec<file_types::ChangedFile>) -> Self {
+    pub fn explorer(files: Vec<file_types::File>) -> Self {
         Self::of(BufferType::Explorer(Explorer::new(files)))
     }
 

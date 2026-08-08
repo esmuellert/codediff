@@ -60,7 +60,7 @@ pub struct Session {
     /// a time: a reader moving down a list faster than git can answer leaves
     /// this pointing at wherever they got to, and that is what is asked for
     /// next. A response for anything else is discarded on arrival.
-    selected: Option<file_types::ChangedFile>,
+    selected: Option<file_types::File>,
     /// Every colour anything open has. Owned here rather than by a buffer, so
     /// a file keeps its colours when the reader moves away and comes back.
     store: Store,
@@ -339,15 +339,15 @@ impl Session {
     /// Compared by revisions and path, not by path: the file that is staged
     /// and then edited again is listed twice, and those two rows are two
     /// different comparisons that must each be openable.
-    fn showing(&self, file: &file_types::ChangedFile) -> bool {
+    fn showing(&self, file: &file_types::File) -> bool {
         let Some(id) = self.view.tab().shown() else {
             return false;
         };
-        self.view.buffer(id).file() == Some(&file.file)
+        self.view.buffer(id).file() == Some(file)
     }
 
     /// The file the list has selected, if a list has focus.
-    fn selected_file(&self) -> Option<file_types::ChangedFile> {
+    fn selected_file(&self) -> Option<file_types::File> {
         let pane = self.view.focused();
         let buffer = self.view.buffer(pane.buffer);
         let cursor = pane.viewport.cursor();

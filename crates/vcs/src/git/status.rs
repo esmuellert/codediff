@@ -349,7 +349,7 @@ mod tests {
                 std::path::Path::new("/repo"),
                 revs()
             )
-            .change(),
+            .get_change_type(),
             ChangeType::Moved
         );
         // The record after a rename must still be read correctly.
@@ -381,7 +381,7 @@ mod tests {
                 std::path::Path::new("/repo"),
                 revs()
             )
-            .change(),
+            .get_change_type(),
             ChangeType::Conflicted
         );
         assert_eq!(entries[0].xy.index, Code::Unmerged);
@@ -399,7 +399,7 @@ mod tests {
                 std::path::Path::new("/repo"),
                 revs()
             )
-            .change(),
+            .get_change_type(),
             ChangeType::Untracked
         );
         assert_eq!(entries[1].xy.worktree, Code::Ignored);

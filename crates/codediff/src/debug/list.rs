@@ -47,9 +47,9 @@ pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     let root = vcs::Repository::open(&cwd)?.repo().root.clone();
     let request = pipeline::list::Request::new(root, diff_type).with_pathspec(pathspec);
 
-    let mut groups: Vec<(file_types::Revs, Vec<file_types::ChangedFile>)> = Vec::new();
+    let mut groups: Vec<(file_types::Revs, Vec<file_types::File>)> = Vec::new();
     for file in pipeline::list::run(&request)? {
-        let revs = file.file.revs();
+        let revs = file.revs();
         match groups.iter_mut().find(|(seen, _)| *seen == revs) {
             Some((_, files)) => files.push(file),
             None => groups.push((revs, vec![file])),
@@ -66,13 +66,13 @@ pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
             revs.after
         );
         for file in &files {
-            let stats = match file.stats {
+            let stats = match file.get_stats() {
                 Some(stats) => format!(" +{} -{}", stats.added, stats.removed),
                 None => String::new(),
             };
             println!(
                 "  {} {}{stats}",
-                super::status::letter(file.change()),
+                super::status::letter(file.get_change_type()),
                 file.path()
             );
         }

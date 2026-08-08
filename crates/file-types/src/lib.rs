@@ -17,7 +17,6 @@
 //! the whole point: a file's identity is converted at no boundary, and so
 //! cannot degrade at one.
 
-mod changed;
 mod content;
 mod diff_type;
 mod file;
@@ -27,7 +26,6 @@ mod rev;
 mod stats;
 mod version;
 
-pub use changed::ChangedFile;
 pub use content::FileContent;
 pub use diff_type::DiffType;
 pub use file::{ChangeType, File, Nowhere, Revs};

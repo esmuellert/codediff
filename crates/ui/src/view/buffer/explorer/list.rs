@@ -14,7 +14,7 @@
 //!
 //! [`Tree`]: super::Tree
 
-use file_types::ChangedFile;
+use file_types::File;
 
 use super::ViewLine;
 use super::order;
@@ -34,7 +34,7 @@ impl List {
     /// A key per path built once, then a plain sort — see
     /// [`order`](super::order). The path is carried beside the key as the
     /// tie-break the key deliberately leaves out.
-    pub fn build(files: &[ChangedFile], members: &[usize]) -> Self {
+    pub fn build(files: &[File], members: &[usize]) -> Self {
         let mut keyed: Vec<(Vec<u8>, &str, usize)> = members
             .iter()
             .map(|&index| {
@@ -62,7 +62,7 @@ impl List {
     ///
     /// The name is the whole path, because nothing above it says where the
     /// file is — which is the whole difference from the nested arrangement.
-    pub fn view_line<'a>(&self, line: usize, files: &'a [ChangedFile]) -> Option<ViewLine<'a>> {
+    pub fn view_line<'a>(&self, line: usize, files: &'a [File]) -> Option<ViewLine<'a>> {
         let file = files.get(self.file_on(line)?)?;
         Some(ViewLine::File {
             name: file.path().as_str(),
@@ -77,14 +77,14 @@ mod tests {
     use file_types::{File, Oid, RepoPath, Revs};
     use std::path::Path;
 
-    fn built(paths: &[&str]) -> (Vec<ChangedFile>, List) {
-        let files: Vec<ChangedFile> = paths
+    fn built(paths: &[&str]) -> (Vec<File>, List) {
+        let files: Vec<File> = paths
             .iter()
             .map(|path| {
-                ChangedFile::new(File::unchanged_path(
+                File::unchanged_path(
                     RepoPath::new(*path, Path::new("/repo")),
                     Revs::worktree_against(Oid::new("b87b24c")),
-                ))
+                )
             })
             .collect();
         let members: Vec<usize> = (0..files.len()).collect();
@@ -92,7 +92,7 @@ mod tests {
         (files, list)
     }
 
-    fn names(files: &[ChangedFile], list: &List) -> Vec<String> {
+    fn names(files: &[File], list: &List) -> Vec<String> {
         (0..list.view_lines().len())
             .map(|line| match list.view_line(line, files) {
                 Some(ViewLine::File { name, .. }) => name.to_owned(),

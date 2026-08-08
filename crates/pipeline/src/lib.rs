@@ -7,10 +7,10 @@
 //!
 //! | | | in | out |
 //! |---|---|---|---|
-//! | [`list`] | a set of files | a [`Request`](list::Request) | `Vec<`[`ChangedFile`]`>` |
-//! | [`file`] | one of them, in four | a [`ChangedFile`] | a [`DiffContent`] |
+//! | [`list`] | a set of files | a [`Request`](list::Request) | `Vec<`[`File`]`>` |
+//! | [`file`] | one of them, in four | a [`File`] | a [`DiffContent`] |
 //!
-//! [`ChangedFile`]: file_types::ChangedFile
+//! [`File`]: file_types::File
 //! [`DiffContent`]: file::DiffContent
 //!
 //! **The list's item type is the file's input type.** That is what makes them
@@ -18,7 +18,7 @@
 //! join: the reader picks a row, and the row is already the next request.
 //!
 //! ```text
-//! list ──▶ ChangedFile ──▶ (a row) ──▶ file ──▶ DiffContent
+//! list ──▶ File ──▶ (a row) ──▶ file ──▶ DiffContent
 //! ```
 //!
 //! The file pipeline used to search for a file by path, which was the list

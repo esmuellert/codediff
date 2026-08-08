@@ -61,14 +61,14 @@ fn indent(tree: &Tree, id: NodeId) -> String {
 mod tests {
     use super::*;
     use crate::view::buffer::explorer::{Explorer, ViewMode};
-    use file_types::{ChangedFile, File, Oid, RepoPath, Revs};
+    use file_types::{File, Oid, RepoPath, Revs};
     use std::path::Path;
 
-    fn file(path: &str) -> ChangedFile {
-        ChangedFile::new(File::unchanged_path(
+    fn file(path: &str) -> File {
+        File::unchanged_path(
             RepoPath::new(path, Path::new("/repo")),
             Revs::worktree_against(Oid::new("b87b24c")),
-        ))
+        )
     }
 
     /// The prefix of every line, as one string each.

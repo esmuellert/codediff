@@ -30,9 +30,9 @@ mod request;
 pub use request::Request;
 
 use anyhow::Result;
-use file_types::ChangedFile;
+use file_types::File;
 
 /// Runs the request and hands over every file it found.
-pub fn run(request: &Request) -> Result<Vec<ChangedFile>> {
+pub fn run(request: &Request) -> Result<Vec<File>> {
     entries::read(request)
 }

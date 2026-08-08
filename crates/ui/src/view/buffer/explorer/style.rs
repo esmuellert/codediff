@@ -14,7 +14,7 @@
 //! and nothing else, so a third one is a variant here and no change anywhere
 //! above. See D69.
 
-use file_types::ChangedFile;
+use file_types::File;
 
 use super::{List, Tree, ViewLine};
 
@@ -45,7 +45,7 @@ impl Style {
     }
 
     /// What is on a line, as facts.
-    pub fn view_line<'a>(&'a self, line: usize, files: &'a [ChangedFile]) -> Option<ViewLine<'a>> {
+    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<ViewLine<'a>> {
         match self {
             Style::Tree(tree) => tree.view_line(line, files),
             Style::List(list) => list.view_line(line, files),

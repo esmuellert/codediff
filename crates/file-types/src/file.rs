@@ -1,6 +1,6 @@
 //! Which file this is.
 
-use crate::{DiffVersion, RepoPath, Rev};
+use crate::{DiffVersion, RepoPath, Rev, Stats};
 
 /// What happened to a file between the two versions being compared.
 ///
@@ -72,6 +72,21 @@ pub struct File {
     /// looked for at a commit.
     before: Rev,
     after: Rev,
+    /// What the backend said happened, when the paths cannot say it.
+    ///
+    /// `Some` only for [`ChangeType::Untracked`] and
+    /// [`ChangeType::Conflicted`]: an untracked file's paths look exactly like
+    /// an added one's, and a conflicted file's look like an ordinary
+    /// modification. Everything else is read from the paths by
+    /// [`change`](Self::change), so no field here can contradict them.
+    changed_type: Option<ChangeType>,
+    /// Lines gained and lost, or `None` when nothing counted them — a binary
+    /// file, or a backend that was not asked.
+    ///
+    /// Counting is a second question from listing, and a backend that will not
+    /// answer it loses the numbers rather than the whole list. So this arrives
+    /// after the file does, through [`with_stats`](Self::with_stats).
+    stats: Option<Stats>,
 }
 
 /// What a file's two sides were read from.
@@ -139,6 +154,8 @@ impl File {
             modified: Some(path),
             before: revs.before,
             after: revs.after,
+            changed_type: None,
+            stats: None,
         }
     }
 
@@ -149,6 +166,8 @@ impl File {
             modified: Some(modified),
             before: revs.before,
             after: revs.after,
+            changed_type: None,
+            stats: None,
         }
     }
 
@@ -159,6 +178,8 @@ impl File {
             modified: Some(path),
             before: revs.before,
             after: revs.after,
+            changed_type: None,
+            stats: None,
         }
     }
 
@@ -169,6 +190,8 @@ impl File {
             modified: None,
             before: revs.before,
             after: revs.after,
+            changed_type: None,
+            stats: None,
         }
     }
 
@@ -189,6 +212,8 @@ impl File {
             modified,
             before: revs.before,
             after: revs.after,
+            changed_type: None,
+            stats: None,
         })
     }
 
@@ -264,18 +289,63 @@ impl File {
             .expect("a file exists on at least one side")
     }
 
-    /// What the paths say happened.
+    /// What happened to this file.
     ///
-    /// Never `Untracked` or `Conflicted` — those are invisible in a path pair.
-    /// A backend that knows better overrides this; see
-    /// `vcs::ChangedFile::change`.
-    pub fn change(&self) -> ChangeType {
+    /// The backend's word where it has one, and otherwise what the paths say.
+    /// `Added`, `Deleted`, `Moved` and `Modified` are always read from the
+    /// paths, so nothing stored can disagree with them; only `Untracked` and
+    /// `Conflicted` are invisible in a path pair and have to be told.
+    pub fn get_change_type(&self) -> ChangeType {
+        self.changed_type
+            .unwrap_or_else(|| self.change_type_of_paths())
+    }
+
+    /// What the paths alone say happened.
+    ///
+    /// Never `Untracked` or `Conflicted`, which a path pair cannot show.
+    pub fn change_type_of_paths(&self) -> ChangeType {
         match (self.only(), self.is_renamed()) {
             (Some(crate::DiffVersion::Modified), _) => ChangeType::Added,
             (Some(crate::DiffVersion::Original), _) => ChangeType::Deleted,
             (None, true) => ChangeType::Moved,
             (None, false) => ChangeType::Modified,
         }
+    }
+
+    /// The same file, with what the backend alone knows happened to it.
+    ///
+    /// # Panics
+    ///
+    /// If `changed_type` is one the paths could have said. Passing `Added`
+    /// here would create exactly the disagreement this type exists to prevent.
+    pub fn set_change_type(mut self, changed_type: ChangeType) -> Self {
+        assert!(
+            changed_type.needs_a_backend(),
+            "{changed_type:?} is readable from the paths; do not store it"
+        );
+        self.changed_type = Some(changed_type);
+        self
+    }
+
+    /// The same file, with what it gained and lost.
+    pub fn set_stats(mut self, stats: Stats) -> Self {
+        self.stats = Some(stats);
+        self
+    }
+
+    /// What this file gained and lost, or `None` when nothing counted it.
+    pub fn get_stats(&self) -> Option<Stats> {
+        self.stats
+    }
+
+    /// Whether this is an unresolved merge.
+    pub fn is_conflicted(&self) -> bool {
+        self.get_change_type() == ChangeType::Conflicted
+    }
+
+    /// Whether this file moved.
+    pub fn is_moved(&self) -> bool {
+        self.get_change_type() == ChangeType::Moved
     }
 
     /// Where the file was, when that differs from where it is.
@@ -294,6 +364,44 @@ impl File {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// The ordinary comparison. Which revisions these are is not what any test
+    /// below is about, so it is said once.
+    fn a_comparison() -> Revs {
+        Revs::worktree_against(crate::Oid::new("b87b24c"))
+    }
+
+    #[test]
+    fn the_ordinary_cases_come_from_the_paths() {
+        assert_eq!(
+            File::added(at("new.rs"), a_comparison()).get_change_type(),
+            ChangeType::Added
+        );
+        assert_eq!(
+            File::renamed(at("o.rs"), at("n.rs"), a_comparison()).get_change_type(),
+            ChangeType::Moved
+        );
+    }
+
+    #[test]
+    fn the_backend_supplies_only_what_the_paths_cannot_say() {
+        let untracked =
+            File::added(at("new.rs"), a_comparison()).set_change_type(ChangeType::Untracked);
+        assert_eq!(untracked.get_change_type(), ChangeType::Untracked);
+        assert_eq!(
+            untracked.change_type_of_paths(),
+            ChangeType::Added,
+            "the paths still say what they say"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "readable from the paths")]
+    fn storing_a_derivable_change_is_refused() {
+        // The whole point: a stored `Added` could disagree with a file that
+        // has both versions, and nothing would catch it.
+        File::added(at("new.rs"), a_comparison()).set_change_type(ChangeType::Added);
+    }
 
     fn at(relative: &str) -> RepoPath {
         RepoPath::new(relative, Path::new("/repo"))
@@ -351,19 +459,19 @@ mod tests {
     #[test]
     fn the_paths_say_what_happened() {
         assert_eq!(
-            File::added(at("new.rs"), revs()).change(),
+            File::added(at("new.rs"), revs()).get_change_type(),
             ChangeType::Added
         );
         assert_eq!(
-            File::deleted(at("gone.rs"), revs()).change(),
+            File::deleted(at("gone.rs"), revs()).get_change_type(),
             ChangeType::Deleted
         );
         assert_eq!(
-            File::renamed(at("old.rs"), at("new.rs"), revs()).change(),
+            File::renamed(at("old.rs"), at("new.rs"), revs()).get_change_type(),
             ChangeType::Moved
         );
         assert_eq!(
-            File::unchanged_path(at("same.rs"), revs()).change(),
+            File::unchanged_path(at("same.rs"), revs()).get_change_type(),
             ChangeType::Modified
         );
     }
@@ -379,7 +487,11 @@ mod tests {
             File::renamed(at("o.rs"), at("n.rs"), revs()),
             File::unchanged_path(at("m.rs"), revs()),
         ] {
-            assert!(!file.change().needs_a_backend(), "{:?}", file.change());
+            assert!(
+                !file.get_change_type().needs_a_backend(),
+                "{:?}",
+                file.get_change_type()
+            );
         }
         assert!(ChangeType::Untracked.needs_a_backend());
         assert!(ChangeType::Conflicted.needs_a_backend());

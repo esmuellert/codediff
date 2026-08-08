@@ -5,7 +5,7 @@
 //! have to come from drawing, not from the data.
 
 use anyhow::Result;
-use file_types::ChangedFile;
+use file_types::File;
 use file_types::{DiffVersion, FileContent};
 use pipeline::file::DiffContent;
 
@@ -23,7 +23,7 @@ use pipeline::list;
 /// A file that has *not* changed is in no group at all, and is compared with
 /// itself. That is a debugging answer rather than a review: the interface
 /// refuses it, because a screen of unmarked text says nothing.
-fn find(path: &str) -> Result<file_types::ChangedFile> {
+fn find(path: &str) -> Result<file_types::File> {
     let cwd = std::env::current_dir()?;
     let git = vcs::Repository::open(&cwd)?;
     let root = git.repo().root.clone();
@@ -38,9 +38,7 @@ fn find(path: &str) -> Result<file_types::ChangedFile> {
         // Against itself, which is what "unchanged" means and what the
         // ordinary worktree comparison would have said had it been listed.
         let revs = file_types::Revs::worktree_against(file_types::Oid::new("HEAD"));
-        return Ok(ChangedFile::new(file_types::File::unchanged_path(
-            repo_path, revs,
-        )));
+        return Ok(file_types::File::unchanged_path(repo_path, revs));
     }
     anyhow::bail!("{path} is neither changed nor present")
 }
@@ -48,7 +46,7 @@ fn find(path: &str) -> Result<file_types::ChangedFile> {
 pub fn run(path: &str, verbose: bool) -> Result<()> {
     let runner = Runner::new(&find(path)?)?;
     let contents = &runner.contents;
-    header(&contents.diff, &contents.original, &contents.modified);
+    header(&contents.file, &contents.original, &contents.modified);
 
     // Nothing to align: a picture has no lines, and saying so is the answer
     // rather than a failure.
@@ -102,12 +100,12 @@ fn one_sided(runner: &Runner, present: DiffVersion) -> Result<()> {
     Ok(())
 }
 
-fn header(diff: &ChangedFile, original: &FileContent, modified: &FileContent) {
+fn header(diff: &File, original: &FileContent, modified: &FileContent) {
     println!("{}", visible(diff.path().as_str()));
-    if let Some(previous) = diff.file.previous_path() {
+    if let Some(previous) = diff.previous_path() {
         println!("moved from {}", visible(previous.as_str()));
     }
-    println!("{:?}", diff.change());
+    println!("{:?}", diff.get_change_type());
     println!();
     println!("before   {}", original.describe());
     println!("after    {}", modified.describe());

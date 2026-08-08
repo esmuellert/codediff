@@ -38,7 +38,7 @@ pub mod run;
 pub mod status;
 pub mod worktree;
 
-use file_types::{ChangedFile, DiffVersion, FileContent, Rev, Revs};
+use file_types::{DiffVersion, File, FileContent, Rev, Revs};
 
 use crate::Repo;
 use crate::error::Result;
@@ -125,13 +125,13 @@ pub fn entries(repo: &Repo, untracked: Untracked, pathspec: &[String]) -> Result
 pub fn read(
     repo: &Repo,
     blobs: &mut cat_file::Batch,
-    file: &ChangedFile,
+    file: &File,
     version: DiffVersion,
 ) -> Result<FileContent> {
-    let Some(path) = file.file.on(version).cloned() else {
+    let Some(path) = file.on(version).cloned() else {
         return Ok(FileContent::Absent);
     };
-    match file.file.rev(version).stored() {
+    match file.rev(version).stored() {
         None => Ok(FileContent::of(worktree::read(&path)?)),
         Some(rev) => {
             // Against the working tree, the stored side is converted the way a
@@ -140,7 +140,7 @@ pub fn read(
             // with the bytes on disk marked **every line** changed — measured,
             // on a file where one line had been edited. The same is true of
             // any clean/smudge filter.
-            if file.file.rev(version.other()) == &Rev::Worktree {
+            if file.rev(version.other()) == &Rev::Worktree {
                 return Ok(FileContent::of(cat_file::filtered(repo, rev, &path)?));
             }
             Ok(FileContent::of(blobs.read(rev, &path)?))

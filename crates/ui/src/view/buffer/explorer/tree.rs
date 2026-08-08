@@ -21,7 +21,7 @@
 //!
 //! [`Explorer`]: super::Explorer
 
-use file_types::ChangedFile;
+use file_types::File;
 
 use super::ViewLine;
 use super::order;
@@ -178,7 +178,7 @@ impl Tree {
     ///
     /// Chains of directories with nothing to choose between are collapsed —
     /// see [`Tree::collapse_chains`].
-    pub fn build(files: &[ChangedFile], members: &[usize]) -> Self {
+    pub fn build(files: &[File], members: &[usize]) -> Self {
         let mut tree = Tree::default();
         for &index in members {
             let (directories, name) = split(files[index].path().as_str());
@@ -213,7 +213,7 @@ impl Tree {
     }
 
     /// What is on a line, as facts.
-    pub fn view_line<'a>(&'a self, line: usize, files: &'a [ChangedFile]) -> Option<ViewLine<'a>> {
+    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<ViewLine<'a>> {
         let node = self.node(*self.view_lines.get(line)?);
         Some(match node.node_type {
             NodeType::Folder { open, .. } => ViewLine::Directory {
@@ -399,19 +399,19 @@ mod tests {
     use file_types::{File, Oid, RepoPath, Revs};
     use std::path::Path;
 
-    fn files(paths: &[&str]) -> Vec<ChangedFile> {
+    fn files(paths: &[&str]) -> Vec<File> {
         paths
             .iter()
             .map(|path| {
-                ChangedFile::new(File::unchanged_path(
+                File::unchanged_path(
                     RepoPath::new(*path, Path::new("/repo")),
                     Revs::worktree_against(Oid::new("b87b24c")),
-                ))
+                )
             })
             .collect()
     }
 
-    fn built(paths: &[&str]) -> (Vec<ChangedFile>, Tree) {
+    fn built(paths: &[&str]) -> (Vec<File>, Tree) {
         let files = files(paths);
         let members: Vec<usize> = (0..files.len()).collect();
         let tree = Tree::build(&files, &members);

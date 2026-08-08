@@ -3,7 +3,7 @@
 //! ---
 //!
 //! Admission criterion: does this **run a version control system**, or say how
-//! doing so can fail? What it *produces* is `file-types` — `ChangedFile`,
+//! doing so can fail? What it *produces* is `file-types` — `File`,
 //! `File`, `RepoPath`, `FileContent` — and `cargo xtask lint-arch` forbids
 //! that crate from naming this one, so no git concept can reach a reviewer.
 //!

@@ -10,7 +10,7 @@
 //! order, so they spell that the way a reader recognises it. What is really
 //! drawn is asserted in `explorer_rows.rs`, against a screen.
 
-use file_types::{ChangeType, ChangedFile, File, Oid, RepoPath, Rev, Revs, Stats};
+use file_types::{ChangeType, File, Oid, RepoPath, Rev, Revs, Stats};
 use std::path::Path;
 use ui::view::buffer::explorer::{Explorer, ViewLine, ViewMode};
 
@@ -48,10 +48,10 @@ fn spell(explorer: &Explorer, line: u32) -> String {
         }
         ViewLine::File { name, file } => {
             out.push_str(name);
-            if let Some(previous) = file.file.previous_path() {
+            if let Some(previous) = file.previous_path() {
                 out.push_str(&format!(" ← {previous}"));
             }
-            if let Some(stats) = file.stats.filter(|s| !s.is_empty()) {
+            if let Some(stats) = file.get_stats().filter(|s| !s.is_empty()) {
                 if stats.added > 0 {
                     out.push_str(&format!(" +{}", stats.added));
                 }
@@ -60,7 +60,7 @@ fn spell(explorer: &Explorer, line: u32) -> String {
                 }
             }
             out.push(' ');
-            out.push_str(match file.change() {
+            out.push_str(match file.get_change_type() {
                 ChangeType::Added => "A",
                 ChangeType::Modified => "M",
                 ChangeType::Deleted => "D",
@@ -111,12 +111,12 @@ fn at(relative: &str) -> RepoPath {
     RepoPath::new(relative, Path::new("/repo"))
 }
 
-fn modified(path: &str) -> ChangedFile {
-    ChangedFile::new(File::unchanged_path(at(path), revs()))
+fn modified(path: &str) -> File {
+    File::unchanged_path(at(path), revs())
 }
 
-fn untracked(path: &str) -> ChangedFile {
-    ChangedFile::reported(File::added(at(path), revs()), ChangeType::Untracked)
+fn untracked(path: &str) -> File {
+    File::added(at(path), revs()).set_change_type(ChangeType::Untracked)
 }
 
 /// Every changed file in the fixture repository, as the backend reports them.
@@ -125,7 +125,7 @@ fn untracked(path: &str) -> ChangedFile {
 /// reports it as `MM`, so there is an unstaged diff and a staged diff of the
 /// same path, and one row could not show both. The two are told apart by the
 /// revisions they carry, which is also what puts them in different groups.
-fn fixture() -> Vec<ChangedFile> {
+fn fixture() -> Vec<File> {
     let mut files = Vec::new();
     for path in [
         "crlf.txt",
@@ -142,26 +142,23 @@ fn fixture() -> Vec<ChangedFile> {
     files.push(untracked("untracked.txt"));
     files.push(untracked("untracked-dir/inside.txt"));
 
-    files.push(ChangedFile::new(File::deleted(
-        at("deleted.txt"),
-        staged_revs(),
-    )));
-    files.push(ChangedFile::new(File::renamed(
+    files.push(File::deleted(at("deleted.txt"), staged_revs()));
+    files.push(File::renamed(
         at("renamed-from.txt"),
         at("renamed-to.txt"),
         staged_revs(),
-    )));
-    files.push(ChangedFile::new(File::unchanged_path(
+    ));
+    files.push(File::unchanged_path(
         at("staged-then-edited.txt"),
         staged_revs(),
-    )));
+    ));
     files
 }
 
 /// The nested directories the fixture gained so that flattening has something
 /// to collapse. Without a chain of single-child directories, a flattened tree
 /// and an unflattened one are the same picture.
-fn nested() -> Vec<ChangedFile> {
+fn nested() -> Vec<File> {
     vec![
         untracked("deep/only/one/chain/leaf.txt"),
         untracked("nest/a/one.txt"),
@@ -298,8 +295,8 @@ fn a_file_row_cannot_be_folded() {
 #[test]
 fn stats_are_shown_per_file_and_summed_on_the_heading() {
     let files = vec![
-        modified("a.rs").with_stats(Stats::new(4, 0)),
-        modified("b.rs").with_stats(Stats::new(2, 3)),
+        modified("a.rs").set_stats(Stats::new(4, 0)),
+        modified("b.rs").set_stats(Stats::new(2, 3)),
     ];
     assert_eq!(
         text(&Explorer::new(files)),

@@ -71,8 +71,8 @@ pub fn letter(change: ChangeType) -> &'static str {
 }
 
 /// `X  path [<- original]`, one line per file.
-fn line(file: &file_types::ChangedFile, verbose: bool) -> String {
-    let mut out = format!("{}  ", letter(file.change()));
+fn line(file: &file_types::File, verbose: bool) -> String {
+    let mut out = format!("{}  ", letter(file.get_change_type()));
     if verbose {
         // Padded by display columns, not characters: a CJK filename is twice
         // as wide as its character count suggests.
@@ -82,14 +82,13 @@ fn line(file: &file_types::ChangedFile, verbose: bool) -> String {
     }
 
     if let Some(previous) = file
-        .file
         .on(file_types::DiffVersion::Original)
         .filter(|original| original.as_str() != file.path().as_str())
     {
         out.push_str(&format!(" <- {}", visible(previous.as_str())));
     }
     if verbose {
-        let note = match file.change() {
+        let note = match file.get_change_type() {
             ChangeType::Conflicted => "unresolved merge — listed, not diffable as two sides",
             ChangeType::Moved => "moved; both paths kept, not an add plus a delete",
             ChangeType::Untracked => "untracked — no before side to compare against",

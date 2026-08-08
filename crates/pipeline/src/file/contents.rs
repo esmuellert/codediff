@@ -9,14 +9,14 @@
 //! is left of the old stage is one line, and it is here.
 
 use anyhow::{Context, Result};
-use file_types::{ChangedFile, DiffVersion, File, FileContent};
+use file_types::{DiffVersion, File, FileContent};
 use vcs::Repository;
 
 use vscode_diff::lines;
 
 /// One file, with both versions read.
 pub struct Contents {
-    pub diff: ChangedFile,
+    pub file: File,
     pub original: FileContent,
     pub modified: FileContent,
 }
@@ -25,7 +25,7 @@ pub struct Contents {
 ///
 /// The file arrives already found, carrying the revisions of the comparison it
 /// was found in, so all that is needed is the repository it lives in.
-pub fn read(file: &ChangedFile) -> Result<Contents> {
+pub fn read(file: &File) -> Result<Contents> {
     let mut repository = Repository::open(file.path().root()).context("opening a repository")?;
     let file = file.clone();
     let original = repository
@@ -35,7 +35,7 @@ pub fn read(file: &ChangedFile) -> Result<Contents> {
         .read(&file, DiffVersion::Modified)
         .context("reading the after side")?;
     Ok(Contents {
-        diff: file,
+        file,
         original,
         modified,
     })
@@ -49,7 +49,7 @@ impl Contents {
     /// the status line could then neither style nor shorten them separately.
     /// The facts travel intact instead, and whatever draws them decides how.
     pub fn file(&self) -> &File {
-        &self.diff.file
+        &self.file
     }
 
     /// A picture has no lines, so there is nothing to align.

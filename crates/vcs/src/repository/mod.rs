@@ -31,7 +31,7 @@ pub use diff_type::DiffType;
 
 use std::path::Path;
 
-use file_types::{ChangedFile, DiffVersion, FileContent, RepoPath, Revs};
+use file_types::{DiffVersion, File, FileContent, RepoPath, Revs};
 
 use crate::Repo;
 use crate::error::Result;
@@ -134,9 +134,9 @@ impl Repository {
 
     /// One side of one file.
     ///
-    /// Takes the whole [`ChangedFile`] rather than a path so that a move reads
+    /// Takes the whole [`File`] rather than a path so that a move reads
     /// its old path without the caller having to know that rule.
-    pub fn read(&mut self, file: &ChangedFile, version: DiffVersion) -> Result<FileContent> {
+    pub fn read(&mut self, file: &File, version: DiffVersion) -> Result<FileContent> {
         // Split so the borrow of `blobs` does not also borrow `repo`.
         if self.blobs.is_none() {
             self.blobs = Some(cat_file::Batch::open(&self.repo)?);

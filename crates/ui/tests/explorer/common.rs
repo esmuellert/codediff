@@ -4,7 +4,7 @@
 //! Shared by the three files beside it rather than by one of them, so that
 //! none of the three is the one that happens to own the fixtures.
 
-pub use file_types::{ChangeType, ChangedFile, DiffType, File, Oid, RepoPath, Rev, Revs, Stats};
+pub use file_types::{ChangeType, DiffType, File, Oid, RepoPath, Rev, Revs, Stats};
 pub use pipeline::file::{DiffContent, Files};
 pub use ratatui::buffer::Buffer as Cells;
 pub use ratatui::layout::Rect;
@@ -29,30 +29,30 @@ pub fn at(relative: &str) -> RepoPath {
     RepoPath::new(relative, Path::new("/repo"))
 }
 
-pub fn modified(path: &str) -> ChangedFile {
-    ChangedFile::new(File::unchanged_path(at(path), revs()))
+pub fn modified(path: &str) -> File {
+    File::unchanged_path(at(path), revs())
 }
 
 /// The same file, in the staged comparison instead of the unstaged one.
-pub fn staged(path: &str) -> ChangedFile {
-    ChangedFile::new(File::unchanged_path(at(path), staged_revs()))
+pub fn staged(path: &str) -> File {
+    File::unchanged_path(at(path), staged_revs())
 }
 
-pub fn untracked(path: &str) -> ChangedFile {
-    ChangedFile::reported(File::added(at(path), revs()), ChangeType::Untracked)
+pub fn untracked(path: &str) -> File {
+    File::added(at(path), revs()).set_change_type(ChangeType::Untracked)
 }
 
 /// One group's worth, as a comparison of two revisions produces.
-pub fn only(files: Vec<ChangedFile>) -> Vec<ChangedFile> {
+pub fn only(files: Vec<File>) -> Vec<File> {
     files
 }
 
-pub fn entries() -> Vec<ChangedFile> {
+pub fn entries() -> Vec<File> {
     vec![
-        modified("src/app.rs").with_stats(Stats::new(12, 3)),
-        modified("src/view/tab.rs").with_stats(Stats::new(4, 0)),
+        modified("src/app.rs").set_stats(Stats::new(12, 3)),
+        modified("src/view/tab.rs").set_stats(Stats::new(4, 0)),
         untracked("notes.txt"),
-        staged("README.md").with_stats(Stats::new(1, 1)),
+        staged("README.md").set_stats(Stats::new(1, 1)),
     ]
 }
 
@@ -116,7 +116,7 @@ pub fn diff(file: File, text: &str) -> Result<DiffContent, String> {
 /// indent guide are all `DarkGray`, so a test written against it can match the
 /// wrong thing and never fail.
 pub fn scripted(
-    files: Vec<ChangedFile>,
+    files: Vec<File>,
     theme: Theme,
     script: Vec<Result<DiffContent, String>>,
 ) -> Session {

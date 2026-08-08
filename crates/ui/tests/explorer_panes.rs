@@ -207,20 +207,17 @@ fn the_file_listed_twice_can_be_opened_from_either_section() {
     let theme = Theme::named("catppuccin-mocha").unwrap();
     // Each row is built with the revisions of *its own* group, which is what
     // makes them two comparisons rather than one file listed twice.
-    let in_unstaged = ChangedFile::new(File::unchanged_path(
-        at("both.rs"),
-        Revs::new(Rev::Index, Rev::Worktree),
-    ));
-    let in_staged = ChangedFile::new(File::unchanged_path(
+    let in_unstaged = File::unchanged_path(at("both.rs"), Revs::new(Rev::Index, Rev::Worktree));
+    let in_staged = File::unchanged_path(
         at("both.rs"),
         Revs::new(Rev::Commit(Oid::new("b87b24c")), Rev::Index),
-    ));
+    );
     let mut session = scripted(
         vec![in_unstaged.clone(), in_staged.clone()],
         theme,
         vec![
-            single_file(in_unstaged.file, "the unstaged one\n"),
-            single_file(in_staged.file, "the staged one\n"),
+            single_file(in_unstaged.clone(), "the unstaged one\n"),
+            single_file(in_staged.clone(), "the staged one\n"),
         ],
     );
 

@@ -10,7 +10,7 @@
 //! one already knows which two versions to read. Nothing downstream has to be
 //! told which list it came out of.
 
-use file_types::{ChangedFile, Rev, Revs};
+use file_types::{File, Rev, Revs};
 
 use crate::git::status::{Code, Entry};
 use crate::repository::changed_file::to_file_diff;
@@ -28,7 +28,7 @@ use crate::repository::changed_file::to_file_diff;
 #[derive(Debug, Clone)]
 pub struct Changes {
     pub revs: Revs,
-    pub files: Vec<ChangedFile>,
+    pub files: Vec<File>,
 }
 
 impl Changes {
