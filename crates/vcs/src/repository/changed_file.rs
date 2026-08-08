@@ -1,29 +1,14 @@
 //! Git's records, in the reviewer's terms.
 //!
-//! The seam, and the one file that names both vocabularies. Everything in
-//! `git` speaks git — `XY` codes, status letters, similarity scores — and
-//! everything above `vcs` speaks [`File`]. This is where one becomes
-//! the other.
-//!
-//! **This is the file a second backend forks**, not [`Repository`]. A
-//! mercurial backend would parse its own records into its own words and need
-//! its own translation to these; the four operations above it would not
-//! change. See D67.
-//!
-//! [`Repository`]: super::Repository
+//! The one file that names both vocabularies: git's `XY` codes on one side,
+//! `File` on the other.
 
 use file_types::{ChangeType, File, RepoPath, Revs};
 
 use crate::git::diff::name_status::Change;
 use crate::git::status::{Code, Entry};
 
-/// Git's model, in the reviewer's terms.
-///
-/// The one place the two vocabularies meet. Git reports two codes because it
-/// compares three things — `HEAD`, the index and the working tree — while a
-/// reviewer looking at "what changed since the last commit" wants one answer.
-/// The index code wins where they differ, since it is the one that describes
-/// the file's relationship to `HEAD`.
+/// Translates a git status entry into a [`File`].
 pub fn to_file_diff(entry: Entry, root: &std::path::Path, revs: Revs) -> File {
     let change = match (entry.xy.index, entry.xy.worktree) {
         // Unresolved merges first: nothing else about the codes matters.

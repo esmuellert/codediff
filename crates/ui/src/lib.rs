@@ -1,29 +1,8 @@
 #![doc = include_str!("../README.md")]
-//!
-//! ---
-//!
-//!
-//! Three structural commitments worth stating up front.
-//!
-//! [`View`] is four nested levels — tabs, panes, buffers, viewports — and an
-//! action is executed by the lowest one that contains everything it affects.
-//! That is what decides where each piece of behaviour lives.
-//!
-//! [`Viewport`] holds a single scroll position for every column of a pane, so
-//! two sides of a diff cannot drift apart and there is no synchronisation code
-//! to get wrong.
-//!
-//! And a key resolves to a [`Command`] that is one of exactly three kinds —
-//! executed by a buffer, by the terminal's owner, or off-thread — so the loop
-//! always knows whether it may block.
-//!
-//! [`Command`]: input::Command
-//! [`View`]: view::View
 
 // Both appear in this crate's public API — `Session::draw` takes a ratatui
 // terminal and `Session::handle` a crossterm event — so a consumer needs the
-// same versions we were built against, and getting them from here is the only
-// way to be sure of that.
+// same versions we were built against.
 pub use crossterm;
 pub use ratatui;
 
