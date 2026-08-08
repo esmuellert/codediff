@@ -1,18 +1,8 @@
-//! How the files under a heading are arranged, and asking whichever it is.
+//! How the files under a heading are arranged.
 //!
-//! One variant per arrangement, and the same four questions of each: how many
-//! lines, what is on one, which file it stands for, and whether it opens. The
-//! answers differ; the questions do not, which is what lets `draw` loop over
-//! lines without knowing what it is drawing.
-//!
-//! An enum rather than a trait: the arrangements are a closed set, so an
-//! exhaustive `match` means adding one breaks the build until it is handled
-//! everywhere — the same property that stops the keymap growing dead commands,
-//! and the same reason `BufferType` is one.
-//!
-//! **No arrangement knows a heading exists.** Each is handed one group's files
-//! and nothing else, so a third one is a variant here and no change anywhere
-//! above. See D69.
+//! One variant per arrangement: tree (with directories) or list (flat paths).
+//! Each answers the same four questions: line count, what is on a line, which
+//! file it is, and whether it opens.
 
 use file_types::File;
 

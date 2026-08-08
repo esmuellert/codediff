@@ -1,23 +1,8 @@
-//! What colour a theme gives each part of a tree drawn in rows.
+//! Colours for tree-structured rows (headings, guides, directories).
 //!
-//! ---
-//!
-//! Taste, and only taste — the same split as [`Code`](super::Code). What a
-//! piece of a row *is* — that this one is a directory and that one is a
-//! heading — is the view's answer, carried on its nodes. This file says what
-//! a directory looks like, which every theme answers differently.
-//! `draw::buffer::explorer::node` is where the two meet.
-//!
-//! **Only what needs rows to mean anything.** An indent guide, a fold arrow, a
-//! section title, a count of what is under it — none of these mean anything
-//! where nothing nests. What happened to a file does, wherever it is named, so
-//! those colours are [`Change`](super::Change) and not here. See D66.
-//!
-//! **A [`Tree`] holds `Color`, not `Style`.** The background of a row belongs
-//! to the selection, and a field that could set one would be able to hide
-//! which row the reader is on. Storing a colour rather than a style means a
-//! theme *cannot* express that mistake. Bold is not here either: a heading is
-//! bold in every theme, so it is structural and lives with the drawing.
+//! Only what needs nesting to mean anything. Colours for *what happened to a
+//! file* are in [`Change`](super::Change) since they apply everywhere a file
+//! is named.
 
 use ratatui::style::Color;
 

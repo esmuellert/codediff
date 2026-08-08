@@ -1,12 +1,4 @@
-//! The file, and its two versions.
-//!
-//! The first stage, and the only one that performs IO. Everything after this
-//! is pure computation over the two texts it produces.
-//!
-//! There used to be a stage before this one that searched git for a file by
-//! path. The list pipeline is that search, and a better one — it knows which
-//! comparison the reader chose, where searching again invented a third. What
-//! is left of the old stage is one line, and it is here.
+//! Stage one: read both versions of a file from git.
 
 use anyhow::{Context, Result};
 use file_types::{DiffVersion, File, FileContent};
@@ -43,27 +35,15 @@ pub fn read(file: &File) -> Result<Contents> {
 
 impl Contents {
     /// Which file this is, for everything downstream.
-    ///
-    /// Handed on unchanged. There used to be a `label()` here that fused the
-    /// path, the previous path and the added/deleted note into one string, and
-    /// the status line could then neither style nor shorten them separately.
-    /// The facts travel intact instead, and whatever draws them decides how.
     pub fn file(&self) -> &File {
         &self.file
     }
 
-    /// A picture has no lines, so there is nothing to align.
     pub fn is_binary(&self) -> bool {
         self.original.is_binary() || self.modified.is_binary()
     }
 
-    /// The lines of one version. Empty — genuinely — if it does not exist.
-    ///
-    /// The distinction is *absent*, never *empty*: a tracked file emptied to
-    /// zero bytes still has a version to compare against, and gets a real
-    /// two-column diff showing every line deleted. Only a file that does not
-    /// exist on one side is left uncompared, and [`File::only`] is what says
-    /// so. See D23.
+    /// The lines of one version. Empty if the version does not exist.
     pub fn version(&self, version: DiffVersion) -> Vec<&str> {
         let content = match version {
             DiffVersion::Original => &self.original,

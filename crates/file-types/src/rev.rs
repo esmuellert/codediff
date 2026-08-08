@@ -1,30 +1,17 @@
 //! Which version of a file's content.
 //!
-//! ---
-//!
-//! Git can name a file's content five ways, and a reviewer needs a sixth that
-//! git has no name for:
-//!
 //! ```text
 //! <rev>:<path>    a blob in a commit
-//! :0:<path>       the index — what `git add` put there
-//! :1:<path>       merge stage 1, the common ancestor
+//! :0:<path>       the index
+//! :1:<path>       merge stage 1, ancestor
 //! :2:<path>       merge stage 2, ours
 //! :3:<path>       merge stage 3, theirs
-//! (the file)      on disk, which git has never hashed
+//! (the file)      on disk — git has no name for this
 //! ```
 //!
-//! **This is a name, not a hash.** [`Rev::Index`] means "whatever `git add`
-//! last put there", which is different bytes after every `git add`. Only
-//! [`Rev::Commit`] is stable, because a commit cannot change. So none of the
-//! four carries a stamp: giving one to the working tree and not to the index
-//! would be arbitrary, and giving one to all of them would make this a hash
-//! rather than a name — and a name is what a status line prints and an
-//! explorer groups by.
-//!
-//! Whether those bytes have changed *since they were read* is a different
-//! question with a different answer, and [`can_change`](Rev::can_change) is
-//! how the two meet.
+//! This is a name, not a hash. Only `Commit` is stable — the others can
+//! change while the review is open. Whether bytes have changed since they
+//! were read is answered by [`Rev::can_change`].
 
 use crate::Oid;
 
