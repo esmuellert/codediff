@@ -63,18 +63,9 @@ impl Scope {
     }
 }
 
-/// Every rule handed to the engine, and the only place a scope path is
-/// written.
+/// Every scope rule handed to the engine.
 ///
-/// Ordered general to specific for a reader; the matcher does not care, since
-/// TextMate precedence is by how much of the path a selector claims. That is
-/// what makes `keyword.control` beat `keyword` without either knowing about
-/// the other, and it is why this is a table of paths rather than a list of
-/// names. See D36.
-///
-/// Position is meaning. A [`Pen`] is an index into this table, so entries
-/// may be added or edited but the table is read by position at runtime — which
-/// is fine, because the same build produces both ends.
+/// A [`Pen`] is an index into this table, so entries must not be reordered.
 pub const SCOPES: &[Scope] = {
     use Group as T;
     &[

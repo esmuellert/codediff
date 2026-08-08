@@ -15,18 +15,10 @@ use file_types::DiffType;
 
 use crate::input::{buffer, pane, program, tab, view};
 
-/// Which set of bindings is live.
+/// Which set of bindings is live, decided by the focused buffer.
 ///
-/// Decided by the focused buffer, and passed in rather than read from
-/// anywhere, so this module depends on nothing — which is what lets the keymap
-/// be built before the thing that decides focus exists.
-///
-/// A file carries its [`DiffType`] rather than restating `SideBySide`,
-/// `Inline` and `Single`, because those are the same three things
-/// `file-types` already names and a second definition is one that can drift.
-/// What this enum adds is the buffer that is *not* a file — which is exactly
-/// why it cannot simply be an `Option<DiffType>`: the explorer is a second
-/// answer, not an absent one. See D33 and D60.
+/// `Explorer` is its own variant rather than `Option<DiffType>` — it has
+/// different keys, not absent ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeymapType {
     /// One file, shown one of the three ways.

@@ -52,17 +52,9 @@ const fn ink(colour: Color) -> Style {
     Style::new().fg(colour)
 }
 
-/// Syntax colours from the sixteen every terminal has.
+/// Syntax colours using only the 16 basic terminal colours.
 ///
-/// The same groups Catppuccin parts, resolved onto a palette a quarter the
-/// size, so several of them necessarily land together — `constant` and
-/// `library` share a colour here because Catppuccin gives both peach, and
-/// `character` and `operator` share one because teal and sky are neighbours.
-/// The groups stay apart in the table so a richer theme can part them; only
-/// this rendering of them collapses.
-///
-/// The bright half on a dark background and the plain half on a light one:
-/// bright yellow on white is unreadable, and plain yellow on black is dim.
+/// Bright half on dark, plain half on light.
 const DARK_CODE: Code = Code {
     comment: Color::DarkGray,
     string: Color::LightGreen,

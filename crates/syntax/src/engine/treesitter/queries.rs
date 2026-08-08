@@ -42,17 +42,10 @@ impl Palette {
         self.styles.get(index).copied().unwrap_or(Style::PLAIN)
     }
 
-    /// The compiled query for a language, preparing it if allowed.
+    /// The compiled query for a language, building it on first use.
     ///
-    /// Preparing means building an index from the query text against the
-    /// grammar — 16 ms for Rust, 180 ms for Haskell, once per language for the
-    /// life of the process. `tree_sitter` has no way to do this ahead of time:
-    /// a compiled query is an opaque C structure full of pointers, so it
-    /// cannot be built at our build time and shipped. Upstream tracks that as
-    /// tree-sitter#1942, open since 2022 with a 1.0 milestone.
-    ///
-    /// So it is done on first use — on the painter's thread, where taking a
-    /// quarter of a second delays nothing anybody is looking at. See D41.
+    /// Compilation is 16–180 ms per language and cannot be done ahead of time
+    /// (opaque C struct, no serialization). Runs on the worker thread.
     pub(super) fn config(&self, grammar: Grammar) -> Option<&HighlightConfiguration> {
         self.configs[grammar.0]
             .get_or_init(|| build(&LANGUAGES[grammar.0], &self.names))
@@ -77,17 +70,9 @@ impl Palette {
     }
 }
 
-/// Captures that are metadata rather than colour, and must be removed.
-///
-/// `@spell` marks a region for Neovim's spell checker; `@none` says
-/// explicitly that something has no colour; `@conceal` hides text. None is a
-/// style, and none of them can simply be ignored — a capture this engine does
-/// not recognise still *wins*, and then resolves to nothing, so a rule reading
-/// `(comment) @comment @spell` leaves every comment plain. Three grammars do
-/// exactly that, and the symptom is a language with no comments at all.
-///
-/// Removing them from the query text is what the aggregator crates do too,
-/// at much greater length.
+/// Neovim metadata captures (`@spell`, `@none`, `@conceal`) that must be
+/// stripped from queries. An unrecognised capture wins over recognised ones
+/// and resolves to nothing, which would leave matched regions uncoloured.
 const IGNORED: &[&str] = &["spell", "nospell", "conceal", "none"];
 
 /// The query with its metadata captures taken out.

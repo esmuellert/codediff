@@ -140,16 +140,8 @@ impl Viewport {
         self.clamp(view_lines);
     }
 
-    /// Moves `count` steps, asking `next` where each one lands.
-    ///
-    /// How a buffer contributes a motion whose targets only it knows —
-    /// stepping through changed blocks now, and search matches or review marks
-    /// later. The viewport still does the moving.
-    ///
-    /// Reports whether it moved at all, so a buffer that has run out of
-    /// targets can say so rather than leaving the reader unsure whether the
-    /// key was even bound. A partial step still counts as moving: `5]c` with
-    /// two changes left takes both, which is what vim does.
+    /// Moves `count` steps, asking `next` for each target. Returns whether
+    /// it moved at all (partial steps count).
     pub fn step(&mut self, count: u32, view_lines: u32, next: impl Fn(u32) -> Option<u32>) -> bool {
         let mut moved = false;
         for _ in 0..count {

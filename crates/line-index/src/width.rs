@@ -31,18 +31,11 @@ pub fn grapheme_width(grapheme: &str) -> u32 {
     }
 }
 
-/// Characters that reorder text on screen without being visible.
+/// Characters that reorder text on screen (bidi controls).
 ///
-/// Unicode gives these zero width, and by that measure they are harmless. They
-/// are not: `U+202E RIGHT-TO-LEFT OVERRIDE` makes a line *read* as something
-/// other than what it says, which is the Trojan Source attack. A reviewer must
-/// never be handed one unaltered, so a renderer draws a placeholder instead,
-/// and the placeholder needs a column — which is why they are measured as one
-/// here rather than as zero.
-///
-/// Not all of Unicode's format category. `U+200D ZERO WIDTH
-/// JOINER` and the variation selectors build ordinary emoji and reorder
-/// nothing; mangling those would corrupt legitimate text to no benefit.
+/// Measured as one column so a renderer can draw a visible placeholder.
+/// Does not include `U+200D` (ZWJ) or variation selectors — those build
+/// ordinary emoji.
 pub fn is_bidi_control(c: char) -> bool {
     matches!(
         c,

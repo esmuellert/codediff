@@ -7,17 +7,8 @@
 use align::DiffVersion;
 use ratatui::layout::Rect;
 
-/// Where the columns of one pane go.
-///
-/// Always two. A file that exists on only one side has nothing to compare
-/// against, so it is not a diff at all — it is a [`SingleFile`] buffer, drawn
-/// by `render::single_file` in one column. There is no such thing as a diff
-/// with one column, which is why neither field is optional. VSCode reached the
-/// same conclusion and stopped opening a diff editor at all for added,
-/// untracked and deleted files: an empty left-hand side "did not provide much
-/// value". See D23.
-///
-/// [`SingleFile`]: crate::view::buffer::SingleFile
+/// The two columns of a side-by-side diff pane. Always two — a one-sided
+/// file uses a `SingleFile` buffer instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame {
     pub original: Column,

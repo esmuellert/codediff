@@ -42,18 +42,9 @@ impl ChangeType {
 
 /// A file under review: where it is on each side of the comparison.
 ///
-/// `None` on a side means the file does not exist there — added on the left,
-/// deleted on the right. Two `Some` with different paths is a rename.
-///
-/// Everything a reader is told about a file is derived from this pair,
-/// never stored beside it. That is the point: a `kind` field could disagree
-/// with the paths, and a formatted `label` field already did — it fused the
-/// path, the previous path and the added/deleted note into one string, after
-/// which nothing could style or shorten them separately.
-///
-/// VSCode's `MultiDiffEditorItem` is the same pair, and its renderer likewise
-/// recomputes "renamed" at paint time from `modifiedUri.path !=
-/// originalUri.path` rather than storing a flag.
+/// `None` on a side means the file does not exist there (added/deleted).
+/// Two `Some` with different paths means a rename. Change type, labels, etc.
+/// are all derived from the paths — never stored separately.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
     original: Option<RepoPath>,
@@ -106,17 +97,8 @@ impl Revs {
         Self::new(Rev::Commit(commit), Rev::Worktree)
     }
 
-    /// What a heading calls this comparison.
-    ///
-    /// Derived rather than stored, because comparing against the index *is*
-    /// what "Staged Changes" means. A backend that reported the name as well
-    /// would be reporting the same fact twice, and the plugin this replaces
-    /// did exactly that — it kept a fixed pair of lists and had to write *"we
-    /// treat everything as unstaged for explorer compatibility"* the first
-    /// time it compared two revisions. See D57.
-    ///
-    /// A reader's words, like [`Rev`]'s `Display` and unlike
-    /// [`Rev::stored`](Rev::stored), which is what goes to git.
+    /// The heading text for this comparison (e.g. "Staged Changes").
+    /// Derived from the revision pair.
     pub fn heading(&self) -> &'static str {
         match self.after {
             Rev::Index => "Staged Changes",

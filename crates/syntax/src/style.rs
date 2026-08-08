@@ -62,20 +62,10 @@ impl Style {
     }
 }
 
-/// One theme rule: which scopes it claims, and how they look.
+/// One theme rule: a TextMate scope selector and the style it produces.
 ///
-/// `selector` is a TextMate scope selector — `keyword.control`, or
-/// `string.quoted`, or the contextual `source.css entity.other.attribute-name`.
-/// Matching is by prefix over a dotted path, so `keyword` claims
-/// `keyword.control.rust` unless a longer rule claims it more specifically.
-///
-/// A path rather than one of a dozen category names, because a real theme
-/// needs the distinction: `keyword` and `keyword.control` are different
-/// colours in every theme worth shipping, and `meta.template.expression`
-/// exists to put interpolated code back to the colour of code. See D36.
-///
-/// `'static` because the table of them is a constant: which scopes are
-/// keywords is a fact about TextMate, not a choice a theme makes.
+/// Matching is by prefix: `keyword` claims `keyword.control.rust` unless a
+/// more specific rule exists. `'static` because the table is a constant.
 #[derive(Debug, Clone, Copy)]
 pub struct Rule {
     pub selector: &'static str,

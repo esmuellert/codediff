@@ -127,22 +127,12 @@ pub fn is_well_formed(diff: &LinesDiff, original_lines: u32, modified_lines: u32
     original_lines + 1 - original == modified_lines + 1 - modified
 }
 
-/// Runs of adjacent changed view lines, as row ranges.
+/// Adjacent changed view lines grouped into row ranges.
 ///
-/// What change navigation steps through and what the status line counts —
-/// both read this, so they cannot disagree about what a change is. That
-/// disagreement was a real bug: the status line counted the engine's hunks
-/// while navigation stepped through changed view lines, so a file could say "1
-/// change" and still stop twice.
-///
-/// Not [`crate::Hunk`]. A hunk merges changes a few lines
-/// apart so they can be shown with shared keymap_type, which is right for reading
-/// and wrong for navigation, where it would make two nearby edits one stop.
-///
-/// Generic over the iterator so both layouts feed the same function: the
-/// answer differs between them — inline gives a deletion and an insertion
-/// separate view lines where side by side gives them one — but the rule for
-/// finding it does not.
+/// Used by both change navigation (`]c`/`[c`) and the status line count.
+/// Not the same as [`crate::Hunk`] — a hunk merges nearby changes, but
+/// navigation needs each edit as its own stop.
+/// Generic over the iterator so both layouts use one function.
 pub fn blocks(view_lines: impl Iterator<Item = ViewLine>) -> Vec<Range<u32>> {
     let mut blocks: Vec<Range<u32>> = Vec::new();
     for (index, line) in view_lines.enumerate() {

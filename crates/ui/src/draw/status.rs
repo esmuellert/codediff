@@ -14,16 +14,7 @@ use crate::view::Direction;
 
 /// What the status line says.
 pub struct Status<'a> {
-    /// Which file, as structure rather than a formatted name.
-    ///
-    /// The whole reason this is a [`File`] and not a `&str`: the directory is
-    /// dimmed while the name is not, and the directory is dropped first when
-    /// the row is too narrow. A string could support neither. It used to be
-    /// one — `"old.rs → new.rs   (added)"` — and the `(added)` was rendered
-    /// bold, as though it were part of the path. See D28.
-    /// `None` when the buffer is not one file — the list of them is not any
-    /// of the files it holds, and naming the first would put a name in the
-    /// status line that nothing on screen corresponds to.
+    /// The file being shown, or `None` for the explorer.
     pub file: Option<&'a File>,
     /// Cursor position and document height, in view lines. Both 0-based
     /// internally, shown 1-based.
@@ -81,17 +72,8 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
     }
 }
 
-/// Writes which file this is, in as much detail as the width allows.
-///
-/// Three independent parts, dropped in order of what a reviewer can most
-/// afford to lose:
-///
-/// 1. the directory, dimmed — recoverable from the file name plus keymap_type
-/// 2. `from → ` for a rename — useful, rarely essential
-/// 3. the file name and any `(added)`/`(deleted)` note — never dropped
-///
-/// This is what a pre-formatted string cannot do, and why [`File`] carries the
-/// facts rather than a label.
+/// Writes the file name, dropping parts in priority order when narrow:
+/// directory first, then rename source, file name last (never dropped).
 fn name(
     buf: &mut Buffer,
     area: Rect,

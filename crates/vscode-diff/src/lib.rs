@@ -51,44 +51,34 @@ pub fn engine_version() -> &'static str {
         .expect("the engine version is an ASCII string literal")
 }
 
-/// Splits text into the lines [`compute`] counts.
+/// Splits text into the lines [`compute`] expects.
 ///
-/// On `\n` only, keeping the empty piece a trailing newline leaves behind:
-/// the engine counts that line, so both sides must agree it is there.
-///
-/// `str::lines()` is wrong here twice over. It drops that final piece, and it
-/// swallows a `\r` before the newline — which would hide exactly the
-/// line-ending differences a reviewer needs to see.
+/// Splits on `\n` only. Keeps the empty piece after a trailing newline
+/// (the engine counts it). Does not strip `\r` — line-ending differences
+/// must be visible.
 ///
 /// ```
 /// assert_eq!(vscode_diff::lines("a\nb\n"), ["a", "b", ""]);
 /// assert_eq!(vscode_diff::lines("a\r\nb"), ["a\r", "b"]);
-/// // An empty file is one empty line, not none — see `compute`.
 /// assert_eq!(vscode_diff::lines(""), [""]);
 /// ```
 pub fn lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
 }
 
-/// Computes the difference between two texts, given as lines without their
-/// terminators.
+/// Computes the difference between two texts, given as lines.
 ///
-/// Line numbers in the result are 1-based and ranges are end-exclusive;
-/// columns are 1-based and counted in UTF-16 code units.
+/// Results use 1-based line numbers, end-exclusive ranges, and UTF-16 columns.
 ///
 /// # Empty input
 ///
-/// An empty side may be given as either `&[]` or `&[""]`; both are normalised
-/// to the engine's representation of an empty file, which is a single empty
-/// line. This matters: passing a zero-length array straight through would make
-/// the engine report *no changes at all* for a file whose entire content was
-/// added.
+/// `&[]` and `&[""]` are both accepted as an empty file. Passing zero lines
+/// directly to the engine would silently report no changes.
 ///
 /// # Errors
 ///
-/// Returns [`Error::InteriorNul`] if a line contains a NUL byte, which the
-/// engine's NUL-terminated strings cannot represent, and [`Error::OutOfMemory`]
-/// if the engine could not allocate its result.
+/// [`Error::InteriorNul`] if a line contains `\0`;
+/// [`Error::OutOfMemory`] if the engine cannot allocate.
 pub fn compute(
     original: &[&str],
     modified: &[&str],

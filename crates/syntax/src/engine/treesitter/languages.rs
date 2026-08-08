@@ -43,19 +43,10 @@ pub struct Parser {
     pub shebangs: &'static [&'static str],
 }
 
-/// Rules appended after a grammar's own.
+/// Rules appended after a grammar's own query.
 ///
-/// Appended, never inserted. Where two patterns cover one node this engine
-/// resolves in favour of the *later*, which is why a shipped query sometimes
-/// loses its own more specific rule — JSON captures keys and then captures
-/// every string, so the key rule never wins. Appending is how a rule wins, and
-/// it is what Helix and nvim-treesitter do at much greater length by forking
-/// the whole file.
-///
-/// Each of these is one line, exists because the matcher already gets that
-/// case right, and would be a visible regression to lose. A malformed one
-/// fails to compile and `every_language_in_the_table_compiles_its_query`
-/// catches it.
+/// Later patterns win in tree-sitter, so appending is how we override.
+/// Each fixes a case the matcher already gets right.
 mod overrides {
     /// The shipped query captures the key, then captures every string.
     pub const JSON: &str = "(pair key: (_) @string.special.key)";
@@ -92,18 +83,9 @@ mod overrides {
     pub const RUST: &str = "(char_literal) @character";
 }
 
-/// Every language we parse.
+/// Every language we parse. A [`Grammar`] is an index into this table.
 ///
-/// Adding one is a dependency and a row. The rows are not uniform because the
-/// crates are not: the query constant is `HIGHLIGHT_QUERY` in some and
-/// `HIGHLIGHTS_QUERY` in others, injections and locals are present or absent
-/// per crate, and TypeScript and PHP each expose two languages. Writing that
-/// out is duller than a macro and survives the next crate that is different
-/// again.
-///
-/// Order is meaning. A [`Grammar`] is an index into this, so rows may be
-/// added or edited but are read by position at runtime — which is fine,
-/// because the same build produces both ends.
+/// Adding one: add the crate dependency and a row here.
 pub static LANGUAGES: &[Parser] = &[
     Parser {
         name: "rust",

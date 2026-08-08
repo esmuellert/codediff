@@ -37,18 +37,13 @@ impl Rgb {
     }
 }
 
-/// `alpha` percent of `fg` over `bg`.
+/// `alpha` percent of `fg` over `bg`. Catppuccin's own formula.
 ///
 /// ```text
 /// out = round(alpha × foreground + (1 − alpha) × background)
 /// ```
 ///
-/// This is Catppuccin's own `blend`, and the reason the themes here are
-/// generated rather than transcribed: its diff colours *are* this function
-/// applied to its palette, so reproducing the function reproduces them and
-/// cannot drift from them.
-///
-/// `const`, so it runs at compile time and a theme costs nothing at startup.
+/// `const` — runs at compile time.
 pub const fn blend(fg: Rgb, bg: Rgb, alpha_percent: u32) -> Rgb {
     const fn channel(fg: u8, bg: u8, a: u32) -> u8 {
         // Integer arithmetic with a +50 rounding term, since floating point is
