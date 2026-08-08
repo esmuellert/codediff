@@ -296,7 +296,10 @@ fn the_first_frame_shows_the_text_before_any_colour() {
         text_of(&first).contains("main"),
         "the text is there straight away"
     );
-    assert!(session.is_colouring(), "and the colours are still on their way");
+    assert!(
+        session.is_colouring(),
+        "and the colours are still on their way"
+    );
 
     session.wait_until_idle();
     let warm = cells(&mut session, 80, 10);

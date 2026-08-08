@@ -61,7 +61,7 @@ fn the_two_sides_never_show_different_rows() {
 fn scrolling_moves_both_sides_together() {
     let mut s = demo();
     // Six rows of document, five rows of text: reaching the end must scroll.
-    s.handle(&key(KeyCode::Char('G')));
+    s.handle_event(&key(KeyCode::Char('G')));
     let rendered = screen(&mut s, 44, 6);
     let rows: Vec<&str> = rendered.lines().collect();
     assert!(rows[0].starts_with("  2 two"), "{:?}", rows[0]);
@@ -98,7 +98,7 @@ fn an_escape_sequence_in_the_file_cannot_reach_the_terminal() {
 fn horizontal_scrolling_shifts_the_text_and_not_the_numbers() {
     let mut s = session("long.rs", "abcdefghijklmnop", "abcdefghijklmnoq");
     for _ in 0..2 {
-        s.handle(&key(KeyCode::Char('l')));
+        s.handle_event(&key(KeyCode::Char('l')));
     }
     let rendered = screen(&mut s, 44, 3);
     let rows: Vec<&str> = rendered.lines().collect();
@@ -113,7 +113,7 @@ fn an_inner_change_keeps_its_highlight_on_its_character_when_scrolled() {
     // into the line, while the scroll is counted in screen cells, and on a
     // line with a tab or a wide character those two disagree.
     let mut s = session("f.rs", "fn f() { total = 1; }", "fn f() { total = 9; }");
-    s.handle(&key(KeyCode::Char('l')));
+    s.handle_event(&key(KeyCode::Char('l')));
     let grid = cells(&mut s, 44, 3);
     let row: String = (0..44).map(|x| grid[(x, 0)].symbol()).collect();
 
@@ -144,7 +144,7 @@ fn an_identical_file_renders_with_no_highlighting_and_says_so() {
 #[test]
 fn resizing_smaller_keeps_the_cursor_on_screen() {
     let mut s = demo();
-    s.handle(&key(KeyCode::Char('G')));
+    s.handle_event(&key(KeyCode::Char('G')));
     screen(&mut s, 44, 20);
     let rendered = screen(&mut s, 44, 4);
     assert!(rendered.contains("five"), "{rendered:?}");
@@ -162,12 +162,12 @@ fn quitting_is_the_only_way_the_loop_ends() {
         KeyCode::F(5),
     ] {
         assert_eq!(
-            s.handle(&key(code)),
+            s.handle_event(&key(code)),
             Flow::Continue,
             "{code:?} should not quit"
         );
     }
-    assert_eq!(s.handle(&key(KeyCode::Char('q'))), Flow::Quit);
+    assert_eq!(s.handle_event(&key(KeyCode::Char('q'))), Flow::Quit);
 }
 
 #[test]

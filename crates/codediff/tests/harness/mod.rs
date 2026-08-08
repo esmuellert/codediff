@@ -129,7 +129,7 @@ pub fn type_keys(session: &mut Session, keys: &str) -> ui::Flow {
         } else {
             KeyModifiers::NONE
         };
-        flow = session.handle(&Event::Key(KeyEvent::new(code, modifiers)));
+        flow = session.handle_event(&Event::Key(KeyEvent::new(code, modifiers)));
     }
     flow
 }

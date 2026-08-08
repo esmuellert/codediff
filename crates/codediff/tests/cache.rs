@@ -38,7 +38,7 @@ fn session(lines: usize) -> Session {
 
 /// Presses a key and lets the loop react, as [`ui::run`] does.
 fn press(session: &mut Session, code: KeyCode) {
-    session.handle(&key(code));
+    session.handle_event(&key(code));
     session.send_colour_request();
     let _ = cells(session, WIDTH, HEIGHT);
 }
@@ -113,7 +113,7 @@ fn a_file_longer_than_the_read_ahead_is_not_read_to_its_end() {
     session.wait_until_idle();
     assert!(!session.is_colouring(), "the screen is done");
 
-    session.handle(&key(KeyCode::Char('G')));
+    session.handle_event(&key(KeyCode::Char('G')));
     session.send_colour_request();
     assert!(
         session.is_colouring(),

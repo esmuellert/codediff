@@ -58,7 +58,7 @@ fn a_one_sided_file_still_scrolls() {
         .join("\n");
     let mut s = Session::new(single("big.rs", &long), Theme::DARK);
     measure(&mut s);
-    s.handle(&key(KeyCode::Char('G')));
+    s.handle_event(&key(KeyCode::Char('G')));
     assert_eq!(s.view().focused().viewport.cursor(), 49);
     assert!(screen(&mut s, 40, 6).contains("line 50"));
 }
@@ -71,7 +71,7 @@ fn the_keys_a_one_sided_file_cannot_use_do_nothing() {
     let mut s = Session::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
     let before = screen(&mut s, 40, 4);
     for c in [']', 'c', '[', 'c', '>', '<'] {
-        s.handle(&key(KeyCode::Char(c)));
+        s.handle_event(&key(KeyCode::Char(c)));
     }
     assert_eq!(screen(&mut s, 40, 4), before);
 }
