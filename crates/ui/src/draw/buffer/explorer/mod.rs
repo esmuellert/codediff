@@ -1,32 +1,10 @@
 //! Drawing the list of changed files.
 //!
 //! ```text
-//! mod.rs        the pane: which lines are on screen, and what precedes each
-//! tree.rs       the nested arrangement's indent guides and fold arrows
-//! view_line.rs  one line: its text, its colour, and where each piece goes
+//! mod.rs        which lines are on screen, and what precedes each
+//! tree.rs       indent guides and fold arrows
+//! view_line.rs  one line: text, colour, placement
 //! ```
-//!
-//! `view_line.rs` is named for what it draws, and one function in it per
-//! variant of [`ViewLine`]. It was `node.rs`, which was wrong twice over: a
-//! heading has no node behind it, and the file was named for the tree rather
-//! than for what it makes.
-//!
-//! [`ViewLine`]: crate::view::buffer::explorer::ViewLine
-//!
-//! **Nothing here is reusable, and that is the point.** The order of a line —
-//! guides, name, where it moved from, what it gained, what happened to it — is
-//! the file list and nothing else. A tree of commits would be graph lanes, a
-//! subject and an author, and would write its own files beside these. What
-//! both would share is `line_index`, which counts columns for everyone.
-//!
-//! **The flat arrangement has no file of its own**, because it needs nothing
-//! in front of a line. There was one, and it was dead code: it asked whether a
-//! node was a directory, in an arrangement that has none. See D69.
-//!
-//! Which line is which is already settled by the time anything here runs: the
-//! viewport needs the count before a frame to clamp the cursor, so the walk
-//! that produced it happened in [`view`](crate::view), on the keypress that
-//! changed it.
 
 mod tree;
 mod view_line;

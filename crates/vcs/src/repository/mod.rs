@@ -1,26 +1,13 @@
-//! A repository being read, and the four things a reviewer needs from one.
-//!
-//! ---
-//!
-//! **The whole surface of this crate.** `git` is private, so nothing outside
-//! can run a git command, name a status code, or hold a `--cached`. A second
-//! backend is a directory beside `git` and an arm in [`open`](Repository::open)
-//! — not a search for every caller that reached past this.
-//!
-//! Four operations, because four is what a review needs:
+//! The public surface of this crate.
 //!
 //! ```text
 //! open      find the repository containing a path
-//! changes   what differs, grouped by the comparison it belongs to
+//! changes   what differs, grouped by comparison
 //! counts    how many lines each file gained and lost
 //! read      one side of one file
 //! ```
 //!
-//! There is no trait. The contract is the *types*: everything returned is
-//! `file-types`, and `cargo xtask lint-arch` forbids that crate from naming
-//! this one, so no git concept can reach a reviewer. A second backend earns a
-//! trait extracted from two real implementations; one guessed from a single
-//! implementor was checking nothing. See D30.
+//! `git/` is private — nothing outside can run a command directly.
 
 pub mod changed_file;
 mod changes;
@@ -40,20 +27,14 @@ use crate::git::status::Untracked;
 use crate::git::{self, Plan, cat_file, rev_parse};
 
 /// An open repository.
-///
-/// Holds what a session accumulates — what has been resolved, which child
-/// process is open — so that everything below can be a free function over a
-/// [`Repo`] and none of it has to be told twice.
 #[derive(Debug)]
 pub struct Repository {
     repo: Repo,
     untracked: Untracked,
-    /// Resolved on first use, so a list-only run never pays for the extra
-    /// process — and resolved **once**, so a commit made while a review is
-    /// open cannot leave half its files named against one `HEAD` and half
-    /// against another.
+    /// Resolved on first use. Resolved once so a mid-review commit cannot
+    /// split the naming.
     revs: Option<Revs>,
-    /// Opened on first use, so a list-only run never pays for the child.
+    /// The `cat-file --batch` child, opened on first use.
     blobs: Option<cat_file::Batch>,
 }
 

@@ -13,40 +13,22 @@ use crate::input::keymap::{Binding, KeymapType};
 use crate::input::tab::{self, TabAction};
 use crate::input::view::ViewAction;
 
-/// Something the focused buffer does, to itself or to the viewport it is lent.
-///
-/// Motions live here rather than at a level of their own because they route to
-/// exactly the same place. Every buffer kind answers them by delegating to one
-/// shared [`Viewport`] helper, so a new kind gets them in a line.
-///
-/// [`Viewport`]: crate::view::Viewport
+/// Something the focused buffer does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferAction {
-    /// Generic movement, needing only a view-line count.
     Motion(Motion),
-    /// Move to the next or previous run of changed view lines.
-    ///
-    /// A motion that has to ask the buffer where to go, which is why it is not
-    /// a [`Motion`]: those need nothing but a view-line count.
     NextChange,
     PrevChange,
-    /// Drag the divider between a side-by-side buffer's two columns.
-    ///
-    /// Not a pane boundary — both columns are inside one buffer — so this
-    /// belongs to the buffer that draws them, not to the tab. Named for the
-    /// column that grows, since that is what the reader is asking for.
+    /// Drag the divider between a side-by-side diff's two columns.
     WidenOriginal,
     NarrowOriginal,
-    /// Show whole paths instead of a tree, or the other way round.
+    /// Switch tree/flat mode in the explorer.
     ToggleViewMode,
-    /// Show or hide the line counts.
+    /// Show or hide the line counts in the explorer.
     ToggleStats,
 }
 
-/// Movement that needs nothing but the number of rows.
-///
-/// Identical arithmetic for every buffer kind — a diff, a file, a list — which
-/// is why it is one enum rather than something each kind reimplements.
+/// Movement that needs only the number of rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motion {
     Down,
