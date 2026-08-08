@@ -79,17 +79,8 @@ pub fn get_heading_line(groups: &[Group], line: u32) -> Option<usize> {
     None
 }
 
-/// Which group's style owns a line, and which of *its* lines it is.
-///
-/// A translation: the screen counts every line of every group from zero, and a
-/// style counts only its own. So the first line of the second group might be
-/// line 5 on screen and line 0 to the style that draws it.
-///
-/// `None` for a heading, which is what the styles sit under rather than a line
-/// in one.
-///
-/// Walked rather than looked up: there are one or two groups, and a table of
-/// line numbers would be a third thing to keep in step with a fold.
+/// Resolves a screen line number to (group index, line within that group's
+/// style). Returns `None` for heading lines.
 pub fn get_line_style(groups: &[Group], line: u32) -> Option<(usize, usize)> {
     let mut at = 0;
     for (index, group) in groups.iter().enumerate() {

@@ -81,17 +81,8 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
     }
 }
 
-/// Writes which file this is, in as much detail as the width allows.
-///
-/// Three independent parts, dropped in order of what a reviewer can most
-/// afford to lose:
-///
-/// 1. the directory, dimmed — recoverable from the file name plus keymap_type
-/// 2. `from → ` for a rename — useful, rarely essential
-/// 3. the file name and any `(added)`/`(deleted)` note — never dropped
-///
-/// This is what a pre-formatted string cannot do, and why [`File`] carries the
-/// facts rather than a label.
+/// Writes the file name, dropping parts in priority order when narrow:
+/// directory first, then rename source, file name last (never dropped).
 fn name(
     buf: &mut Buffer,
     area: Rect,

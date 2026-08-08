@@ -180,17 +180,8 @@ impl<'a> LineIndex<'a> {
         }
     }
 
-    /// The byte offset drawn at a cell.
-    ///
-    /// A cell inside a wide character clamps to that character's start, since
-    /// there is no byte that begins at the second half of a `日`.
-    ///
-    /// Cell position is not strictly increasing — combining marks and
-    /// variation selectors occupy no columns — so several bytes can share a
-    /// cell. The first of them is returned, which is the one a renderer
-    /// should start drawing from.
-    ///
-    /// Cells past the end of the line clamp to its end.
+    /// The byte offset at a cell column. Wide characters clamp to their start;
+    /// cells past the end clamp to the line's end.
     pub fn cell_to_byte(&self, cell: CellCol) -> ByteOff {
         match &self.index {
             Index::Trivial { len } => ByteOff(cell.get().min(*len)),

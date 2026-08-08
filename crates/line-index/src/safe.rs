@@ -9,17 +9,9 @@
 
 use crate::width::is_bidi_control;
 
-/// Characters a file must not be allowed to send to the terminal showing it.
+/// Characters that must be replaced before reaching the terminal.
 ///
-/// Two families, for the same reason: both let a file decide what the reviewer
-/// sees rather than what it contains.
-///
-/// - Control characters. `ESC` starts a sequence the terminal *obeys* —
-///   recolour, move the cursor, erase what is already drawn.
-/// - Bidirectional formatting. `U+202E RIGHT-TO-LEFT OVERRIDE` and the
-///   isolates reorder a line on screen, so it reads as something other than
-///   what it executes. This is the Trojan Source attack, and `char::is_control`
-///   does not cover it: those are format characters, category `Cf`, not `Cc`.
+/// Control characters (ESC sequences) and bidi formatting (Trojan Source).
 pub fn is_dangerous(c: char) -> bool {
     c.is_control() || is_bidi_control(c)
 }
