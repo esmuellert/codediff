@@ -207,7 +207,7 @@ mod tests {
         // Carrying it over opened the new file at the old file's line, which
         // showed up as a file that opened blank.
         let mut tab = split();
-        tab.pane_mut(PaneId(1)).viewport.jump(120, 400);
+        tab.pane_mut(PaneId(1)).viewport.place(120, 400);
         assert_eq!(tab.pane(PaneId(1)).viewport.cursor(), 120);
 
         tab.show(BufferId::new(2));

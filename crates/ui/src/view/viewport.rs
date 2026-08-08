@@ -127,16 +127,12 @@ impl Viewport {
         }
     }
 
-    /// Puts the cursor on a given row and centres on it.
+    /// Puts the cursor on a row without recentring the view.
     ///
-    /// For a jump whose target was worked out elsewhere — today, the row a
-    /// line moved to when the layout changed. Centring rather than
-    /// preserving the offset because after a change of layout the rows around
-    /// the cursor are not the rows that were there before, so there is no
-    /// offset worth preserving.
-    pub fn jump(&mut self, view_line: u32, view_lines: u32) {
+    /// For a click: the row is already on screen, so the view stays put.
+    /// Only SCROLLOFF near an edge may nudge it.
+    pub fn place(&mut self, view_line: u32, view_lines: u32) {
         self.cursor = view_line;
-        self.centre();
         self.clamp(view_lines);
     }
 

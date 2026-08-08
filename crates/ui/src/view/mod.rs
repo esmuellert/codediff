@@ -70,7 +70,7 @@ impl View {
         // The buffer decides where a reader starts, and the viewport is what
         // holds the answer — so the two are set together, here, rather than
         // left for the first frame to reconcile.
-        view.tabs[0].focused_mut().viewport.jump(start, rows);
+        view.tabs[0].focused_mut().viewport.place(start, rows);
         view
     }
 
@@ -201,7 +201,7 @@ impl View {
             self.tabs[self.active]
                 .pane_mut(pane)
                 .viewport
-                .jump(view_line, total);
+                .place(view_line, total);
         }
     }
 

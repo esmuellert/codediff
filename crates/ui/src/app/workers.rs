@@ -112,7 +112,7 @@ impl Session {
                     self.view
                         .pane_mut_for(id)
                         .viewport
-                        .jump(line.min(rows.saturating_sub(1)), rows);
+                        .place(line.min(rows.saturating_sub(1)), rows);
                 }
                 self.notice = None;
                 self.send_colour_request();

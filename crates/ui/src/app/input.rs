@@ -77,7 +77,7 @@ impl Session {
                             let (buffer, viewport) = self.view.focused_mut();
                             let target = viewport.top() + line_in_pane;
                             let clamped = target.min(buffer.view_lines().saturating_sub(1));
-                            viewport.jump(clamped, buffer.view_lines());
+                            viewport.place(clamped, buffer.view_lines());
                             if matches!(buffer.buffer_type(), BufferType::Explorer(_)) {
                                 self.open();
                             }
@@ -150,7 +150,7 @@ impl Session {
                 let cursor = viewport.cursor();
                 if buffer.select(cursor) {
                     let lines = buffer.view_lines();
-                    viewport.jump(cursor.min(lines.saturating_sub(1)), lines);
+                    viewport.place(cursor.min(lines.saturating_sub(1)), lines);
                 } else {
                     self.open();
                 }

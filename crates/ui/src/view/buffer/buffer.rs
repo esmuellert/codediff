@@ -185,7 +185,7 @@ impl Buffer {
                     let landing =
                         explorer.reshape_around(view.cursor(), |model| model.toggle_mode());
                     self.recount();
-                    view.jump(landing, self.view_lines);
+                    view.place(landing, self.view_lines);
                 }
             }
         }
