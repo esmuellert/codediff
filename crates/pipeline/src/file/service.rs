@@ -1,18 +1,13 @@
-//! The four stages, on a thread of their own.
-//!
-//! Comparing a 50,000-line file takes ~1 s (of which the C engine is ~700 ms),
-//! so it cannot run on the drawing thread.
+//! The file worker thread — diffs one file at a time off the drawing thread.
 //!
 //! ```text
-//!  drawing thread                        file worker
-//!  ──────────────                        ───────────
-//!  reader presses enter
-//!    want() ─────────────────────────►   recv
-//!  draw, still showing the old file      four stages
-//!  loop {                                send ─────┐
-//!    take() ◄──────────────────────────────────────┘
+//!  drawing thread                        file worker thread
+//!  ──────────────                        ──────────────────
+//!  send_diff_request(file) ────────────────────────►  recv(file)
+//!  draw (still showing previous file)    read, diff, align
+//!  loop {                                send(result) ───┐
+//!    poll() ◄────────────────────────────────────────────┘
 //!    install, draw
-//!    wait for a key                     (asleep again)
 //!  }
 //! ```
 
@@ -33,8 +28,7 @@ pub struct Response {
 pub struct Files {
     requests: Sender<File>,
     answers: Receiver<Response>,
-    /// At most one request in flight — newer selections replace older ones
-    /// rather than queueing.
+    /// At most one request in flight.
     outstanding: bool,
 }
 
@@ -54,9 +48,9 @@ impl Files {
         }
     }
 
-    /// A worker that answers from a script, for tests. A request past the end
+    /// Mock worker for tests. A request past the end
     /// of the script fails.
-    pub fn canned(script: Vec<Result<DiffContent, String>>) -> Self {
+    pub fn mock(script: Vec<Result<DiffContent, String>>) -> Self {
         let (requests, incoming) = channel::<File>();
         let (finished, answers) = channel::<Response>();
         thread::Builder::new()
@@ -81,7 +75,7 @@ impl Files {
     }
 
     /// Asks for a file to be compared. Does nothing while one is outstanding.
-    pub fn request(&mut self, file: &File) {
+    pub fn send_diff_request(&mut self, file: &File) {
         if self.outstanding {
             return;
         }
@@ -90,12 +84,12 @@ impl Files {
     }
 
     /// Whether a response is outstanding.
-    pub fn working(&self) -> bool {
+    pub fn is_busy(&self) -> bool {
         self.outstanding
     }
 
     /// The response, if one has arrived. Never blocks.
-    pub fn take(&mut self) -> Option<Response> {
+    pub fn poll(&mut self) -> Option<Response> {
         match self.answers.try_recv() {
             Ok(response) => {
                 self.outstanding = false;
@@ -130,5 +124,5 @@ fn compare(file: &File) -> Result<DiffContent, String> {
     if runner.is_binary() {
         return Err(format!("{path} is binary — there are no lines to review"));
     }
-    runner.run().map_err(|why| format!("{path}: {why:#}"))
+    runner.compute_diff().map_err(|why| format!("{path}: {why:#}"))
 }

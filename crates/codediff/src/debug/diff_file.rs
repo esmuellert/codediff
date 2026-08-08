@@ -33,7 +33,7 @@ fn find(path: &str) -> Result<file_types::File> {
     // the deletion, so `R100 renamed-to.txt` comes back as `A. renamed-to.txt`
     // instead. Either of a moved file's names has to find it.
     let request = pipeline::list::Request::worktree(root.clone());
-    let listed = list::run(&request)?.into_iter().find(|file| {
+    let listed = list::get_files(&request)?.into_iter().find(|file| {
         file.path().as_str() == path || file.previous_path().is_some_and(|was| was.as_str() == path)
     });
     if let Some(file) = listed {
@@ -71,7 +71,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     // The same content the interface is given, read rather than drawn. Any
     // disagreement between this and the screen would have to come from
     // drawing, since there is only one source for both.
-    let content = runner.run()?;
+    let content = runner.compute_diff()?;
     let DiffContent::Diff(diff) = &content else {
         unreachable!("two sides were read, so this is a diff");
     };

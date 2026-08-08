@@ -38,7 +38,7 @@ pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     let request = pipeline::list::Request::new(root, diff_type).with_pathspec(pathspec);
 
     let mut groups: Vec<(file_types::Revs, Vec<file_types::File>)> = Vec::new();
-    for file in pipeline::list::run(&request)? {
+    for file in pipeline::list::get_files(&request)? {
         let revs = file.revs();
         match groups.iter_mut().find(|(seen, _)| *seen == revs) {
             Some((_, files)) => files.push(file),

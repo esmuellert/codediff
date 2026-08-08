@@ -1,7 +1,7 @@
 //! One request for a set of changed files.
 //!
 //! ```ignore
-//! let files = list::run(&list::Request::worktree(root))?;
+//! let files = list::get_files(&list::Request::worktree(root))?;
 //! ```
 
 pub mod entries;
@@ -13,6 +13,6 @@ use anyhow::Result;
 use file_types::File;
 
 /// Runs the request and hands over every file it found.
-pub fn run(request: &Request) -> Result<Vec<File>> {
+pub fn get_files(request: &Request) -> Result<Vec<File>> {
     entries::read(request)
 }
