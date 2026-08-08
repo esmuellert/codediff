@@ -1,22 +1,7 @@
 //! What every buffer has, whatever it is showing.
 //!
-//! A buffer is **a sequence of view lines you can scroll through**, and that is
-//! the whole definition. Everything that follows from it lives here — how many
-//! there are, which of them changed, and where change navigation last got to — so
-//! that it is written once and cannot come to mean different things in
-//! different layouts.
-//!
-//! What differs between the kinds lives in [`BufferType`] and its structs.
-//! Rust has no inheritance, so the split is composition plus an enum rather
-//! than a base class: the enum is only there because the language needs the
-//! alternatives named.
-//!
-//! Two things deliberately live elsewhere:
-//!
-//! - **Position.** `top`, `cursor` and `left` belong to the [`Viewport`] on
-//!   the pane, because two panes showing one buffer need independent
-//!   positions. A buffer is *lent* a viewport when it acts.
-//! - **Size.** A buffer never knows its own width; the layout tells it.
+//! What differs between kinds lives in [`BufferType`]. Position lives on
+//! the pane's [`Viewport`] (two panes on one buffer scroll independently).
 
 use std::ops::Range;
 
@@ -32,27 +17,11 @@ use crate::view::Viewport;
 /// A sequence of view lines you can scroll through.
 #[derive(Debug)]
 pub struct Buffer {
-    /// The height of the document, in view lines rather than file lines.
-    ///
-    /// Not a fact about what is being shown but about **how**: a change is as
-    /// tall as its taller side in two columns and as tall as both sides
-    /// together inline. Cached here, beside the type that decided it, so the
-    /// two are set at the same moment and cannot describe different layouts.
+    /// Height of the document in view lines (layout-dependent).
     view_lines: u32,
-    /// Runs of adjacent changed view lines, in this buffer's own view layout.
-    ///
-    /// Navigation and the status line both read this, so they cannot disagree
-    /// about what counts as a change — a disagreement that was a real bug.
-    /// Empty when there is nothing to compare against.
+    /// Runs of changed view lines, for navigation and the status line.
     blocks: Vec<Range<u32>>,
-    /// Which way the last change-navigation key went when there was nowhere
-    /// left to go.
-    ///
-    /// Kept so the status line can answer the keypress. Without it `]c` at the
-    /// last change does nothing and says nothing, which reads as a broken key
-    /// rather than as the end of the file. Cleared by the next key, which is
-    /// how vim's echo area behaves — and the reason this needs no clock, which
-    /// `ui` is forbidden from having.
+    /// Set when `]c`/`[c` hit the end, cleared on the next key.
     exhausted: Option<Direction>,
     buffer_type: BufferType,
 }
@@ -65,14 +34,7 @@ pub enum Direction {
 }
 
 impl Buffer {
-    /// A file the pipeline read, as something to draw.
-    ///
-    /// The one constructor for a file, because which kind of buffer it becomes
-    /// follows from what was read rather than from which function the caller
-    /// chose. A file with one version has nothing to lay out against, so it
-    /// cannot be shown either paired way; a file with two starts side by side,
-    /// which is where a reader starts, and `t` reads the same pairing inline
-    /// without rebuilding any of it. See D23 and D60.
+    /// Builds a buffer from what the pipeline read. See D23 and D60.
     pub fn diff(content: DiffContent) -> Self {
         Self::of(match content {
             DiffContent::SingleFile(single) => BufferType::SingleFile(SingleFile::new(single)),
@@ -85,8 +47,6 @@ impl Buffer {
         Self::of(BufferType::Explorer(Explorer::new(files)))
     }
 
-    /// The one place `view_lines` and `blocks` are computed, so neither can be
-    /// set without the other or without the layout they were derived from.
     fn of(buffer_type: BufferType) -> Self {
         let (view_lines, blocks) = counts(&buffer_type);
         Self {
@@ -97,20 +57,7 @@ impl Buffer {
         }
     }
 
-    /// Reads the same diff the other way round.
-    ///
-    /// Consumes and rebuilds rather than mutating, because the view-line count
-    /// and the changed blocks both follow from the layout and neither is
-    /// meaningful against the other one. The divider does not come along: it
-    /// belongs to [`SideBySide`] and inline has no columns to divide, so there
-    /// is nowhere for it to wait. A buffer with nothing to compare against has
-    /// only one way to be read and is returned as it was.
-    ///
-    /// The reader's place is *not* carried here: a view-line number means
-    /// nothing in the other layout. [`View::toggle_layout`] translates it
-    /// through the file line, which does mean the same in both.
-    ///
-    /// [`View::toggle_layout`]: crate::view::View::toggle_layout
+    /// The same buffer in the other layout. Position is not carried.
     pub fn flipped(self) -> Self {
         Self::of(match self.buffer_type {
             BufferType::SideBySide(d) => BufferType::Inline(Inline::new(d.into_diff())),
@@ -124,14 +71,7 @@ impl Buffer {
         &self.buffer_type
     }
 
-    /// Asks for everything up to `last`, whatever this buffer is showing.
-    ///
-    /// Returns at once. The colours arrive over the following frames, and the
-    /// buffer draws plainly until they do — which is the whole point of
-    /// colouring having a thread: nothing here can be made to wait.
-    ///
-    /// Sends nothing when the store already has enough, which after the first
-    /// screen is the ordinary case.
+    /// Asks the syntax worker to colour up to `last`. Returns immediately.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, last: u32) {
         match &mut self.buffer_type {
             BufferType::SideBySide(d) => d.request(syntax, store, version, last),
@@ -144,9 +84,6 @@ impl Buffer {
     }
 
     /// How many view lines this buffer has.
-    ///
-    /// The only thing a generic motion needs, which is why every motion works
-    /// on every buffer kind without any of them implementing one.
     pub fn view_lines(&self) -> u32 {
         self.view_lines
     }
@@ -180,11 +117,7 @@ impl Buffer {
             .is_some_and(Alignment::hit_timeout)
     }
 
-    /// Which file this buffer is showing.
-    ///
-    /// Structured, not a formatted name: the status line styles the directory
-    /// differently from the file name and drops it first when the width runs
-    /// out, which a single string could not support. See D28.
+    /// Which file this buffer is showing, or `None` for the explorer.
     pub fn file(&self) -> Option<&File> {
         self.buffer_type.file()
     }
@@ -197,11 +130,8 @@ impl Buffer {
         }
     }
 
-    /// Acts on the selected row of a list, if this buffer is one.
-    ///
-    /// Returns whether the buffer dealt with it. `false` means the row is a
-    /// file, which only something above this crate can open — so the answer
-    /// is what decides whether a task leaves at all.
+    /// Toggles a directory fold on a list. Returns `true` if handled (row was
+    /// a directory), `false` if the row is a file the caller should open.
     pub fn select(&mut self, cursor: u32) -> bool {
         let BufferType::Explorer(explorer) = &mut self.buffer_type else {
             return false;
@@ -213,12 +143,8 @@ impl Buffer {
         true
     }
 
-    /// Where the reader should start.
-    ///
-    /// Zero for anything showing text, because the top of a file is where a
-    /// file begins. A list starts on its first *file*: row zero is a heading,
-    /// which can be folded but not opened, so starting there would mean the
-    /// first key press did nothing.
+    /// Where the reader should start. A list starts on its first file (row 0
+    /// is a heading that can't be opened).
     pub fn start_row(&self) -> u32 {
         match &self.buffer_type {
             BufferType::Explorer(explorer) => explorer.first_file(),
@@ -226,11 +152,7 @@ impl Buffer {
         }
     }
 
-    /// Rebuilds the row count after the model has changed under it.
-    ///
-    /// A fold changes how many rows there are, and `view_lines` is what every
-    /// motion and every scroll is clamped against. Called by whoever changed
-    /// the model, in the same breath, so the two cannot be left disagreeing.
+    /// Rebuilds the row count after a fold or mode change.
     pub fn recount(&mut self) {
         let (view_lines, blocks) = counts(&self.buffer_type);
         self.view_lines = view_lines;
@@ -238,9 +160,6 @@ impl Buffer {
     }
 
     /// Which keymap is live while this buffer has focus.
-    ///
-    /// One keymap_type per kind, and per layout: a diff read inline has no
-    /// second column, so the keys that move the divider are not bound there.
     pub fn keymap_type(&self) -> KeymapType {
         match self.buffer_type.diff_type() {
             Some(diff_type) => KeymapType::File(diff_type),
@@ -248,34 +167,18 @@ impl Buffer {
         }
     }
 
-    /// Applies a command aimed at what the reader is looking at.
-    ///
-    /// The viewport is lent, not owned: the buffer moves a position that
-    /// belongs to the pane. That is what lets a motion be generic while a
-    /// buffer kind can still specialise one.
+    /// Applies a buffer action with the given count.
     pub fn act(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
-        // Any key answers the previous one, so the note lasts exactly until
-        // the reader does something else.
         self.exhausted = None;
         match action {
-            // Generic arithmetic over a line count, which this buffer supplies.
-            // Nothing here is diff-specific.
             BufferAction::Motion(motion) => view.motion(motion, count, self.view_lines),
             BufferAction::NextChange => self.step(Direction::Next, count, view),
             BufferAction::PrevChange => self.step(Direction::Previous, count, view),
-            // Only two columns have a divider between them. Not bound in the
-            // other contexts, so it cannot arrive there — but the match is
-            // exhaustive, which is what stops a new action being forgotten.
             BufferAction::WidenOriginal | BufferAction::NarrowOriginal => {
                 if let BufferType::SideBySide(data) = &mut self.buffer_type {
                     data.drag(action, count);
                 }
             }
-            // Both reshape the list, so both change how many rows there are.
-            // `recount` keeps the motions clamped to the new number, and the
-            // reshape keeps the reader on the file they were reading — landing
-            // them on row zero, which is a heading nothing can open, was the
-            // first version of this and it was wrong.
             BufferAction::ToggleViewMode | BufferAction::ToggleStats => {
                 if let BufferType::Explorer(explorer) = &mut self.buffer_type {
                     let landing = explorer.reshape_around(view.cursor(), |model| match action {

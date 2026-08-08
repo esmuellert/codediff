@@ -1,34 +1,17 @@
-//! The git backend: one file per command, and nothing else.
-//!
-//! **Private to this crate.** Every file below is named as git spells the
-//! command it runs, so the file tree answers "which command is this?" before
-//! you open anything:
+//! The git backend: one file per command.
 //!
 //! ```text
-//! run             spawn git, capture what it printed, fail loudly
-//! rev_parse       git rev-parse --show-toplevel | --absolute-git-dir | --verify
-//! status          git status --porcelain=v2 -z
-//! diff/           git diff
-//! ├ name_status     --name-status -z    which files, and what happened
-//! └ numstat         --numstat -z        how many lines each gained and lost
+//! run             spawn git, capture output
+//! rev_parse       --show-toplevel | --absolute-git-dir | --verify
+//! status          --porcelain=v2 -z
+//! diff/           --name-status -z, --numstat -z
 //! merge_base      git merge-base
 //! cat_file        git cat-file --batch | --filters
-//! worktree        std::fs — the third thing git compares, and not a command
+//! worktree        std::fs — the working tree
 //! ```
 //!
-//! Each of them **runs a command and parses what it printed into git's own
-//! words** — `XY` codes, status letters, similarity scores. None of them
-//! decides anything, and none produces the reviewer's vocabulary; that is
-//! [`repository`](crate::repository), one level up, and
-//! [`changed_file`](crate::repository::changed_file) is the seam.
-//!
-//! Everything here is a free function over a [`Repo`]. What a session
-//! accumulates — what has been resolved, which child is open — belongs to
-//! [`Repository`](crate::Repository).
-//!
-//! This file is the door: it turns a [`DiffType`] into the command that
-//! answers it, which is the one piece of git knowledge that is not itself a
-//! command. See D67.
+//! Each file runs a command and parses its output in git's vocabulary.
+//! Translation to the reviewer's types happens in `repository/changed_file.rs`.
 
 pub mod cat_file;
 pub mod diff;
@@ -45,28 +28,18 @@ use crate::error::Result;
 use crate::repository::DiffType;
 use status::{Entry, Untracked};
 
-/// Which command answers a comparison, and what its answer will mean.
-///
-/// Two shapes, because git has two: the working tree is described by a status,
-/// and everything else by a diff. A status describes three things at once and
-/// so yields two comparisons; a diff describes two things and yields one.
+/// Which git command answers a comparison.
 pub enum Plan {
-    /// `git status`, which the caller reads as two comparisons.
+    /// `git status` — yields two comparisons (index vs HEAD, worktree vs index).
     Worktree,
-    /// `git diff <args>`, one comparison.
+    /// `git diff <args>` — one comparison.
     Diff {
-        /// What goes after `diff`.
         args: Vec<String>,
-        /// What those arguments mean in the reviewer's terms.
         revs: Revs,
     },
 }
 
-/// Resolves every revision the comparison names, and picks the command.
-///
-/// Names become ids here rather than staying as typed, because a name moves:
-/// `main` an hour into a review is not the `main` the review opened against,
-/// and an id is what says which bytes were read.
+/// Resolves revision names to ids and picks the command shape.
 pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
     let commit = |name: &str| -> Result<Rev> { Ok(Rev::Commit(rev_parse::resolve(repo, name)?)) };
 
