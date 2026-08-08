@@ -1,28 +1,12 @@
 //! How a key sequence is looked up.
 //!
-//! The bindings themselves live with the level that executes them — one file
-//! each, `buffer`, `pane`, `tab`, `view`, `program` — so adding a command
-//! means touching one file, not two.
+//! Bindings live with the level that executes them (`buffer`, `pane`, `tab`,
+//! `view`, `program`). Lookup walks innermost-first, so a buffer can shadow
+//! keys from levels above it.
 //!
-//! Lookup walks the containment hierarchy, innermost first. That single
-//! fact does two jobs. It puts each level's bindings where the level is, and
-//! it makes *shadowing* the answer to scoping: a buffer kind that binds `<`
-//! claims it, and everywhere else the same key falls through to the tab. Exactly
-//! how Neovim's buffer-local mappings shadow global ones — and the reason a
-//! key's list and a key's executor need not be tied together.
-//!
-//! The tables are data — `const`, comparable, printable. A binding is a
-//! sequence of keys and an [`Action`] *value*, never a closure. A closure
-//! could not be rendered into a help screen, compared in a test, or held
-//! without capturing references to everything it might touch.
-//!
-//! Lookup gives the flat lists in [`bindings`] trie semantics: an action lives only
-//! at a leaf, so no binding may be a proper prefix of another. That is what
-//! vim's own built-in keymap does — `g`, `d`, `z`, `[` and `]` are all
-//! unbound alone — and it is why the resolver needs no clock. Ambiguity has
-//! no good resolution: firing immediately makes the longer binding
-//! unreachable, and waiting makes the shorter one feel broken. Vim needs
-//! `timeoutlen` only because user mappings *may* create it.
+//! Tables are `const` data (not closures) — printable, testable, and
+//! requiring no captured state. No binding may be a prefix of another, so
+//! the resolver needs no timeout.
 
 use crokey::KeyCombination;
 

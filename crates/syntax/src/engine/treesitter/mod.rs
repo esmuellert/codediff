@@ -1,51 +1,16 @@
-//! The second engine: a parser, rather than regular expressions over lines.
+//! The parser engine (tree-sitter). Recognises structure, not just shapes.
 //!
-//! A TextMate grammar recognises *shapes* — a word after `fn`, a name inside a
-//! parameter list — and nothing else. It cannot tell `Rect` in `area: Rect`
-//! from `frame` in `frame.text`, because to a regular expression they are both
-//! just words. Measured on this repository's own source, that leaves **35% of
-//! identifiers with no scope at all**; `bat` on the same files leaves exactly
-//! the same words uncoloured, so it is the grammar's limit and not a theme's.
+//! Covers 35→21% of the identifiers syntect misses. Falls back to syntect
+//! for the ~150 languages without a grammar. See D39.
 //!
-//! A parser knows. `Rect` is a `type_identifier` node, and the shipped
-//! `highlights.scm` says `(type_identifier) @type`. The same measurement here
-//! is 21%, and what remains is plain locals, which Catppuccin draws in the
-//! ordinary text colour anyway.
-//!
-//! This does not replace [`syntect`](super::syntect). There are about
-//! forty maintained grammars against two-face's 183 languages, so the TextMate
-//! engine stays as the fallback and a file we have no parser for is coloured
-//! exactly as it is today. See D39.
-//!
-//! ---
-//!
-//! Three things about this engine are worth knowing before reading it:
-//!
-//! - It is not resumable. `tree_sitter_highlight` has no range parameter;
-//!   it parses the whole document every call. That would be fatal to a lazy
-//!   renderer if it were slow, but it runs at ~190 000 lines a second — more
-//!   than ten times `syntect` — so the whole file costs less than one of
-//!   `syntect`'s capped slices, and [`Highlighted`] simply gets everything on
-//!   the first ask.
-//! - The queries are given, not written. Each grammar crate ships its own
-//!   `highlights.scm`. There is no table of scope selectors here, and none of
-//!   the TextMate precedence work that `theme::scopes` needed.
-//! - We deliberately use the crates' own queries, not Neovim's. The only
-//!   thing nvim-treesitter's forks add is `(identifier) @variable`, which
-//!   Catppuccin paints in the ordinary text colour — no visible difference —
-//!   and they use Neovim-only predicates (`#lua-match?`) that this engine
-//!   *silently ignores*, which would turn `((identifier) @type (#lua-match? …))`
-//!   into an unconditional `(identifier) @type` and paint every word as a
-//!   type. All cost, no benefit.
-//!
-//! ---
-//!
-//! Three files, three nouns:
+//! Key properties:
+//! - Not resumable — parses the whole file each call (~190k lines/sec)
+//! - Uses each grammar crate's own `highlights.scm`, not Neovim's
 //!
 //! ```text
-//! mod.rs        this: finding a grammar, and reading a file into spans
-//! languages.rs  which languages there are, and what their queries say
-//! queries.rs    turning that query text into something to match with
+//! mod.rs        grammar lookup and file → spans
+//! languages.rs  which languages have grammars
+//! queries.rs    compiling query text for the engine
 //! ```
 //!
 //! [`Highlighted`]: crate::Highlighted
