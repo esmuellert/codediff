@@ -43,19 +43,10 @@ pub struct Parser {
     pub shebangs: &'static [&'static str],
 }
 
-/// Rules appended after a grammar's own.
+/// Rules appended after a grammar's own query.
 ///
-/// Appended, never inserted. Where two patterns cover one node this engine
-/// resolves in favour of the *later*, which is why a shipped query sometimes
-/// loses its own more specific rule — JSON captures keys and then captures
-/// every string, so the key rule never wins. Appending is how a rule wins, and
-/// it is what Helix and nvim-treesitter do at much greater length by forking
-/// the whole file.
-///
-/// Each of these is one line, exists because the matcher already gets that
-/// case right, and would be a visible regression to lose. A malformed one
-/// fails to compile and `every_language_in_the_table_compiles_its_query`
-/// catches it.
+/// Later patterns win in tree-sitter, so appending is how we override.
+/// Each fixes a case the matcher already gets right.
 mod overrides {
     /// The shipped query captures the key, then captures every string.
     pub const JSON: &str = "(pair key: (_) @string.special.key)";

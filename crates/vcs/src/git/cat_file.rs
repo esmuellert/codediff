@@ -49,18 +49,8 @@ impl Batch {
         })
     }
 
-    /// Reads `path` as it exists at `rev`.
-    ///
-    /// Returns `Ok(None)` when the object does not exist — a file added since
-    /// the revision, or deleted before it. That is an ordinary answer, not an
-    /// error: a diff against `HEAD` asks for both sides of every file and one
-    /// of them is routinely absent.
-    ///
-    /// The path is taken as good. A request ends at a newline, so a path
-    /// holding one would be read as two requests and every answer after it
-    /// would belong to the wrong file. Checking here would be checking in the
-    /// wrong place: a path is checked where one enters, not at each of the
-    /// places that use it. See B7.
+    /// Reads `path` at `rev`. Returns `Ok(None)` if the object doesn't exist
+    /// (file added or deleted relative to that revision).
     pub fn read(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
         // The `rev:path` spelling is what cat-file expects for a path inside a
         // tree, and the path is relative to the root.
