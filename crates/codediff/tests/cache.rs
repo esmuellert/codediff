@@ -39,7 +39,7 @@ fn session(lines: usize) -> Session {
 /// Presses a key and lets the loop react, as [`ui::run`] does.
 fn press(session: &mut Session, code: KeyCode) {
     session.handle(&key(code));
-    session.request();
+    session.send_colour_request();
     let _ = cells(session, WIDTH, HEIGHT);
 }
 
@@ -66,7 +66,7 @@ fn anything_coloured(cells: &Cells) -> bool {
 #[test]
 fn a_file_is_coloured_without_being_waited_for() {
     let mut session = session(200);
-    session.settle();
+    session.wait_until_idle();
     let cells = cells(&mut session, WIDTH, HEIGHT);
     assert!(
         anything_coloured(&cells),
@@ -80,12 +80,12 @@ fn nothing_is_asked_for_twice() {
     // what it needs sends no request at all, so coming back to a file costs a
     // lookup rather than a read.
     let mut session = session(200);
-    session.settle();
-    assert!(!session.painting(), "settled");
+    session.wait_until_idle();
+    assert!(!session.is_colouring(), "settled");
 
-    session.request();
+    session.send_colour_request();
     assert!(
-        !session.painting(),
+        !session.is_colouring(),
         "asking again for a screen already coloured sends nothing"
     );
 }
@@ -93,13 +93,13 @@ fn nothing_is_asked_for_twice() {
 #[test]
 fn scrolling_back_over_coloured_lines_asks_for_nothing() {
     let mut session = session(200);
-    session.settle();
+    session.wait_until_idle();
     for _ in 0..5 {
         press(&mut session, KeyCode::Char('j'));
     }
     press(&mut session, KeyCode::Char('k'));
     assert!(
-        !session.painting(),
+        !session.is_colouring(),
         "lines already held are not asked for again"
     );
 }
@@ -110,13 +110,13 @@ fn a_file_longer_than_the_read_ahead_is_not_read_to_its_end() {
     // finds work to do — if opening the file had read all of it there would
     // be nothing left to ask for.
     let mut session = session(20_000);
-    session.settle();
-    assert!(!session.painting(), "the screen is done");
+    session.wait_until_idle();
+    assert!(!session.is_colouring(), "the screen is done");
 
     session.handle(&key(KeyCode::Char('G')));
-    session.request();
+    session.send_colour_request();
     assert!(
-        session.painting(),
+        session.is_colouring(),
         "the end of the file had not been read, so reaching it asks"
     );
 }
@@ -124,9 +124,9 @@ fn a_file_longer_than_the_read_ahead_is_not_read_to_its_end() {
 #[test]
 fn the_end_of_a_long_file_is_coloured_once_it_is_reached() {
     let mut session = session(20_000);
-    session.settle();
+    session.wait_until_idle();
     press(&mut session, KeyCode::Char('G'));
-    session.settle();
+    session.wait_until_idle();
     let cells = cells(&mut session, WIDTH, HEIGHT);
     assert!(anything_coloured(&cells), "and it is coloured when it is");
 }
@@ -138,9 +138,9 @@ fn reaching_further_into_a_file_keeps_what_was_already_read() {
     // exactly where the last ended. A restart would therefore show up as a
     // file that stops being coloured part way down.
     let mut session = session(20_000);
-    session.settle();
+    session.wait_until_idle();
     press(&mut session, KeyCode::Char('G'));
-    session.settle();
+    session.wait_until_idle();
 
     // Back to the top: those lines were read first and must still be there.
     press(&mut session, KeyCode::Char('g'));
@@ -150,16 +150,16 @@ fn reaching_further_into_a_file_keeps_what_was_already_read() {
         anything_coloured(&cells),
         "the top is still coloured after reading the end"
     );
-    assert!(!session.painting(), "and nothing had to be read again");
+    assert!(!session.is_colouring(), "and nothing had to be read again");
 }
 
 #[test]
 fn a_language_nothing_claims_draws_plainly_and_stops_asking() {
     let mut session = Session::new(single("a.qqqqq", "nothing claims this\n"), Theme::DARK);
     let _ = cells(&mut session, WIDTH, HEIGHT);
-    session.settle();
+    session.wait_until_idle();
     assert!(
-        !session.painting(),
+        !session.is_colouring(),
         "answered once, with nothing, rather than asked for ever"
     );
 }

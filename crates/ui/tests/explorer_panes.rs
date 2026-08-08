@@ -251,10 +251,10 @@ fn enter_on_a_file_row_asks_for_it() {
     // Past the first row, so what is asked for is not what is already shown.
     session.press(crokey::key!(j));
     session.press(crokey::key!(enter));
-    session.request_file();
-    assert!(session.opening(), "enter asked for nothing");
+    session.send_file_request();
+    assert!(session.is_loading_file(), "enter asked for nothing");
 
-    assert!(session.opened(), "the answer was not installed");
+    assert!(session.has_file_arrived(), "the answer was not installed");
     let area = Rect::new(0, 0, 80, 6);
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);

@@ -80,10 +80,10 @@ impl Session {
     }
 
     /// Blocks until all visible lines are coloured. For tests only.
-    pub fn settle(&mut self) -> bool {
+    pub fn wait_until_idle(&mut self) -> bool {
         let mut changed = false;
         let mut idle = 0;
-        while self.painting() && idle < IDLE_ANSWERS {
+        while self.is_colouring() && idle < IDLE_ANSWERS {
             let held = self.store.held();
             match self.syntax.next() {
                 Some(response) => changed |= self.store.install(response),
@@ -94,18 +94,18 @@ impl Session {
             } else {
                 idle + 1
             };
-            self.request();
+            self.send_colour_request();
         }
         changed
     }
 
     /// Whether anything on screen is still being coloured.
-    pub fn painting(&self) -> bool {
+    pub fn is_colouring(&self) -> bool {
         self.syntax.working()
     }
 
     /// Collects finished syntax spans. Never blocks.
-    pub fn collect(&mut self) -> bool {
+    pub fn receive_colours(&mut self) -> bool {
         let mut changed = false;
         for response in self.syntax.take() {
             changed |= self.store.install(response);
@@ -114,7 +114,7 @@ impl Session {
     }
 
     /// Asks the syntax worker for anything newly visible.
-    pub fn request(&mut self) {
+    pub fn send_colour_request(&mut self) {
         self.view.request(&mut self.syntax, &mut self.store);
     }
 
@@ -165,19 +165,19 @@ impl Session {
     }
 
     /// Whether a file comparison is in progress.
-    pub fn opening(&self) -> bool {
+    pub fn is_loading_file(&self) -> bool {
         self.files.working()
     }
 
     /// Sends the selected file to the worker if one is pending and the worker is free.
-    pub fn request_file(&mut self) {
+    pub fn send_file_request(&mut self) {
         if let Some(file) = &self.selected {
             self.files.request(file);
         }
     }
 
     /// Collects a finished file comparison. Never blocks.
-    pub fn collect_file(&mut self) -> bool {
+    pub fn receive_file(&mut self) -> bool {
         let Some(response) = self.files.take() else {
             return false;
         };
@@ -186,12 +186,12 @@ impl Session {
             return false;
         }
         self.selected = None;
-        self.install(response)
+        self.apply_file_response(response)
     }
 
     /// Blocks until the file worker answers. For tests only.
-    pub fn opened(&mut self) -> bool {
-        self.request_file();
+    pub fn has_file_arrived(&mut self) -> bool {
+        self.send_file_request();
         let Some(response) = self.files.wait() else {
             return false;
         };
@@ -199,14 +199,14 @@ impl Session {
             return false;
         }
         self.selected = None;
-        self.install(response)
+        self.apply_file_response(response)
     }
 
     /// Puts a comparison result on screen, or shows the error on the status line.
-    fn install(&mut self, response: Response) -> bool {
+    fn apply_file_response(&mut self, response: Response) -> bool {
         // If this file is already showing, keep the cursor position.
         let keep = self
-            .showing(&response.file)
+            .is_file_shown(&response.file)
             .then(|| self.view.tab().shown())
             .flatten()
             .map(|id| self.view.pane_for(id).viewport.cursor());
@@ -222,7 +222,7 @@ impl Session {
                         .jump(line.min(rows.saturating_sub(1)), rows);
                 }
                 self.notice = None;
-                self.request();
+                self.send_colour_request();
             }
             Err(why) => self.notice = Some(why),
         }
@@ -230,7 +230,7 @@ impl Session {
     }
 
     /// Whether this file is already showing beside the list.
-    fn showing(&self, file: &file_types::File) -> bool {
+    fn is_file_shown(&self, file: &file_types::File) -> bool {
         let Some(id) = self.view.tab().shown() else {
             return false;
         };
@@ -408,19 +408,19 @@ impl Session {
 /// The main loop. Terminal is restored by `Screen`'s `Drop`.
 pub fn run(session: &mut Session) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
-    session.request_file();
+    session.send_file_request();
     session.draw(screen.terminal())?;
 
     loop {
-        let coloured = session.collect();
-        let compared = session.collect_file();
+        let coloured = session.receive_colours();
+        let compared = session.receive_file();
         if coloured || compared {
-            session.request();
-            session.request_file();
+            session.send_colour_request();
+            session.send_file_request();
             session.draw(screen.terminal())?;
         }
 
-        let Some(event) = screen.next_event(session.painting() || session.opening())? else {
+        let Some(event) = screen.next_event(session.is_colouring() || session.is_loading_file())? else {
             continue;
         };
 
@@ -429,8 +429,8 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
             Flow::Suspend => screen.suspend()?,
             Flow::Continue => {}
         }
-        session.request();
-        session.request_file();
+        session.send_colour_request();
+        session.send_file_request();
         session.draw(screen.terminal())?;
     }
 }

@@ -38,7 +38,7 @@ fn foregrounds(cells: &Cells, y: u16) -> Vec<Color> {
 /// `the_first_frame_shows_the_text_before_any_colour` is the one that asks
 /// about the other.
 fn settled(session: &mut Session, width: u16, height: u16) -> Cells {
-    session.settle();
+    session.wait_until_idle();
     cells(session, width, height)
 }
 
@@ -275,7 +275,7 @@ fn a_very_long_file_shows_at_once_and_colours_as_it_goes() {
         "and jumping to the end shows it, coloured or not"
     );
 
-    session.settle();
+    session.wait_until_idle();
     let settled = cells(&mut session, 80, 24);
     assert!(
         (0..settled.area.height)
@@ -296,15 +296,15 @@ fn the_first_frame_shows_the_text_before_any_colour() {
         text_of(&first).contains("main"),
         "the text is there straight away"
     );
-    assert!(session.painting(), "and the colours are still on their way");
+    assert!(session.is_colouring(), "and the colours are still on their way");
 
-    session.settle();
+    session.wait_until_idle();
     let warm = cells(&mut session, 80, 10);
     assert!(
         (0..warm.area.height).any(|y| foregrounds(&warm, y).contains(&Theme::DARK.code.keyword)),
         "a moment later, `fn` is a keyword"
     );
-    assert!(!session.painting());
+    assert!(!session.is_colouring());
 }
 
 #[test]
@@ -314,11 +314,11 @@ fn toggling_the_layout_keeps_the_colours_it_already_has() {
     // toggle must not send the reader back to plain text while it is all
     // painted again.
     let mut session = rust_session(BEFORE, AFTER);
-    session.settle();
-    assert!(!session.painting());
+    session.wait_until_idle();
+    assert!(!session.is_colouring());
 
     harness::type_keys(&mut session, "t");
-    assert!(!session.painting(), "nothing was thrown away");
+    assert!(!session.is_colouring(), "nothing was thrown away");
 
     let inline = cells(&mut session, 80, 10);
     assert!(
@@ -338,7 +338,7 @@ fn a_second_file_in_the_same_language_is_coloured_too() {
         ("fn c() {}\n", "fn d() {}\n"),
     ] {
         let mut session = rust_session(before, after);
-        session.settle();
+        session.wait_until_idle();
         let cells = cells(&mut session, 80, 10);
         assert!(
             (0..cells.area.height)

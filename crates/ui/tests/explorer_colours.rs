@@ -114,7 +114,7 @@ fn a_pane_that_does_not_have_focus_is_still_coloured() {
         )],
     );
     open_selected(&mut session);
-    session.settle();
+    session.wait_until_idle();
 
     // The list keeps focus, exactly as it does at startup.
     let area = Rect::new(0, 0, 80, 6);
@@ -159,7 +159,7 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
     let mut cells = Cells::empty(area);
 
     open_selected(&mut session);
-    session.settle();
+    session.wait_until_idle();
     session.draw_into(&mut cells, area);
     let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
     assert_eq!(
@@ -170,12 +170,12 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
 
     session.press(crokey::key!(j));
     open_selected(&mut session);
-    session.settle();
+    session.wait_until_idle();
     session.press(crokey::key!(k));
 
     // The first file again, by the same name, with different bytes behind it.
     open_selected(&mut session);
-    session.settle();
+    session.wait_until_idle();
     session.draw_into(&mut cells, area);
     let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
     assert_eq!(

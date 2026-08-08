@@ -130,7 +130,7 @@ pub fn scripted(
 /// of its own, and an assertion about a pane has to know when to look.
 pub fn open_selected(session: &mut Session) {
     session.open();
-    assert!(session.opened(), "nothing was installed");
+    assert!(session.has_file_arrived(), "nothing was installed");
 }
 
 /// The column `needle` starts at, which is not where `str::find` puts it.
