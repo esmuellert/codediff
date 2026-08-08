@@ -7,7 +7,7 @@
 //! staging area at all. What "before" means is decided when a backend is
 //! constructed, not here. See D30.
 
-use crate::{ChangeType, File, RepoPath};
+use crate::{ChangeType, File, RepoPath, Stats};
 
 /// One file that differs between the two sides.
 ///
@@ -29,6 +29,13 @@ pub struct ChangedFile {
     reported: Option<ChangeType>,
     /// How alike the two paths are, 0–100, when the file moved.
     pub similarity: Option<u8>,
+    /// Lines gained and lost, or `None` when nothing counted them — a binary
+    /// file, or a backend that was not asked.
+    ///
+    /// Counting is a second question from listing, and a backend that will not
+    /// answer it loses the numbers rather than the whole list. So this arrives
+    /// after the file does, through [`with_stats`](Self::with_stats).
+    pub stats: Option<Stats>,
 }
 
 impl ChangedFile {
@@ -38,6 +45,7 @@ impl ChangedFile {
             file,
             reported: None,
             similarity,
+            stats: None,
         }
     }
 
@@ -56,7 +64,14 @@ impl ChangedFile {
             file,
             reported: Some(reported),
             similarity: None,
+            stats: None,
         }
+    }
+
+    /// The same file, with what it gained and lost.
+    pub fn with_stats(mut self, stats: Stats) -> Self {
+        self.stats = Some(stats);
+        self
     }
 
     /// What happened to this file.

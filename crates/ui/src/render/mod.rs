@@ -11,14 +11,13 @@
 //! gutter   one line number
 //! column   one gutter-and-text column of a diff
 //! line     how one line of a diff is coloured
-//! list     what one row of the file list says, and how it is coloured
-//! fit      what survives when a row is wider than its pane
 //! ```
 //!
-//! `line` and `list` are the same brick for the two things on screen: each
-//! takes what its own crate reports, adds a theme, and answers in text and
-//! colour. Neither decides what fits — that is `fit`, which knows about
-//! neither and is shared with the status line.
+//! **A feature must not add a file here.** Every brick above arrived with the
+//! terminal itself, before there was a file list. One that arrives *with* a
+//! feature is that feature wearing a brick's name, however general it looks —
+//! which is how `list.rs` and `fit.rs` came to live here, and why they now
+//! live beside the list that is their only caller. See D68.
 //!
 //! **Nothing here may name [`crate::view`]**, and `cargo xtask lint-arch`
 //! refuses it. That is the whole distinction from [`draw`](crate::draw): a
@@ -33,8 +32,6 @@
 
 pub mod cells;
 pub mod column;
-pub mod fit;
 pub mod gutter;
 pub mod layout;
 pub mod line;
-pub mod list;

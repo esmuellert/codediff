@@ -39,7 +39,6 @@ codediff/
 │   ├── line-index/           where each character of a line sits      pure
 │   ├── syntax/               text → normalized syntactic spans        pure
 │   ├── align/                Alignment · rows · hunks · spans        pure
-│   ├── explorer/             entries · grouping · tree · filter       pure
 │   ├── vcs/                  git today, jj tomorrow
 │   ├── runtime/              events · commands · effects · watcher
 │   ├── ui/                   ratatui rendering + input
@@ -61,7 +60,6 @@ codediff/
 | `line-index` | where each character of a line sits: UTF-16 ↔ byte ↔ char ↔ grapheme ↔ cell, display width, tab expansion, cell-range slicing | pure |
 | `syntax` | language detection; text → `SpanSet` of normalized `Class` values. The only crate that may name a syntax engine | pure |
 | `align` | pairing lines from a `LinesDiff` plus two texts; fillers; hunks; inner-change byte ranges; unchanged regions | pure |
-| `explorer` | status entries → grouped tree, path collapsing, gitignore-style filtering | pure |
 | `vcs` | `VcsBackend` trait, git subprocess implementation, blob reading, rev resolution | IO |
 | `runtime` | `Event`, `Command`, `update`, effect runner, file watcher, request generations | IO + state + concurrency |
 | `ui` | terminal lifecycle, layout, panes, widgets, input state machine, theme | state |
@@ -82,8 +80,7 @@ codediff ──> ui ──────> runtime ──> vcs ──────> 
               │            │  └────> syntax ───> line-index
               │            └──> align ────────> line-index
               │            │         └────────> diff-types
-              │            └──> explorer
-              └──> align, explorer, line-index, syntax
+              └──> align, line-index, syntax
 
 vscode-diff ──> diff-types                 the engine, named only by the
      └────────> vscode-diff-sys ──> C      composition root and by tests
@@ -105,13 +102,13 @@ does not propagate, so that costs consumers nothing.
 | `align`, `diff-types` → `vscode-diff-sys` | the model must never touch the FFI layer |
 | **anything → a syntax engine, except `crates/syntax/src/engine/`** | keeps the engine swappable; `syntect::` or `tree_sitter::` appearing anywhere else fails CI |
 | anything → `codediff` | the composition root is a leaf; nothing depends on it |
-| `align`/`explorer`/`line-index`/`syntax`/`vscode-diff`/`diff-types` → anything with IO | keeps the pure core pure |
+| `align`/`line-index`/`syntax`/`vscode-diff`/`diff-types` → anything with IO | keeps the pure core pure |
 
 ## Hard rules
 
 | rule | rationale | enforcement |
 |---|---|---|
-| `align`, `explorer`, `line-index`, `vscode-diff`, `diff-types` perform no IO — no `std::fs`, no `std::process`, no sockets, no clock | pure core is trivially testable and cannot rot | CI lint + absent dependencies |
+| `align`, `line-index`, `vscode-diff`, `diff-types` perform no IO — no `std::fs`, no `std::process`, no sockets, no clock | pure core is trivially testable and cannot rot | CI lint + absent dependencies |
 | the pure model builds without a C toolchain | `align` is proptest-tested and must stay cheap to build and portable; it also keeps the door open to a second engine, such as a pure-Rust fallback or a WASM target where `cc` cannot run | `cargo xtask lint-arch` refuses `align → vscode-diff` in `[dependencies]` while allowing it in `[dev-dependencies]` |
 | no cyclic crate dependencies | the single mechanism that prevented the plugin's decay | cargo |
 | soft cap 300 lines/file, hard cap 500 | forces splitting before a file becomes a junk drawer | `cargo xtask lint-size` |
@@ -238,7 +235,7 @@ failures.
    └───────────┬────────────┘                      └───────────┬───────────┘
                │ reads model types                             │ calls
                ▼                                               ▼
-        align  ·  explorer                              vcs   ·   vscode-diff
+        align                                           vcs   ·   vscode-diff
                │                                                  │
                ▼                                                  ▼
      line-index · diff-types                              vscode-diff-sys → C
@@ -279,8 +276,8 @@ through one path because Neovim owned the loop.
 4  runtime   → Command::LoadStatus { req: R1 }
 5  effect    worker: vcs::status() → `git status --porcelain=v2 -z --no-optional-locks`
 6  effect    → Event::Status(R1, Vec<StatusEntry>)          [channel]
-7  runtime   update: explorer::build(entries, cfg) → AppState.tree
-8  ui        render: explorer populated, diff area empty
+7  ui        view: Tree::build(files, mode, flatten) → the rows
+8  ui        render: the list populated, diff area empty
 ```
 
 ### Opening a file
@@ -342,7 +339,7 @@ sync channel — an implementation detail of one adapter, not a property of the 
 4. Every `Command` carries a `RequestId`; results with a stale id are dropped in `update`.
 5. `ui` owns presentation state, `runtime` owns domain state; the bridge between them
    is **stable identity** (`path`, `HunkId`) — never an index.
-6. `vscode-diff`, `line-index`, `align`, `explorer` are pure and testable with no terminal, no
+6. `vscode-diff`, `line-index`, `align` are pure and testable with no terminal, no
    repository and no threads.
 
 Invariant 2 is the one that pays most: the entire application logic can be tested by feeding
@@ -354,7 +351,7 @@ Named in advance so they are cheap. Unnamed, each is a month-three refactor.
 
 | # | pressure | mitigation |
 |---|---|---|
-| 1 | `AppState` grows into a god object | nest by domain (`state.explorer`, `state.diff`, `state.watch`); `update/` submodules may only touch their own sub-state; track its line count |
+| 1 | `AppState` grows into a god object | nest by domain (`state.list`, `state.diff`, `state.watch`); `update/` submodules may only touch their own sub-state; track its line count |
 | 2 | the `runtime`/`ui` state boundary gets re-argued (is "expanded set" domain or presentation?) | expect to redraw this line once around S12; the rule is presentation, keyed by path |
 | 3 | `line-index` gets pulled into rendering | strictly measurement and conversion, never drawing |
 | 4 | syntax spans must composite with diff and inner-change spans | build the generic `SpanSet` compositor with priorities at S7, when only diff spans feed it |

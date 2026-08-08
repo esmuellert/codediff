@@ -4,7 +4,6 @@
 //! Shared by the three files beside it rather than by one of them, so that
 //! none of the three is the one that happens to own the fixtures.
 
-pub use explorer::{Entry, Group, Groups};
 pub use file_types::{ChangeType, ChangedFile, DiffType, File, Oid, RepoPath, Rev, Revs, Stats};
 pub use pipeline::file::{DiffContent, Files};
 pub use ratatui::buffer::Buffer as Cells;
@@ -13,54 +12,47 @@ pub use ratatui::style::Color;
 pub use std::path::Path;
 pub use ui::{Buffer, Session, Theme};
 
+/// The two comparisons `codediff` with no arguments produces.
+///
+/// A group *is* a revision pair, so these are what put a file in one group
+/// rather than the other. Nothing stamps a category on a file: there is one
+/// answer, and it is the one the file already carries.
 pub fn revs() -> Revs {
-    Revs::worktree_against(Oid::new("b87b24c"))
+    Revs::new(Rev::Index, Rev::Worktree)
+}
+
+pub fn staged_revs() -> Revs {
+    Revs::new(Rev::Commit(Oid::new("b87b24c")), Rev::Index)
 }
 
 pub fn at(relative: &str) -> RepoPath {
     RepoPath::new(relative, Path::new("/repo"))
 }
 
-pub fn modified(path: &str) -> Entry {
-    Entry::new(ChangedFile::new(
-        File::unchanged_path(at(path), revs()),
-        None,
-    ))
+pub fn modified(path: &str) -> ChangedFile {
+    ChangedFile::new(File::unchanged_path(at(path), revs()), None)
 }
 
-pub fn untracked(path: &str) -> Entry {
-    Entry::new(ChangedFile::reported(
-        File::added(at(path), revs()),
-        ChangeType::Untracked,
-    ))
+/// The same file, in the staged comparison instead of the unstaged one.
+pub fn staged(path: &str) -> ChangedFile {
+    ChangedFile::new(File::unchanged_path(at(path), staged_revs()), None)
 }
 
-/// The two comparisons `codediff` with no arguments produces.
-pub fn unstaged(files: Vec<Entry>) -> Group {
-    Group::new("Changes", Revs::new(Rev::Index, Rev::Worktree), files)
+pub fn untracked(path: &str) -> ChangedFile {
+    ChangedFile::reported(File::added(at(path), revs()), ChangeType::Untracked)
 }
 
-pub fn staged(files: Vec<Entry>) -> Group {
-    Group::new(
-        "Staged Changes",
-        Revs::new(Rev::Commit(Oid::new("b87b24c")), Rev::Index),
-        files,
-    )
+/// One group's worth, as a comparison of two revisions produces.
+pub fn only(files: Vec<ChangedFile>) -> Vec<ChangedFile> {
+    files
 }
 
-/// One group, as a comparison of two revisions produces.
-pub fn only(files: Vec<Entry>) -> Groups {
-    vec![unstaged(files)]
-}
-
-pub fn entries() -> Groups {
+pub fn entries() -> Vec<ChangedFile> {
     vec![
-        unstaged(vec![
-            modified("src/app.rs").with_stats(Stats::new(12, 3)),
-            modified("src/view/tab.rs").with_stats(Stats::new(4, 0)),
-            untracked("notes.txt"),
-        ]),
-        staged(vec![modified("README.md").with_stats(Stats::new(1, 1))]),
+        modified("src/app.rs").with_stats(Stats::new(12, 3)),
+        modified("src/view/tab.rs").with_stats(Stats::new(4, 0)),
+        untracked("notes.txt"),
+        staged("README.md").with_stats(Stats::new(1, 1)),
     ]
 }
 
@@ -123,8 +115,12 @@ pub fn diff(file: File, text: &str) -> Result<DiffContent, String> {
 /// what it checks — in `basic-dark` the comment, the line number and the
 /// indent guide are all `DarkGray`, so a test written against it can match the
 /// wrong thing and never fail.
-pub fn scripted(groups: Groups, theme: Theme, script: Vec<Result<DiffContent, String>>) -> Session {
-    Session::with_files(Buffer::explorer(groups), theme, Files::canned(script))
+pub fn scripted(
+    files: Vec<ChangedFile>,
+    theme: Theme,
+    script: Vec<Result<DiffContent, String>>,
+) -> Session {
+    Session::with_files(Buffer::explorer(files), theme, Files::canned(script))
 }
 
 /// Opens the selected row and waits for its comparison.

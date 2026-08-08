@@ -17,15 +17,16 @@ use crate::repository::changed_file::to_file_diff;
 
 /// Files that are all the same comparison.
 ///
-/// The neutral counterpart of what an explorer calls a group. `vcs` names it
+/// The neutral counterpart of what a file list calls a group. `vcs` names it
 /// itself rather than borrowing that word, because a backend must not know
-/// what an explorer is — `cargo xtask lint-arch` forbids the edge, and the
-/// binary is where the two vocabularies meet.
+/// what a file list is.
+///
+/// **No heading.** What a heading says is derivable from [`revs`](Self::revs)
+/// — a comparison against the index is what "Staged Changes" means — so
+/// storing it here would be storing the same fact twice, in the layer least
+/// able to phrase it for a reader. See D57.
 #[derive(Debug, Clone)]
 pub struct Changes {
-    /// What a heading would say. Git's own words, since git is what decided
-    /// this group exists.
-    pub name: &'static str,
     pub revs: Revs,
     pub files: Vec<ChangedFile>,
 }
@@ -61,12 +62,10 @@ pub fn split(entries: Vec<Entry>, root: &std::path::Path, commit: Rev) -> Vec<Ch
 
     vec![
         Changes {
-            name: "Changes",
             revs: Revs::new(Rev::Index, Rev::Worktree),
             files: unstaged,
         },
         Changes {
-            name: "Staged Changes",
             revs: Revs::new(commit, Rev::Index),
             files: staged,
         },

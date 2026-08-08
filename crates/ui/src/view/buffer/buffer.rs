@@ -81,8 +81,8 @@ impl Buffer {
     }
 
     /// The list of changed files.
-    pub fn explorer(groups: explorer::Groups) -> Self {
-        Self::of(BufferType::Explorer(Explorer::new(groups)))
+    pub fn explorer(files: Vec<file_types::ChangedFile>) -> Self {
+        Self::of(BufferType::Explorer(Explorer::new(files)))
     }
 
     /// The one place `view_lines` and `blocks` are computed, so neither can be
@@ -278,7 +278,7 @@ impl Buffer {
             // first version of this and it was wrong.
             BufferAction::ToggleViewMode | BufferAction::ToggleStats => {
                 if let BufferType::Explorer(explorer) = &mut self.buffer_type {
-                    let landing = explorer.reshape(view.cursor(), |model| match action {
+                    let landing = explorer.reshape_around(view.cursor(), |model| match action {
                         BufferAction::ToggleViewMode => model.toggle_mode(),
                         _ => model.toggle_stats(),
                     });

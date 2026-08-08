@@ -22,7 +22,7 @@
 #[allow(clippy::module_inception)]
 mod buffer;
 mod colour;
-mod explorer;
+pub mod explorer;
 mod inline;
 mod side_by_side;
 mod single_file;

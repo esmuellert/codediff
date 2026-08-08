@@ -358,7 +358,7 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
         for file in &group.files {
             if file.path().as_str() == "staged-then-edited.txt" {
                 assert_eq!(file.change(), ChangeType::Modified);
-                found.push(group.name);
+                found.push(group.revs.heading());
             }
         }
     }

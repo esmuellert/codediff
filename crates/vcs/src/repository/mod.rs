@@ -97,7 +97,7 @@ impl Repository {
                 let commit = self.revs()?.before;
                 Ok(changes::split(entries, &self.repo.root, commit))
             }
-            Plan::Diff { name, args, revs } => {
+            Plan::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 let files = git::diff::name_status::run(&self.repo, &args, pathspec)?
                     .into_iter()
@@ -105,7 +105,7 @@ impl Repository {
                         changed_file::to_changed_file(change, &self.repo.root, revs.clone())
                     })
                     .collect();
-                Ok(vec![Changes { name, revs, files }])
+                Ok(vec![Changes { revs, files }])
             }
         }
     }

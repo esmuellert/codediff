@@ -352,9 +352,7 @@ impl Session {
         let buffer = self.view.buffer(pane.buffer);
         let cursor = pane.viewport.cursor();
         match buffer.buffer_type() {
-            crate::view::BufferType::Explorer(explorer) => {
-                Some(explorer.entry(cursor)?.file.clone())
-            }
+            crate::view::BufferType::Explorer(explorer) => Some(explorer.file(cursor)?.clone()),
             _ => None,
         }
     }

@@ -53,28 +53,21 @@ fn every_part_of_a_row_is_coloured_by_what_it_is() {
 fn every_status_letter_has_a_colour_of_its_own() {
     let theme = Theme::named("basic-dark").unwrap();
     let change = theme.change;
-    let groups = vec![
-        unstaged(vec![
-            untracked("new.txt"),
-            Entry::new(ChangedFile::reported(
-                File::unchanged_path(at("clash.rs"), revs()),
-                ChangeType::Conflicted,
-            )),
-        ]),
-        staged(vec![
-            Entry::new(ChangedFile::new(File::added(at("added.rs"), revs()), None)),
-            Entry::new(ChangedFile::new(
-                File::unchanged_path(at("edited.rs"), revs()),
-                None,
-            )),
-            Entry::new(ChangedFile::new(File::deleted(at("gone.rs"), revs()), None)),
-            Entry::new(ChangedFile::new(
-                File::renamed(at("was.rs"), at("now.rs"), revs()),
-                Some(90),
-            )),
-        ]),
+    let files = vec![
+        untracked("new.txt"),
+        ChangedFile::reported(
+            File::unchanged_path(at("clash.rs"), revs()),
+            ChangeType::Conflicted,
+        ),
+        ChangedFile::new(File::added(at("added.rs"), staged_revs()), None),
+        ChangedFile::new(File::unchanged_path(at("edited.rs"), staged_revs()), None),
+        ChangedFile::new(File::deleted(at("gone.rs"), staged_revs()), None),
+        ChangedFile::new(
+            File::renamed(at("was.rs"), at("now.rs"), staged_revs()),
+            Some(90),
+        ),
     ];
-    let mut session = Session::new(Buffer::explorer(groups), theme);
+    let mut session = Session::new(Buffer::explorer(files), theme);
     let letters = colours(&mut session, 40, 12, 39);
     // Unstaged in name order, then staged in name order.
     assert_eq!(letters[1], change.conflicted, "clash.rs");

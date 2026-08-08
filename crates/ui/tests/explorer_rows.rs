@@ -1,11 +1,12 @@
 //! What a row says, and what survives a narrow pane.
 //!
-//! The model is checked in the `explorer` crate and the fitting in
-//! `render::fit`; this is the two together with a viewport and a theme,
-//! which is the only place the whole thing can be wrong.
+//! The shape of the tree is checked in `explorer_tree.rs` and the placing in
+//! `draw::buffer::explorer::node`; this is all of it together with a viewport
+//! and a theme, which is the only place the whole thing can be wrong.
 //!
-//! **The characters are asserted here and nowhere else.** `explorer` reports
-//! facts, and `render::list` is what turns them into `▾`, `│ ` and `M`.
+//! **The characters are asserted against a real screen here.** The view
+//! reports facts, and `draw::buffer::explorer` is what turns them into `▾`,
+//! `│ ` and `M`.
 
 #![allow(dead_code, unused_imports)]
 
@@ -39,6 +40,59 @@ fn the_list_is_drawn_with_its_sections_guides_and_counts() {
             // can open, and rows one to three are a heading and two
             // directories.
             " changed files                          4/8".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn an_ancestor_that_was_last_leaves_blank_space_and_not_a_guide() {
+    // The shared fixture cannot show this: it has no directory that is both
+    // the last of its siblings and has children, so every guide column in it
+    // is a `│`. Without a tree shaped like this one, a renderer that drew
+    // `│ ` at every depth would pass every other test here.
+    let mut session = Session::new(
+        Buffer::explorer(vec![
+            untracked("nest/a/one.txt"),
+            untracked("nest/b/two.txt"),
+        ]),
+        Theme::named("basic-dark").unwrap(),
+    );
+    let rows = screen(&mut session, 30, 7);
+    assert_eq!(
+        &rows[..6],
+        [
+            "Changes (2)".to_string(),
+            "└ ▾ nest".to_string(),
+            // `nest` was the last of its siblings, so nothing runs down
+            // beside it — two spaces, not `│ `.
+            "  ├ ▾ a".to_string(),
+            "  │ └ one.txt               ??".to_string(),
+            "  └ ▾ b".to_string(),
+            "    └ two.txt               ??".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn the_flat_shape_draws_whole_paths_and_no_guides() {
+    // What VS Code's list mode does: no indent, no fold arrows, the whole
+    // path on each line. A guide here would draw a tree where there is none.
+    // See D69.
+    let mut session = Session::new(
+        Buffer::explorer(entries()),
+        Theme::named("basic-dark").unwrap(),
+    );
+    session.press(crokey::key!(i));
+    let rows = screen(&mut session, 44, 8);
+    assert_eq!(
+        &rows[..6],
+        [
+            "Changes (3 · +16 -3)".to_string(),
+            "notes.txt                                 ??".to_string(),
+            "src/app.rs                          +12 -3 M".to_string(),
+            "src/view/tab.rs                         +4 M".to_string(),
+            "Staged Changes (1 · +1 -1)".to_string(),
+            "README.md                            +1 -1 M".to_string(),
         ]
     );
 }

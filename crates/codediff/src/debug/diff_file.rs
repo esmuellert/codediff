@@ -30,7 +30,7 @@ fn find(path: &str) -> Result<file_types::ChangedFile> {
     let request =
         pipeline::list::Request::worktree(root.clone()).with_pathspec(vec![path.to_owned()]);
 
-    if let Some(file) = list::files(&request)?.into_iter().next() {
+    if let Some(file) = list::run(&request)?.into_iter().next() {
         return Ok(file);
     }
     let repo_path = file_types::RepoPath::new(path, &root);

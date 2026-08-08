@@ -1,6 +1,6 @@
 //! What set of files to show, and where from.
 //!
-//! Moved out of `explorer`, which declared it and never used it: nothing in
+//! Moved out of the file list, which declared it and never used it: nothing in
 //! that crate reads a request, because a request is what produces the files it
 //! is handed. See D67.
 

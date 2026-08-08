@@ -2851,6 +2851,9 @@ usual objection to `anyhow` in a library does not apply.
 
 ## D65 — a model reports facts; only a terminal picks characters
 
+**Superseded in part by [D68](#d68)**: the split of facts from characters holds,
+but `render` was the wrong side of the line to put `list.rs` and `fit.rs` on.
+
 `align` reports that a view line is a gap. It never says a gap is drawn `╱` —
 that word lives in `ui::render::column`, beside the theme that colours it.
 
@@ -3093,3 +3096,253 @@ only half of what it names.
 **Cargo did not rebuild** when an edit landed in the same second as the test
 command, so the first sabotage falsely passed. Edits and tests as separate
 commands is not enough — check for `Compiling` in the output.
+
+## D68 — a feature must not add a file to `render`
+
+**Extended by [D69](#d69)**, which keeps the rule and corrects where the file
+list's own pieces sit.
+
+[D65](#d65) split what was `render/explorer.rs` into `render/list.rs` (facts plus
+a theme, in text and colour) and `render/fit.rs` (drop the cheap pieces, cut the
+longest). It asked the right question of each — *is this general?* — and got
+yes, twice. The drop-then-cut rule really is general; the status line needs
+exactly it.
+
+It asked the wrong question. The right one is **did this arrive with a
+feature?**, and git answers it without argument:
+
+| commit | files added to `render/` |
+|---|---|
+| `290175c` draw the diff in a terminal | `cells.rs`, `gutter.rs` |
+| `cba7e18` one file renders one thing | `column.rs`, `layout.rs` |
+| `7f1d035` read a diff inline | — |
+| `64fa04e` D65, the file list | **`list.rs`, `fit.rs`** |
+
+Every other brick arrived with the terminal itself. Those two arrived with the
+explorer, and `render/list.rs` opened `use explorer::{Content, Guides, Row}` and
+matched on `Heading | Directory | File`. `render/mod.rs` says a brick "can be
+handed a rectangle and some text by anything", and `lint-arch` enforced that by
+banning `crate::view` — the file list's vocabulary walked in through a *crate*
+import instead, so the rule never fired. `list.rs` was the file list wearing a
+brick's name.
+
+**A tree is not a row.** The thing that kept `render/tree.rs` from being written
+as a reusable component is that two unrelated ideas were in one box. Nesting —
+who contains whom, what is open, what is therefore visible — has no width and no
+colour. A row — content from the left edge, content pinned to the right, and a
+rule for what goes when it will not fit — has no idea anything nests. The tree
+contributes a *prefix* to a row and nothing else.
+
+Which of the two generalises is settled by naming the second caller, not by
+inspection. The row has one: the status line drops a directory, then a rename,
+to keep the file name. The nesting does not — a commit graph is a DAG drawn as
+**lanes**, `│ ├ ─ ╮ ╰` weaving sideways, with no depth, no ancestors and nothing
+to collapse. So the row is what a second view would reuse, and the tree is a
+model.
+
+**The shape**, as this decision left it — [D69](#d69) then found the heading
+was in the wrong half and moved it, so the files below are not what is there
+now:
+
+```text
+view/buffer/explorer/     ←→   draw/buffer/explorer/
+├ mod.rs   the state           ├ mod.rs   which rows are on screen
+├ tree.rs  nests, folds,       ├ tree.rs  guides and fold arrows
+│          flattens            ├ list.rs  the flat view — no indent
+├ order.rs the two sorts       └ node.rs  one line: text, colour, placing
+└ filter.rs the glob
+```
+
+The flattening is recorded in the tree rather than walked at drawing time,
+because the viewport needs the row count before a frame to clamp the cursor —
+a walk that only ran while drawing would be a second answer to how many rows
+there are. It records **only which nodes**: `rows: Vec<NodeId>`.
+
+**A visible line is a node, not a `Row` beside one.** The first version of this
+kept both, the `Row` carrying the indent — `ancestors: Vec<bool>`, `is_last`,
+`is_heading` — on the inherited grounds that a guide is *"a fact about the walk
+and not a property of the node"*. That sentence is false, and it survived
+because it was moved rather than reread. Folding changes which nodes are
+*shown*; it never changes which children a node has. So once `sort` has run,
+both "am I the last of my siblings" and "was my ancestor at depth *d*" are
+permanent, and `is_heading` was never anything but `node_type == Heading`
+written twice.
+
+They live on the node now — `parent: Option<NodeId>` and `is_last: bool`,
+recorded once by `Tree::place` — and `draw` walks up the parents to build the
+indent. That is a handful of steps for the rows that fit on a screen, against a
+`Vec<bool>` allocated per row on every fold, and three fields that could
+contradict the tree they described.
+
+The `explorer` crate is gone, and with it `Entry`, `Group`, `Groups`, `Content`
+and `vcs::Changes::name`. A file already carries the two revisions it compares,
+so which group it is in is a field on it, and what the heading says is
+`Revs::heading()` — derived, so nothing can disagree with it. That is
+[D57](#d57) finally applied all the way down: the backend used to report
+`"Staged Changes"` *and* the revision pair that means it.
+
+**What is *not* shared.** `draw/buffer/explorer/node.rs` places one row and
+narrows it, and a commit list would write its own. What both use is
+`line_index`, which counts columns for everyone — and miscounting is what
+[B9](06-known-bugs.md) actually is: `draw/status.rs:110` says
+`path.file_name().chars().count()`. Characters, where a terminal counts columns.
+Sharing `fit` was never the fix for that; asking `line_index` is.
+
+### Verification
+
+612 tests pass, up from 610, with the same five pre-existing failures — three in
+`codediff/tests/terminal.rs` and two in `codediff/tests/pipeline.rs`, all
+confirmed failing on the parent commit in a clean worktree.
+
+Sabotage, counting tests that fail:
+
+| break | tests failed |
+|---|---|
+| `Rev::Index` heads "Changes" instead of "Staged Changes" | 19 |
+| every file put in one group instead of grouped by revision pair | 10 |
+| the gap takes one column instead of every spare one | 11 |
+| a guide drawn where an ancestor was the last of its siblings | 4 |
+| `is_last` recorded as `false` for every node | 17 |
+| `parent` never recorded, so the indent has no chain to walk | 13 |
+
+The guide row failed **one** test at first. The shared fixture has no directory
+that is both last among its siblings and has children, so every guide column in
+it is a `│` and a renderer that drew `│ ` at every depth passed everything.
+`an_ancestor_that_was_last_leaves_blank_space_and_not_a_guide` is that tree, on
+a real screen. D65 claimed this case failed three tests; it did not.
+
+## D69 — a heading is what an arrangement sits under, not part of one
+
+[D68](#d68) moved the file list out of `render` and into `view` and `draw`. It
+left one thing wrong, and the wrongness was visible as dead code: there was a
+`draw/buffer/explorer/list.rs` whose whole body asked whether a node was a
+directory, in a mode that has none. It could not fire. Nothing noticed, because
+there was no screen test of list mode at all — and `explorer_tree.rs` still
+asserted `├ ` before a flat path, because its helper built the indent itself
+instead of asking the renderer. The test and the screen disagreed and both
+passed.
+
+**The cause was that both arrangements owned the heading.** `Tree` made it a
+root node with everything hanging off it; the flat mode made it a `Line::
+Heading`. So each knew what a heading was, each counted files and summed stats
+for it, each held its fold — and each was a *tree* either way, since the flat
+one built an arena in order to walk it straight back into one line per file.
+
+A heading is not part of an arrangement. It is what an arrangement sits under.
+
+```text
+Explorer
+├ "Changes"         ── Style: a Tree, or a List, of that group's files
+└ "Staged Changes"  ── the same, arranged the same way
+```
+
+```text
+view/buffer/explorer/            draw/buffer/explorer/
+├ mod.rs     the state           ├ mod.rs        which lines are on screen
+├ group.rs   which comparison    ├ tree.rs       guides and fold arrows
+├ style.rs   asking whichever    └ view_line.rs  one line: text and placing
+├ tree.rs    the nested one
+├ list.rs    the flat one
+├ order.rs   what comes first
+└ filter.rs  the glob
+```
+
+Two functions in `group.rs` carry the numbering, because the groups are drawn
+one after another and the screen counts every line from zero while a style
+counts only its own: `get_heading_line` says which group's heading a line is,
+and `get_line_style` translates a screen line into a style and a line within
+it. Exactly one of them answers for any line — which was an enum until it was
+clear that three of its four callers wanted the same arm every time.
+
+`Explorer` owns the groups, the headings, the counts, the fold on a heading,
+and the numbering of lines across groups. A `Style` is handed one group's files
+and produces lines; it cannot name a heading because it is never given one.
+That is what makes a third arrangement a new variant and nothing else.
+
+An enum rather than a trait, for the reason `BufferType` is one: the set is
+closed, so adding a variant breaks the build until it is handled everywhere.
+
+**The order is VS Code's; the method is not.** `SCMTreeSorter` sorts the flat
+mode with `comparePaths`, whose one surprising rule is that a shallower file
+comes first — `a/z.rs` before `a/b/c.rs` — because the walk runs out of
+segments on one side and returns there. Ours did the opposite, since it
+compared whole paths as strings and `/` is below every letter. Names now
+compare numerically too, so `file9` precedes `file10`.
+
+VS Code folds case *inside* the comparison. Sorting twenty thousand paths makes
+about 287,000 comparisons, so that is 570,000 foldings of a forty-character
+string; transliterated to Rust it measured **81 ms**, against **25 ms** for the
+comparator it replaces. So `order.rs` builds a sort key once per path — twenty
+thousand foldings — and the sort is then a memcmp: **1.2 ms**. A key is
+deliberately *not* a total order, since two spellings of one name fold
+together; whatever sorts carries the path beside it as the tie-break, which is
+what a collator's own fallback does.
+
+**A measurement that corrected a claim.** The flat mode was thought to be
+avoiding the cost of building a tree. It was not: building the two shapes takes
+about the same time, and both are noise beside the 296 ms git spends before
+either runs ([D63](#d63)). What cost 19 ms of a 30 ms flat build was the
+comparator, in *both* modes. The split is worth making because the flat
+arrangement has no directories, no parents and nothing foldable — not because
+it is faster.
+
+**A node is what every node has, then what only its kind has.** `NodeType` was
+`Heading | Directory | File`. Once the heading left, the honest shape was the
+one gitui's `FileTreeItem` and broot's `TreeLine` — the two closest programs to
+this — already use: shared fields in the struct, the differing half in an enum
+beside them.
+
+```rust,ignore
+struct Node { name, parent, is_last, node_type: NodeType }
+enum NodeType {
+    File { index: usize },
+    Folder { children: Vec<NodeId>, open: bool },
+}
+```
+
+`name` and `parent` are asked of every node while drawing, so they are read
+without asking which kind it is. A folder's children and a file's index are
+each unreachable from the other — not because a constructor is careful, but
+because there is nowhere to put them. An intermediate version used
+`file: Option<usize>` with the children beside it, and that was strictly worse:
+it made "a file with children" writable, and it took two constructors and 22
+tests to forbid what the type above cannot express.
+
+It also caught a real fault immediately. `sort` and `place` descended into
+every node writing through a "give me your children" call that a file now has
+no answer to, and four tests panicked. The `Option` shape had accepted it in
+silence.
+
+And `Content` is now `ViewLine`, the counterpart of [`align::ViewLine`] — one
+line of a buffer as facts, before anything draws it. Two crates naming one idea
+alike is not the collision [D28](#d28) removed; that was one idea with two
+names. `draw/…/node.rs` became `view_line.rs` for the same reason: it draws
+headings too, and a heading has no node behind it.
+
+[`align::ViewLine`]: ../../crates/align/src/view_line.rs
+
+**Also gone: `flatten`.** A `bool` on the explorer with no key, no config and
+no caller, always `true`. Collapsing a chain of single-child directories is
+what `Tree` does; a switch nobody can reach is not a setting.
+
+### Verification
+
+627 tests pass, up from 612, with the same five pre-existing failures — three in
+`codediff/tests/terminal.rs` and two in `codediff/tests/pipeline.rs`, all
+confirmed failing on the parent commit in a clean worktree.
+
+Sabotage, counting tests that fail:
+
+| break | tests failed |
+|---|---|
+| a shallower path sorts last instead of first | 8 |
+| a run of digits compares as text | 2 |
+| a heading's fold does nothing | 3 |
+| a heading occupies no line | 4 |
+
+The last one hung, before there was a test for it. Dropping the heading's own
+line sends every lookup to a heading, and the scan in `first_file` then never
+advances — so the failure was a test run that did not terminate rather than an
+assertion. `every_line_resolves_to_a_different_place` names it instead: every
+line maps to its own place, and there is exactly one heading line per group. It
+fails in both arrangements.

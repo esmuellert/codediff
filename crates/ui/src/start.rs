@@ -18,7 +18,6 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use explorer::Group;
 
 use crate::app::{Session, run};
 use crate::theme::Theme;
@@ -35,16 +34,16 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
     // reader makes inside the review, not one they spell in git's revision
     // syntax before it opens. See D62.
     let request = pipeline::list::Request::worktree(cwd).with_pathspec(pathspec);
-    let groups = pipeline::list::run(&request)?;
+    let files = pipeline::list::run(&request)?;
 
     // Refused rather than opened. An empty list on a full screen looks like a
     // tool that failed to load, and there is nothing in it to press; the
     // reader wants to be told, and to get their shell back.
-    if groups.iter().all(Group::is_empty) {
+    if files.is_empty() {
         bail!("nothing has changed here — there is nothing to review");
     }
 
-    let mut session = Session::new(Buffer::explorer(groups), theme);
+    let mut session = Session::new(Buffer::explorer(files), theme);
     // The first file is asked for before the terminal opens, so it is already
     // being compared while the screen is set up. It arrives a frame or two
     // after the list rather than before it: a comparison runs on a thread of

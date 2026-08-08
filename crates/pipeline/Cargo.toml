@@ -11,7 +11,6 @@ publish = false
 
 [dependencies]
 align.workspace = true
-explorer.workspace = true
 file-types.workspace = true
 vcs.workspace = true
 vscode-diff.workspace = true

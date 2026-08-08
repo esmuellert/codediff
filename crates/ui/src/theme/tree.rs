@@ -4,12 +4,9 @@
 //!
 //! Taste, and only taste — the same split as [`Code`](super::Code). What a
 //! piece of a row *is* — that this one is a directory and that one is a
-//! section heading — is `explorer`'s answer, carried in its
-//! [`Content`](explorer::Content). This file says what a directory looks like,
-//! which every theme answers differently. [`render::list`] is where the two
-//! meet.
-//!
-//! [`render::list`]: crate::render::list
+//! heading — is the view's answer, carried on its nodes. This file says what
+//! a directory looks like, which every theme answers differently.
+//! `draw::buffer::explorer::node` is where the two meet.
 //!
 //! **Only what needs rows to mean anything.** An indent guide, a fold arrow, a
 //! section title, a count of what is under it — none of these mean anything

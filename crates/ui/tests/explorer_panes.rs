@@ -219,10 +219,7 @@ fn the_file_listed_twice_can_be_opened_from_either_section() {
         None,
     );
     let mut session = scripted(
-        vec![
-            unstaged(vec![Entry::new(in_unstaged.clone())]),
-            staged(vec![Entry::new(in_staged.clone())]),
-        ],
+        vec![in_unstaged.clone(), in_staged.clone()],
         theme,
         vec![
             single_file(in_unstaged.file, "the unstaged one\n"),

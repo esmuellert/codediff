@@ -1,17 +1,21 @@
-//! Asking the repository, and saying the answer in the explorer's words.
+//! Asking the repository, and attaching what it counted.
 //!
-//! The only place git's vocabulary and the explorer's are both spoken.
-//! `explorer` may not name `vcs` and `vcs` may not name `explorer` — `cargo
-//! xtask lint-arch` forbids both — so the translation happens here.
+//! Every file the request found, flat and carrying its line counts. How they
+//! are grouped is not decided here: a file already knows which two revisions
+//! it compares, so grouping is reading a field, and the layer that draws the
+//! headings is the one that phrases them.
 
 use anyhow::{Context, Result};
-use explorer::{Entry, Group, Groups};
-use vcs::{Changes, Counts, Repository};
+use file_types::ChangedFile;
+use vcs::Repository;
 
 use crate::list::Request;
 
-/// Every file the request finds, grouped by the comparison it belongs to.
-pub fn read(request: &Request) -> Result<Groups> {
+/// Every file the request finds, each with what it gained and lost.
+///
+/// A path that is staged and then edited again yields two, which is the honest
+/// answer: they are two comparisons of it, carrying different revisions.
+pub fn read(request: &Request) -> Result<Vec<ChangedFile>> {
     let mut repository = Repository::open(&request.repo).context("opening a repository")?;
     let changes = repository
         .changes(&request.diff_type, &request.pathspec)
@@ -26,28 +30,10 @@ pub fn read(request: &Request) -> Result<Groups> {
 
     Ok(changes
         .into_iter()
-        .filter(|group| !group.is_empty())
-        .map(|group| translate(group, &counts))
-        .collect())
-}
-
-/// One of the repository's groups, in the explorer's words.
-///
-/// The whole translation: a name, a revision pair, and files carrying their
-/// line counts. Nothing is decided here — which groups exist was decided by
-/// the comparison, and what is in them by the repository.
-fn translate(changes: Changes, counts: &Counts) -> Group {
-    let files = changes
-        .files
-        .into_iter()
-        .map(|file| {
-            let stats = counts.get(file.path().as_str()).copied();
-            let entry = Entry::new(file);
-            match stats {
-                Some(stats) => entry.with_stats(stats),
-                None => entry,
-            }
+        .flat_map(|group| group.files)
+        .map(|file| match counts.get(file.path().as_str()) {
+            Some(&stats) => file.with_stats(stats),
+            None => file,
         })
-        .collect();
-    Group::new(changes.name, changes.revs, files)
+        .collect())
 }

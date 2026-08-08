@@ -39,7 +39,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
         // and what the group *is* is the pair.
         println!(
             "{} ({}) {} -> {}",
-            group.name,
+            group.revs.heading(),
             group.files.len(),
             group.revs.before,
             group.revs.after
@@ -54,17 +54,25 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// `X  path [<- original]`, one line per file.
-fn line(file: &file_types::ChangedFile, verbose: bool) -> String {
-    let letter = match file.change() {
+/// Git's letter for what happened, as `git status` prints it.
+///
+/// Not the interface's: that one is beside the theme that colours it, and
+/// spells an untracked file `??` because a column of them reads better. This
+/// is a debug command echoing git.
+pub fn letter(change: ChangeType) -> &'static str {
+    match change {
         ChangeType::Added => "A",
         ChangeType::Modified => "M",
         ChangeType::Deleted => "D",
         ChangeType::Moved => "R",
         ChangeType::Untracked => "?",
         ChangeType::Conflicted => "U",
-    };
-    let mut out = format!("{letter}  ");
+    }
+}
+
+/// `X  path [<- original]`, one line per file.
+fn line(file: &file_types::ChangedFile, verbose: bool) -> String {
+    let mut out = format!("{}  ", letter(file.change()));
     if verbose {
         // Padded by display columns, not characters: a CJK filename is twice
         // as wide as its character count suggests.

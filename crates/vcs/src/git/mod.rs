@@ -55,8 +55,6 @@ pub enum Plan {
     Worktree,
     /// `git diff <args>`, one comparison.
     Diff {
-        /// What a heading will say.
-        name: &'static str,
         /// What goes after `diff`.
         args: Vec<String>,
         /// What those arguments mean in the reviewer's terms.
@@ -75,12 +73,10 @@ pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
     Ok(match diff_type {
         DiffType::Worktree => Plan::Worktree,
         DiffType::Against(rev) => Plan::Diff {
-            name: "Changes",
             args: vec![rev.clone()],
             revs: Revs::new(commit(rev)?, Rev::Worktree),
         },
         DiffType::Between(a, b) => Plan::Diff {
-            name: "Changes",
             args: vec![a.clone(), b.clone()],
             revs: Revs::new(commit(a)?, commit(b)?),
         },
@@ -89,13 +85,11 @@ pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
             // reason this is its own way of comparing rather than a spelling.
             let base = merge_base::run(repo, base, target)?;
             Plan::Diff {
-                name: "Changes",
                 args: vec![base.as_str().to_owned(), target.clone()],
                 revs: Revs::new(Rev::Commit(base), commit(target)?),
             }
         }
         DiffType::Staged(rev) => Plan::Diff {
-            name: "Staged Changes",
             args: vec!["--cached".to_owned(), rev.clone()],
             revs: Revs::new(commit(rev)?, Rev::Index),
         },

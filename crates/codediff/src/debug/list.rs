@@ -1,8 +1,8 @@
 //! `codediff debug list` — the groups a request produces.
 //!
 //! The list pipeline, printed. `debug status` shows what git said; this shows
-//! what the explorer will be handed, which is the other side of the
-//! translation and the only place the two can be compared.
+//! what the interface will be handed, grouped the way the interface groups it,
+//! which is the only place the two can be compared.
 //!
 //! Machine-readable on purpose: one line per group and one per file, so a test
 //! can assert on it without a terminal.
@@ -38,24 +38,43 @@ pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
 }
 
 /// Prints every group, and every file in it.
+///
+/// The pipeline answers flat, so the grouping happens here — by the revision
+/// pair each file carries, which is the same read the interface makes and the
+/// reason neither can disagree with the other.
 pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = vcs::Repository::open(&cwd)?.repo().root.clone();
     let request = pipeline::list::Request::new(root, diff_type).with_pathspec(pathspec);
 
-    for group in pipeline::list::run(&request)? {
+    let mut groups: Vec<(file_types::Revs, Vec<file_types::ChangedFile>)> = Vec::new();
+    for file in pipeline::list::run(&request)? {
+        let revs = file.file.revs();
+        match groups.iter_mut().find(|(seen, _)| *seen == revs) {
+            Some((_, files)) => files.push(file),
+            None => groups.push((revs, vec![file])),
+        }
+    }
+
+    for (revs, files) in groups {
         // The revisions, not only the name: a name is a label a human reads,
         // and what the group *is* is the pair.
         println!(
             "group {:?} {} -> {}",
-            group.name, group.revs.before, group.revs.after
+            revs.heading(),
+            revs.before,
+            revs.after
         );
-        for entry in &group.files {
-            let stats = match entry.stats {
+        for file in &files {
+            let stats = match file.stats {
                 Some(stats) => format!(" +{} -{}", stats.added, stats.removed),
                 None => String::new(),
             };
-            println!("  {} {}{stats}", entry.status(), entry.path());
+            println!(
+                "  {} {}{stats}",
+                super::status::letter(file.change()),
+                file.path()
+            );
         }
     }
     Ok(())

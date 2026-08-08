@@ -28,11 +28,6 @@ pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
         "vcs",
         "the aligned model is pure and must not perform IO",
     ),
-    (
-        "explorer",
-        "vcs",
-        "the explorer model is pure; obtaining entries belongs to vcs",
-    ),
     ("line-index", "vcs", "text measurement must not perform IO"),
     ("syntax", "vcs", "syntactic analysis must not perform IO"),
 ];
@@ -78,7 +73,6 @@ pub const PURE_CRATES: &[&str] = &[
     "line-index",
     "syntax",
     "align",
-    "explorer",
     "vscode-diff",
     "diff-types",
     "file-types",
