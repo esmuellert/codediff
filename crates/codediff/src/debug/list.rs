@@ -10,18 +10,8 @@
 use anyhow::Result;
 use vcs::DiffType;
 
-/// The words `debug list` takes, as a diff type.
-///
-/// It lives here because only this subcommand reaches it. The command line
-/// has no way to say any of it, and is not going to grow one: a reviewer
-/// should not have to know git's revision syntax to open a review. `a...b` is
-/// exact and almost nobody knows it. What compares against what is a decision
-/// made *inside* the review, where it can be shown and changed, the way
-/// lazygit does it. See D62.
-///
-/// The types themselves are real and reachable — the list pipeline resolves
-/// all five — so the interface has something to switch between when the keys
-/// for it arrive. This is how a test reaches them without a terminal.
+/// Parses `debug list` arguments into a diff type. Only this subcommand
+/// uses it — the main command line takes no revision arguments.
 pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
     use DiffType as Type;
     match (staged, rev.first().cloned(), rev.get(1).cloned()) {

@@ -83,18 +83,9 @@ mod overrides {
     pub const RUST: &str = "(char_literal) @character";
 }
 
-/// Every language we parse.
+/// Every language we parse. A [`Grammar`] is an index into this table.
 ///
-/// Adding one is a dependency and a row. The rows are not uniform because the
-/// crates are not: the query constant is `HIGHLIGHT_QUERY` in some and
-/// `HIGHLIGHTS_QUERY` in others, injections and locals are present or absent
-/// per crate, and TypeScript and PHP each expose two languages. Writing that
-/// out is duller than a macro and survives the next crate that is different
-/// again.
-///
-/// Order is meaning. A [`Grammar`] is an index into this, so rows may be
-/// added or edited but are read by position at runtime — which is fine,
-/// because the same build produces both ends.
+/// Adding one: add the crate dependency and a row here.
 pub static LANGUAGES: &[Parser] = &[
     Parser {
         name: "rust",
