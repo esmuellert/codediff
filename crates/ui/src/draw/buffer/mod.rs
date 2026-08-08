@@ -1,21 +1,11 @@
 //! What each buffer type looks like.
 //!
-//! One file draws one buffer type, and the files line up with the model:
-//!
 //! ```text
 //! view/buffer/side_by_side.rs  ←→  draw/buffer/side_by_side.rs
 //! view/buffer/inline.rs        ←→  draw/buffer/inline.rs
 //! view/buffer/single_file.rs   ←→  draw/buffer/single_file.rs
 //! view/buffer/explorer/       ←→  draw/buffer/explorer/
 //! ```
-//!
-//! The file list is a directory on each side because it is the one type with
-//! a shape of its own: what nests and what is open on the model's side, and
-//! three files' worth of drawing on this one.
-//!
-//! [`BufferType`] is declared in the file this one mirrors, and dispatched on
-//! here. Adding a type is a new arm below and a new file beside this one, and
-//! the compiler names the arm that is missing.
 
 mod explorer;
 mod inline;

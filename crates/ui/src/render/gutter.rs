@@ -1,9 +1,5 @@
-//! One line number.
-//!
-//! Its own file because it is drawn in two places — beside a diff's column and
-//! beside a single file — and two copies of "what a line number looks like"
-//! can drift. They never appear on one screen, so nothing would compare them
-//! and no test would catch it.
+//! One line number, drawn in its own file so the two call sites share one
+//! definition.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
