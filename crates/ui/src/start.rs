@@ -15,7 +15,7 @@ use crate::view::Buffer;
 pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<()> {
     let theme = theme_for(theme)?;
     let request = pipeline::list::Request::worktree(cwd).with_pathspec(pathspec);
-    let files = pipeline::list::run(&request)?;
+    let files = pipeline::list::get_files(&request)?;
 
     if files.is_empty() {
         bail!("nothing has changed here — there is nothing to review");

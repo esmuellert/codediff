@@ -79,7 +79,7 @@ pub fn unchanged(path: &str) -> File {
 
 /// One version of a file, as the worker would answer with it.
 ///
-/// What a test hands to [`Files::canned`], in the order it expects rows to be
+/// What a test hands to [`Files::mock`], in the order it expects rows to be
 /// opened. No repository is touched and no engine is run — what these check is
 /// what a pane shows, not how its contents were obtained.
 pub fn single_file(file: File, text: &str) -> Result<DiffContent, String> {
@@ -120,7 +120,7 @@ pub fn scripted(
     theme: Theme,
     script: Vec<Result<DiffContent, String>>,
 ) -> Session {
-    Session::with_files(Buffer::explorer(files), theme, Files::canned(script))
+    Session::with_files(Buffer::explorer(files), theme, Files::mock(script))
 }
 
 /// Opens the selected row and waits for its comparison.

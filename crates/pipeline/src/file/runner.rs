@@ -70,7 +70,7 @@ impl Runner {
     }
 
     /// Runs stages two to four.
-    pub fn run(&self) -> Result<DiffContent> {
+    pub fn compute_diff(&self) -> Result<DiffContent> {
         let file = self.contents.file().clone();
         match file.only() {
             // Nothing to compare against, so neither two columns nor an

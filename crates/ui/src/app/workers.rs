@@ -59,20 +59,20 @@ impl Session {
 
     /// Whether a file comparison is in progress.
     pub fn is_loading_file(&self) -> bool {
-        self.files.working()
+        self.files.is_busy()
     }
 
     /// Sends the selected file to the worker if one is pending and the worker
     /// is free.
     pub fn send_file_request(&mut self) {
         if let Some(file) = &self.selected {
-            self.files.request(file);
+            self.files.send_diff_request(file);
         }
     }
 
     /// Collects a finished file comparison. Never blocks.
     pub fn receive_file(&mut self) -> bool {
-        let Some(response) = self.files.take() else {
+        let Some(response) = self.files.poll() else {
             return false;
         };
         if self.selected.as_ref() != Some(&response.file) {
