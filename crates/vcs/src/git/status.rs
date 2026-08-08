@@ -116,18 +116,12 @@ pub enum Untracked {
     /// Every untracked file, recursing into untracked directories.
     #[default]
     All,
-    /// Untracked directories collapsed to one entry.
-    Normal,
-    /// None at all.
-    No,
 }
 
 impl Untracked {
     pub(crate) fn flag(self) -> &'static str {
         match self {
             Untracked::All => "--untracked-files=all",
-            Untracked::Normal => "--untracked-files=normal",
-            Untracked::No => "--untracked-files=no",
         }
     }
 }
@@ -344,7 +338,7 @@ mod tests {
         assert_eq!(entries[0].xy.index, Code::Renamed);
         assert_eq!(entries[0].score, Some(100));
         assert_eq!(
-            crate::repository::changed_file::to_file_diff(
+            crate::repository::list::status_entry_to_file(
                 entries[0].clone(),
                 std::path::Path::new("/repo"),
                 revs()
@@ -376,7 +370,7 @@ mod tests {
         let entries = parse(&bytes).expect("parses");
         assert_eq!(entries[0].path.as_str(), "conflict.txt");
         assert_eq!(
-            crate::repository::changed_file::to_file_diff(
+            crate::repository::list::status_entry_to_file(
                 entries[0].clone(),
                 std::path::Path::new("/repo"),
                 revs()
@@ -394,7 +388,7 @@ mod tests {
         assert_eq!(entries[0].xy.worktree, Code::Untracked);
         assert_eq!(entries[0].xy.index, Code::Unmodified);
         assert_eq!(
-            crate::repository::changed_file::to_file_diff(
+            crate::repository::list::status_entry_to_file(
                 entries[0].clone(),
                 std::path::Path::new("/repo"),
                 revs()

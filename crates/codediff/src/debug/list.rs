@@ -44,7 +44,7 @@ pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
 /// reason neither can disagree with the other.
 pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let root = vcs::Repository::open(&cwd)?.repo().root.clone();
+    let root = vcs::Repository::open(&cwd)?.repo_path().root.clone();
     let request = pipeline::list::Request::new(root, diff_type).with_pathspec(pathspec);
 
     let mut groups: Vec<(file_types::Revs, Vec<file_types::File>)> = Vec::new();

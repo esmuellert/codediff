@@ -3346,3 +3346,57 @@ advances — so the failure was a test run that did not terminate rather than an
 assertion. `every_line_resolves_to_a_different_place` names it instead: every
 line maps to its own place, and there is exactly one heading line per group. It
 fails in both arrangements.
+
+## D70 — an unresolved merge has no index, and a rename needs both its paths
+
+Two failures that had outlived several commits, and both were real rather than
+stale assertions.
+
+**A conflicted file was read from a stage git does not have.** Every unstaged
+file compared `Rev::Index` against the working tree, which git spells `:0`. A
+path in an unresolved merge has stages 1, 2 and 3 and *nothing* at stage 0, so
+the read did not come back empty — it failed:
+
+```text
+fatal: path 'conflict.txt' is in the index, but not at stage 0
+hint: Did you mean ':1:conflict.txt'?
+```
+
+`Rev::Conflict(Stage)` had existed since the type was written and nothing ever
+produced one. The unstaged side of a conflict is stage 2 — what the reader is
+merging *into*, the version they had before the merge began, and so the one the
+conflict markers in their working tree are a change to. And a conflict is no
+longer listed as staged at all: there is nothing at stage 0 to have staged, and
+nothing to review until it is resolved.
+
+**A rename is only visible when both its paths are.** `debug diff-file <path>`
+narrowed the status with a pathspec, which is the cheap way to ask git about
+one file — but git detects a rename by *pairing* a deletion with an addition,
+so a pathspec naming only the new path hides the deletion and `R100
+renamed-to.txt` comes back as `A. renamed-to.txt`. The file was found, and
+reported as added, with no before side.
+
+So the path is matched here rather than by git: the list is read whole and the
+file found by either of its names, which is also what makes the old name work.
+That is D58's rule seen from the other side — the list *is* the search, and
+narrowing it before searching it throws away what the search needed.
+
+### Verification
+
+633 tests pass and **none fail**, where five had failed on every commit for the
+length of this session. The two above were the real ones; the three in
+`terminal.rs` were [B8](06-known-bugs.md), which had diagnosed itself and was
+waiting for someone to read it.
+
+Sabotage: restoring `Rev::Index` for a conflicted file fails
+`every_changed_file_can_be_diffed_without_failing` with git's own error;
+restoring the pathspec fails `a_moved_file_is_found_by_either_of_its_paths` on
+both of the file's names.
+
+**Two tests were wrong in a way worth recording.** One sliced the status line
+at byte 8 to find the path, from when the line carried two status letters
+rather than one — so it read `conflict.txt` as `flict.txt` and reported a file
+that does not exist. The other asserted `1/4` in a status line that had been
+redrawn a digit at a time. Both were asserting on a *representation* rather
+than on what is on screen, and both went wrong the moment the representation
+moved.

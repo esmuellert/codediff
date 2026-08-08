@@ -11,11 +11,6 @@ use std::process::Command;
 use file_types::DiffVersion;
 use vcs::{DiffType, Repository};
 
-/// Where each comparison sits in what `changes` returns for a worktree: the working
-/// tree against the index first, then the index against the commit.
-const UNSTAGED: usize = 0;
-const STAGED: usize = 1;
-
 /// A repository built by hand, removed on drop.
 struct Repo {
     dir: PathBuf,
@@ -72,14 +67,14 @@ fn a_repository_with_no_commit_yet_lists_what_is_staged() {
 
     let mut git = repo.open();
     let changes = git
-        .changes(&DiffType::Worktree, &[])
+        .get_changed_files(&DiffType::Worktree, &[])
         .expect("listing an unborn repository");
-    assert_eq!(changes[STAGED].files.len(), 1);
-    assert_eq!(changes[STAGED].files[0].path().as_str(), "a.txt");
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].path().as_str(), "a.txt");
 
     // And the file reads, with nothing on the before side.
     let content = git
-        .read(&changes[STAGED].files[0], DiffVersion::Original)
+        .get_file_content(&changes[0], DiffVersion::Original)
         .expect("reading the before side");
     assert!(
         matches!(content, file_types::FileContent::Absent),
@@ -100,7 +95,9 @@ fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
     repo.git(&["mv", "f.txt", "g.txt"]);
 
     let mut git = repo.open();
-    let counts = git.counts(&DiffType::Worktree, &[]).expect("counting");
+    let counts = git
+        .get_line_stats(&DiffType::Worktree, &[])
+        .expect("counting");
     // The new name must be *in* the map. Defaulting a missing entry to zero
     // let an empty map pass, which is every way this could be broken.
     let stats = counts
@@ -127,14 +124,15 @@ fn a_symlink_is_its_target_and_not_the_file_it_points_at() {
     std::os::unix::fs::symlink("other.txt", repo.path().join("link.txt")).expect("a new link");
 
     let mut git = repo.open();
-    let changes = git.changes(&DiffType::Worktree, &[]).expect("listing");
-    let link = changes[UNSTAGED]
-        .files
+    let changes = git
+        .get_changed_files(&DiffType::Worktree, &[])
+        .expect("listing");
+    let link = changes
         .iter()
         .find(|f| f.path().as_str() == "link.txt")
         .expect("the link is listed");
     let content = git
-        .read(link, DiffVersion::Modified)
+        .get_file_content(link, DiffVersion::Modified)
         .expect("reading the link");
     match content {
         file_types::FileContent::Text(text) => assert_eq!(
@@ -157,23 +155,20 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
     repo.write("a.txt", "three\n");
 
     let mut git = repo.open();
-    let changes = git.changes(&DiffType::Worktree, &[]).expect("listing");
-    assert_eq!(
-        changes[UNSTAGED].files.len(),
-        1,
-        "the working tree against the index"
-    );
-    assert_eq!(
-        changes[STAGED].files.len(),
-        1,
-        "the index against the commit"
-    );
+    let changes = git
+        .get_changed_files(&DiffType::Worktree, &[])
+        .expect("listing");
+    // Two files for one path: each carries the pair of revisions it compares,
+    // which is what tells them apart now that the list is flat.
+    assert_eq!(changes.len(), 2, "one path, two comparisons");
+    assert_eq!(changes[0].revs().after, file_types::Rev::Worktree);
+    assert_eq!(changes[1].revs().after, file_types::Rev::Index);
 
     let unstaged = git
-        .read(&changes[UNSTAGED].files[0], DiffVersion::Original)
+        .get_file_content(&changes[0], DiffVersion::Original)
         .expect("reading");
     let staged = git
-        .read(&changes[STAGED].files[0], DiffVersion::Original)
+        .get_file_content(&changes[1], DiffVersion::Original)
         .expect("reading");
     // The whole reason one row could not show both: their before sides are
     // different files.
@@ -197,15 +192,20 @@ fn a_repository_that_converts_line_endings_diffs_only_what_changed() {
     repo.write("a.txt", "one\r\nTWO\r\nthree\r\nfour\r\n");
 
     let mut git = repo.open();
-    let changes = git.changes(&DiffType::Worktree, &[]).expect("listing");
-    let file = changes[UNSTAGED]
-        .files
+    let changes = git
+        .get_changed_files(&DiffType::Worktree, &[])
+        .expect("listing");
+    let file = changes
         .iter()
         .find(|f| f.path().as_str() == "a.txt")
         .expect("the file is listed");
 
-    let before = git.read(file, DiffVersion::Original).expect("reading");
-    let after = git.read(file, DiffVersion::Modified).expect("reading");
+    let before = git
+        .get_file_content(file, DiffVersion::Original)
+        .expect("reading");
+    let after = git
+        .get_file_content(file, DiffVersion::Modified)
+        .expect("reading");
     let (file_types::FileContent::Text(before), file_types::FileContent::Text(after)) =
         (before, after)
     else {

@@ -230,11 +230,16 @@ fn every_changed_file_can_be_diffed_without_failing() {
     let fixture = Fixture::new("all");
     let status = fixture.run(&["debug", "status"]);
 
+    // `  X  path`, which is two spaces, the status letter, two more, then the
+    // path — and the path may itself contain spaces, so it is what is left
+    // rather than a field. Slicing at a fixed offset is what made this test
+    // read `flict.txt`: the line used to carry two letters and now carries
+    // one.
     let paths: Vec<String> = status
         .lines()
-        .filter(|l| l.starts_with("  ") && l.len() > 8)
-        .filter_map(|l| l.get(8..).map(str::to_owned))
-        .filter(|p| !p.is_empty() && !p.contains(" <- "))
+        .filter_map(|line| line.strip_prefix("  ")?.split_once("  "))
+        .map(|(_letter, path)| path.trim().to_owned())
+        .filter(|path| !path.is_empty() && !path.contains(" <- "))
         .collect();
     assert!(
         paths.len() >= 8,

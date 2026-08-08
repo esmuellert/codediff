@@ -17,9 +17,9 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
     let cwd = std::env::current_dir().context("finding the current directory")?;
     let mut repository = Repository::open(&cwd).context("opening a repository")?;
 
-    let repo_path = RepoPath::new(path, &repository.repo().root);
+    let repo_path = RepoPath::new(path, &repository.repo_path().root);
     let bytes = repository
-        .at(rev, &repo_path)
+        .get_raw_content(rev, &repo_path)
         .with_context(|| format!("reading {spec}"))?;
 
     let Some(bytes) = bytes else {

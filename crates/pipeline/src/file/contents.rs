@@ -29,10 +29,10 @@ pub fn read(file: &File) -> Result<Contents> {
     let mut repository = Repository::open(file.path().root()).context("opening a repository")?;
     let file = file.clone();
     let original = repository
-        .read(&file, DiffVersion::Original)
+        .get_file_content(&file, DiffVersion::Original)
         .context("reading the before side")?;
     let modified = repository
-        .read(&file, DiffVersion::Modified)
+        .get_file_content(&file, DiffVersion::Modified)
         .context("reading the after side")?;
     Ok(Contents {
         file,

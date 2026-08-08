@@ -18,19 +18,18 @@ use crate::list::Request;
 pub fn read(request: &Request) -> Result<Vec<File>> {
     let mut repository = Repository::open(&request.repo).context("opening a repository")?;
     let changes = repository
-        .changes(&request.diff_type, &request.pathspec)
+        .get_changed_files(&request.diff_type, &request.pathspec)
         .context("listing changed files")?;
 
     // A failure to count is not a failure to review: the list is still correct
     // without the numbers, so a repository that will not answer loses the
     // counts rather than the whole screen.
     let counts = repository
-        .counts(&request.diff_type, &request.pathspec)
+        .get_line_stats(&request.diff_type, &request.pathspec)
         .unwrap_or_default();
 
     Ok(changes
         .into_iter()
-        .flat_map(|group| group.files)
         .map(|file| match counts.get(file.path().as_str()) {
             Some(&stats) => file.set_stats(stats),
             None => file,

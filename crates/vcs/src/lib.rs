@@ -26,6 +26,5 @@ mod repository;
 
 pub use error::{Error, Result};
 pub use git::diff::numstat::Counts;
-pub use git::status::Untracked;
 pub use repo::Repo;
-pub use repository::{Changes, DiffType, Repository};
+pub use repository::{DiffType, Repository};

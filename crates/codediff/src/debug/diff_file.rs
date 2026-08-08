@@ -26,11 +26,17 @@ use pipeline::list;
 fn find(path: &str) -> Result<file_types::File> {
     let cwd = std::env::current_dir()?;
     let git = vcs::Repository::open(&cwd)?;
-    let root = git.repo().root.clone();
-    let request =
-        pipeline::list::Request::worktree(root.clone()).with_pathspec(vec![path.to_owned()]);
-
-    if let Some(file) = list::run(&request)?.into_iter().next() {
+    let root = git.repo_path().root.clone();
+    // The whole list, and the path matched here rather than by git. Narrowing
+    // the status to one path costs the rename: git pairs a deletion with an
+    // addition to spot one, and a pathspec that names only the new path hides
+    // the deletion, so `R100 renamed-to.txt` comes back as `A. renamed-to.txt`
+    // instead. Either of a moved file's names has to find it.
+    let request = pipeline::list::Request::worktree(root.clone());
+    let listed = list::run(&request)?.into_iter().find(|file| {
+        file.path().as_str() == path || file.previous_path().is_some_and(|was| was.as_str() == path)
+    });
+    if let Some(file) = listed {
         return Ok(file);
     }
     let repo_path = file_types::RepoPath::new(path, &root);

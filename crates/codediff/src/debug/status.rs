@@ -15,36 +15,44 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     let mut repository = Repository::open(std::path::Path::new(dir))
         .with_context(|| format!("opening a repository at {dir}"))?;
 
-    let repo = repository.repo().clone();
+    let repo = repository.repo_path().clone();
     println!("root     {}", visible(&repo.root.display().to_string()));
     println!(
         "git dir  {}",
         visible(&repo.control_dir.display().to_string())
     );
 
-    let groups = repository
-        .changes(&DiffType::Worktree, &[])
+    let changed = repository
+        .get_changed_files(&DiffType::Worktree, &[])
         .context("reading what changed")?;
     println!();
-    if groups.iter().all(|group| group.files.is_empty()) {
+    if changed.is_empty() {
         println!("working tree clean");
         return Ok(());
     }
 
-    for group in &groups {
-        if group.files.is_empty() {
-            continue;
+    // The repository answers flat, so the grouping happens here — by the pair
+    // of revisions each file carries, which is the same read the interface
+    // makes and the reason neither can disagree with the other.
+    let mut groups: Vec<(file_types::Revs, Vec<&file_types::File>)> = Vec::new();
+    for file in &changed {
+        let revs = file.revs();
+        match groups.iter_mut().find(|(seen, _)| *seen == revs) {
+            Some((_, files)) => files.push(file),
+            None => groups.push((revs, vec![file])),
         }
+    }
+
+    for (revs, mut files) in groups {
         // The revisions, not only the name: a name is a label a human reads,
         // and what the group *is* is the pair.
         println!(
             "{} ({}) {} -> {}",
-            group.revs.heading(),
-            group.files.len(),
-            group.revs.before,
-            group.revs.after
+            revs.heading(),
+            files.len(),
+            revs.before,
+            revs.after
         );
-        let mut files: Vec<_> = group.files.iter().collect();
         files.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
         for file in files {
             println!("  {}", line(file, verbose));

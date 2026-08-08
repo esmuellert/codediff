@@ -153,27 +153,28 @@ today, and `doctor` checks none.
 
 ---
 
-## B8 — three terminal tests still describe the pre-pathspec screen
+## B8 — three terminal tests still describe the pre-pathspec screen ✅ fixed
 
-**Owner: the terminal tests.** `crates/codediff/tests/terminal.rs`.
+**Was: the terminal tests.** `crates/codediff/tests/terminal.rs`.
 
-`codediff <path>` is a pathspec on the list now (D58), so it draws the split —
-list on the left with focus, file on the right — where it used to draw one
-buffer. Three tests still assert the old screen and fail:
+`codediff <path>` is a pathspec on the list (D58), so it draws the split — list
+on the left with focus, file on the right — where it used to draw one buffer.
+Two of the three tests needed a `Tab` before their keys, so the diff has focus
+when `]c` and `t` arrive.
 
-| test | what it assumes |
-|---|---|
-| `a_one_sided_file_is_drawn_in_one_pane` | no `│` anywhere; the split always draws one |
-| `a_change_key_with_nowhere_to_go_says_so_on_a_real_terminal` | `]c` reaches the diff, not the list |
-| `the_layout_key_is_delivered_by_a_real_terminal` | the status line is the diff's, not the list's |
+The third could not be fixed by pressing a key: it showed "no second column" by
+the *absence* of `│`, and the split always draws one. It counts gutters now — a
+file with two sides numbers both, a one-sided file numbers only its own.
 
-The last two need a `Tab` before their keys. The first needs a different
-assertion: with a split there is always one divider, so "no second column" can
-no longer be shown by its absence.
+A fourth thing surfaced while fixing them: `the_layout_key_is_delivered_by_a_
+real_terminal` asserted on `1/4` in the status line, and taking focus rewrites
+only the cells that changed — the count goes from the list's `2/2` to the
+diff's `1/4` a digit at a time, so the phrase is never on the wire even though
+it is on the screen. It asserts on the fourth gutter instead, which is the grid
+rather than the redraw strategy.
 
-They were hidden because `cargo test --workspace` stops at the first failing
-target and `--test pipeline` fails earlier. **Run the suite with
-`--no-fail-fast`**, or targets after the first failure never run at all.
+**The trap this hid behind is still real.** `cargo test --workspace` stops at
+the first failing target, so targets after it never run. Use `--no-fail-fast`.
 
 ---
 
