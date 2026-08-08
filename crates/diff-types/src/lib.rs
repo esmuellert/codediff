@@ -2,9 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: is this part of *what a diff is*? Never how one is
-//! computed — that is `vscode-diff`, which owns the engine and depends on
-//! this.
 //!
 //! This crate has no dependencies, no build script and no `unsafe`. That is
 //! its whole purpose: everything downstream of the engine can name a diff

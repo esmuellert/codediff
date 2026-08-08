@@ -2,10 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: does this say *which line* appears where, or *what
-//! changed* about it? Pairing and grouping only — never what a view line **looks
-//! like**. Which view line a file line lands on is admitted, and is why two layouts
-//! live here; a style, a width or a cell is not.
 //!
 //! This crate performs no IO. It does hold the two texts — an [`Alignment`]
 //! shares both sides so the thread that colours can be handed them — but it

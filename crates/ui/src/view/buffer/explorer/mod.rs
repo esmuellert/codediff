@@ -2,8 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: does this decide *which files are listed and in what
-//! shape*? Never how they are read, and never how they look:
 //!
 //! ```text
 //! mod.rs     the state, and every key that changes it

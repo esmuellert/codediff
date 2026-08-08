@@ -2,9 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: does this decide *what is visible and where*? Four
-//! levels, each containing the next, and one file each — so the module tree
-//! and the model are the same picture:
 //!
 //! ```text
 //! view/            View     tabs, and every buffer any of them can show

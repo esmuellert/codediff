@@ -1,17 +1,8 @@
-//! What to compare, in the reviewer's words.
+//! What to compare.
 //!
-//! Five ways, and each is one command to the backend. A new one is an arm here
-//! and an arm in `git::plan` — nothing above this crate learns about it, and
-//! nothing below is told which the reader picked.
-//!
-//! **Revisions are held as the reader typed them** — `HEAD~3`, `main`, a tag —
-//! not as ids. Resolving needs a repository, and this has to be nameable
-//! without one.
-//!
-//! Named `DiffType` as [`file_types::DiffType`] is, and the two do not
-//! collide: that one is how a file is *read* — two columns, one column, alone
-//! — and this is what is being compared. The crate in front of the name says
-//! which.
+//! Five comparison modes, each mapping to one backend command. Revisions are
+//! held as the reader typed them (not as ids), since resolving needs a
+//! repository.
 
 /// Which comparison a review is of.
 #[derive(Debug, Clone, PartialEq, Eq)]

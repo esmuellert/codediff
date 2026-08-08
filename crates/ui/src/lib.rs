@@ -2,9 +2,6 @@
 //!
 //! ---
 //!
-//! Admission criterion: does this decide what appears on the screen, or what a
-//! keypress means? Presentation only — this crate cannot see a repository, and
-//! `cargo xtask lint-arch` fails if it tries.
 //!
 //! Three structural commitments worth stating up front.
 //!
