@@ -119,7 +119,7 @@ static KILLED: std::sync::LazyLock<[(i32, std::sync::Arc<std::sync::atomic::Atom
         ]
         .map(|signal| {
             let flag = std::sync::Arc::<std::sync::atomic::AtomicBool>::default();
-            // Ignored deliberately: failing to install a handler leaves the
+            // Ignored: failing to install a handler leaves the
             // signal's default action, which is what happened before this
             // existed. It must not stop the review.
             let _ = signal_hook::flag::register(signal, std::sync::Arc::clone(&flag));

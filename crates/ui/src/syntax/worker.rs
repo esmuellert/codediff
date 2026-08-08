@@ -3,13 +3,13 @@
 //! No file is read here, no repository consulted, no character drawn. Text
 //! arrives, spans leave.
 //!
-//! **Every request can be answered cold.** The worker remembers where it got
+//! Every request can be answered cold. The worker remembers where it got
 //! to in files it has not finished, but only as a shortcut: delete that memory
 //! and every answer is identical, only slower. That is the difference between
 //! a cache and a session, and it is why the asker may evict whatever it likes
 //! without telling anyone.
 //!
-//! **Only one engine can be resumed.** The matcher stops where it is asked and
+//! Only one engine can be resumed. The matcher stops where it is asked and
 //! carries on later; the parser has no range API and reads a whole file
 //! however little was wanted. A memo for a parsed file is therefore never
 //! made, because there is never anything left over.
@@ -122,7 +122,7 @@ fn respond(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mu
 
     if !answered {
         // Nothing to read: an empty file, or one already read past what was
-        // asked for. **Every request must be answered**, because the asker
+        // asked for. Every request must be answered, because the asker
         // holds a request for this file back until this one finishes — so
         // silence here would stop that file being coloured for good.
         let _ = answers.send(SyntaxResponse {

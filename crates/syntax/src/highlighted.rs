@@ -7,21 +7,21 @@
 //! line 40 never changes, and a prefix once read is read for good.
 //!
 //! What remains is that the answer for line 500 depends on lines 1 to 499, so
-//! reading can only ever go **forwards**. Jumping ahead costs the gap, once.
+//! reading can only ever go forwards. Jumping ahead costs the gap, once.
 //!
-//! **This keeps a count, not a corpus.** The spans go straight to the caller's
+//! This keeps a count, not a corpus. The spans go straight to the caller's
 //! buffer and are never held here, because the one caller that wants them is
 //! sending them somewhere else and the one thing only this can hold is the
 //! engine's position. Keeping both would be storing every span twice for the
 //! life of the read. See D42.
 //!
-//! **Both engines fit here, and only one of them is lazy.** The matcher stops
+//! Both engines fit here, and only one of them is lazy. The matcher stops
 //! where it is asked and resumes later; the parser has no way to read part of
 //! a file and returns the whole thing on the first ask. Nothing in this file
 //! branches on which: [`reach`](Self::reach) says how far it would like to get
 //! and [`done`](Self::done) says how far it actually got.
 //!
-//! **Nothing here is scheduled against frames.** It once was — a frame read
+//! Nothing here is scheduled against frames. It once was — a frame read
 //! what it could and an idle moment read a little more — and that could not
 //! survive an engine whose smallest unit of work is an indivisible quarter of
 //! a second. Colouring now happens on a thread of its own, so this may take as
@@ -94,7 +94,7 @@ impl Highlighted {
     /// costs nothing because it does not happen: a line already read is a line
     /// the caller already has.
     ///
-    /// May read **further** than asked. The parser has no range API, so it
+    /// May read further than asked. The parser has no range API, so it
     /// answers with the whole file however little was wanted;
     /// [`done`](Self::done) says what actually happened.
     pub fn reach(

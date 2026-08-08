@@ -2,7 +2,7 @@
 //!
 //! Every line of both versions gets a view line of its own: unchanged lines once,
 //! since both versions agree on them, then a change's deleted lines followed
-//! by its inserted ones. A change is therefore as tall as the **sum** of its
+//! by its inserted ones. A change is therefore as tall as the sum of its
 //! sides, where [`crate::side_by_side`] makes it as tall as the taller one.
 //! That single difference is the entire layout.
 //!

@@ -54,7 +54,7 @@ impl ChangeType {
 /// `None` on a side means the file does not exist there — added on the left,
 /// deleted on the right. Two `Some` with different paths is a rename.
 ///
-/// Everything a reader is told about a file is **derived** from this pair,
+/// Everything a reader is told about a file is derived from this pair,
 /// never stored beside it. That is the point: a `kind` field could disagree
 /// with the paths, and a formatted `label` field already did — it fused the
 /// path, the previous path and the added/deleted note into one string, after

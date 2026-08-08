@@ -31,7 +31,7 @@ const fn tab(keys: &'static [KeyCombination], action: TabAction) -> Binding {
 
 /// `<Tab>` is the only key live at every level.
 ///
-/// Moving the border is **not** here. A tab-level binding is live in every
+/// Moving the border is not here. A tab-level binding is live in every
 /// buffer, and a plain file has no border beside it, so `>` there would be a
 /// key that silently does nothing. The two resize keys are bound by the list
 /// instead — they still name [`TabAction`], because the tab is what executes

@@ -5,7 +5,7 @@
 //! cannot catch it, and neither can the compiler. The only guard is to run
 //! every selector against real source and insist it claims something.
 //!
-//! **Deliberately asks the matcher**, whatever the seam would choose. Every
+//! Deliberately asks the matcher, whatever the seam would choose. Every
 //! selector here is a TextMate scope path, which only that engine matches; a
 //! reader opening one of these files gets the parser instead. Which engine a
 //! real file gets is `ui`'s `colours.rs` to say, and this says nothing about

@@ -10,7 +10,7 @@
 //! of steps for a handful of lines: the depth of a repository's directories,
 //! once per line that fits on the screen.
 //!
-//! **Only the nested arrangement reaches here.** A flat list has no ancestors,
+//! Only the nested arrangement reaches here. A flat list has no ancestors,
 //! and a guide beside a whole path would draw a tree where there is none —
 //! which is what VS Code's own list mode refuses too. See D69.
 

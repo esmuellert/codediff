@@ -1,11 +1,10 @@
 //! The layout that shows both versions at once.
 //!
 //! Each row carries a slot for each version: two lines that correspond, or a
-//! line against a filler where one side has nothing. The two versions stay
-//! level down the screen — which is the whole point of the layout, and the
-//! reason two columns drawn from one view-line slice cannot drift apart.
+//! line against a filler where one side has nothing. Two columns drawn from
+//! one view-line slice cannot drift apart.
 //!
-//! **A change is split before its fillers are placed.** Where the engine found
+//! A change is split before its fillers are placed. Where the engine found
 //! character-level detail, the lines it matched are pulled level with each
 //! other and the fillers go around them, so a line that survived a rewrite
 //! sits beside itself rather than beside whatever happens to be that far down.

@@ -29,7 +29,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         (Some(Command::Debug(command)), _) => debug::run(command),
-        // A path is a **pathspec**, not a different mode: `codediff a.rs` is
+        // A path is a pathspec, not a different mode: `codediff a.rs` is
         // `codediff` narrowed to one file. One code path, so a file reached by
         // naming it and the same file reached by pressing enter on its row are
         // the same comparison — which they were not. See D58.

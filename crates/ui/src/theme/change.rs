@@ -7,17 +7,17 @@
 //! [`ChangeType`](file_types::ChangeType); this file says what each of them
 //! looks like, which every theme answers differently.
 //!
-//! **Not the file list's, though the list is what draws them today.** A change
+//! Not the file list's, though the list is what draws them today. A change
 //! is a fact about a file, so anything naming a file can want its colour — a
 //! header over a diff, a tab of open files, the bottom row. A table living
 //! inside one buffer type's would be the wrong place to look for it, which is
 //! the fault D65 removed one layer down. See D66.
 //!
-//! **Six colours rather than one**, because the column carrying them is what a
+//! Six colours rather than one, because the column carrying them is what a
 //! reviewer scans: a screen where a deletion and an addition look alike has to
 //! be read a word at a time.
 //!
-//! **A [`Change`] holds `Color`, not `Style`.** The background says which row
+//! A [`Change`] holds `Color`, not `Style`. The background says which row
 //! the reader is on, and a field that could set one would be able to hide it.
 //! Storing a colour rather than a style means a theme *cannot* express that
 //! mistake.

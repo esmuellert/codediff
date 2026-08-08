@@ -75,9 +75,8 @@ pub fn spans_single_file<'a>(read: &file::SingleFile, store: &'a Store) -> Spans
 
 /// Asks for one version of one file, up to `upto`.
 ///
-/// **Sends nothing** when the store already holds enough, which is the
-/// ordinary case after the first screen and the whole reason the store is
-/// on this side of the thread; when a request for that version is still
+/// Sends nothing when the store already holds enough (the ordinary case
+/// after the first screen); when a request for that version is still
 /// outstanding, since what was wanted meanwhile is asked for again on the
 /// next frame from a starting point that is current by then; or when the
 /// file does not exist on the side asked about, which has no text and so

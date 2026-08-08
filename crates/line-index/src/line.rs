@@ -106,7 +106,7 @@ impl<'a> LineIndex<'a> {
     }
 
     /// Byte offset of a UTF-16 column, rounding a column that lands inside a
-    /// character **up** to that character's end.
+    /// character up to that character's end.
     ///
     /// The counterpart to [`utf16_to_byte`](Self::utf16_to_byte), which rounds
     /// down. Which one is correct depends on whether the column opens or closes
@@ -124,7 +124,7 @@ impl<'a> LineIndex<'a> {
 
     /// Byte range covering a half-open span of UTF-16 columns.
     ///
-    /// **This is the conversion the diff engine's inner-change spans need.**
+    /// This is the conversion the diff engine's inner-change spans need.
     /// The engine compares individual UTF-16 code units, so it can report a
     /// span that begins or ends *inside* a character: `😀` and `🨀` differ only
     /// in their high surrogate, and the engine reports a one-unit change.
@@ -197,7 +197,7 @@ impl<'a> LineIndex<'a> {
     ///
     /// Cell position is not strictly increasing — combining marks and
     /// variation selectors occupy no columns — so several bytes can share a
-    /// cell. The **first** of them is returned, which is the one a renderer
+    /// cell. The first of them is returned, which is the one a renderer
     /// should start drawing from.
     ///
     /// Cells past the end of the line clamp to its end.

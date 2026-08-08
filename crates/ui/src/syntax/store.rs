@@ -1,6 +1,6 @@
 //! Every colour the interface has, kept until memory says otherwise.
 //!
-//! **All of the cache is on this side.** A frame that finds what it needs here
+//! All of the cache is on this side. A frame that finds what it needs here
 //! draws and sends nothing, so switching between two files costs one lookup
 //! rather than two parses. The worker keeps no results at all — only its place
 //! in a file it has not finished, which is a bookmark and not a copy.
@@ -204,7 +204,7 @@ pub enum Spans<'a> {
 impl<'a> Spans<'a> {
     /// How line `number` of one version is coloured.
     ///
-    /// **Numbered from 1**, like [`Alignment::line`] and like the gutter, and
+    /// Numbered from 1, like [`Alignment::line`] and like the gutter, and
     /// unlike the spans underneath, which are indexed from 0. The two
     /// conventions meet here and nowhere else: written at each call site
     /// instead, it was wrong at one of them, and a whole file coloured one line

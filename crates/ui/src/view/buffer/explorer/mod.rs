@@ -13,7 +13,7 @@
 //! filter.rs  hiding files by a glob
 //! ```
 //!
-//! **A group is a revision pair, and it belongs here.** "Staged Changes" is
+//! A group is a revision pair, and it belongs here. "Staged Changes" is
 //! not a category a file belongs to — it is the name for comparing the index
 //! against a commit, and every file already carries that pair. So the heading,
 //! how many files are under it, and whether it is open are all *this* file's,
@@ -33,7 +33,7 @@
 //! What a line looks like is [`draw::buffer::explorer`], which is where the
 //! theme is. Nothing here spells `▾`, `│ ` or `+4`.
 //!
-//! **The cursor is the selection.** There is one number, on the pane's
+//! The cursor is the selection. There is one number, on the pane's
 //! viewport. A second one here would be a second answer to "which line is the
 //! reader on", and the two would part company the first time a fold changed
 //! the line count.

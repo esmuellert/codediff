@@ -4,7 +4,7 @@
 //! `draw::buffer::explorer::node`; this is all of it together with a viewport
 //! and a theme, which is the only place the whole thing can be wrong.
 //!
-//! **The characters are asserted against a real screen here.** The view
+//! The characters are asserted against a real screen here. The view
 //! reports facts, and `draw::buffer::explorer` is what turns them into `▾`,
 //! `│ ` and `M`.
 

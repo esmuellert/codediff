@@ -72,7 +72,7 @@ impl Scope {
 /// the other, and it is why this is a table of paths rather than a list of
 /// names. See D36.
 ///
-/// **Position is meaning.** A [`Pen`] is an index into this table, so entries
+/// Position is meaning. A [`Pen`] is an index into this table, so entries
 /// may be added or edited but the table is read by position at runtime — which
 /// is fine, because the same build produces both ends.
 pub const SCOPES: &[Scope] = {
@@ -135,7 +135,7 @@ pub const SCOPES: &[Scope] = {
         // references agree — VS Code's `dark_plus` gives `storage.type` the
         // same blue as `keyword.control`, and Catppuccin sends
         // `@type.builtin` to Mauve. What earns the *type* colour below is a
-        // type's **name**, which is `entity.name.type` and `support.type`.
+        // type's name, which is `entity.name.type` and `support.type`.
         //
         // One rule, not eight. Every `storage.type.*` a grammar spells —
         // Rust's `.struct` and `.impl`, Go's `.keyword.func`, Java's

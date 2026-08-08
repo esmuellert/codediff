@@ -14,7 +14,7 @@
 //! counterpart here, and none can acquire one without first adding a second
 //! position field.
 //!
-//! Everything below is arithmetic over a **row count**, which the buffer
+//! Everything below is arithmetic over a row count, which the buffer
 //! supplies. That is what makes a motion generic: nothing here knows what a
 //! row contains — and nothing here may know, which is why the divider of a
 //! side-by-side diff lives on that buffer and not in this struct. A pane

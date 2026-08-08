@@ -6,7 +6,7 @@
 //! no idea what a hunk is, and the renderer has no idea what Catppuccin is;
 //! the two meet at the field names below.
 //!
-//! Each field is a **complete** style rather than a colour, so a theme can say
+//! Each field is a complete style rather than a colour, so a theme can say
 //! bold or reversed where a colour would not carry — which is what lets
 //! [`basic`] work on a terminal that has no 24-bit colour to give.
 //!

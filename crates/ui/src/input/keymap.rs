@@ -4,19 +4,19 @@
 //! each, `buffer`, `pane`, `tab`, `view`, `program` — so adding a command
 //! means touching one file, not two.
 //!
-//! **Lookup walks the containment hierarchy, innermost first.** That single
+//! Lookup walks the containment hierarchy, innermost first. That single
 //! fact does two jobs. It puts each level's bindings where the level is, and
 //! it makes *shadowing* the answer to scoping: a buffer kind that binds `<`
 //! claims it, and everywhere else the same key falls through to the tab. Exactly
 //! how Neovim's buffer-local mappings shadow global ones — and the reason a
 //! key's list and a key's executor need not be tied together.
 //!
-//! The tables are **data** — `const`, comparable, printable. A binding is a
+//! The tables are data — `const`, comparable, printable. A binding is a
 //! sequence of keys and an [`Action`] *value*, never a closure. A closure
 //! could not be rendered into a help screen, compared in a test, or held
 //! without capturing references to everything it might touch.
 //!
-//! Lookup gives the flat lists in [`bindings`] **trie semantics**: an action lives only
+//! Lookup gives the flat lists in [`bindings`] trie semantics: an action lives only
 //! at a leaf, so no binding may be a proper prefix of another. That is what
 //! vim's own built-in keymap does — `g`, `d`, `z`, `[` and `]` are all
 //! unbound alone — and it is why the resolver needs no clock. Ambiguity has
@@ -71,7 +71,7 @@ impl KeymapType {
 pub struct Binding {
     /// One entry for a single key, more for a sequence such as `gg`.
     ///
-    /// Written in **normalised** form — `key!(shift-g)` rather than
+    /// Written in normalised form — `key!(shift-g)` rather than
     /// `key!(G)` — because incoming events are normalised before lookup and
     /// the two must meet. A test checks every entry against its own
     /// normalisation.

@@ -104,7 +104,7 @@ fn build<S: AsRef<str>>(
 
 /// Hashes what the hunk *says*, not where it sits.
 ///
-/// Line numbers are deliberately excluded: inserting an unrelated function
+/// Line numbers are excluded: inserting an unrelated function
 /// above a hunk moves it without changing it, and a reviewer should not have to
 /// read it again.
 ///

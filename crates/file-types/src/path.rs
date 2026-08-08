@@ -62,7 +62,6 @@ impl RepoPath {
     ///
     /// Separate from [`file_name`](Self::file_name) so a status line can style
     /// them differently and drop the directory first when the width runs out.
-    /// That is the whole reason this type exists rather than a `String`.
     pub fn directory(&self) -> &str {
         match self.relative.rfind('/') {
             Some(at) => &self.relative[..at],

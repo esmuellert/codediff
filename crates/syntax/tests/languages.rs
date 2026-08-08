@@ -18,7 +18,7 @@ const MARKUP: Pen = Pen(4);
 
 /// The smallest theme that can tell the four apart.
 ///
-/// **Both tables, with the same pens.** Which engine reads a file is the
+/// Both tables, with the same pens. Which engine reads a file is the
 /// seam's business — a parser where we have a grammar, the matcher where we do
 /// not — and these assertions are about the language, not the engine. Giving
 /// both the same pens is what lets one test hold either way, and it is also

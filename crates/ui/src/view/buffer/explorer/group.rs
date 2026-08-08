@@ -1,6 +1,6 @@
 //! Which comparison a file is in, and which one a line falls in.
 //!
-//! **A group is a revision pair.** "Staged Changes" is not a category a file
+//! A group is a revision pair. "Staged Changes" is not a category a file
 //! belongs to — it is the name for comparing the index against a commit, and
 //! every file already carries that pair. So grouping reads a field rather than
 //! consulting a category a file was put in, and the heading is derived rather
@@ -15,7 +15,7 @@
 //! -- compatibility
 //! ```
 //!
-//! **A heading occupies a line.** That is what [`locate`] is for: the groups
+//! A heading occupies a line. That is what [`locate`] is for: the groups
 //! are drawn one after another, so a line number has to be resolved to a group
 //! and a line within it before anything can be asked about it.
 

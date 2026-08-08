@@ -8,7 +8,7 @@
 //!
 //! ---
 //!
-//! **Two engines, one file each, and one per file.**
+//! Two engines, one file each, and one per file.
 //!
 //! [`treesitter`] parses, so it knows that `Rect` in `area: Rect` is a type.
 //! [`syntect`] matches regular expressions against lines, so it does not — but
@@ -127,7 +127,7 @@ pub struct Palette {
 impl Palette {
     /// The colours both engines answer in.
     ///
-    /// **The only place a pen is given a number.** Both tables are numbered
+    /// The only place a pen is given a number. Both tables are numbered
     /// here, one after the other, and [`group`] reads them back with the same
     /// arithmetic ten lines away. Numbering assigned in two files is an
     /// agreement two files have to keep; numbered here it is one function that
@@ -216,7 +216,7 @@ impl Engine {
 
     /// Reads the lines in `want`, appending the spans for each.
     ///
-    /// **The range is a request, not a promise.** The matcher honours it, which
+    /// The range is a request, not a promise. The matcher honours it, which
     /// is what lets a frame stop halfway through a long file. The parser has no
     /// range API at all, so it reads everything and the caller gets more than
     /// it asked for — which is why [`Highlighted`] checks how far it actually

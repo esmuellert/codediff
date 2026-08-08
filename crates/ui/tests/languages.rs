@@ -3,7 +3,7 @@
 //! One case per construct per language: the words a reader looks for first —
 //! a keyword, a type, a function, a string, a comment — and the role each must
 //! end up wearing. Twenty-five of these go through the parser and the rest
-//! through the matcher, and **this file does not say which**. That is the
+//! through the matcher, and this file does not say which. That is the
 //! point: a reader does not care how the answer was reached, and a language
 //! moving between engines is caught here by the answer changing rather than by
 //! nothing at all.

@@ -62,7 +62,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, status: &Status<'_>, theme: &Theme) {
     };
 
     if status.timed_out {
-        // Deliberately loud. A diff the engine abandoned is not a diff, and a
+        // Loud. A diff the engine abandoned is not a diff, and a
         // reviewer who mistakes one for a complete one will approve code they
         // have not seen.
         x = cells::write(

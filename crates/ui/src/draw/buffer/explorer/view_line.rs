@@ -10,7 +10,7 @@
 //! and colour: `▾`, `+4`, `M`. That `align` reports a gap and never says a gap
 //! is drawn `╱` is the same division. See D65.
 //!
-//! **Arranging is part of drawing a line, not a brick of its own.** Where each
+//! Arranging is part of drawing a line, not a brick of its own. Where each
 //! piece goes, and which of them survive a pane too narrow to hold them, is
 //! one question with one answer, and it is asked here because this is where
 //! the pieces are. A tree of commits would arrange its own rows: a graph
@@ -243,7 +243,7 @@ fn push_stats(
 /// Git's letter for what happened.
 ///
 /// Git's letters where a [`ChangeType`] has one. It has six variants and git
-/// prints eight: a **copy** arrives as `Moved` and shows `R`, and a **type
+/// prints eight: a copy arrives as `Moved` and shows `R`, and a **type
 /// change** as `Modified` and shows `M`. Both are deliberate — what a reviewer
 /// does about either is read the new content, which is what those letters
 /// already promise.

@@ -5,7 +5,7 @@
 //! drives all three the way a reader does: open a file, scroll, come back, and
 //! see what was computed and what was not.
 //!
-//! **Perl throughout.** Only one of the two engines can read part of a file:
+//! Perl throughout. Only one of the two engines can read part of a file:
 //! the matcher stops where it is asked and carries on later, and the parser
 //! has no range API and reads everything however little was wanted. So a
 //! language the parser does not know is the only place laziness is visible at

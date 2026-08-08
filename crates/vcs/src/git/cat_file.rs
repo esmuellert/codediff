@@ -56,7 +56,7 @@ impl Batch {
     /// error: a diff against `HEAD` asks for both sides of every file and one
     /// of them is routinely absent.
     ///
-    /// **The path is taken as good.** A request ends at a newline, so a path
+    /// The path is taken as good. A request ends at a newline, so a path
     /// holding one would be read as two requests and every answer after it
     /// would belong to the wrong file. Checking here would be checking in the
     /// wrong place: a path is checked where one enters, not at each of the
@@ -119,7 +119,7 @@ impl Drop for Batch {
 /// Runs `git cat-file --filters <rev>:<path>`. `None` when the object does not
 /// exist, which is ordinary: one side of a diff is routinely absent.
 ///
-/// **Not batched.** `cat-file --batch --filters` reports the size of the
+/// Not batched. `cat-file --batch --filters` reports the size of the
 /// object *before* filtering and then writes the filtered bytes, so a reader
 /// framing by that size falls out of step with the stream. One process per
 /// file is the price of being right, and it is paid only when a file is

@@ -31,7 +31,7 @@ impl std::error::Error for Malformed {}
 
 /// A diff paired up with the two files it came from.
 ///
-/// **Owns** all three, and is therefore a plain value: it can be returned from
+/// Owns all three, and is therefore a plain value: it can be returned from
 /// a function, stored in a struct, and moved into a collection. That is the
 /// whole reason it owns them. A borrowing version cannot be returned by the
 /// stage that builds it — the texts it points at die when that function ends —

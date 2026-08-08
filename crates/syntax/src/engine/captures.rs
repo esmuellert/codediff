@@ -7,13 +7,13 @@
 //! the same [`Group`]s, which is what lets one theme serve two engines and a
 //! file look the same whichever read it.
 //!
-//! **Shorter than [`scopes`], and that is the point.** A capture is what the
+//! Shorter than [`scopes`], and that is the point. A capture is what the
 //! grammar's author already decided; there is no precedence to arrange, no
 //! contextual selector to get right, and no typo to hunt — a name that matches
 //! nothing simply never appears. Most of the work in `scopes` was fighting
 //! TextMate's matching rules, and none of it exists here.
 //!
-//! Matching is by **longest dotted prefix**, done by the engine: a query that
+//! Matching is by longest dotted prefix, done by the engine: a query that
 //! captures `@keyword.function` finds `keyword` here if `keyword.function` is
 //! not listed. So only the names that need a *different* answer from their
 //! prefix appear below, plus the prefixes themselves.

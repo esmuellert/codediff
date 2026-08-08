@@ -3,7 +3,7 @@
 //! ---
 //!
 //!
-//! One file per **executor**, each holding that executor's commands *and* the
+//! One file per executor, each holding that executor's commands *and* the
 //! keys bound to them — so a new command is one file, not two:
 //!
 //! ```text

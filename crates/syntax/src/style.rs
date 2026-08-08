@@ -1,8 +1,8 @@
 //! What a highlighter says about text, and what a caller says about colour.
 //!
-//! The two travel in opposite directions. A [`Rule`] goes **in**: `ui` says
+//! The two travel in opposite directions. A [`Rule`] goes in: `ui` says
 //! "anything matching `keyword.control` is mauve and italic". A [`Span`] comes
-//! **out**: "bytes 4..9 of this line wear that style".
+//! out: "bytes 4..9 of this line wear that style".
 //!
 //! Neither names an engine, and neither is a colour this crate chose.
 
@@ -66,7 +66,7 @@ impl Style {
 ///
 /// `selector` is a TextMate scope selector — `keyword.control`, or
 /// `string.quoted`, or the contextual `source.css entity.other.attribute-name`.
-/// Matching is by **prefix over a dotted path**, so `keyword` claims
+/// Matching is by prefix over a dotted path, so `keyword` claims
 /// `keyword.control.rust` unless a longer rule claims it more specifically.
 ///
 /// A path rather than one of a dozen category names, because a real theme

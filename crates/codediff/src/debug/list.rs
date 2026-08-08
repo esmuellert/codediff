@@ -12,7 +12,7 @@ use vcs::DiffType;
 
 /// The words `debug list` takes, as a diff type.
 ///
-/// It lives here because **only this subcommand reaches it**. The command line
+/// It lives here because only this subcommand reaches it. The command line
 /// has no way to say any of it, and is not going to grow one: a reviewer
 /// should not have to know git's revision syntax to open a review. `a...b` is
 /// exact and almost nobody knows it. What compares against what is a decision

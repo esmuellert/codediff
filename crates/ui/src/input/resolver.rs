@@ -4,7 +4,7 @@
 //! is not a command**: `g` alone means nothing, `5` alone means nothing.
 //! Something has to remember what came before, and this is that something.
 //!
-//! It **resolves and returns**; it never acts. What comes out goes back to the
+//! It resolves and returns; it never acts. What comes out goes back to the
 //! event loop, which is the only thing that can see all three kinds of
 //! answerer. That is what lets [`Resolver`] hold no references at all, and be
 //! a pure function of its own two fields plus one key — so a test is a string

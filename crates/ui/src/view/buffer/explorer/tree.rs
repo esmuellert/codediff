@@ -2,19 +2,19 @@
 //!
 //! ---
 //!
-//! **One group's files, and nothing about groups.** What a heading says, how
+//! One group's files, and nothing about groups. What a heading says, how
 //! many files are under it and whether it is open are [`Explorer`]'s, because
 //! a heading is what an arrangement sits *under* rather than part of one. This
 //! is handed some files and nests them; a second arrangement is handed the
 //! same files and does something else with them. See D69.
 //!
-//! **A visible line is a [`NodeId`].** Where a line sits is read off the node
+//! A visible line is a [`NodeId`]. Where a line sits is read off the node
 //! — what it hangs from, and whether it is the last of its siblings — because
 //! folding changes which nodes are *shown* and never which children a node
 //! has. Both are recorded once by [`Tree::place`], after the children are in
 //! their final order.
 //!
-//! **Facts, not characters.** That `▾` and `│ ` are how those look is `draw`'s
+//! Facts, not characters. That `▾` and `│ ` are how those look is `draw`'s
 //! answer, beside the theme that colours them — the same division `align`
 //! keeps when it reports that a view line is a gap without saying a gap is
 //! drawn `╱`. See D65.

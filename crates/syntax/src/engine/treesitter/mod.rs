@@ -9,10 +9,10 @@
 //!
 //! A parser knows. `Rect` is a `type_identifier` node, and the shipped
 //! `highlights.scm` says `(type_identifier) @type`. The same measurement here
-//! is **21%**, and what remains is plain locals, which Catppuccin draws in the
+//! is 21%, and what remains is plain locals, which Catppuccin draws in the
 //! ordinary text colour anyway.
 //!
-//! **This does not replace [`syntect`](super::syntect).** There are about
+//! This does not replace [`syntect`](super::syntect). There are about
 //! forty maintained grammars against two-face's 183 languages, so the TextMate
 //! engine stays as the fallback and a file we have no parser for is coloured
 //! exactly as it is today. See D39.
@@ -21,16 +21,16 @@
 //!
 //! Three things about this engine are worth knowing before reading it:
 //!
-//! - **It is not resumable.** `tree_sitter_highlight` has no range parameter;
+//! - It is not resumable. `tree_sitter_highlight` has no range parameter;
 //!   it parses the whole document every call. That would be fatal to a lazy
 //!   renderer if it were slow, but it runs at ~190 000 lines a second — more
 //!   than ten times `syntect` — so the whole file costs less than one of
 //!   `syntect`'s capped slices, and [`Highlighted`] simply gets everything on
 //!   the first ask.
-//! - **The queries are given, not written.** Each grammar crate ships its own
+//! - The queries are given, not written. Each grammar crate ships its own
 //!   `highlights.scm`. There is no table of scope selectors here, and none of
 //!   the TextMate precedence work that `theme::scopes` needed.
-//! - **We deliberately use the crates' own queries, not Neovim's.** The only
+//! - We deliberately use the crates' own queries, not Neovim's. The only
 //!   thing nvim-treesitter's forks add is `(identifier) @variable`, which
 //!   Catppuccin paints in the ordinary text colour — no visible difference —
 //!   and they use Neovim-only predicates (`#lua-match?`) that this engine

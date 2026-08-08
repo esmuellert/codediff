@@ -6,7 +6,7 @@
 //!
 //! In `a日🎉b`, the position of `b` is byte 8, char 3, UTF-16 unit 4, cell 5.
 //!
-//! All four are **zero-based**. The diff engine reports columns one-based, so
+//! All four are zero-based. The diff engine reports columns one-based, so
 //! [`Utf16Col::from_engine`] and [`Utf16Col::to_engine`] are the only places
 //! that adjustment happens.
 
@@ -19,7 +19,7 @@ macro_rules! coordinate {
         impl $name {
             pub const ZERO: Self = Self(0);
 
-            /// The underlying number. Deliberately verbose: reaching for this
+            /// The underlying number. Verbose on purpose: reaching for this
             /// is how a coordinate ends up used as the wrong kind.
             pub const fn get(self) -> u32 {
                 self.0

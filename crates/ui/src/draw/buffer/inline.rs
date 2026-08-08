@@ -1,7 +1,7 @@
 //! Drawing a diff one version per line, into one pane.
 //!
 //! Two gutters and one text column. Every line belongs to one version, and the
-//! **missing number is what says which**: no modified number means the line
+//! missing number is what says which: no modified number means the line
 //! was deleted, no original number means it was inserted. An unchanged line
 //! carries both, since both versions have it there.
 //!

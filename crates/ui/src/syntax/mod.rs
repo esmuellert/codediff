@@ -44,7 +44,7 @@ pub struct Syntax {
     /// the reader kept scrolling, and every response would be for a screen
     /// already gone.
     ///
-    /// **Holding the newest one back would be worse, not better.** A request
+    /// Holding the newest one back would be worse, not better. A request
     /// says how much of the file the asker already has, and that number moves
     /// every time a response lands — so a request waiting its turn is answered
     /// from a starting point that has since gone stale, and its lines are
