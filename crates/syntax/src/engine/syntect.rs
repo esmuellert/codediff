@@ -1,15 +1,7 @@
 //! The syntect (TextMate regex) engine.
 //!
-//! `cargo xtask lint-arch` refuses `syntect` anywhere else in the workspace,
-//! so everything above this file is written against [`Span`], [`Style`] and
-//! [`Rule`] and would survive the engine being replaced.
-//!
-//! Theme matching is syntect's, not ours. A scope selector is matched with
-//! TextMate's precedence rules — a longer path wins, and a rule may name an
-//! enclosing scope. That is a great deal of subtle comparison syntect has
-//! already tested against real themes, and rewriting it to avoid a dependency
-//! we have already taken would be work with no reader-visible result. What we
-//! keep is the *choice of colours*, which arrives as [`Rule`]s from `ui`.
+//! `lint-arch` refuses `syntect` outside this file. Theme matching (scope
+//! precedence) is syntect's own — we supply the colour choices as [`Rule`]s.
 
 use syntect::highlighting::{
     Color, FontStyle, HighlightState, Highlighter, RangedHighlightIterator, ScopeSelectors,
