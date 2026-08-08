@@ -85,7 +85,7 @@ pub struct View {
     /// Raising it for every open discards a little more than it must, since
     /// only one file was re-read. Colouring one file is what happens on any
     /// first open, so the cost is a frame; keeping this per file needs a
-    /// watcher to say which file moved, which is S14.
+    /// watcher to say which file moved.
     version: Version,
 }
 
