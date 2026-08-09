@@ -20,3 +20,4 @@ pub mod column;
 pub mod gutter;
 pub mod layout;
 pub mod line;
+pub mod selection;

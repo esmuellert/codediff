@@ -10,13 +10,14 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 
-use crate::draw::Look;
+use crate::draw::{Look, TextRects};
 use crate::render::cells::{self, Ink};
 use crate::render::gutter;
 use crate::render::layout::gutter_width;
 use crate::syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::SingleFile;
+use crate::view::selection::SelectionColumn;
 
 pub fn draw(
     buf: &mut Buffer,
@@ -24,11 +25,11 @@ pub fn draw(
     data: &SingleFile,
     view: &Viewport,
     look: Look<'_>,
-) -> bool {
+) -> Option<TextRects> {
     let Look { theme, syntax, .. } = look;
     let width = gutter_width(data.lines());
     if area.width < width + 4 || area.height == 0 {
-        return false;
+        return None;
     }
     let text = Rect {
         x: area.x + width,
@@ -97,5 +98,5 @@ pub fn draw(
             theme.normal,
         );
     }
-    true
+    Some(vec![(SelectionColumn::Only, text)])
 }

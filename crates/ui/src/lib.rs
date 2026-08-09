@@ -8,6 +8,8 @@ pub use ratatui;
 
 mod app;
 mod draw;
+
+pub use draw::screen_map::ScreenMap;
 pub mod input;
 mod render;
 mod start;

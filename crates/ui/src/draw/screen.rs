@@ -6,6 +6,7 @@
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
+use crate::draw::screen_map::ScreenMap;
 use crate::draw::{Look, status, tab};
 use crate::render::{cells, layout};
 use crate::syntax::Store;
@@ -13,11 +14,6 @@ use crate::theme::Theme;
 use crate::view::{Buffer, View, Viewport};
 
 /// Renders the whole interface into the terminal's cell grid.
-///
-/// `view` is taken by mutable reference for one reason: the frame is where a
-/// pane's height becomes known, and page motions need it. A terminal resize
-/// therefore needs no event of its own — the next frame simply has a different
-/// height, and the viewport re-examines itself when told.
 pub fn render(
     cells: &mut Cells,
     area: Rect,
@@ -25,7 +21,9 @@ pub fn render(
     theme: &Theme,
     store: &Store,
     notice: Option<&str>,
+    screen_map: &mut ScreenMap,
 ) {
+    screen_map.clear();
     let look = Look {
         theme,
         syntax: view.syntax(),
@@ -34,8 +32,9 @@ pub fn render(
     let Some((body, status_area)) = layout::screen(area) else {
         return too_small(cells, area, theme);
     };
+    screen_map.body = body;
 
-    if !tab::draw(cells, body, view, look) {
+    if !tab::draw(cells, body, view, look, screen_map) {
         return too_small(cells, area, theme);
     }
 

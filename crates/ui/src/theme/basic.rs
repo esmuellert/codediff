@@ -155,6 +155,8 @@ pub const DARK: Theme = Theme {
         .add_modifier(Modifier::BOLD)
         .add_modifier(Modifier::REVERSED),
 
+    selection: over(cube::DARK_BLUE),
+
     code: DARK_CODE,
     tree: super::tree::BASIC_DARK,
     change: super::change::BASIC_DARK,
@@ -185,6 +187,8 @@ pub const LIGHT: Theme = Theme {
         .fg(Color::Red)
         .add_modifier(Modifier::BOLD)
         .add_modifier(Modifier::REVERSED),
+
+    selection: over(cube::PALE_BLUE),
 
     code: LIGHT_CODE,
     tree: super::tree::BASIC_LIGHT,
