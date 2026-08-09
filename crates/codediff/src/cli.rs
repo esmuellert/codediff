@@ -14,6 +14,10 @@ pub struct Cli {
     #[arg(hide = true)]
     pub path: Option<String>,
 
+    /// Write debug logs to this file.
+    #[arg(long, hide = true, value_name = "PATH")]
+    pub log: Option<std::path::PathBuf>,
+
     /// Panic after taking over the terminal (for testing terminal restore).
     #[arg(long, hide = true)]
     pub self_panic: bool,

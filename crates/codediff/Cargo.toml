@@ -25,6 +25,7 @@ pipeline.workspace = true
 ui.workspace = true
 vcs.workspace = true
 vscode-diff.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true
