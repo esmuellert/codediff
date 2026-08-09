@@ -9,7 +9,7 @@ use file_types::File;
 use file_types::{DiffVersion, FileContent};
 use pipeline::file::DiffContent;
 
-use crate::text::visible;
+use crate::text::sanitize;
 use pipeline::file::Runner;
 use pipeline::list;
 
@@ -101,15 +101,15 @@ fn one_sided(runner: &Runner, present: DiffVersion) -> Result<()> {
     println!("{} line(s), {what}", numbered.len());
     println!();
     for (i, line) in numbered.iter().enumerate() {
-        println!("{:>5}   {}", i + 1, visible(line));
+        println!("{:>5}   {}", i + 1, sanitize(line));
     }
     Ok(())
 }
 
 fn header(diff: &File, original: &FileContent, modified: &FileContent) {
-    println!("{}", visible(diff.path().as_str()));
+    println!("{}", sanitize(diff.path().as_str()));
     if let Some(previous) = diff.previous_path() {
-        println!("moved from {}", visible(previous.as_str()));
+        println!("moved from {}", sanitize(previous.as_str()));
     }
     println!("{:?}", diff.get_change_type());
     println!();

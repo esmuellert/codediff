@@ -9,17 +9,17 @@ use anyhow::{Context, Result};
 use file_types::ChangeType;
 use vcs::{DiffType, Repository};
 
-use crate::text::{pad, visible};
+use crate::text::{pad, sanitize};
 
 pub fn run(dir: &str, verbose: bool) -> Result<()> {
     let mut repository = Repository::open(std::path::Path::new(dir))
         .with_context(|| format!("opening a repository at {dir}"))?;
 
     let repo = repository.repo_path().clone();
-    println!("root     {}", visible(&repo.root.display().to_string()));
+    println!("root     {}", sanitize(&repo.root.display().to_string()));
     println!(
         "git dir  {}",
-        visible(&repo.control_dir.display().to_string())
+        sanitize(&repo.control_dir.display().to_string())
     );
 
     let changed = repository
@@ -84,16 +84,16 @@ fn line(file: &file_types::File, verbose: bool) -> String {
     if verbose {
         // Padded by display columns, not characters: a CJK filename is twice
         // as wide as its character count suggests.
-        out.push_str(&pad(&visible(file.path().as_str()), 28));
+        out.push_str(&pad(&sanitize(file.path().as_str()), 28));
     } else {
-        out.push_str(&visible(file.path().as_str()));
+        out.push_str(&sanitize(file.path().as_str()));
     }
 
     if let Some(previous) = file
         .on(file_types::DiffVersion::Original)
         .filter(|original| original.as_str() != file.path().as_str())
     {
-        out.push_str(&format!(" <- {}", visible(previous.as_str())));
+        out.push_str(&format!(" <- {}", sanitize(previous.as_str())));
     }
     if verbose {
         let note = match file.get_change_type() {

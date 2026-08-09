@@ -8,7 +8,7 @@ use ::align::{Alignment, DiffVersion, Slot, ViewLine, ViewLineType};
 use anyhow::{Context, Result};
 use file_types::DiffType;
 
-use crate::text::{expand_str, fit, pad, visible};
+use crate::text::{expand_str, fit, pad, sanitize};
 
 /// Columns given to each file's text.
 const COLUMN: u32 = 44;
@@ -56,7 +56,7 @@ fn header(
     modified: &[&str],
     alignment: &Alignment,
 ) {
-    println!("{}  ->  {}", visible(original_path), visible(modified_path));
+    println!("{}  ->  {}", sanitize(original_path), sanitize(modified_path));
     println!(
         "{} lines -> {} lines, {} view lines",
         original.len(),
@@ -183,7 +183,7 @@ fn detail(alignment: &Alignment) {
                     label(version),
                     span.bytes.start,
                     span.bytes.end,
-                    visible(piece)
+                    sanitize(piece)
                 );
             }
         }

@@ -7,12 +7,12 @@
 use anyhow::{Context, Result};
 use line_index::{CellCol, DEFAULT_TAB_WIDTH, Grapheme, LineIndex};
 
-use crate::text::{display_width, expand, pad, visible};
+use crate::text::{display_width, expand, pad, sanitize};
 
 pub fn run(path: &str, verbose: bool) -> Result<()> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
 
-    println!("{}", visible(path));
+    println!("{}", sanitize(path));
     println!();
     if verbose {
         println!("Every character, with a cell ruler under each line:");
@@ -106,11 +106,11 @@ fn name(g: &Grapheme<'_>) -> String {
             .map(|c| match c {
                 '\u{200d}' => "+".to_owned(),
                 '\u{fe0f}' => String::new(),
-                c => visible(&c.to_string()),
+                c => sanitize(&c.to_string()),
             })
             .collect();
     }
-    visible(g.text)
+    sanitize(g.text)
 }
 
 /// A visual check that the computed widths match what the terminal draws:
