@@ -1,14 +1,16 @@
 //! The event loop: take worker results, wait for a key, dispatch, draw.
 //!
 //! ```text
-//! mod.rs      Session struct, constructors, draw, and the run loop
+//! mod.rs      Session struct, constructors, draw, run loop, and event router
 //! workers.rs  sending to and receiving from the two background threads
-//! input.rs    keys, mouse, and routing commands to executors
+//! keys.rs     key press and command dispatch
+//! mouse.rs    scroll, click, and hit-testing
 //! ```
 //!
 //! Nothing here computes a diff, touches git, or colours a line.
 
-mod input;
+mod keys;
+mod mouse;
 mod workers;
 
 use pipeline::file::Files;
@@ -120,6 +122,21 @@ impl Session {
         })?;
         self.update_hit_map(completed.area);
         Ok(())
+    }
+
+    /// Applies one terminal event — key or mouse.
+    pub fn handle_event(&mut self, event: &crossterm::event::Event) -> Flow {
+        use crossterm::event::Event;
+        match event {
+            Event::Key(_) => {
+                let Some(key) = crate::input::press(event) else {
+                    return Flow::Continue;
+                };
+                self.press(key)
+            }
+            Event::Mouse(mouse) => self.handle_mouse(mouse),
+            _ => Flow::Continue,
+        }
     }
 }
 
