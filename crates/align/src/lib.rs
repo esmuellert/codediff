@@ -12,7 +12,6 @@ mod hunk;
 pub mod inline;
 mod inner;
 mod layout;
-mod region;
 pub mod side_by_side;
 mod view_line;
 
@@ -20,5 +19,4 @@ pub use alignment::{Alignment, DiffVersion, Malformed};
 pub use hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 pub use inner::{Span, span_on, spans, spans_with_tab_width};
 pub use layout::ViewLines;
-pub use region::{UnchangedRegion, regions};
 pub use view_line::{Slot, ViewLine, ViewLineType, blocks, is_well_formed};
