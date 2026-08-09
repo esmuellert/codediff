@@ -27,7 +27,7 @@ pub fn draw(
     explorer: &Explorer,
     viewport: &Viewport,
     theme: &Theme,
-    focused: bool,
+    _focused: bool,
 ) -> bool {
     if area.width < 4 || area.height == 0 {
         return false;
@@ -40,7 +40,7 @@ pub fn draw(
             ..area
         };
         let index = visible.start + offset as u32;
-        let selected = focused && index == viewport.cursor();
+        let selected = index == viewport.cursor();
         let background = if selected {
             theme.cursor_line
         } else {

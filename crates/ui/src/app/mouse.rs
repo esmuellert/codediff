@@ -49,8 +49,10 @@ impl Session {
                     let line_in_pane = (mouse.row - area.y) as u32;
                     let (buffer, viewport) = self.view.focused_mut();
                     let target = viewport.top() + line_in_pane;
-                    let clamped = target.min(buffer.view_lines().saturating_sub(1));
-                    viewport.place(clamped, buffer.view_lines());
+                    if target >= buffer.view_lines() {
+                        return Flow::Continue;
+                    }
+                    viewport.place(target, buffer.view_lines());
                     if matches!(buffer.buffer_type(), BufferType::Explorer(_)) {
                         self.open();
                     }
