@@ -16,6 +16,7 @@ members = [
     "crates/syntax",
     "crates/ui",
     "crates/pipeline",
+    "crates/watcher",
     "crates/codediff",
     "xtask",
 ]
@@ -50,6 +51,7 @@ fixtures = { path = "crates/fixtures" }
 syntax = { path = "crates/syntax" }
 ui = { path = "crates/ui" }
 pipeline = { path = "crates/pipeline" }
+watcher = { path = "crates/watcher" }
 
 # The TextMate engine, and bat's extended grammar set. `onig` rather than
 # `fancy-regex`: it is the same Oniguruma VS Code compiles to WASM, four times
@@ -107,6 +109,15 @@ crokey = { version = "1.5", default-features = false }
 # Only for suspending: raw mode disables the terminal's own Ctrl-Z handling, so
 # the signal has to be raised by hand. Safe API; no `unsafe` in our crates.
 signal-hook = { version = "0.3", features = ["iterator"] }
+# Filesystem watcher: detects worktree and .git changes so the explorer stays
+# current without polling. The debouncer collapses rapid events into one.
+notify = "8.2"
+notify-debouncer-full = "0.7"
+# Respects .gitignore so build output never triggers a refresh.
+ignore = "0.4"
+# Structured logging. Only active when CODEDIFF_LOG is set; writes to stderr.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Test-only: allocates a real terminal so the alternate screen and raw mode can
 # be checked from outside the process that set them.
 portable-pty = { version = "0.9", default-features = false }
