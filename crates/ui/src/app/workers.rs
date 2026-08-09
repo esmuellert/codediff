@@ -19,7 +19,7 @@ impl Session {
         let mut idle = 0;
         while self.is_colouring() && idle < IDLE_ANSWERS {
             let held = self.store.get_cached_lines();
-            match self.syntax.next() {
+            match self.syntax.recv() {
                 Some(response) => changed |= self.store.install(response),
                 None => break,
             }

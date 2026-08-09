@@ -206,7 +206,7 @@ pub fn run(session: &mut Session, repo_root: &std::path::Path) -> std::io::Resul
         // Watcher event: re-list if the worker is free.
         if let Some(event::Event::FsChanged) = ev {
             tracing::debug!("fs change detected");
-            let request = pipeline::list::Request::worktree(&repo_root);
+            let request = pipeline::list::Request::worktree(repo_root);
             session.list_worker.send_request(request);
         }
 

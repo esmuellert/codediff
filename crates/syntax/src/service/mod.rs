@@ -109,7 +109,7 @@ impl Syntax {
     ///
     /// `None` means the worker has stopped, which can only happen if it
     /// panicked.
-    pub fn next(&mut self) -> Option<SyntaxResponse> {
+    pub fn recv(&mut self) -> Option<SyntaxResponse> {
         let response = self.answers.recv().ok()?;
         self.finish(&response);
         Some(response)
@@ -155,7 +155,7 @@ mod tests {
     fn drain(syntax: &mut Syntax) -> Vec<SyntaxResponse> {
         let mut out = Vec::new();
         while syntax.working() {
-            match syntax.next() {
+            match syntax.recv() {
                 Some(response) => out.push(response),
                 None => break,
             }
