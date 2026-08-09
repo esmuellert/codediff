@@ -5,9 +5,9 @@
 //! rather than two parses. The worker keeps no results at all — only its place
 //! in a file it has not finished, which is a bookmark and not a copy.
 //!
-//! Entries are dropped least-recently-used, capped by lines held rather than
+//! Entries are dropped least-recently-used, capped by total lines cached rather than
 //! by number of files, because files differ by three orders of magnitude and
-//! counting them measures nothing. The file being read is never dropped: it is
+//! counting them measures nothing. The file being coloured is never dropped: it is
 //! used every frame, so it is never the least recent, and that falls out of
 //! the ordering instead of needing a rule.
 
@@ -18,7 +18,7 @@ use syntax::Span;
 
 use super::message::{SyntaxResponse, Version};
 
-/// Lines held before the least recently used file is dropped.
+/// Max cached lines before the LRU file is evicted.
 ///
 /// Spans measured at 3.5 per line on our own source, so roughly 80 bytes a
 /// line: eight hundred thousand lines is about sixty-four megabytes. Generous
@@ -30,10 +30,10 @@ const BUDGET: usize = 800_000;
 ///
 /// Spans and nothing else. Deliberately not a `Highlighted`: that holds an
 /// engine's position, which is the worker's business, and the interface has no
-/// use for one when it is not the thing reading.
+/// use for one when it is not doing the colouring.
 #[derive(Debug, Default)]
 pub struct Colours {
-    read: Vec<Vec<Span>>,
+    lines: Vec<Vec<Span>>,
     /// Which content these describe. An answer for anything else is thrown
     /// away rather than mixed in.
     version: Version,
@@ -45,7 +45,7 @@ impl Colours {
     /// Nothing is the ordinary answer for a line not yet reached, and means
     /// "draw it plainly" rather than "this line has no colour".
     pub fn line(&self, line: u32) -> &[Span] {
-        self.read
+        self.lines
             .get(line as usize)
             .map(Vec::as_slice)
             .unwrap_or_default()
@@ -53,7 +53,7 @@ impl Colours {
 
     /// How many lines have arrived.
     pub fn lines(&self) -> u32 {
-        self.read.len() as u32
+        self.lines.len() as u32
     }
 
     /// Adds a piece, and says whether it was taken.
@@ -62,10 +62,10 @@ impl Colours {
     /// where the last one ended. The worker sends in order, but a stale answer
     /// must not be able to shorten or reorder what is already drawn.
     fn install(&mut self, response: SyntaxResponse) -> bool {
-        if response.version != self.version || response.from as usize != self.read.len() {
+        if response.version != self.version || response.from as usize != self.lines.len() {
             return false;
         }
-        self.read.extend(response.spans);
+        self.lines.extend(response.spans);
         true
     }
 }
@@ -78,7 +78,7 @@ pub struct Store {
     /// searched by key every time one is used, and at the handful of entries a review
     /// holds a scan beats a second index.
     order: Vec<String>,
-    held: usize,
+    cached_lines: usize,
 }
 
 impl Store {
@@ -103,15 +103,15 @@ impl Store {
     /// Marks a file as wanted now, and starts an entry if it has none.
     ///
     /// Called when a request is about to be sent. A file whose content has
-    /// changed loses what was read of it, because the old colours describe
+    /// changed loses what was cached of it, because the old colours describe
     /// text that is gone.
     pub fn start(&mut self, key: &str, version: Version) {
         match self.entries.get_mut(key) {
             Some(colours) if colours.version == version => {}
             Some(colours) => {
-                self.held -= colours.read.len();
+                self.cached_lines -= colours.lines.len();
                 *colours = Colours {
-                    read: Vec::new(),
+                    lines: Vec::new(),
                     version,
                 };
             }
@@ -119,7 +119,7 @@ impl Store {
                 self.entries.insert(
                     key.to_owned(),
                     Colours {
-                        read: Vec::new(),
+                        lines: Vec::new(),
                         version,
                     },
                 );
@@ -130,7 +130,7 @@ impl Store {
 
     /// Installs a piece, and says whether the screen may have changed.
     ///
-    /// An answer for a file no longer held is dropped: it was evicted while
+    /// An answer for an evicted file is dropped: it was removed while
     /// the worker was busy, and installing half of it would leave the file
     /// looking coloured when most of it is not.
     pub fn install(&mut self, response: SyntaxResponse) -> bool {
@@ -138,11 +138,11 @@ impl Store {
         let Some(colours) = self.entries.get_mut(&key) else {
             return false;
         };
-        let before = colours.read.len();
+        let before = colours.lines.len();
         if !colours.install(response) {
             return false;
         }
-        self.held += colours.read.len() - before;
+        self.cached_lines += colours.lines.len() - before;
         self.evict(&key);
         true
     }
@@ -150,33 +150,33 @@ impl Store {
     /// Drops least recently wanted files until inside the budget.
     ///
     /// `keeping` is never dropped however large it is — a single file over
-    /// budget is still the file being read, and colouring it only to throw it
+    /// budget is still the file being coloured, and colouring it only to throw it
     /// away would loop.
     fn evict(&mut self, keeping: &str) {
-        while self.held > BUDGET {
+        while self.cached_lines > BUDGET {
             let Some(position) = self.order.iter().position(|key| key != keeping) else {
                 return;
             };
             let key = self.order.remove(position);
             if let Some(colours) = self.entries.remove(&key) {
-                self.held -= colours.read.len();
+                self.cached_lines -= colours.lines.len();
             }
         }
     }
 
     fn mark_used(&mut self, key: &str) {
-        if let Some(position) = self.order.iter().position(|held| held == key) {
+        if let Some(position) = self.order.iter().position(|k| k == key) {
             self.order.remove(position);
         }
         self.order.push(key.to_owned());
     }
 
-    /// How many lines are held, for tests and for a status display.
-    pub fn held(&self) -> usize {
-        self.held
+    /// Total lines cached across all files.
+    pub fn get_cached_lines(&self) -> usize {
+        self.cached_lines
     }
 
-    /// How many versions of how many files are held.
+    /// How many file versions are cached.
     pub fn cached_count(&self) -> usize {
         self.entries.len()
     }
@@ -302,7 +302,7 @@ mod tests {
             "the old colours describe text that is gone"
         );
         assert_eq!(
-            store.held(),
+            store.lines_cached(),
             0,
             "and are not still counted against the budget"
         );
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn a_file_bigger_than_the_budget_is_still_kept() {
-        // Otherwise the one file being read would be coloured and thrown away
+        // Otherwise the one file being coloured would be coloured and thrown away
         // over and over.
         let mut store = Store::new();
         let a = key("huge.rs");

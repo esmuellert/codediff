@@ -25,12 +25,12 @@ pub fn draw(cells: &mut Cells, body: Rect, view: &mut View, look: Look<'_>) -> b
         return pane::draw(cells, body, view, view.tab().focus(), look);
     };
 
-    // A row at a time: `hatch` draws one row, and handing it a full-height
+    // A row at a time: `fill_repeat_pattern` draws one row, and handing it a full-height
     // rectangle drew the border only on the top line — as `side_by_side` does
     // for the divider between its own two columns.
     let style = look.theme.normal.patch(look.theme.divider);
     for y in border.y..border.bottom() {
-        cells::hatch(
+        cells::fill_repeat_pattern(
             cells,
             Rect {
                 y,

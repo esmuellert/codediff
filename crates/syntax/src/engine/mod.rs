@@ -34,14 +34,14 @@ pub enum Grammar {
     TextMate(syntect::Grammar),
 }
 
-/// How far through a file an engine has read.
+/// How far through a file an engine has coloured.
 ///
 /// The parser carries nothing between calls — it does the whole file at once —
 /// so its variant is only the grammar it has yet to use. The matcher's state
 /// is the reason it can stop and resume at all.
-pub enum Reading {
+pub enum EngineState {
     Tree(treesitter::Grammar),
-    TextMate(Box<syntect::Reading>),
+    TextMate(Box<syntect::SyntectState>),
 }
 
 /// Which syntax group a pen names, whichever engine produced it.
@@ -187,12 +187,12 @@ impl Engine {
         }
     }
 
-    /// Begins reading a file from its first line.
-    pub fn start(&self, grammar: Grammar, palette: &Palette) -> Reading {
+    /// Begins engine_state a file from its first line.
+    pub fn start(&self, grammar: Grammar, palette: &Palette) -> EngineState {
         match grammar {
-            Grammar::Tree(g) => Reading::Tree(g),
+            Grammar::Tree(g) => EngineState::Tree(g),
             Grammar::TextMate(g) => {
-                Reading::TextMate(Box::new(self.textmate.start(g, &palette.textmate)))
+                EngineState::TextMate(Box::new(self.textmate.start(g, &palette.textmate)))
             }
         }
     }
@@ -206,17 +206,17 @@ impl Engine {
     /// got rather than assuming.
     ///
     /// [`Highlighted`]: crate::Highlighted
-    pub fn read(
+    pub fn colour(
         &self,
-        reading: &mut Reading,
+        engine_state: &mut EngineState,
         palette: &Palette,
         lines: &[String],
         rows: Range<usize>,
         into: &mut Vec<Vec<Span>>,
     ) {
-        match reading {
-            Reading::Tree(grammar) => self.trees.read(*grammar, &palette.trees, lines, into),
-            Reading::TextMate(state) => {
+        match engine_state {
+            EngineState::Tree(grammar) => self.trees.colour(*grammar, &palette.trees, lines, into),
+            EngineState::TextMate(state) => {
                 self.textmate
                     .read(state, &palette.textmate, &lines[rows], into);
             }
@@ -360,9 +360,9 @@ mod tests {
         let palette = palette();
         let lines = vec!["fn a() {}".to_owned()];
         let read = |grammar: Grammar| {
-            let mut reading = engine.start(grammar, &palette);
+            let mut engine_state = engine.start(grammar, &palette);
             let mut out = Vec::new();
-            engine.read(&mut reading, &palette, &lines, 0..1, &mut out);
+            engine.read(&mut engine_state, &palette, &lines, 0..1, &mut out);
             out
         };
 

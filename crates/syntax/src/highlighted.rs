@@ -7,27 +7,27 @@
 //! Spans go straight to the caller; only the engine's position is held here.
 //!
 //! Both engines fit: the matcher resumes from where it stopped, the parser
-//! reads the whole file on the first ask. `reach`/`done` is the interface.
+//! reads the whole file on the first ask. `read_colours_to_line`/`lines_coloured` is the interface.
 
-use crate::engine::{Engine, Grammar, Palette, Reading};
+use crate::engine::{Engine, Grammar, Palette, EngineState};
 use crate::limits;
 use crate::style::Span;
 
 /// One version of one file, coloured as far as it has been read.
 pub struct Highlighted {
     /// How many lines from the top have been read.
-    done: u32,
+    lines_coloured: u32,
     /// Where the engine got to, or `None` once there is nothing more to do —
     /// either the file is finished, or it was never worth starting.
-    reading: Option<Box<Reading>>,
+    engine_state: Option<Box<EngineState>>,
 }
 
 impl std::fmt::Debug for Highlighted {
-    /// Written out rather than derived because `Reading` is a grammar's
+    /// Written out rather than derived because `EngineState` is a grammar's
     /// context stack, which no failing test is easier to read for.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Highlighted")
-            .field("done", &self.done)
+            .field("lines_coloured", &self.lines_coloured)
             .field("finished", &self.finished())
             .finish()
     }
@@ -42,8 +42,8 @@ impl Highlighted {
     /// been read.
     pub fn none() -> Self {
         Self {
-            done: 0,
-            reading: None,
+            lines_coloured: 0,
+            engine_state: None,
         }
     }
 
@@ -54,32 +54,32 @@ impl Highlighted {
             return Self::none();
         }
         Self {
-            done: 0,
-            reading: Some(Box::new(engine.start(grammar, palette))),
+            lines_coloured: 0,
+            engine_state: Some(Box::new(engine.start(grammar, palette))),
         }
     }
 
     /// How many lines have been read.
-    pub fn done(&self) -> u32 {
-        self.done
+    pub fn get_lines_coloured(&self) -> u32 {
+        self.lines_coloured
     }
 
     /// Whether there is anything left to read.
     pub fn finished(&self) -> bool {
-        self.reading.is_none()
+        self.engine_state.is_none()
     }
 
     /// Reads until `line` has been coloured, appending to `into`.
     ///
     /// `into` receives one entry per line read by *this* call, so a caller
-    /// draining it between calls gets each line exactly once. Reading back
+    /// draining it between calls gets each line exactly once. EngineState back
     /// costs nothing because it does not happen: a line already read is a line
     /// the caller already has.
     ///
     /// May read further than asked. The parser has no range API, so it
     /// answers with the whole file however little was wanted;
-    /// [`done`](Self::done) says what actually happened.
-    pub fn reach(
+    /// [`lines_coloured`](Self::lines_coloured) says what actually happened.
+    pub fn read_colours_to_line(
         &mut self,
         engine: &Engine,
         palette: &Palette,
@@ -99,23 +99,23 @@ impl Highlighted {
         into: &mut Vec<Vec<Span>>,
     ) {
         let target = target.min(lines.len());
-        if self.done as usize >= target {
+        if self.lines_coloured as usize >= target {
             return;
         }
-        let Some(reading) = self.reading.as_mut() else {
+        let Some(engine_state) = self.engine_state.as_mut() else {
             return;
         };
         // The range is what we *want*. One engine parses whole files and has
         // no way to do less, so it may come back having read everything —
         // which is why the check below is `>=` and not `==`.
         let before = into.len();
-        let from = self.done as usize;
-        engine.read(reading, palette, lines, from..target, into);
-        self.done += (into.len() - before) as u32;
-        if self.done as usize >= lines.len() {
+        let from = self.lines_coloured as usize;
+        engine.colour(engine_state, palette, lines, from..target, into);
+        self.lines_coloured += (into.len() - before) as u32;
+        if self.lines_coloured as usize >= lines.len() {
             // Nothing left to carry forward. Dropping it returns the grammar's
             // context stack, which for a deeply nested file is not nothing.
-            self.reading = None;
+            self.engine_state = None;
         }
     }
 }
@@ -148,7 +148,7 @@ mod tests {
 
     impl Case {
         fn reach(&mut self, line: u32) {
-            self.highlighted.reach(
+            self.highlighted.read_colours_to_line(
                 &self.engine,
                 &self.palette,
                 line,
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn nothing_is_read_until_someone_looks() {
         let case = rust(&["fn a() {}", "fn b() {}"]);
-        assert_eq!(case.highlighted.done(), 0);
+        assert_eq!(case.highlighted.get_lines_coloured(), 0);
         assert!(
             case.spans.is_empty(),
             "not read yet, so nothing handed back"
@@ -191,8 +191,8 @@ mod tests {
     #[test]
     fn reaching_a_line_reads_at_least_up_to_it() {
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.reach(1);
-        assert!(case.highlighted.done() >= 2, "at least what was asked for");
+        case.read_colours_to_line(1);
+        assert!(case.highlighted.get_lines_coloured() >= 2, "at least what was asked for");
         assert!(!case.spans[0].is_empty(), "`fn` is a keyword");
     }
 
@@ -201,8 +201,8 @@ mod tests {
         // The count and the spans must agree, because the caller uses the
         // count to decide where the spans belong.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.reach(2);
-        assert_eq!(case.spans.len(), case.highlighted.done() as usize);
+        case.read_colours_to_line(2);
+        assert_eq!(case.spans.len(), case.highlighted.get_lines_coloured() as usize);
     }
 
     #[test]
@@ -210,12 +210,12 @@ mod tests {
         // Two calls covering overlapping ranges must not repeat a line, or
         // the caller would install it twice at two different places.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.reach(0);
+        case.read_colours_to_line(0);
         let after_first = case.spans.len();
-        case.reach(2);
+        case.read_colours_to_line(2);
         assert_eq!(
             case.spans.len(),
-            case.highlighted.done() as usize,
+            case.highlighted.get_lines_coloured() as usize,
             "the second call appended only what the first had not"
         );
         assert!(
@@ -227,10 +227,10 @@ mod tests {
     #[test]
     fn reaching_a_line_already_read_does_nothing() {
         let mut case = rust(&["fn a() {}", "fn b() {}"]);
-        case.reach(1);
+        case.read_colours_to_line(1);
         let spans = case.spans.clone();
-        case.reach(0);
-        assert_eq!(case.highlighted.done(), 2, "did not go backwards");
+        case.read_colours_to_line(0);
+        assert_eq!(case.highlighted.get_lines_coloured(), 2, "did not go backwards");
         assert_eq!(case.spans, spans, "and did not change its mind");
     }
 
@@ -238,7 +238,7 @@ mod tests {
     fn a_file_read_to_its_end_reports_finished() {
         let mut case = rust(&["fn a() {}"]);
         assert!(!case.highlighted.finished());
-        case.reach(0);
+        case.read_colours_to_line(0);
         assert!(case.highlighted.finished(), "nothing left to carry forward");
     }
 
@@ -248,10 +248,10 @@ mod tests {
         // little was wanted, so a caller must look at `done` rather than
         // assume it got what it asked for.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.reach(0);
-        assert!(case.highlighted.done() >= 1, "at least the line asked for");
+        case.read_colours_to_line(0);
+        assert!(case.highlighted.get_lines_coloured() >= 1, "at least the line asked for");
         assert!(
-            case.highlighted.done() <= case.lines.len() as u32,
+            case.highlighted.get_lines_coloured() <= case.lines.len() as u32,
             "and never past the file"
         );
     }
@@ -263,8 +263,8 @@ mod tests {
         let palette = palette();
         let mut h = Highlighted::none();
         assert!(h.finished());
-        h.reach(&engine, &palette, 9_999, &[], &mut spans);
-        assert_eq!(h.done(), 0);
+        h.read_colours_to_line(&engine, &palette, 9_999, &[], &mut spans);
+        assert_eq!(h.get_lines_coloured(), 0);
         assert!(spans.is_empty(), "nothing to hand back");
     }
 }

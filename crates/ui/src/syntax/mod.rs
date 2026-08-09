@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn reading_further_continues_rather_than_starting_again() {
-        // The lines already held must not come back a second time: the store
+        // The lines already cached must not come back a second time: the store
         // refuses a piece that does not continue where the last ended, so a
         // repeat would be dropped and the file would stop growing.
         let mut syntax = Syntax::start();
