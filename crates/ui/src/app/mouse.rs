@@ -1,30 +1,14 @@
-//! Mouse event handling: scroll, click, and hit-testing.
+//! Mouse event handling: scroll, click, drag, and hit-testing.
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-use ratatui::layout::Rect;
 
-use crate::render::layout;
-use crate::view::{BufferType, Layout, PaneId};
+use crate::view::BufferType;
+use crate::view::selection::{Pos, Selection};
 
-use super::{Flow, HitMap, Session};
-
-impl HitMap {
-    /// Returns the pane at a screen position, if any.
-    fn hit_test(&self, col: u16, row: u16) -> Option<(PaneId, Rect)> {
-        self.panes
-            .iter()
-            .find(|(_, rect)| {
-                col >= rect.x
-                    && col < rect.x + rect.width
-                    && row >= rect.y
-                    && row < rect.y + rect.height
-            })
-            .map(|(id, rect)| (*id, *rect))
-    }
-}
+use super::{Flow, PendingSelection, Session};
 
 impl Session {
-    /// Handles a mouse event — scroll or click.
+    /// Handles a mouse event — scroll, click, or drag.
     pub(super) fn handle_mouse(&mut self, mouse: &MouseEvent) -> Flow {
         match mouse.kind {
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
@@ -33,7 +17,7 @@ impl Session {
                 } else {
                     3
                 };
-                if let Some((pane_id, _)) = self.hit_map.hit_test(mouse.column, mouse.row) {
+                if let Some((pane_id, _)) = self.screen_map.pane_at(mouse.column, mouse.row) {
                     let pane = self.view.tab().pane(pane_id);
                     let view_lines = self.view.buffer(pane.buffer).view_lines();
                     self.view
@@ -44,53 +28,98 @@ impl Session {
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if let Some((pane_id, area)) = self.hit_map.hit_test(mouse.column, mouse.row) {
+                // Clear any existing selection — a new click always resets.
+                self.view.selection = None;
+                self.pending_selection = None;
+
+                if let Some(ta) = self.screen_map.text_area_at(mouse.column, mouse.row) {
+                    let pane_id = ta.pane;
+                    let column = ta.column;
+                    self.view.tab_mut().set_focus(pane_id);
+                    let pos = ta.to_pos(
+                        mouse.column,
+                        mouse.row,
+                        &self.view.tab().pane(pane_id).viewport,
+                    );
+                    let buf_id = self.view.tab().pane(pane_id).buffer;
+                    let view_lines = self.view.buffer(buf_id).view_lines();
+                    if pos.line < view_lines {
+                        // Record anchor — selection starts only on drag.
+                        self.pending_selection = Some(PendingSelection {
+                            pane: pane_id,
+                            column,
+                            anchor: pos,
+                        });
+                        // Move cursor to the clicked line.
+                        self.view
+                            .tab_mut()
+                            .pane_mut(pane_id)
+                            .viewport
+                            .place(pos.line, view_lines);
+                    }
+                } else if let Some((pane_id, area)) =
+                    self.screen_map.pane_at(mouse.column, mouse.row)
+                {
                     self.view.tab_mut().set_focus(pane_id);
                     let line_in_pane = (mouse.row - area.y) as u32;
-                    let (buffer, viewport) = self.view.focused_mut();
-                    let target = viewport.top() + line_in_pane;
-                    if target >= buffer.view_lines() {
-                        return Flow::Continue;
+                    let buf_id = self.view.tab().pane(pane_id).buffer;
+                    let view_lines = self.view.buffer(buf_id).view_lines();
+                    {
+                        let viewport = &mut self.view.tab_mut().pane_mut(pane_id).viewport;
+                        let target = viewport.top() + line_in_pane;
+                        if target >= view_lines {
+                            return Flow::Continue;
+                        }
+                        viewport.place(target, view_lines);
                     }
-                    viewport.place(target, buffer.view_lines());
-                    if matches!(buffer.buffer_type(), BufferType::Explorer(_)) {
+                    if matches!(
+                        self.view.buffer(buf_id).buffer_type(),
+                        BufferType::Explorer(_)
+                    ) {
                         self.open();
                     }
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                // Promote pending to a real selection on first drag.
+                if let Some(pending) = self.pending_selection.take() {
+                    self.view.selection = Some((
+                        pending.pane,
+                        Selection::start(pending.column, pending.anchor),
+                    ));
+                }
+                // Update existing selection.
+                if let Some((pane_id, ref sel)) = self.view.selection
+                    && let Some(ta) = self.screen_map.text_area_of(pane_id, sel.column)
+                {
+                    let pos = ta.to_pos(
+                        mouse.column,
+                        mouse.row,
+                        &self.view.tab().pane(pane_id).viewport,
+                    );
+                    let view_lines = self
+                        .view
+                        .buffer(self.view.tab().pane(pane_id).buffer)
+                        .view_lines();
+                    let pos = Pos::new(pos.line.min(view_lines.saturating_sub(1)), pos.col);
+                    self.view.selection.as_mut().unwrap().1.update(pos);
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                // A click without drag — no selection created.
+                self.pending_selection = None;
+                // If selection exists but is empty (drag returned to anchor), clear.
+                if self
+                    .view
+                    .selection
+                    .as_ref()
+                    .is_some_and(|(_, sel)| sel.is_empty())
+                {
+                    self.view.selection = None;
                 }
             }
             _ => {}
         }
         Flow::Continue
-    }
-
-    /// Records where each pane landed, so a click can say which one it hit.
-    pub(super) fn update_hit_map(&mut self, area: Rect) {
-        self.hit_map.panes.clear();
-        let Some((body, _status)) = layout::screen(area) else {
-            self.hit_map.body = Rect::default();
-            return;
-        };
-        self.hit_map.body = body;
-
-        let places = match self.view.tab().layout() {
-            Layout::Split { left } => layout::split(body, left),
-            Layout::Full => None,
-        };
-        let panes: Vec<PaneId> = self.view.tab().ids().collect();
-        match places {
-            Some((left_area, _border, right_area)) => {
-                if let Some(&id) = panes.first() {
-                    self.hit_map.panes.push((id, left_area));
-                }
-                if let Some(&id) = panes.get(1) {
-                    self.hit_map.panes.push((id, right_area));
-                }
-            }
-            None => {
-                if let Some(&id) = panes.first() {
-                    self.hit_map.panes.push((id, body));
-                }
-            }
-        }
     }
 }

@@ -14,13 +14,20 @@
 mod buffer;
 mod pane;
 mod screen;
+pub mod screen_map;
 mod status;
 mod tab;
 
 pub use screen::render;
 
+use ratatui::layout::Rect;
+
 use crate::syntax::Store;
 use crate::theme::Theme;
+use crate::view::selection::SelectionColumn;
+
+/// Text areas produced by drawing a buffer. Used for hit-testing and overlay.
+pub(crate) type TextRects = Vec<(SelectionColumn, Rect)>;
 
 /// What every pane of a frame is drawn *with*, as opposed to what it draws.
 #[derive(Clone, Copy)]

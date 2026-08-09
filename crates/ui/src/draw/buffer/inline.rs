@@ -16,7 +16,7 @@ use file_types::DiffType;
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::draw::Look;
+use crate::draw::{Look, TextRects};
 use crate::render::layout::{self, InlineFrame};
 use crate::render::line::{self, Painter};
 use crate::render::{cells, gutter};
@@ -24,11 +24,11 @@ use crate::syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::Inline;
+use crate::view::selection::SelectionColumn;
 
 /// Draws one diff into the pane's area.
 ///
-/// Returns `false` if the pane is too narrow to draw, which the caller shows
-/// as a message rather than a corrupt frame.
+/// Returns `None` if the pane is too narrow to draw, or the text rects drawn.
 pub fn draw(
     buf: &mut Cells,
     area: Rect,
@@ -36,16 +36,14 @@ pub fn draw(
     data: &Inline,
     view: &Viewport,
     look: Look<'_>,
-) -> bool {
+) -> Option<TextRects> {
     let Look { theme, syntax, .. } = look;
     let alignment = data.alignment();
-    let Some(frame) = layout::inline(
+    let frame = layout::inline(
         area,
         alignment.lines(DiffVersion::Original).len() as u32,
         alignment.lines(DiffVersion::Modified).len() as u32,
-    ) else {
-        return false;
-    };
+    )?;
 
     let visible = view.visible(buffer.view_lines());
     let painter = Painter {
@@ -88,7 +86,7 @@ pub fn draw(
     for y in (frame.text.y + drawn)..frame.text.bottom() {
         cells::fill(buf, frame.row(y), theme.normal);
     }
-    true
+    Some(vec![(SelectionColumn::Only, frame.text)])
 }
 
 fn view_line(

@@ -17,10 +17,11 @@ use crate::theme::Theme;
 use crate::view::Viewport;
 use crate::view::buffer::Explorer;
 
+use crate::draw::TextRects;
+
 /// Draws the list into `area`.
 ///
-/// Returns `false` if the pane is too narrow to say anything, which the caller
-/// reports rather than filling with cut-off fragments.
+/// Returns `None` if the pane is too narrow to say anything.
 pub fn draw(
     cells: &mut Cells,
     area: Rect,
@@ -28,9 +29,9 @@ pub fn draw(
     viewport: &Viewport,
     theme: &Theme,
     _focused: bool,
-) -> bool {
+) -> Option<TextRects> {
     if area.width < 4 || area.height == 0 {
-        return false;
+        return None;
     }
     let visible = viewport.visible(explorer.view_lines());
     for (offset, y) in (area.y..area.bottom()).enumerate() {
@@ -60,5 +61,5 @@ pub fn draw(
         };
         view_line::draw(cells, line, &view_line, prefix, theme, background);
     }
-    true
+    Some(vec![])
 }

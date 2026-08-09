@@ -55,6 +55,9 @@ pub struct Theme {
     /// Patched over `status` for something the reader must not miss.
     pub warning: Style,
 
+    /// Mouse text selection highlight.
+    pub selection: Style,
+
     /// The colour of each kind of code.
     ///
     /// Apart from the rest because it is the only table indexed by something
@@ -132,7 +135,7 @@ impl Theme {
     }
 
     /// Every style, for tests that need to check all of them at once.
-    pub fn styles(&self) -> [Style; 14] {
+    pub fn styles(&self) -> [Style; 15] {
         [
             self.normal,
             self.deleted,
@@ -148,6 +151,7 @@ impl Theme {
             self.status,
             self.status_path,
             self.warning,
+            self.selection,
         ]
     }
 }

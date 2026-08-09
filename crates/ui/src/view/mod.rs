@@ -12,11 +12,13 @@
 
 pub mod buffer;
 mod pane;
+pub mod selection;
 mod tab;
 mod viewport;
 
 pub use buffer::{Buffer, BufferType, Direction};
 pub use pane::Pane;
+pub use selection::{Selection, SelectionColumn};
 pub use tab::{Layout, PaneId, Tab};
 pub use viewport::Viewport;
 
@@ -49,6 +51,8 @@ pub struct View {
     /// Incremented when a buffer is replaced, so the colour store discards
     /// stale spans.
     version: Version,
+    /// The single active mouse text selection, if any: (pane, range).
+    pub selection: Option<(PaneId, Selection)>,
 }
 
 /// Uninhabited — reserved for help/prompts.
@@ -66,6 +70,7 @@ impl View {
             overlays: Vec::new(),
             syntax: true,
             version: Version(1),
+            selection: None,
         };
         // The buffer decides where a reader starts, and the viewport is what
         // holds the answer — so the two are set together, here, rather than
@@ -155,6 +160,7 @@ impl View {
 
     /// Puts a buffer beside the list, splitting the tab if needed.
     pub fn show(&mut self, buffer: Buffer) {
+        self.selection = None;
         // Reuse the existing slot so we don't accumulate every file ever opened.
         let id = match self.tabs[self.active].right_pane_buffer() {
             Some(id) => {
@@ -196,6 +202,7 @@ impl View {
     /// Switches the diff between side-by-side and inline, keeping the cursor
     /// on the same file line.
     pub fn toggle_layout(&mut self) {
+        self.selection = None;
         let Some(pane) = self.reading() else {
             return;
         };

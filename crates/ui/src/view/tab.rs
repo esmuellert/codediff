@@ -33,6 +33,14 @@ const MAX_LEFT: u16 = 100;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PaneId(usize);
 
+impl PaneId {
+    /// For tests that need a pane id without building a tab.
+    #[cfg(test)]
+    pub(crate) fn new(index: usize) -> Self {
+        Self(index)
+    }
+}
+
 /// How a tab arranges its panes.
 ///
 /// A width in columns rather than a rectangle: where the border lands on a

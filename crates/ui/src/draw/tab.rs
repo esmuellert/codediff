@@ -7,22 +7,27 @@
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
+use crate::draw::screen_map::ScreenMap;
 use crate::draw::{Look, pane};
 use crate::render::{cells, layout};
 use crate::view::{Layout, PaneId, View};
 
 /// Draws every pane the tab has, in its own rectangle.
-///
-/// The split is refused rather than squeezed when the screen cannot hold both,
-/// and the focused pane gets the whole body instead — a diff twelve columns
-/// wide would be worse than a list the reader can close.
-pub fn draw(cells: &mut Cells, body: Rect, view: &mut View, look: Look<'_>) -> bool {
+pub fn draw(
+    cells: &mut Cells,
+    body: Rect,
+    view: &mut View,
+    look: Look<'_>,
+    screen_map: &mut ScreenMap,
+) -> bool {
     let places = match view.tab().layout() {
         Layout::Split { left } => layout::split(body, left),
         Layout::Full => None,
     };
     let Some((left_area, border, right_area)) = places else {
-        return pane::draw(cells, body, view, view.tab().focus(), look);
+        let focus = view.tab().focus();
+        screen_map.panes.push((focus, body));
+        return pane::draw(cells, body, view, focus, look, screen_map);
     };
 
     // A row at a time: `fill_repeat_pattern` draws one row, and handing it a full-height
@@ -51,7 +56,8 @@ pub fn draw(cells: &mut Cells, body: Rect, view: &mut View, look: Look<'_>) -> b
     let panes: Vec<PaneId> = view.tab().ids().collect();
     let fits = panes.iter().enumerate().all(|(index, &id)| {
         let rect = if index == 0 { left_area } else { right_area };
-        pane::draw(cells, rect, view, id, look)
+        screen_map.panes.push((id, rect));
+        pane::draw(cells, rect, view, id, look, screen_map)
     });
     if fits {
         return true;
@@ -60,5 +66,8 @@ pub fn draw(cells: &mut Cells, body: Rect, view: &mut View, look: Look<'_>) -> b
     // edge to edge, so the second attempt covers the border and whatever the
     // first attempt had drawn. Clearing here as well was measurably
     // redundant — removing it changed no test and no frame.
-    pane::draw(cells, body, view, view.tab().focus(), look)
+    screen_map.clear();
+    let focus = view.tab().focus();
+    screen_map.panes.push((focus, body));
+    pane::draw(cells, body, view, focus, look, screen_map)
 }

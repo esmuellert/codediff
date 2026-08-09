@@ -21,6 +21,7 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
 use crate::draw;
+use crate::draw::screen_map::ScreenMap;
 use crate::input::Resolver;
 use crate::syntax::{Store, Syntax};
 use crate::terminal::Screen;
@@ -34,15 +35,6 @@ pub enum Flow {
     /// Give the terminal back until the reader brings us forward again.
     Suspend,
     Quit,
-}
-
-/// Where each pane was drawn, so a mouse click can say which one it hit.
-///
-/// Updated after every frame, and read only on a click.
-#[derive(Debug, Default, Clone)]
-struct HitMap {
-    panes: Vec<(PaneId, Rect)>,
-    body: Rect,
 }
 
 /// One review session — the entire running program state.
@@ -60,7 +52,17 @@ pub struct Session {
     /// Error from the last file open, cleared on the next key.
     pub(crate) notice: Option<String>,
     /// Where each pane landed on the last frame.
-    hit_map: HitMap,
+    screen_map: ScreenMap,
+    /// A mouse-down that might become a selection if the user drags.
+    pending_selection: Option<PendingSelection>,
+}
+
+/// Recorded on mouse-down; promoted to a real Selection on first drag.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PendingSelection {
+    pub pane: PaneId,
+    pub column: crate::view::selection::SelectionColumn,
+    pub anchor: crate::view::selection::Pos,
 }
 
 impl Session {
@@ -84,7 +86,8 @@ impl Session {
             selected: None,
             store,
             notice: None,
-            hit_map: HitMap::default(),
+            screen_map: ScreenMap::default(),
+            pending_selection: None,
         }
     }
 
@@ -97,6 +100,11 @@ impl Session {
         &self.resolver
     }
 
+    /// The screen geometry from the last frame.
+    pub fn screen_map(&self) -> &crate::draw::screen_map::ScreenMap {
+        &self.screen_map
+    }
+
     /// Draws one frame into a cell grid (for tests, without a terminal).
     pub fn draw_into(&mut self, cells: &mut ratatui::buffer::Buffer, area: Rect) {
         draw::render(
@@ -106,15 +114,16 @@ impl Session {
             &self.theme,
             &self.store,
             self.notice.as_deref(),
+            &mut self.screen_map,
         );
-        self.update_hit_map(area);
     }
 
     pub fn draw<B: Backend>(
         &mut self,
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
-        let completed = terminal.draw(|frame| {
+        let mut screen_map = std::mem::take(&mut self.screen_map);
+        terminal.draw(|frame| {
             let area = frame.area();
             draw::render(
                 frame.buffer_mut(),
@@ -123,9 +132,10 @@ impl Session {
                 &self.theme,
                 &self.store,
                 self.notice.as_deref(),
+                &mut screen_map,
             );
         })?;
-        self.update_hit_map(completed.area);
+        self.screen_map = screen_map;
         Ok(())
     }
 

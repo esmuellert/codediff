@@ -11,7 +11,7 @@ use file_types::DiffType;
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::draw::Look;
+use crate::draw::{Look, TextRects};
 use crate::render::layout;
 use crate::render::line::Painter;
 use crate::render::{cells, column};
@@ -19,11 +19,11 @@ use crate::syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::SideBySide;
+use crate::view::selection::SelectionColumn;
 
 /// Draws one diff into the pane's area.
 ///
-/// Returns `false` if the pane is too narrow to draw, which the caller shows
-/// as a message rather than a corrupt frame.
+/// Returns `None` if the pane is too narrow to draw, or the text rects drawn.
 pub fn draw(
     buf: &mut Cells,
     area: Rect,
@@ -31,17 +31,15 @@ pub fn draw(
     data: &SideBySide,
     view: &Viewport,
     look: Look<'_>,
-) -> bool {
+) -> Option<TextRects> {
     let Look { theme, syntax, .. } = look;
     let alignment = data.alignment();
-    let Some(frame) = layout::columns(
+    let frame = layout::columns(
         area,
         data.divider(),
         alignment.lines(DiffVersion::Original).len() as u32,
         alignment.lines(DiffVersion::Modified).len() as u32,
-    ) else {
-        return false;
-    };
+    )?;
 
     let visible = view.visible(buffer.view_lines());
 
@@ -83,5 +81,8 @@ pub fn draw(
         );
     }
 
-    true
+    Some(vec![
+        (SelectionColumn::Original, frame.original.text),
+        (SelectionColumn::Modified, frame.modified.text),
+    ])
 }
