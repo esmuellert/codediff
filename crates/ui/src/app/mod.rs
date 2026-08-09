@@ -13,6 +13,7 @@
 mod event;
 mod keys;
 mod mouse;
+mod threads;
 mod workers;
 
 use pipeline::file::Files;
@@ -167,26 +168,10 @@ pub fn run(session: &mut Session, repo_root: &std::path::Path) -> std::io::Resul
     session.draw(screen.terminal())?;
 
     let (tx, rx) = mpsc::channel::<event::Event>();
-    event::spawn_reader(tx.clone());
+    threads::spawn_reader(tx.clone());
     #[cfg(unix)]
-    event::spawn_signals(tx.clone());
-
-    // Start the watcher with a forwarding thread.
-    let repo_root = repo_root.to_owned();
-    let watcher_root = repo_root.clone();
-    let tx_watch = tx;
-    std::thread::Builder::new()
-        .name("watcher-fwd".to_owned())
-        .spawn(move || {
-            if let Ok((_watcher, rx_watch)) = watcher::start(&watcher_root) {
-                for _refresh in rx_watch {
-                    if tx_watch.send(event::Event::FsChanged).is_err() {
-                        break;
-                    }
-                }
-            }
-        })
-        .expect("the watcher-fwd thread starts");
+    threads::spawn_signals(tx.clone());
+    threads::spawn_watcher(repo_root, tx);
 
     loop {
         let busy =
