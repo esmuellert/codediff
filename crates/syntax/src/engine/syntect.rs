@@ -138,12 +138,20 @@ impl Engine {
     /// having no spans, so a minified bundle cannot corrupt the lines after
     /// it. That is `bat`'s answer; `delta` truncates the text and loses the
     /// state.
-    fn read_line(&self, engine_state: &mut SyntectState, matcher: &Highlighter<'_>, line: &str) -> Vec<Span> {
+    fn read_line(
+        &self,
+        engine_state: &mut SyntectState,
+        matcher: &Highlighter<'_>,
+        line: &str,
+    ) -> Vec<Span> {
         engine_state.buffer.clear();
         engine_state.buffer.push_str(line);
         engine_state.buffer.push('\n');
 
-        let Ok(ops) = engine_state.parse.parse_line(&engine_state.buffer, &self.syntaxes) else {
+        let Ok(ops) = engine_state
+            .parse
+            .parse_line(&engine_state.buffer, &self.syntaxes)
+        else {
             // A grammar that failed on one line has not failed on the file.
             return Vec::new();
         };
@@ -152,14 +160,18 @@ impl Engine {
             return Vec::new();
         }
 
-        let spans =
-            RangedHighlightIterator::new(&mut engine_state.highlight, &ops, &engine_state.buffer, matcher)
-                .map(|(style, _, range)| {
-                    // The newline we added is not part of the line the caller holds.
-                    let end = range.end.min(line.len());
-                    Span::new(range.start as u32..end as u32, convert(style))
-                })
-                .collect();
+        let spans = RangedHighlightIterator::new(
+            &mut engine_state.highlight,
+            &ops,
+            &engine_state.buffer,
+            matcher,
+        )
+        .map(|(style, _, range)| {
+            // The newline we added is not part of the line the caller holds.
+            let end = range.end.min(line.len());
+            Span::new(range.start as u32..end as u32, convert(style))
+        })
+        .collect();
         coalesce(spans)
     }
 }

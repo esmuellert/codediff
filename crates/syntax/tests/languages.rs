@@ -57,7 +57,7 @@ fn read(path: &str, source: &str) -> Vec<Vec<Span>> {
         .unwrap_or_else(|| panic!("no grammar claims {path}"));
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &lines);
     let mut spans = Vec::new();
-    highlighted.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
+    highlighted.read_colours_to_line(&engine, &palette, lines.len() as u32, &lines, &mut spans);
     spans
 }
 
@@ -258,7 +258,7 @@ fn an_unrecognised_file_is_plain_rather_than_a_failure() {
     );
     // And the caller's answer for such a file is "no spans", not a panic.
     let nothing = Highlighted::none();
-    assert_eq!(nothing.done(), 0);
+    assert_eq!(nothing.get_lines_coloured(), 0);
     assert!(nothing.finished());
 }
 

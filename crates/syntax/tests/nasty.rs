@@ -38,7 +38,7 @@ fn read(path: &str, lines: &[&str]) -> Vec<Vec<Span>> {
         .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &owned);
     let mut spans = Vec::new();
-    highlighted.reach(&engine, &palette, owned.len() as u32, &owned, &mut spans);
+    highlighted.read_colours_to_line(&engine, &palette, owned.len() as u32, &owned, &mut spans);
     spans
 }
 
@@ -101,7 +101,7 @@ fn a_file_too_big_to_read_is_left_plain_rather_than_refused() {
         .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &huge);
     let mut spans = Vec::new();
-    highlighted.reach(&engine, &palette, 10, &huge, &mut spans);
+    highlighted.read_colours_to_line(&engine, &palette, 10, &huge, &mut spans);
     assert!(highlighted.finished(), "there is nothing to do");
     assert!(spans.is_empty(), "and nothing was handed back");
 }

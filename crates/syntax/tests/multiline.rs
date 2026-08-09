@@ -42,7 +42,7 @@ fn read(path: &str, source: &str) -> Vec<Vec<Span>> {
         .expect("a grammar");
     let mut highlighted = Highlighted::new(&engine, grammar, &palette, &lines);
     let mut spans = Vec::new();
-    highlighted.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
+    highlighted.read_colours_to_line(&engine, &palette, lines.len() as u32, &lines, &mut spans);
     spans
 }
 
@@ -134,7 +134,7 @@ fn reading_lazily_gives_the_same_answer_as_reading_it_all() {
     // colours.
     let mut spans = Vec::new();
     for line in [0, 2, 5] {
-        piecemeal.reach(&engine, &palette, line, &lines, &mut spans);
+        piecemeal.read_colours_to_line(&engine, &palette, line, &lines, &mut spans);
     }
 
     let whole = read("a.rs", source);

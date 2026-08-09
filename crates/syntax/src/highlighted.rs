@@ -9,7 +9,7 @@
 //! Both engines fit: the matcher resumes from where it stopped, the parser
 //! reads the whole file on the first ask. `read_colours_to_line`/`lines_coloured` is the interface.
 
-use crate::engine::{Engine, Grammar, Palette, EngineState};
+use crate::engine::{Engine, EngineState, Grammar, Palette};
 use crate::limits;
 use crate::style::Span;
 
@@ -191,8 +191,11 @@ mod tests {
     #[test]
     fn reaching_a_line_reads_at_least_up_to_it() {
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.read_colours_to_line(1);
-        assert!(case.highlighted.get_lines_coloured() >= 2, "at least what was asked for");
+        case.reach(1);
+        assert!(
+            case.highlighted.get_lines_coloured() >= 2,
+            "at least what was asked for"
+        );
         assert!(!case.spans[0].is_empty(), "`fn` is a keyword");
     }
 
@@ -201,8 +204,11 @@ mod tests {
         // The count and the spans must agree, because the caller uses the
         // count to decide where the spans belong.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.read_colours_to_line(2);
-        assert_eq!(case.spans.len(), case.highlighted.get_lines_coloured() as usize);
+        case.reach(2);
+        assert_eq!(
+            case.spans.len(),
+            case.highlighted.get_lines_coloured() as usize
+        );
     }
 
     #[test]
@@ -210,9 +216,9 @@ mod tests {
         // Two calls covering overlapping ranges must not repeat a line, or
         // the caller would install it twice at two different places.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.read_colours_to_line(0);
+        case.reach(0);
         let after_first = case.spans.len();
-        case.read_colours_to_line(2);
+        case.reach(2);
         assert_eq!(
             case.spans.len(),
             case.highlighted.get_lines_coloured() as usize,
@@ -227,10 +233,14 @@ mod tests {
     #[test]
     fn reaching_a_line_already_read_does_nothing() {
         let mut case = rust(&["fn a() {}", "fn b() {}"]);
-        case.read_colours_to_line(1);
+        case.reach(1);
         let spans = case.spans.clone();
-        case.read_colours_to_line(0);
-        assert_eq!(case.highlighted.get_lines_coloured(), 2, "did not go backwards");
+        case.reach(0);
+        assert_eq!(
+            case.highlighted.get_lines_coloured(),
+            2,
+            "did not go backwards"
+        );
         assert_eq!(case.spans, spans, "and did not change its mind");
     }
 
@@ -238,7 +248,7 @@ mod tests {
     fn a_file_read_to_its_end_reports_finished() {
         let mut case = rust(&["fn a() {}"]);
         assert!(!case.highlighted.finished());
-        case.read_colours_to_line(0);
+        case.reach(0);
         assert!(case.highlighted.finished(), "nothing left to carry forward");
     }
 
@@ -248,8 +258,11 @@ mod tests {
         // little was wanted, so a caller must look at `done` rather than
         // assume it got what it asked for.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
-        case.read_colours_to_line(0);
-        assert!(case.highlighted.get_lines_coloured() >= 1, "at least the line asked for");
+        case.reach(0);
+        assert!(
+            case.highlighted.get_lines_coloured() >= 1,
+            "at least the line asked for"
+        );
         assert!(
             case.highlighted.get_lines_coloured() <= case.lines.len() as u32,
             "and never past the file"

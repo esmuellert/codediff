@@ -34,7 +34,7 @@ fn pens(engine: &Engine, rules: &[Rule]) -> Vec<Pen> {
         };
         let mut read = Highlighted::new(engine, grammar, &palette, &lines);
         let mut spans = Vec::new();
-        read.reach(engine, &palette, lines.len() as u32, &lines, &mut spans);
+        read.read_colours_to_line(engine, &palette, lines.len() as u32, &lines, &mut spans);
         for line in &spans {
             for span in line {
                 if let Some(pen) = span.style.pen

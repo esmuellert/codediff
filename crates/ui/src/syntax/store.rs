@@ -302,7 +302,7 @@ mod tests {
             "the old colours describe text that is gone"
         );
         assert_eq!(
-            store.lines_cached(),
+            store.get_cached_lines(),
             0,
             "and are not still counted against the budget"
         );

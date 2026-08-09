@@ -362,7 +362,7 @@ mod tests {
         let read = |grammar: Grammar| {
             let mut engine_state = engine.start(grammar, &palette);
             let mut out = Vec::new();
-            engine.read(&mut engine_state, &palette, &lines, 0..1, &mut out);
+            engine.colour(&mut engine_state, &palette, &lines, 0..1, &mut out);
             out
         };
 

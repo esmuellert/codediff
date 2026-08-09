@@ -39,7 +39,7 @@ fn read(path: &str, source: &str, needle: &str) -> Option<Group> {
         .unwrap_or_else(|| panic!("no grammar claims {path}"));
     let mut read = Highlighted::new(&engine, grammar, &palette, &lines);
     let mut spans = Vec::new();
-    read.reach(&engine, &palette, lines.len() as u32, &lines, &mut spans);
+    read.read_colours_to_line(&engine, &palette, lines.len() as u32, &lines, &mut spans);
 
     let (n, byte) = lines
         .iter()
