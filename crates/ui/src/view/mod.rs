@@ -156,7 +156,7 @@ impl View {
     /// Puts a buffer beside the list, splitting the tab if needed.
     pub fn show(&mut self, buffer: Buffer) {
         // Reuse the existing slot so we don't accumulate every file ever opened.
-        let id = match self.tabs[self.active].shown() {
+        let id = match self.tabs[self.active].right_pane_buffer() {
             Some(id) => {
                 self.buffers[id.0] = buffer;
                 id
@@ -167,7 +167,7 @@ impl View {
             }
         };
         self.version = Version(self.version.0 + 1);
-        self.tabs[self.active].show(id);
+        self.tabs[self.active].set_right_pane(id);
     }
 
     /// The focused pane's buffer and viewport together.

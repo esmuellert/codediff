@@ -100,14 +100,14 @@ impl Session {
     fn apply_file_response(&mut self, response: Response) -> bool {
         let keep = self
             .is_file_shown(&response.file)
-            .then(|| self.view.tab().shown())
+            .then(|| self.view.tab().right_pane_buffer())
             .flatten()
             .map(|id| self.view.pane_for(id).viewport.cursor());
         match response.content {
             Ok(content) => {
                 self.view.show(Buffer::diff(content));
                 if let Some(line) = keep {
-                    let id = self.view.tab().shown().expect("just shown");
+                    let id = self.view.tab().right_pane_buffer().expect("just shown");
                     let rows = self.view.buffer(id).view_lines();
                     self.view
                         .pane_mut_for(id)
@@ -124,7 +124,7 @@ impl Session {
 
     /// Whether this file is already showing beside the list.
     fn is_file_shown(&self, file: &file_types::File) -> bool {
-        let Some(id) = self.view.tab().shown() else {
+        let Some(id) = self.view.tab().right_pane_buffer() else {
             return false;
         };
         self.view.buffer(id).file() == Some(file)

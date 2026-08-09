@@ -71,23 +71,16 @@ impl Tab {
         self.layout
     }
 
-    /// Puts `buffer` in the right-hand pane, splitting the tab if it is whole.
-    ///
-    /// Here rather than on a pane because it can create one, and a pane cannot
-    /// bring a sibling into being. The focus does not move: a reader working
-    /// down a list of files wants the next file, not the pane they just filled
-    /// — which is what the plugin's `focus_on_select = false` also decided.
-    pub fn show(&mut self, buffer: BufferId) {
+    /// Puts `buffer` in the right-hand pane, splitting the tab if needed.
+    /// Focus stays on the left (list).
+    pub fn set_right_pane(&mut self, buffer: BufferId) {
         match self.layout {
             Layout::Full => {
                 self.panes.push(Pane::new(buffer));
                 self.layout = Layout::Split { left: DEFAULT_LEFT };
             }
-            // A fresh pane, not a repointed one. A viewport describes a place
-            // in *the buffer it was looking at*, so carrying it over opens the
-            // new file at the old file's line and horizontal offset — which
-            // showed up as a file that opened blank, scrolled off its own
-            // text.
+            // Fresh pane — carrying the old viewport would show the new file
+            // at the old file's scroll position.
             Layout::Split { .. } => self.panes[1] = Pane::new(buffer),
         }
     }
@@ -97,11 +90,8 @@ impl Tab {
         matches!(self.layout, Layout::Split { .. })
     }
 
-    /// The buffer already beside the list, if there is one.
-    ///
-    /// What lets a second open reuse the first one's slot rather than adding
-    /// to a list nothing ever removes from.
-    pub fn shown(&self) -> Option<BufferId> {
+    /// The buffer in the right pane, if the tab is split.
+    pub fn right_pane_buffer(&self) -> Option<BufferId> {
         match self.layout {
             Layout::Split { .. } => Some(self.panes[1].buffer),
             Layout::Full => None,
@@ -182,7 +172,7 @@ mod tests {
 
     fn split() -> Tab {
         let mut tab = Tab::single(BufferId::new(0));
-        tab.show(BufferId::new(1));
+        tab.set_right_pane(BufferId::new(1));
         tab
     }
 
@@ -210,7 +200,7 @@ mod tests {
         tab.pane_mut(PaneId(1)).viewport.place(120, 400);
         assert_eq!(tab.pane(PaneId(1)).viewport.cursor(), 120);
 
-        tab.show(BufferId::new(2));
+        tab.set_right_pane(BufferId::new(2));
         assert_eq!(tab.pane(PaneId(1)).buffer, BufferId::new(2));
         assert_eq!(tab.pane(PaneId(1)).viewport.cursor(), 0, "at its own top");
     }
@@ -218,11 +208,11 @@ mod tests {
     #[test]
     fn the_slot_beside_the_list_is_named_so_a_second_open_can_reuse_it() {
         let mut tab = Tab::single(BufferId::new(0));
-        assert_eq!(tab.shown(), None, "nothing is beside it yet");
-        tab.show(BufferId::new(1));
-        assert_eq!(tab.shown(), Some(BufferId::new(1)));
-        tab.show(BufferId::new(2));
-        assert_eq!(tab.shown(), Some(BufferId::new(2)));
+        assert_eq!(tab.right_pane_buffer(), None, "nothing is beside it yet");
+        tab.set_right_pane(BufferId::new(1));
+        assert_eq!(tab.right_pane_buffer(), Some(BufferId::new(1)));
+        tab.set_right_pane(BufferId::new(2));
+        assert_eq!(tab.right_pane_buffer(), Some(BufferId::new(2)));
         assert_eq!(tab.panes().len(), 2, "and no third pane appeared");
     }
 
