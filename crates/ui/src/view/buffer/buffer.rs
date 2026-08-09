@@ -197,7 +197,7 @@ impl Buffer {
     /// but stepping through them does not.
     fn step(&mut self, direction: Direction, count: u32, view: &mut Viewport) {
         let starts = || self.blocks.iter().map(|b| b.start);
-        let moved = view.step(count, self.view_lines, |from| match direction {
+        let moved = view.jump_to(count, self.view_lines, |from| match direction {
             Direction::Next => starts().find(|&r| r > from),
             Direction::Previous => starts().rev().find(|&r| r < from),
         });

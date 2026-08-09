@@ -136,9 +136,9 @@ impl Viewport {
         self.clamp(view_lines);
     }
 
-    /// Moves `count` steps, asking `next` for each target. Returns whether
+    /// Jumps to `count` successive targets given by `next`. Returns whether
     /// it moved at all (partial steps count).
-    pub fn step(&mut self, count: u32, view_lines: u32, next: impl Fn(u32) -> Option<u32>) -> bool {
+    pub fn jump_to(&mut self, count: u32, view_lines: u32, next: impl Fn(u32) -> Option<u32>) -> bool {
         let mut moved = false;
         for _ in 0..count {
             match next(self.cursor) {
@@ -291,7 +291,7 @@ mod tests {
     fn stepping_asks_the_buffer_where_to_go_and_centres_there() {
         let starts = [40u32, 70];
         let mut v = view(20);
-        v.step(1, 100, |from| starts.iter().copied().find(|&r| r > from));
+        v.jump_to(1, 100, |from| starts.iter().copied().find(|&r| r > from));
         assert_eq!(v.cursor(), 40);
         assert_eq!(v.top(), 30, "centred");
     }
@@ -300,7 +300,7 @@ mod tests {
     fn a_count_steps_that_many_times() {
         let starts = [10u32, 40, 70];
         let mut v = view(20);
-        v.step(2, 100, |from| starts.iter().copied().find(|&r| r > from));
+        v.jump_to(2, 100, |from| starts.iter().copied().find(|&r| r > from));
         assert_eq!(v.cursor(), 40);
     }
 
@@ -309,7 +309,7 @@ mod tests {
         let starts = [40u32];
         let mut v = view(20);
         for _ in 0..2 {
-            v.step(1, 100, |from| starts.iter().copied().find(|&r| r > from));
+            v.jump_to(1, 100, |from| starts.iter().copied().find(|&r| r > from));
         }
         assert_eq!(v.cursor(), 40);
     }
