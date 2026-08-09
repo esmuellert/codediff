@@ -8,8 +8,6 @@
 //! reports facts, and `draw::buffer::explorer` is what turns them into `▾`,
 //! `│ ` and `M`.
 
-#![allow(dead_code, unused_imports)]
-
 #[path = "explorer/common.rs"]
 mod common;
 
