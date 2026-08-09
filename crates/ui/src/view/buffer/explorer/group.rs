@@ -104,6 +104,10 @@ mod tests {
     use file_types::{File, Oid, RepoPath, Rev};
     use std::path::Path;
 
+    fn of(files: &[File]) -> Vec<(&'static str, Vec<usize>)> {
+        from_files(files)
+    }
+
     fn at(path: &str, revs: Revs) -> File {
         File::unchanged_path(RepoPath::new(path, Path::new("/repo")), revs)
     }

@@ -163,7 +163,7 @@ fn unchanged_rows_hold_identical_text() {
             if line.kind != ViewLineType::Unchanged {
                 continue;
             }
-            let (o, m) = line.both().expect("an unchanged line has both sides");
+            let (o, m) = line.line_pair().expect("an unchanged line has both sides");
             assert_eq!(
                 alignment.line(DiffVersion::Original, o),
                 alignment.line(DiffVersion::Modified, m),

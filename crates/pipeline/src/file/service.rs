@@ -124,5 +124,7 @@ fn compare(file: &File) -> Result<DiffContent, String> {
     if runner.is_binary() {
         return Err(format!("{path} is binary — there are no lines to review"));
     }
-    runner.compute_diff().map_err(|why| format!("{path}: {why:#}"))
+    runner
+        .compute_diff()
+        .map_err(|why| format!("{path}: {why:#}"))
 }

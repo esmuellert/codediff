@@ -56,7 +56,11 @@ fn header(
     modified: &[&str],
     alignment: &Alignment,
 ) {
-    println!("{}  ->  {}", sanitize(original_path), sanitize(modified_path));
+    println!(
+        "{}  ->  {}",
+        sanitize(original_path),
+        sanitize(modified_path)
+    );
     println!(
         "{} lines -> {} lines, {} view lines",
         original.len(),

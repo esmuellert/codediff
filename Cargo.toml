@@ -106,7 +106,7 @@ crossterm = "0.29"
 crokey = { version = "1.5", default-features = false }
 # Only for suspending: raw mode disables the terminal's own Ctrl-Z handling, so
 # the signal has to be raised by hand. Safe API; no `unsafe` in our crates.
-signal-hook = { version = "0.3", default-features = false }
+signal-hook = { version = "0.3", features = ["iterator"] }
 # Test-only: allocates a real terminal so the alternate screen and raw mode can
 # be checked from outside the process that set them.
 portable-pty = { version = "0.9", default-features = false }

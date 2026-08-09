@@ -179,6 +179,10 @@ mod tests {
         request_diff(&diff(Rev::Worktree), &mut syntax, &mut store, Version(1), 0);
         let before = store.cached_count();
         request_diff(&diff(Rev::Worktree), &mut syntax, &mut store, Version(1), 0);
-        assert_eq!(store.cached_count(), before, "asking twice made no new entry");
+        assert_eq!(
+            store.cached_count(),
+            before,
+            "asking twice made no new entry"
+        );
     }
 }

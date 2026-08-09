@@ -57,7 +57,8 @@ pub struct SyntaxResponse {
 /// A file added or deleted exists on one side only, and the side it does not
 /// exist on has no text and therefore no language.
 pub fn path_of(file: &File, version: DiffVersion) -> Option<String> {
-    file.path_of_version(version).map(|path| path.as_str().to_owned())
+    file.path_of_version(version)
+        .map(|path| path.as_str().to_owned())
 }
 
 #[cfg(test)]

@@ -69,7 +69,11 @@ pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> 
 /// The raw records, in git's own terms.
 ///
 /// Runs `git --no-optional-locks status --porcelain=v2 -z`.
-pub fn status_entries(repo: &Repo, untracked: Untracked, pathspec: &[String]) -> Result<Vec<Entry>> {
+pub fn status_entries(
+    repo: &Repo,
+    untracked: Untracked,
+    pathspec: &[String],
+) -> Result<Vec<Entry>> {
     let mut args = vec![
         "status",
         "--porcelain=v2",
@@ -106,7 +110,9 @@ pub fn read(
             // When comparing against the worktree, apply checkout filters
             // (CRLF, smudge) so the stored side matches what's on disk.
             if file.rev(version.other()) == &Rev::Worktree {
-                return Ok(FileContent::from_bytes(cat_file::read_filtered(repo, rev, &path)?));
+                return Ok(FileContent::from_bytes(cat_file::read_filtered(
+                    repo, rev, &path,
+                )?));
             }
             Ok(FileContent::from_bytes(blobs.read(rev, &path)?))
         }

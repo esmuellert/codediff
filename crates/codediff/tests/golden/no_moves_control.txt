@@ -15,8 +15,3 @@ hunks
 
 character changes
   modified line    2  bytes    0..8    "changed "
-
-unchanged regions
-  original 1..2  modified 1..2
-  original 3..4  modified 3..4
-  original 4..7  modified 5..8

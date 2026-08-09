@@ -5,10 +5,12 @@
 //! workers.rs  sending to and receiving from the two background threads
 //! keys.rs     key press and command dispatch
 //! mouse.rs    scroll, click, and hit-testing
+//! event.rs    Event enum and reader/signal thread spawning
 //! ```
 //!
 //! Nothing here computes a diff, touches git, or colours a line.
 
+mod event;
 mod keys;
 mod mouse;
 mod workers;
@@ -140,33 +142,57 @@ impl Session {
     }
 }
 
+/// One frame at 60 Hz — how often the loop checks workers while they run.
+const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+
 /// The main loop. Terminal is restored by `Screen`'s `Drop`.
 pub fn run(session: &mut Session) -> std::io::Result<()> {
+    use std::sync::mpsc;
+
     let mut screen = Screen::open()?;
     session.send_file_request();
     session.draw(screen.terminal())?;
 
+    let (tx, rx) = mpsc::channel::<event::Event>();
+    event::spawn_reader(tx.clone());
+    #[cfg(unix)]
+    event::spawn_signals(tx);
+
     loop {
-        let coloured = session.receive_colours();
-        let compared = session.receive_file();
-        if coloured || compared {
+        // Block until an event arrives. When workers are busy, use a short
+        // timeout so we can collect their results at frame rate.
+        let ev = if session.is_colouring() || session.is_loading_file() {
+            rx.recv_timeout(FRAME).ok()
+        } else {
+            rx.recv().ok()
+        };
+
+        // Collect worker results.
+        let mut changed = session.receive_colours() | session.receive_file();
+
+        // Handle terminal events from the batch.
+        if let Some(event::Event::Terminal(ref e)) = ev {
+            match session.handle_event(e) {
+                Flow::Quit => return Ok(()),
+                Flow::Suspend => {
+                    screen.suspend()?;
+                    changed = true;
+                }
+                Flow::Continue => changed = true,
+            }
+        }
+
+        // A kill signal: restore the terminal and exit immediately.
+        #[cfg(unix)]
+        if let Some(event::Event::Signal(sig)) = ev {
+            crate::terminal::restore();
+            std::process::exit(128 + sig);
+        }
+
+        if changed {
             session.send_colour_request();
             session.send_file_request();
             session.draw(screen.terminal())?;
         }
-
-        let Some(event) = screen.next_event(session.is_colouring() || session.is_loading_file())?
-        else {
-            continue;
-        };
-
-        match session.handle_event(&event) {
-            Flow::Quit => return Ok(()),
-            Flow::Suspend => screen.suspend()?,
-            Flow::Continue => {}
-        }
-        session.send_colour_request();
-        session.send_file_request();
-        session.draw(screen.terminal())?;
     }
 }

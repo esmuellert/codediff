@@ -82,10 +82,5 @@ hunks
 character changes
   none
 
-unchanged regions
-  original 1..9  modified 1..9
-  original 17..37  modified 9..29  (14 line(s) could be hidden)
-  original 37..65  modified 37..65  (22 line(s) could be hidden)
-
 moves
   original 9..17  ->  modified 29..37

@@ -184,6 +184,7 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 pub const THREAD_FILES: &[&str] = &[
     "crates/ui/src/syntax/mod.rs",
     "crates/pipeline/src/file/service.rs",
+    "crates/ui/src/app/event.rs",
 ];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 
@@ -204,10 +205,10 @@ pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 /// synchronously. A call made while the reader is holding a key may not.
 ///
 /// These directories are only ever reached from inside the loop, so nothing in
-/// them may perform IO or wait. `app.rs` holds the loop itself and is checked
-/// as a file: the startup that used to sit beside it now lives in `start.rs`,
-/// which runs once, before the terminal is opened, and may block. That split
-/// is what let this rule reach the loop at all. See D63 and D64.
+/// them may perform IO or wait. `app/mod.rs` holds the loop itself — its
+/// `recv()` is the single permitted block — and is not checked. The event
+/// handlers in `keys.rs` and `mouse.rs` are checked because they run on
+/// every key and every frame.
 pub const NON_BLOCKING_DIRS: &[&str] = &[
     "crates/ui/src/input",
     "crates/ui/src/draw",
@@ -218,10 +219,10 @@ pub const NON_BLOCKING_DIRS: &[&str] = &[
 /// Files reached on every key and every frame, checked as [`NON_BLOCKING_DIRS`]
 /// are.
 ///
-/// One so far: the loop. It is a file rather than a directory because
-/// `crates/ui/src` also holds `start.rs`, whose whole job is the blocking work
-/// the loop must never do.
-pub const NON_BLOCKING_FILES: &[&str] = &["crates/ui/src/app.rs"];
+/// The event handlers that run inside the loop. They must never block because
+/// they are called between the channel wait and the next draw.
+pub const NON_BLOCKING_FILES: &[&str] =
+    &["crates/ui/src/app/keys.rs", "crates/ui/src/app/mouse.rs"];
 
 /// What blocking looks like, in the directories above.
 ///

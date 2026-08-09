@@ -15,8 +15,3 @@ hunks
 
 character changes
   none
-
-unchanged regions
-  original 1..2  modified 1..2
-  original 3..6  modified 2..5
-  original 6..7  modified 6..7

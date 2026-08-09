@@ -75,7 +75,7 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
 
         // 4. an unchanged line really does hold the same text on both sides
         if line.kind == ViewLineType::Unchanged {
-            let (o, m) = line.both().expect("an unchanged line has both sides");
+            let (o, m) = line.line_pair().expect("an unchanged line has both sides");
             prop_assert_eq!(
                 alignment.line(DiffVersion::Original, o),
                 alignment.line(DiffVersion::Modified, m)

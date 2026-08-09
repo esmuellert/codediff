@@ -49,20 +49,20 @@ mod tests {
     #[test]
     fn an_escape_sequence_cannot_reach_the_terminal() {
         let attack = "\u{1b}[31mred";
-        let safe = visible(attack);
+        let safe = sanitize(attack);
         assert!(!safe.contains('\u{1b}'));
         assert!(safe.starts_with('\u{241b}'));
     }
 
     #[test]
     fn a_right_to_left_override_is_replaced() {
-        assert_eq!(visible("a\u{202e}b"), "a\u{fffd}b");
+        assert_eq!(sanitize("a\u{202e}b"), "a\u{fffd}b");
     }
 
     #[test]
     fn ordinary_text_is_untouched() {
         for text in ["hello", "日本語", "e\u{301}", "👨‍👩‍👧"] {
-            assert_eq!(visible(text), text);
+            assert_eq!(sanitize(text), text);
         }
     }
 

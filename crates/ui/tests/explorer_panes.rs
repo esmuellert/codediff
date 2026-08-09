@@ -190,7 +190,7 @@ fn re_opening_a_file_that_has_grown_shorter_lands_inside_it() {
     let id = session
         .view()
         .tab()
-        .shown()
+        .right_pane_buffer()
         .expect("a pane beside the list");
     let rows = session.view().buffer(id).view_lines();
     assert!(
@@ -267,7 +267,7 @@ fn shown_file(session: &Session) -> File {
     let id = session
         .view()
         .tab()
-        .shown()
+        .right_pane_buffer()
         .expect("a pane beside the list");
     session
         .view()

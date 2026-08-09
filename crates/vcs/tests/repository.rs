@@ -237,7 +237,9 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
 
     assert_eq!(moved.get_change_type(), ChangeType::Moved);
     assert_eq!(
-        moved.on(DiffVersion::Original).map(RepoPath::as_str),
+        moved
+            .path_of_version(DiffVersion::Original)
+            .map(RepoPath::as_str),
         Some("renamed-from.txt")
     );
     assert!(

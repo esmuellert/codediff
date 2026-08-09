@@ -160,7 +160,13 @@ pub fn write(buf: &mut Buffer, row: Rect, offset: u16, text: &str, style: Style)
         if u32::from(at) + g.width > u32::from(row.width) {
             break;
         }
-        put(buf, row, u32::from(at), &line_index::sanitize(g.text), style);
+        put(
+            buf,
+            row,
+            u32::from(at),
+            &line_index::sanitize(g.text),
+            style,
+        );
         for extra in 1..g.width {
             put(buf, row, u32::from(at) + extra, "", style);
         }

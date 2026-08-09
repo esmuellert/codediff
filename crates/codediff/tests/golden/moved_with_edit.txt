@@ -28,11 +28,5 @@ character changes
   modified line    7  bytes   20..36   ", \"input is nil\""
   modified line   10  bytes   20..36   ", \"not a string\""
 
-unchanged regions
-  original 1..3  modified 5..7
-  original 4..6  modified 8..10
-  original 7..10  modified 11..14
-  original 14..15  modified 14..15
-
 moves
   original 10..14  ->  modified 1..5

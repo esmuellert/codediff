@@ -138,7 +138,12 @@ impl Viewport {
 
     /// Jumps to `count` successive targets given by `next`. Returns whether
     /// it moved at all (partial steps count).
-    pub fn jump_to(&mut self, count: u32, view_lines: u32, next: impl Fn(u32) -> Option<u32>) -> bool {
+    pub fn jump_to(
+        &mut self,
+        count: u32,
+        view_lines: u32,
+        next: impl Fn(u32) -> Option<u32>,
+    ) -> bool {
         let mut moved = false;
         for _ in 0..count {
             match next(self.cursor) {

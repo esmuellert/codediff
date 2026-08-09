@@ -21,9 +21,5 @@ hunks
 character changes
   none
 
-unchanged regions
-  original 1..4  modified 5..8
-  original 8..9  modified 8..9
-
 moves
   original 4..8  ->  modified 1..5

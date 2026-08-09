@@ -537,16 +537,6 @@ character changes
   original line  338  bytes   11..12   "8"
   modified line  381  bytes   11..12   "9"
 
-unchanged regions
-  original 1..2  modified 1..2
-  original 3..10  modified 3..10
-  original 13..37  modified 13..37  (18 line(s) could be hidden)
-  original 139..211  modified 38..110  (66 line(s) could be hidden)
-  original 212..279  modified 255..322  (61 line(s) could be hidden)
-  original 280..300  modified 323..343  (14 line(s) could be hidden)
-  original 301..338  modified 344..381  (31 line(s) could be hidden)
-  original 339..363  modified 382..406  (18 line(s) could be hidden)
-
 moves
   original 32..89  ->  modified 197..254
   original 89..110  ->  modified 110..132
