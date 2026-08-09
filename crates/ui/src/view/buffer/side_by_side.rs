@@ -8,7 +8,7 @@ use file_types::File;
 use pipeline::file;
 
 use super::colour;
-use crate::syntax::{Spans, Store, Syntax, Version};
+use syntax::{Spans, Store, Syntax, Version};
 
 /// A diff shown in two columns, and where the line between them sits.
 #[derive(Debug)]

@@ -14,10 +14,10 @@ use crate::draw::{Look, TextRects};
 use crate::render::cells::{self, Ink};
 use crate::render::gutter;
 use crate::render::layout::gutter_width;
-use syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::SingleFile;
 use crate::view::selection::SelectionColumn;
+use syntax::Spans;
 
 pub fn draw(
     buf: &mut Buffer,

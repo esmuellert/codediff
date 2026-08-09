@@ -24,10 +24,10 @@ use ratatui::layout::Rect;
 use crate::draw;
 use crate::draw::screen_map::ScreenMap;
 use crate::input::Resolver;
-use syntax::{Store, Syntax};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 use crate::view::{Buffer, PaneId, View};
+use syntax::{Store, Syntax};
 
 /// What the loop should do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

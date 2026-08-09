@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
+use crate::Span;
 use align::DiffVersion;
 use file_types::File;
-use crate::Span;
 
 /// Monotonic counter for detecting stale answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

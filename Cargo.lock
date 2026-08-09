@@ -1998,6 +1998,8 @@ dependencies = [
 name = "syntax"
 version = "0.13.0"
 dependencies = [
+ "align",
+ "file-types",
  "line-index",
  "syntect",
  "tree-sitter",

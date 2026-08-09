@@ -13,8 +13,8 @@
 
 use std::collections::HashMap;
 
-use align::DiffVersion;
 use crate::Span;
+use align::DiffVersion;
 
 use super::message::{SyntaxResponse, Version};
 

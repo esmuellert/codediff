@@ -179,10 +179,10 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 ///
 /// | file | what it does off the drawing thread |
 /// |---|---|
-/// | `ui/src/syntax/mod.rs` | colours text |
+/// | `syntax/src/service/mod.rs` | colours text |
 /// | `pipeline/src/file/service.rs` | reads two versions and pairs them |
 pub const THREAD_FILES: &[&str] = &[
-    "crates/ui/src/syntax/mod.rs",
+    "crates/syntax/src/service/mod.rs",
     "crates/pipeline/src/file/service.rs",
     "crates/pipeline/src/list/worker.rs",
     "crates/ui/src/app/threads.rs",

@@ -22,9 +22,9 @@ pub use screen::render;
 
 use ratatui::layout::Rect;
 
-use syntax::Store;
 use crate::theme::Theme;
 use crate::view::selection::SelectionColumn;
+use syntax::Store;
 
 /// Text areas produced by drawing a buffer. Used for hit-testing and overlay.
 pub(crate) type TextRects = Vec<(SelectionColumn, Rect)>;

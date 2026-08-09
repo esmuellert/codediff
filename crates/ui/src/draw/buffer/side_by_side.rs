@@ -15,11 +15,11 @@ use crate::draw::{Look, TextRects};
 use crate::render::layout;
 use crate::render::line::Painter;
 use crate::render::{cells, column};
-use syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::SideBySide;
 use crate::view::selection::SelectionColumn;
+use syntax::Spans;
 
 /// Draws one diff into the pane's area.
 ///

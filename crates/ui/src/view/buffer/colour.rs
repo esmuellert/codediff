@@ -8,7 +8,7 @@ use std::sync::Arc;
 use file_types::{DiffVersion, File};
 use pipeline::file;
 
-use crate::syntax::{Colours, Spans, Store, Syntax, SyntaxRequest, Version, path_of};
+use syntax::{Colours, Spans, Store, Syntax, SyntaxRequest, Version, path_of};
 
 /// Asks for both versions of a paired file, up to `last`.
 pub fn request_diff(
@@ -121,7 +121,7 @@ mod tests {
     use file_types::{File, Oid, RepoPath, Rev, Revs};
 
     use super::*;
-    use crate::syntax::{Store, Syntax, Version};
+    use syntax::{Store, Syntax, Version};
 
     fn at(path: &str) -> RepoPath {
         RepoPath::new(path, std::path::Path::new("/repo"))

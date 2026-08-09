@@ -20,11 +20,11 @@ use crate::draw::{Look, TextRects};
 use crate::render::layout::{self, InlineFrame};
 use crate::render::line::{self, Painter};
 use crate::render::{cells, gutter};
-use syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::Inline;
 use crate::view::selection::SelectionColumn;
+use syntax::Spans;
 
 /// Draws one diff into the pane's area.
 ///

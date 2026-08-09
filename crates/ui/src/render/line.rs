@@ -16,8 +16,8 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 use crate::render::cells::{self, Ink};
-use syntax::Spans;
 use crate::theme::Theme;
+use syntax::Spans;
 
 /// What every line of a frame has in common.
 ///

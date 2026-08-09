@@ -25,7 +25,7 @@ pub use viewport::Viewport;
 use file_types::DiffType;
 
 use crate::input::KeymapType;
-use crate::syntax::{Store, Syntax, Version};
+use syntax::{Store, Syntax, Version};
 
 /// An index into [`View::buffers`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
