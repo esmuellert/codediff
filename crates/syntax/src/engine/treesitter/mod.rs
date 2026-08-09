@@ -82,7 +82,7 @@ impl Engine {
     /// than the TextMate engine's, that is a better deal than it sounds.
     ///
     /// Appends one entry per line, so the caller's line count is the file's.
-    pub fn read(
+    pub fn colour(
         &self,
         grammar: Grammar,
         palette: &Palette,
@@ -96,7 +96,7 @@ impl Engine {
             into.extend(std::iter::repeat_n(Vec::new(), lines.len()));
             return;
         };
-        let mut read = vec![Vec::new(); lines.len()];
+        let mut output = vec![Vec::new(); lines.len()];
         {
             // One allocation of the file, dropped on the way out. The engine
             // wants contiguous bytes and we hold lines; there is no way round
@@ -108,9 +108,9 @@ impl Engine {
                 source.push_str(line);
                 source.push('\n');
             }
-            paint(config, palette, &source, &starts, lines, &mut read);
+            paint(config, palette, &source, &starts, lines, &mut output);
         }
-        into.append(&mut read);
+        into.append(&mut output);
     }
 }
 
@@ -127,7 +127,7 @@ fn paint(
     source: &str,
     starts: &[usize],
     lines: &[String],
-    read: &mut [Vec<Span>],
+    output: &mut [Vec<Span>],
 ) {
     let mut highlighter = Highlighter::new();
     // A file the engine gives up on keeps its lines and loses its colour,
@@ -150,14 +150,14 @@ fn paint(
             // same rule TextMate precedence arrives at the long way round.
             Ok(HighlightEvent::Source { start, end }) => {
                 if let Some(style) = open.last() {
-                    spread(start, end, *style, starts, lines, read);
+                    spread(start, end, *style, starts, lines, output);
                 }
             }
             Err(_) => return,
         }
     }
 
-    for line in read.iter_mut() {
+    for line in output.iter_mut() {
         *line = coalesce(std::mem::take(line));
     }
     let _ = source;
@@ -174,7 +174,7 @@ fn spread(
     style: Style,
     starts: &[usize],
     lines: &[String],
-    read: &mut [Vec<Span>],
+    output: &mut [Vec<Span>],
 ) {
     let first = starts.partition_point(|s| *s <= start).saturating_sub(1);
     for (n, line_start) in starts.iter().enumerate().skip(first) {
@@ -185,7 +185,7 @@ fn spread(
         let from = start.max(*line_start) - line_start;
         let to = end.min(line_end).saturating_sub(*line_start);
         if from < to {
-            read[n].push(Span::new(from as u32..to as u32, style));
+            output[n].push(Span::new(from as u32..to as u32, style));
         }
     }
 }
@@ -214,7 +214,7 @@ mod tests {
             .find(Clues::new(path, lines.first().map(String::as_str)))
             .unwrap_or_else(|| panic!("no parser claims {path}"));
         let mut out = Vec::new();
-        engine.read(grammar, &palette, &lines, &mut out);
+        engine.colour(grammar, &palette, &lines, &mut out);
         out
     }
 
@@ -247,11 +247,11 @@ mod tests {
 
         let grammar = engine.find(Clues::new("a.rs", None)).expect("rust");
         let mut first = Vec::new();
-        engine.read(grammar, &palette, &lines, &mut first);
+        engine.colour(grammar, &palette, &lines, &mut first);
         assert!(!first[0].is_empty(), "`fn` is a keyword");
 
         let mut again = Vec::new();
-        engine.read(grammar, &palette, &lines, &mut again);
+        engine.colour(grammar, &palette, &lines, &mut again);
         assert_eq!(again, first, "and the same answer the second time");
     }
 
@@ -322,7 +322,7 @@ mod tests {
             };
             let lines: Vec<String> = comment.1.lines().map(str::to_owned).collect();
             let mut out = Vec::new();
-            engine.read(Grammar(n), &palette, &lines, &mut out);
+            engine.colour(Grammar(n), &palette, &lines, &mut out);
             assert!(
                 out.iter().flatten().any(|s| s.style.pen == Some(Pen(2))),
                 "{}: a comment was not coloured",

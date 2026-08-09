@@ -13,7 +13,7 @@ use crate::detect::Clues;
 use crate::limits;
 use crate::style::{Pen, Rule, Span, Style, coalesce};
 
-/// Every grammar we can read, loaded once.
+/// Every grammar we can load, loaded once.
 ///
 /// Two-face's set rather than syntect's own: it is `bat`'s, which carries the
 /// languages people actually diff — TypeScript, TOML, Dockerfile — that the
@@ -22,7 +22,7 @@ pub struct Engine {
     syntaxes: SyntaxSet,
 }
 
-/// Which grammar to read a file with.
+/// Which grammar to colour a file with.
 ///
 /// An index rather than a reference, so it can be stored beside the buffer
 /// that needs it without borrowing the engine.

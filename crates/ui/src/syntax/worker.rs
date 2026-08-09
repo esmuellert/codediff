@@ -32,7 +32,7 @@ const CHUNK: u32 = 2_000;
 
 /// Unfinished readings kept in case they are wanted again.
 ///
-/// Four, because the memory is only worth having for a file part-read, and a
+/// Four, because the memory is only worth having for a partly-coloured file, and a
 /// reader moves between a handful of files before coming back. Each holds a
 /// grammar's context stack, so this is not free, and there is nothing to be
 /// gained from keeping the one for a file abandoned an hour ago.
@@ -42,8 +42,8 @@ const MEMOS: usize = 4;
 struct Memo {
     key: String,
     version: super::message::Version,
-    /// What the asker held when this was made. A memo is only usable by
-    /// someone who still has everything read so far; anyone else needs the
+    /// What the asker had cached when this was made. A memo is only usable by
+    /// someone who still has everything coloured so far; anyone else needs the
     /// lines this skipped over.
     reached: u32,
     reading: Highlighted,
@@ -148,7 +148,7 @@ fn resume(request: &SyntaxRequest, memos: &mut Vec<Memo>) -> Option<Memo> {
         return Some(memos.remove(position));
     }
     // Either this file was never started, or the asker has thrown away part of
-    // what was read — eviction does that — so a bookmark further down answers
+    // what was cached — eviction does that — so a bookmark further down answers
     // a question nobody asked. Begin again.
     memos.retain(|memo| memo.key != request.key);
 

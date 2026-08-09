@@ -34,7 +34,7 @@ pub enum Grammar {
     TextMate(syntect::Grammar),
 }
 
-/// How far through a file an engine has read.
+/// How far through a file an engine has coloured.
 ///
 /// The parser carries nothing between calls — it does the whole file at once —
 /// so its variant is only the grammar it has yet to use. The matcher's state
@@ -206,7 +206,7 @@ impl Engine {
     /// got rather than assuming.
     ///
     /// [`Highlighted`]: crate::Highlighted
-    pub fn read(
+    pub fn colour(
         &self,
         engine_state: &mut EngineState,
         palette: &Palette,
@@ -215,7 +215,7 @@ impl Engine {
         into: &mut Vec<Vec<Span>>,
     ) {
         match engine_state {
-            EngineState::Tree(grammar) => self.trees.read(*grammar, &palette.trees, lines, into),
+            EngineState::Tree(grammar) => self.trees.colour(*grammar, &palette.trees, lines, into),
             EngineState::TextMate(state) => {
                 self.textmate
                     .read(state, &palette.textmate, &lines[rows], into);

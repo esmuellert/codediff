@@ -110,7 +110,7 @@ impl Highlighted {
         // which is why the check below is `>=` and not `==`.
         let before = into.len();
         let from = self.lines_coloured as usize;
-        engine.read(engine_state, palette, lines, from..target, into);
+        engine.colour(engine_state, palette, lines, from..target, into);
         self.lines_coloured += (into.len() - before) as u32;
         if self.lines_coloured as usize >= lines.len() {
             // Nothing left to carry forward. Dropping it returns the grammar's
