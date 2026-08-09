@@ -7,9 +7,9 @@
 
 use line_index::{DEFAULT_TAB_WIDTH, LineIndex};
 
-pub use line_index::visible;
+pub use line_index::sanitize;
 
-/// Tabs replaced by the spaces they expand to, and controls by their picture.
+/// Tabs replaced by the spaces they expand to, and controls by their replacement.
 ///
 /// A raw tab would use the *terminal's* tab stops rather than the ones we
 /// measured with, so the two would disagree about where anything sits.
@@ -19,7 +19,7 @@ pub fn expand(line: &LineIndex<'_>) -> String {
         if g.is_tab() {
             out.extend(std::iter::repeat_n(' ', g.width as usize));
         } else {
-            out.push_str(&visible(g.text));
+            out.push_str(&sanitize(g.text));
         }
     }
     out
@@ -67,7 +67,7 @@ pub fn fit(text: &str, columns: u32) -> String {
         if g.is_tab() {
             out.extend(std::iter::repeat_n(' ', g.width as usize));
         } else {
-            out.push_str(&visible(g.text));
+            out.push_str(&sanitize(g.text));
         }
         used += g.width;
     }

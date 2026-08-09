@@ -17,7 +17,7 @@ pub fn is_dangerous(c: char) -> bool {
 }
 
 /// A printable stand-in of the same width, or the character itself.
-pub fn picture(c: char) -> char {
+fn safe_char(c: char) -> char {
     match c {
         // Unicode Control Pictures: U+2400 draws U+0000, U+2401 draws U+0001,
         // and so on through the C0 range.
@@ -30,15 +30,15 @@ pub fn picture(c: char) -> char {
     }
 }
 
-/// Text with anything the terminal would act on replaced by its [`picture`].
+/// Text with anything the terminal would act on replaced by its [`safe_char`].
 ///
 /// Returns the input unchanged when there is nothing to do, which is almost
 /// always, so ordinary lines cost one scan and no allocation beyond the copy.
-pub fn visible(text: &str) -> String {
+pub fn sanitize(text: &str) -> String {
     if !text.chars().any(is_dangerous) {
         return text.to_owned();
     }
-    text.chars().map(picture).collect()
+    text.chars().map(safe_char).collect()
 }
 
 #[cfg(test)]
@@ -74,7 +74,7 @@ mod tests {
             '\u{0}', '\u{1b}', '\u{7f}', '\u{85}', '\u{202e}', '\u{2066}',
         ] {
             let original = grapheme_width(&c.to_string());
-            let replaced = grapheme_width(&picture(c).to_string());
+            let replaced = grapheme_width(&safe_char(c).to_string());
             assert_eq!(replaced, original, "{c:?} changed width");
             assert_eq!(replaced, 1, "{c:?} should occupy exactly one column");
         }

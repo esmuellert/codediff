@@ -82,7 +82,7 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
             continue;
         }
 
-        let symbol = line_index::visible(g.text);
+        let symbol = line_index::sanitize(g.text);
         put(buf, row, from - left, &symbol, style);
         // A wide character owns the columns after it. Ratatui expects those to
         // hold an empty symbol; leaving the fill's space there would make the
@@ -160,7 +160,7 @@ pub fn write(buf: &mut Buffer, row: Rect, offset: u16, text: &str, style: Style)
         if u32::from(at) + g.width > u32::from(row.width) {
             break;
         }
-        put(buf, row, u32::from(at), &line_index::visible(g.text), style);
+        put(buf, row, u32::from(at), &line_index::sanitize(g.text), style);
         for extra in 1..g.width {
             put(buf, row, u32::from(at) + extra, "", style);
         }

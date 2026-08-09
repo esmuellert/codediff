@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use file_types::RepoPath;
 use vcs::Repository;
 
-use crate::text::visible;
+use crate::text::sanitize;
 
 pub fn run(spec: &str, raw: bool) -> Result<()> {
     let (rev, path) = spec
@@ -38,7 +38,7 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
     // Classified here rather than through the trait: this command names an
     // arbitrary revision, which is not one of the two sides of a change.
     let text = String::from_utf8(bytes).ok();
-    println!("{} at {}", visible(path), visible(rev));
+    println!("{} at {}", sanitize(path), sanitize(rev));
     println!("{size} byte(s)");
     println!();
 
@@ -48,7 +48,7 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
                 // Control characters and bidi overrides are rendered as
                 // pictures: a file being reviewed must not be able to steer the
                 // terminal showing it.
-                println!("{:>5} │ {}", number + 1, visible(line));
+                println!("{:>5} │ {}", number + 1, sanitize(line));
             }
         }
         None => println!("(binary — pass --raw to write the bytes to stdout)"),
