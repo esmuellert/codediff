@@ -5,7 +5,7 @@
 //! rather than two parses. The worker keeps no results at all — only its place
 //! in a file it has not finished, which is a bookmark and not a copy.
 //!
-//! Entries are dropped least-recently-used, capped by lines held rather than
+//! Entries are dropped least-recently-used, capped by total lines cached rather than
 //! by number of files, because files differ by three orders of magnitude and
 //! counting them measures nothing. The file being read is never dropped: it is
 //! used every frame, so it is never the least recent, and that falls out of
@@ -18,7 +18,7 @@ use syntax::Span;
 
 use super::message::{SyntaxResponse, Version};
 
-/// Lines held before the least recently used file is dropped.
+/// Max cached lines before the LRU file is evicted.
 ///
 /// Spans measured at 3.5 per line on our own source, so roughly 80 bytes a
 /// line: eight hundred thousand lines is about sixty-four megabytes. Generous
@@ -30,7 +30,7 @@ const BUDGET: usize = 800_000;
 ///
 /// Spans and nothing else. Deliberately not a `Highlighted`: that holds an
 /// engine's position, which is the worker's business, and the interface has no
-/// use for one when it is not the thing reading.
+/// use for one when it is not doing the colouring.
 #[derive(Debug, Default)]
 pub struct Colours {
     read: Vec<Vec<Span>>,
@@ -78,7 +78,7 @@ pub struct Store {
     /// searched by key every time one is used, and at the handful of entries a review
     /// holds a scan beats a second index.
     order: Vec<String>,
-    held: usize,
+    cached_lines: usize,
 }
 
 impl Store {
@@ -109,7 +109,7 @@ impl Store {
         match self.entries.get_mut(key) {
             Some(colours) if colours.version == version => {}
             Some(colours) => {
-                self.held -= colours.read.len();
+                self.cached_lines -= colours.read.len();
                 *colours = Colours {
                     read: Vec::new(),
                     version,
@@ -130,7 +130,7 @@ impl Store {
 
     /// Installs a piece, and says whether the screen may have changed.
     ///
-    /// An answer for a file no longer held is dropped: it was evicted while
+    /// An answer for an evicted file is dropped: it was removed while
     /// the worker was busy, and installing half of it would leave the file
     /// looking coloured when most of it is not.
     pub fn install(&mut self, response: SyntaxResponse) -> bool {
@@ -142,7 +142,7 @@ impl Store {
         if !colours.install(response) {
             return false;
         }
-        self.held += colours.read.len() - before;
+        self.cached_lines += colours.read.len() - before;
         self.evict(&key);
         true
     }
@@ -153,13 +153,13 @@ impl Store {
     /// budget is still the file being read, and colouring it only to throw it
     /// away would loop.
     fn evict(&mut self, keeping: &str) {
-        while self.held > BUDGET {
+        while self.cached_lines > BUDGET {
             let Some(position) = self.order.iter().position(|key| key != keeping) else {
                 return;
             };
             let key = self.order.remove(position);
             if let Some(colours) = self.entries.remove(&key) {
-                self.held -= colours.read.len();
+                self.cached_lines -= colours.read.len();
             }
         }
     }
@@ -171,12 +171,12 @@ impl Store {
         self.order.push(key.to_owned());
     }
 
-    /// How many lines are held, for tests and for a status display.
-    pub fn held(&self) -> usize {
-        self.held
+    /// Total lines cached across all files.
+    pub fn get_cached_lines(&self) -> usize {
+        self.cached_lines
     }
 
-    /// How many versions of how many files are held.
+    /// How many file versions are cached.
     pub fn cached_count(&self) -> usize {
         self.entries.len()
     }
@@ -302,7 +302,7 @@ mod tests {
             "the old colours describe text that is gone"
         );
         assert_eq!(
-            store.held(),
+            store.lines_cached(),
             0,
             "and are not still counted against the budget"
         );

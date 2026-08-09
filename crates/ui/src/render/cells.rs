@@ -134,8 +134,8 @@ pub fn fill(buf: &mut Buffer, row: Rect, style: Style) {
 
 /// Repeats one character across a row.
 ///
-/// Used for the filler hatching where a side has no line at all.
-pub fn hatch(buf: &mut Buffer, row: Rect, symbol: &str, style: Style) {
+/// Fills a row with a repeated symbol. Used where a side has no line at all.
+pub fn fill_repeat_pattern(buf: &mut Buffer, row: Rect, symbol: &str, style: Style) {
     for x in row.x..row.right() {
         if let Some(cell) = buf.cell_mut((x, row.y)) {
             cell.set_symbol(symbol);

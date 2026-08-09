@@ -13,7 +13,7 @@ use crate::render::gutter;
 use crate::render::layout::Column;
 use crate::render::line::{self, Painter};
 
-/// The hatching drawn where a side has no line.
+/// The symbol repeated where a side has no line.
 ///
 /// The plugin's choice, and a good one: it is visibly not content, and it
 /// slants, so a block of them reads as a gap rather than as a border.
@@ -72,7 +72,7 @@ fn view_line(
     let Slot::Line(number) = slot else {
         // No line on this side at all. Hatch the whole width, gutter included,
         // so the gap is unmistakable and no line number is implied.
-        cells::hatch(buf, column.row(y), FILLER, theme.normal.patch(theme.filler));
+        cells::fill_repeat_pattern(buf, column.row(y), FILLER, theme.normal.patch(theme.filler));
         return;
     };
 

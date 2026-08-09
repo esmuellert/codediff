@@ -41,10 +41,10 @@ pub struct Palette {
 /// whether this line is inside a block comment — and `HighlightState` knows
 /// which theme rules those contexts resolved to. Both must be carried from one
 /// line to the next, so a highlighter cannot be asked about line 500 alone.
-pub struct Reading {
+pub struct SyntectState {
     parse: ParseState,
     highlight: HighlightState,
-    /// The line with its newline restored, reused so that reading a file does
+    /// The line with its newline restored, reused so that engine_state a file does
     /// not allocate once per line.
     ///
     /// The grammars are the newline-terminated variants, because a rule that
@@ -98,11 +98,11 @@ impl Engine {
         &self.syntaxes.syntaxes()[grammar.0].name
     }
 
-    /// Begins reading a file from its first line.
-    pub fn start(&self, grammar: Grammar, palette: &Palette) -> Reading {
+    /// Begins engine_state a file from its first line.
+    pub fn start(&self, grammar: Grammar, palette: &Palette) -> SyntectState {
         let syntax = &self.syntaxes.syntaxes()[grammar.0];
         let highlighter = Highlighter::new(&palette.theme);
-        Reading {
+        SyntectState {
             parse: ParseState::new(syntax),
             highlight: HighlightState::new(&highlighter, ScopeStack::new()),
             buffer: String::new(),
@@ -118,14 +118,14 @@ impl Engine {
     /// The caller already has the whole slice, so there is nothing to give up.
     pub fn read(
         &self,
-        reading: &mut Reading,
+        engine_state: &mut SyntectState,
         palette: &Palette,
         lines: &[String],
         into: &mut Vec<Vec<Span>>,
     ) {
         let matcher = Highlighter::new(&palette.theme);
         for line in lines {
-            let spans = self.read_line(reading, &matcher, line);
+            let spans = self.read_line(engine_state, &matcher, line);
             into.push(spans);
         }
     }
@@ -138,12 +138,12 @@ impl Engine {
     /// having no spans, so a minified bundle cannot corrupt the lines after
     /// it. That is `bat`'s answer; `delta` truncates the text and loses the
     /// state.
-    fn read_line(&self, reading: &mut Reading, matcher: &Highlighter<'_>, line: &str) -> Vec<Span> {
-        reading.buffer.clear();
-        reading.buffer.push_str(line);
-        reading.buffer.push('\n');
+    fn read_line(&self, engine_state: &mut SyntectState, matcher: &Highlighter<'_>, line: &str) -> Vec<Span> {
+        engine_state.buffer.clear();
+        engine_state.buffer.push_str(line);
+        engine_state.buffer.push('\n');
 
-        let Ok(ops) = reading.parse.parse_line(&reading.buffer, &self.syntaxes) else {
+        let Ok(ops) = engine_state.parse.parse_line(&engine_state.buffer, &self.syntaxes) else {
             // A grammar that failed on one line has not failed on the file.
             return Vec::new();
         };
@@ -153,7 +153,7 @@ impl Engine {
         }
 
         let spans =
-            RangedHighlightIterator::new(&mut reading.highlight, &ops, &reading.buffer, matcher)
+            RangedHighlightIterator::new(&mut engine_state.highlight, &ops, &engine_state.buffer, matcher)
                 .map(|(style, _, range)| {
                     // The newline we added is not part of the line the caller holds.
                     let end = range.end.min(line.len());

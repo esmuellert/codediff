@@ -6,7 +6,7 @@
 //! carries both, since both versions have it there.
 //!
 //! No fillers and no divider: nothing is drawn opposite anything, so there is
-//! no gap to hatch. That is the whole visual difference from
+//! no gap to fill. That is the whole visual difference from
 //! [`side_by_side`](crate::draw::buffer::side_by_side) — the colours, the
 //! inner-change highlighting and the cursor line are shared with it verbatim,
 //! in [`line`](crate::render::line).

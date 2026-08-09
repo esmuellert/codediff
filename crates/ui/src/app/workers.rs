@@ -18,12 +18,12 @@ impl Session {
         let mut changed = false;
         let mut idle = 0;
         while self.is_colouring() && idle < IDLE_ANSWERS {
-            let held = self.store.held();
+            let held = self.store.get_cached_lines();
             match self.syntax.next() {
                 Some(response) => changed |= self.store.install(response),
                 None => break,
             }
-            idle = if self.store.held() > held {
+            idle = if self.store.get_cached_lines() > held {
                 0
             } else {
                 idle + 1

@@ -71,7 +71,7 @@ pub fn draw(
     let area = frame.divider;
     let style = theme.normal.patch(theme.divider);
     for y in area.y..area.bottom() {
-        cells::hatch(
+        cells::fill_repeat_pattern(
             buf,
             Rect {
                 y,

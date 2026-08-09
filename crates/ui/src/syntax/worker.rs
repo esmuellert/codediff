@@ -24,7 +24,7 @@ use super::message::{SyntaxRequest, SyntaxResponse};
 /// Lines sent back at a time.
 ///
 /// The only reason this is not "everything wanted at once" is that a very long
-/// file would otherwise stay plain until all of it was done — sixteen seconds
+/// file would otherwise stay plain until all of it was coloured — sixteen seconds
 /// for three hundred thousand lines with the slower engine. Two thousand lines
 /// is a hundred milliseconds of that engine's work and five of the other's, so
 /// a reader sees colour arrive promptly and in order.
@@ -82,7 +82,7 @@ fn respond(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mu
         let chunk = (sent + CHUNK).min(target);
         reading
             .reading
-            .reach(engine(), palette(), chunk, &request.text, &mut spans);
+            .read_colours_to_line(engine(), palette(), chunk, &request.text, &mut spans);
 
         // What the engine actually reached, which for a parser is the whole
         // file however little was asked for.
@@ -137,7 +137,7 @@ fn respond(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mu
     remember(reading, memos);
 }
 
-/// The reading to continue, whether remembered or begun.
+/// The engine state to continue, whether remembered or begun.
 ///
 /// `None` when nothing claims the language, which is not an error: plenty of
 /// files in a review are data, and they draw plainly.
@@ -162,7 +162,7 @@ fn resume(request: &SyntaxRequest, memos: &mut Vec<Memo>) -> Option<Memo> {
     })
 }
 
-/// Keeps a reading in case the file is scrolled further.
+/// Keeps the engine state in case the file is scrolled further.
 ///
 /// A finished file is not remembered: there is nothing left to carry, and the
 /// asker has every line already.
