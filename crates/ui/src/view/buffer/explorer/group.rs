@@ -31,7 +31,7 @@ pub struct Group {
 /// order is the backend's: it knows that what is unstaged is reviewed before
 /// what is staged, and a comparison of two revisions has only one group to
 /// order.
-pub fn of(files: &[File]) -> Vec<(&'static str, Vec<usize>)> {
+pub fn from_files(files: &[File]) -> Vec<(&'static str, Vec<usize>)> {
     let mut groups: Vec<(Revs, Vec<usize>)> = Vec::new();
     for (index, file) in files.iter().enumerate() {
         let revs = file.revs();

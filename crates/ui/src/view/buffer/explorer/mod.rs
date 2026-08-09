@@ -291,7 +291,7 @@ impl Explorer {
                 .collect(),
         };
         let mode = self.mode;
-        self.groups = group::of(&kept)
+        self.groups = group::from_files(&kept)
             .into_iter()
             .map(|(heading, files)| group::Group {
                 heading,

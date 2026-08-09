@@ -177,7 +177,7 @@ impl Store {
     }
 
     /// How many versions of how many files are held.
-    pub fn entries(&self) -> usize {
+    pub fn cached_count(&self) -> usize {
         self.entries.len()
     }
 }

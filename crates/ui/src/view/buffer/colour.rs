@@ -163,7 +163,7 @@ mod tests {
         }
 
         assert_eq!(
-            store.entries(),
+            store.cached_count(),
             3,
             "one entry for the shared before side, and one for each after side"
         );
@@ -177,8 +177,8 @@ mod tests {
         let mut syntax = Syntax::start();
         let mut store = Store::new();
         request_diff(&diff(Rev::Worktree), &mut syntax, &mut store, Version(1), 0);
-        let before = store.entries();
+        let before = store.cached_count();
         request_diff(&diff(Rev::Worktree), &mut syntax, &mut store, Version(1), 0);
-        assert_eq!(store.entries(), before, "asking twice made no new entry");
+        assert_eq!(store.cached_count(), before, "asking twice made no new entry");
     }
 }
