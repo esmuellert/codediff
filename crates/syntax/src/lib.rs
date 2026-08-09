@@ -10,10 +10,12 @@ pub mod engine;
 mod group;
 mod highlighted;
 pub mod limits;
+pub mod service;
 mod style;
 
 pub use detect::Clues;
 pub use engine::{Engine, Grammar, Palette, group, rules};
 pub use group::Group;
 pub use highlighted::Highlighted;
+pub use service::{Colours, Spans, Store, Syntax, SyntaxRequest, SyntaxResponse, Version, path_of};
 pub use style::{Capture, Pen, Rule, Span, Style, coalesce};

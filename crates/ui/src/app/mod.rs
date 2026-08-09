@@ -23,7 +23,7 @@ use ratatui::layout::Rect;
 use crate::draw;
 use crate::draw::screen_map::ScreenMap;
 use crate::input::Resolver;
-use crate::syntax::{Store, Syntax};
+use syntax::{Store, Syntax};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 use crate::view::{Buffer, PaneId, View};

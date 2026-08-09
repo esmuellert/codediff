@@ -7,7 +7,7 @@ use file_types::File;
 use pipeline::file;
 
 use super::colour;
-use crate::syntax::{Spans, Store, Syntax, Version};
+use syntax::{Spans, Store, Syntax, Version};
 
 /// One version of a file, and what has been coloured of it.
 #[derive(Debug)]

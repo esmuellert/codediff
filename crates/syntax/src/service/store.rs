@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use align::DiffVersion;
-use syntax::Span;
+use crate::Span;
 
 use super::message::{SyntaxResponse, Version};
 
@@ -232,7 +232,7 @@ impl<'a> Spans<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use syntax::{Pen, Style};
+    use crate::{Pen, Style};
 
     fn key(path: &str) -> String {
         format!("worktree:{path}")

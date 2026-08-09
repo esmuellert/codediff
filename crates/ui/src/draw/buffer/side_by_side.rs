@@ -15,7 +15,7 @@ use crate::draw::{Look, TextRects};
 use crate::render::layout;
 use crate::render::line::Painter;
 use crate::render::{cells, column};
-use crate::syntax::Spans;
+use syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::SideBySide;

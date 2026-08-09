@@ -20,7 +20,7 @@ use crate::draw::{Look, TextRects};
 use crate::render::layout::{self, InlineFrame};
 use crate::render::line::{self, Painter};
 use crate::render::{cells, gutter};
-use crate::syntax::Spans;
+use syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::Buffer;
 use crate::view::buffer::Inline;

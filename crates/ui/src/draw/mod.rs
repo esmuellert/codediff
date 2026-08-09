@@ -22,7 +22,7 @@ pub use screen::render;
 
 use ratatui::layout::Rect;
 
-use crate::syntax::Store;
+use syntax::Store;
 use crate::theme::Theme;
 use crate::view::selection::SelectionColumn;
 

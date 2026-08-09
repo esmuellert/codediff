@@ -17,7 +17,7 @@
 use std::sync::OnceLock;
 use std::sync::mpsc::{Receiver, Sender};
 
-use syntax::{Clues, Engine, Highlighted, Palette};
+use crate::{Clues, Engine, Highlighted, Palette};
 
 use super::message::{SyntaxRequest, SyntaxResponse};
 

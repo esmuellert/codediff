@@ -14,7 +14,7 @@ use crate::draw::{Look, TextRects};
 use crate::render::cells::{self, Ink};
 use crate::render::gutter;
 use crate::render::layout::gutter_width;
-use crate::syntax::Spans;
+use syntax::Spans;
 use crate::view::Viewport;
 use crate::view::buffer::SingleFile;
 use crate::view::selection::SelectionColumn;

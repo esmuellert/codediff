@@ -11,6 +11,8 @@ publish = false
 
 [dependencies]
 line-index.workspace = true
+align.workspace = true
+file-types.workspace = true
 syntect.workspace = true
 two-face.workspace = true
 tree-sitter.workspace = true

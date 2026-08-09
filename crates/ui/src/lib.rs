@@ -13,7 +13,6 @@ pub use draw::screen_map::ScreenMap;
 pub mod input;
 mod render;
 mod start;
-mod syntax;
 mod terminal;
 pub mod theme;
 pub mod view;

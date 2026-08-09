@@ -9,7 +9,7 @@ use file_types::File;
 use pipeline::file;
 
 use super::colour;
-use crate::syntax::{Spans, Store, Syntax, Version};
+use syntax::{Spans, Store, Syntax, Version};
 
 /// A diff shown one version per view line.
 #[derive(Debug)]
