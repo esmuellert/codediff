@@ -469,8 +469,8 @@ mod tests {
         }
 
         fn entries(&self) -> Vec<Entry> {
-            let repo = crate::git::rev_parse::discover(&self.dir).expect("opening");
-            crate::git::entries(&repo, Untracked::default(), &[]).expect("status runs")
+            let repo = crate::git::rev_parse::find_repo(&self.dir).expect("opening");
+            crate::git::status_entries(&repo, Untracked::default(), &[]).expect("status runs")
         }
     }
 

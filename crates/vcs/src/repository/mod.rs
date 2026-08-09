@@ -40,7 +40,7 @@ impl Repository {
     /// that, and every path built afterwards is relative to what it found.
     pub fn open(path: &Path) -> crate::Result<Self> {
         Ok(Self {
-            repo: rev_parse::discover(path)?,
+            repo: rev_parse::find_repo(path)?,
             revs: None,
             blobs: None,
         })

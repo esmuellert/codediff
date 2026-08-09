@@ -5,7 +5,7 @@ use file_types::{ChangeType, File, RepoPath, Rev, Revs, Stage};
 use crate::git::diff::name_status::Change;
 use crate::git::diff::numstat::{self, Counts};
 use crate::git::status::{Code, Entry, Untracked};
-use crate::git::{self, Plan};
+use crate::git::{self, GitCommand};
 
 use super::Repository;
 
@@ -22,13 +22,13 @@ impl Repository {
         diff_type: &super::DiffType,
         pathspec: &[String],
     ) -> crate::Result<Vec<File>> {
-        match git::plan(&self.repo, diff_type)? {
-            Plan::Worktree => {
-                let entries = git::entries(&self.repo, Untracked::All, pathspec)?;
+        match git::resolve_command(&self.repo, diff_type)? {
+            GitCommand::Worktree => {
+                let entries = git::status_entries(&self.repo, Untracked::All, pathspec)?;
                 let commit = self.revs()?.before;
                 Ok(from_status(entries, &self.repo.root, commit))
             }
-            Plan::Diff { args, revs } => {
+            GitCommand::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 let files = git::diff::name_status::run(&self.repo, &args, pathspec)?
                     .into_iter()
@@ -48,13 +48,13 @@ impl Repository {
         diff_type: &super::DiffType,
         pathspec: &[String],
     ) -> crate::Result<Counts> {
-        match git::plan(&self.repo, diff_type)? {
-            Plan::Worktree => {
+        match git::resolve_command(&self.repo, diff_type)? {
+            GitCommand::Worktree => {
                 let mut counts = numstat::unstaged(&self.repo)?;
                 counts.extend(numstat::staged(&self.repo)?);
                 Ok(counts)
             }
-            Plan::Diff { args, .. } => {
+            GitCommand::Diff { args, .. } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 numstat::diff(&self.repo, &args, pathspec)
             }

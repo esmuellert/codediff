@@ -29,7 +29,7 @@ use crate::repository::DiffType;
 use status::{Entry, Untracked};
 
 /// Which git command answers a comparison.
-pub enum Plan {
+pub enum GitCommand {
     /// `git status` — yields two comparisons (index vs HEAD, worktree vs index).
     Worktree,
     /// `git diff <args>` — one comparison.
@@ -37,16 +37,16 @@ pub enum Plan {
 }
 
 /// Resolves revision names to ids and picks the command shape.
-pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
+pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> {
     let commit = |name: &str| -> Result<Rev> { Ok(Rev::Commit(rev_parse::resolve(repo, name)?)) };
 
     Ok(match diff_type {
-        DiffType::Worktree => Plan::Worktree,
-        DiffType::Against(rev) => Plan::Diff {
+        DiffType::Worktree => GitCommand::Worktree,
+        DiffType::Against(rev) => GitCommand::Diff {
             args: vec![rev.clone()],
             revs: Revs::new(commit(rev)?, Rev::Worktree),
         },
-        DiffType::Between(a, b) => Plan::Diff {
+        DiffType::Between(a, b) => GitCommand::Diff {
             args: vec![a.clone(), b.clone()],
             revs: Revs::new(commit(a)?, commit(b)?),
         },
@@ -54,12 +54,12 @@ pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
             // Where the two parted, which is what `a...b` means and the only
             // reason this is its own way of comparing rather than a spelling.
             let base = merge_base::run(repo, base, target)?;
-            Plan::Diff {
+            GitCommand::Diff {
                 args: vec![base.as_str().to_owned(), target.clone()],
                 revs: Revs::new(Rev::Commit(base), commit(target)?),
             }
         }
-        DiffType::Staged(rev) => Plan::Diff {
+        DiffType::Staged(rev) => GitCommand::Diff {
             args: vec!["--cached".to_owned(), rev.clone()],
             revs: Revs::new(commit(rev)?, Rev::Index),
         },
@@ -69,7 +69,7 @@ pub fn plan(repo: &Repo, diff_type: &DiffType) -> Result<Plan> {
 /// The raw records, in git's own terms.
 ///
 /// Runs `git --no-optional-locks status --porcelain=v2 -z`.
-pub fn entries(repo: &Repo, untracked: Untracked, pathspec: &[String]) -> Result<Vec<Entry>> {
+pub fn status_entries(repo: &Repo, untracked: Untracked, pathspec: &[String]) -> Result<Vec<Entry>> {
     let mut args = vec![
         "status",
         "--porcelain=v2",
@@ -103,14 +103,10 @@ pub fn read(
     match file.rev(version).stored() {
         None => Ok(FileContent::from_bytes(worktree::read(&path)?)),
         Some(rev) => {
-            // Against the working tree, the stored side is converted the way a
-            // checkout would convert it. A repository with `core.autocrlf`
-            // stores LF and checks out CRLF, so comparing the stored bytes
-            // with the bytes on disk marked every line changed — measured,
-            // on a file where one line had been edited. The same is true of
-            // any clean/smudge filter.
+            // When comparing against the worktree, apply checkout filters
+            // (CRLF, smudge) so the stored side matches what's on disk.
             if file.rev(version.other()) == &Rev::Worktree {
-                return Ok(FileContent::from_bytes(cat_file::filtered(repo, rev, &path)?));
+                return Ok(FileContent::from_bytes(cat_file::read_filtered(repo, rev, &path)?));
             }
             Ok(FileContent::from_bytes(blobs.read(rev, &path)?))
         }

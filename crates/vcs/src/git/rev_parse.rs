@@ -12,7 +12,7 @@ use crate::repo::Repo;
 /// upwards looking for `.git`: a linked worktree has a `.git` *file*, a
 /// submodule's git dir lives in the parent's `.git/modules`, and
 /// `GIT_DIR`/`GIT_WORK_TREE` override both.
-pub fn discover(path: &Path) -> Result<Repo> {
+pub fn find_repo(path: &Path) -> Result<Repo> {
     let start = if path.is_dir() {
         path.to_path_buf()
     } else {

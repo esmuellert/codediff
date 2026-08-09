@@ -104,24 +104,17 @@ impl Drop for Batch {
     }
 }
 
-/// A stored version, converted as a checkout would convert it.
+/// Reads a blob through checkout filters (CRLF, smudge).
 ///
-/// Runs `git cat-file --filters <rev>:<path>`. `None` when the object does not
-/// exist, which is ordinary: one side of a diff is routinely absent.
-///
-/// Not batched. `cat-file --batch --filters` reports the size of the
-/// object *before* filtering and then writes the filtered bytes, so a reader
-/// framing by that size falls out of step with the stream. One process per
-/// file is the price of being right, and it is paid only when a file is
-/// opened.
-pub fn filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
+/// Runs `cat-file --filters`. Returns `None` if the object doesn't exist.
+/// Not batched — `--batch --filters` reports pre-filter size, which breaks
+/// stream framing.
+pub fn read_filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
     let spec = format!("{rev}:{path}");
     match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
         Ok(bytes) => Ok(Some(bytes)),
-        // Only what git says when the object is not there. Reading *every*
-        // failure as "missing" turned a broken clean filter, a corrupt object
-        // and a killed process into a file that had simply been added — a
-        // whole-file diff, with nothing to say the read had failed.
+        // Only match git's "object not found" message. Treating all errors as
+        // "missing" would hide real failures (corrupt objects, broken filters).
         Err(Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
         Err(other) => Err(other),
     }
