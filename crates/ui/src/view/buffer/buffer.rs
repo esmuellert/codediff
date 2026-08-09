@@ -71,6 +71,10 @@ impl Buffer {
         &self.buffer_type
     }
 
+    pub fn buffer_type_mut(&mut self) -> &mut BufferType {
+        &mut self.buffer_type
+    }
+
     /// Asks the syntax worker to colour up to `last`. Returns immediately.
     pub fn request(&mut self, syntax: &mut Syntax, store: &mut Store, version: Version, last: u32) {
         match &mut self.buffer_type {

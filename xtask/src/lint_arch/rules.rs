@@ -184,7 +184,9 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 pub const THREAD_FILES: &[&str] = &[
     "crates/ui/src/syntax/mod.rs",
     "crates/pipeline/src/file/service.rs",
+    "crates/pipeline/src/list/worker.rs",
     "crates/ui/src/app/event.rs",
+    "crates/ui/src/app/mod.rs",
 ];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 

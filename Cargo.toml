@@ -112,7 +112,6 @@ signal-hook = { version = "0.3", features = ["iterator"] }
 # Filesystem watcher: detects worktree and .git changes so the explorer stays
 # current without polling. The debouncer collapses rapid events into one.
 notify = "8.2"
-notify-debouncer-full = "0.7"
 # Respects .gitignore so build output never triggers a refresh.
 ignore = "0.4"
 # Structured logging. Only active when CODEDIFF_LOG is set; writes to stderr.

@@ -16,6 +16,7 @@ mod mouse;
 mod workers;
 
 use pipeline::file::Files;
+use pipeline::list::ListWorker;
 use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
@@ -51,6 +52,7 @@ pub struct Session {
     pub(crate) resolver: Resolver,
     pub(crate) syntax: Syntax,
     pub(crate) files: Files,
+    pub(crate) list_worker: ListWorker,
     /// The file the reader last selected, waiting to be sent to the worker.
     pub(crate) selected: Option<file_types::File>,
     /// Syntax spans for all open files.
@@ -78,6 +80,7 @@ impl Session {
             resolver: Resolver::new(),
             syntax,
             files,
+            list_worker: ListWorker::start(),
             selected: None,
             store,
             notice: None,
@@ -146,7 +149,7 @@ impl Session {
 const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 
 /// The main loop. Terminal is restored by `Screen`'s `Drop`.
-pub fn run(session: &mut Session) -> std::io::Result<()> {
+pub fn run(session: &mut Session, repo_root: &std::path::Path) -> std::io::Result<()> {
     use std::sync::mpsc;
 
     let mut screen = Screen::open()?;
@@ -156,12 +159,29 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
     let (tx, rx) = mpsc::channel::<event::Event>();
     event::spawn_reader(tx.clone());
     #[cfg(unix)]
-    event::spawn_signals(tx);
+    event::spawn_signals(tx.clone());
+
+    // Start the watcher with a forwarding thread.
+    let repo_root = repo_root.to_owned();
+    let watcher_root = repo_root.clone();
+    let tx_watch = tx;
+    std::thread::Builder::new()
+        .name("watcher-fwd".to_owned())
+        .spawn(move || {
+            if let Ok((_watcher, rx_watch)) = watcher::start(&watcher_root) {
+                for _refresh in rx_watch {
+                    if tx_watch.send(event::Event::FsChanged).is_err() {
+                        break;
+                    }
+                }
+            }
+        })
+        .expect("the watcher-fwd thread starts");
 
     loop {
-        // Block until an event arrives. When workers are busy, use a short
-        // timeout so we can collect their results at frame rate.
-        let ev = if session.is_colouring() || session.is_loading_file() {
+        let busy =
+            session.is_colouring() || session.is_loading_file() || session.list_worker.is_busy();
+        let ev = if busy {
             rx.recv_timeout(FRAME).ok()
         } else {
             rx.recv().ok()
@@ -170,7 +190,13 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
         // Collect worker results.
         let mut changed = session.receive_colours() | session.receive_file();
 
-        // Handle terminal events from the batch.
+        // Check list worker for re-list results.
+        if let Some(new_files) = session.list_worker.poll() {
+            session.view.update_explorer(new_files);
+            changed = true;
+        }
+
+        // Handle terminal events.
         if let Some(event::Event::Terminal(ref e)) = ev {
             match session.handle_event(e) {
                 Flow::Quit => return Ok(()),
@@ -180,6 +206,13 @@ pub fn run(session: &mut Session) -> std::io::Result<()> {
                 }
                 Flow::Continue => changed = true,
             }
+        }
+
+        // Watcher event: re-list if the worker is free.
+        if let Some(event::Event::FsChanged) = ev {
+            tracing::debug!("fs change detected");
+            let request = pipeline::list::Request::worktree(&repo_root);
+            session.list_worker.send_request(request);
         }
 
         // A kill signal: restore the terminal and exit immediately.

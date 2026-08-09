@@ -170,6 +170,22 @@ impl View {
         self.tabs[self.active].set_right_pane(id);
     }
 
+    /// Replaces the explorer's file list, preserving cursor position.
+    pub fn update_explorer(&mut self, files: Vec<file_types::File>) {
+        let explorer_id = BufferId(0); // The explorer is always the first buffer.
+        let buffer = &mut self.buffers[explorer_id.0];
+        let tab = &mut self.tabs[self.active];
+        let pane_id = tab.ids().next().unwrap();
+        let pane = tab.pane_mut(pane_id);
+        let cursor = pane.viewport.cursor();
+        if let BufferType::Explorer(explorer) = buffer.buffer_type_mut() {
+            let landing = explorer.reshape_around(cursor, |e| e.refresh(files));
+            let lines = explorer.view_lines();
+            pane.viewport.place(landing, lines);
+        }
+        self.version = Version(self.version.0 + 1);
+    }
+
     /// The focused pane's buffer and viewport together.
     pub fn focused_mut(&mut self) -> (&mut Buffer, &mut Viewport) {
         let pane = self.tabs[self.active].focused_mut();

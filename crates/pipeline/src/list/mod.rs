@@ -6,8 +6,10 @@
 
 pub mod entries;
 mod request;
+mod worker;
 
 pub use request::Request;
+pub use worker::ListWorker;
 
 use anyhow::Result;
 use file_types::File;

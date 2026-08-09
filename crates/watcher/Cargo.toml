@@ -7,7 +7,6 @@ publish = false
 
 [dependencies]
 notify = { workspace = true }
-notify-debouncer-full = { workspace = true }
 ignore = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }

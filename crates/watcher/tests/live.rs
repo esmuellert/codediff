@@ -14,6 +14,9 @@ const TIMEOUT: Duration = Duration::from_secs(3);
 /// Short wait to confirm nothing arrives.
 const SHORT: Duration = Duration::from_millis(300);
 
+/// Long enough for a self-sustaining loop (~15 Hz) to show itself.
+const QUIET: Duration = Duration::from_secs(1);
+
 /// Time to let watches settle after start.
 
 struct Repo {
@@ -417,5 +420,58 @@ fn heavy_non_ignored_writes_stay_responsive() {
     assert!(
         write_time < Duration::from_secs(5),
         "writing 500 files took {write_time:?} — watcher may be blocking"
+    );
+}
+
+// === Read-only access must never wake the watcher ===
+
+/// Every read codediff performs while it refreshes.
+fn read_like_a_refresh(repo: &Repo) {
+    repo.git(&["--no-optional-locks", "status", "--porcelain=v2", "-z"]);
+    let _ = fs::read(repo.path().join(".git/HEAD"));
+    let _ = fs::read(repo.path().join(".git/index"));
+    let _ = fs::read(repo.path().join("file.txt"));
+    let _ = fs::read(repo.path().join(".gitignore"));
+}
+
+#[test]
+fn reading_files_triggers_nothing() {
+    let (repo, _w, rx) = setup();
+    read_like_a_refresh(&repo);
+    assert!(
+        rx.recv_timeout(QUIET).is_err(),
+        "reads must not trigger a refresh"
+    );
+}
+
+#[test]
+fn refresh_does_not_feed_itself() {
+    let (repo, _w, rx) = setup();
+
+    // One real edit starts the cycle.
+    fs::write(repo.path().join("file.txt"), "changed").unwrap();
+
+    // Answer every refresh with the reads a refresh performs. If a read
+    // counts as a change, this never settles.
+    let mut refreshes = 0;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        match rx.recv_timeout(QUIET) {
+            Ok(_) => {
+                refreshes += 1;
+                assert!(
+                    refreshes <= 20,
+                    "feedback loop: {refreshes} refreshes and still going"
+                );
+                read_like_a_refresh(&repo);
+            }
+            Err(_) => break,
+        }
+    }
+
+    assert!(refreshes >= 1, "the edit itself must produce a refresh");
+    assert!(
+        refreshes <= 3,
+        "should settle in a few refreshes, got {refreshes}"
     );
 }

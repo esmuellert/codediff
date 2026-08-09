@@ -26,7 +26,13 @@ pub fn get_refresh(events: &[notify::Event], ctx: &Context) -> Refresh {
     out
 }
 
-fn refresh_for_path(path: &Path, _kind: EventKind, ctx: &Context) -> Refresh {
+fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
+    // Read-only access (IN_OPEN, IN_CLOSE_NOWRITE) is not a change.
+    if matches!(kind, EventKind::Access(_)) {
+        tracing::trace!(?path, "skipped: read-only access");
+        return Refresh::default();
+    }
+
     // Skip .lock files — git renames foo.lock → foo atomically.
     if is_lock_file(path) {
         tracing::trace!(?path, "skipped: lock file");
@@ -323,5 +329,36 @@ mod tests {
             &c,
         );
         assert!(r.index);
+    }
+
+    #[test]
+    fn read_only_access_triggers_nothing() {
+        let c = ctx("/repo");
+        // Opening a file for reading (IN_OPEN) must not trigger a refresh.
+        let r = get_refresh(
+            &[event(
+                EventKind::Access(notify::event::AccessKind::Open(
+                    notify::event::AccessMode::Any,
+                )),
+                "/repo/.git/HEAD",
+            )],
+            &c,
+        );
+        assert!(r.is_empty(), "read-only access should not refresh, got {r}");
+    }
+
+    #[test]
+    fn read_only_access_on_worktree_triggers_nothing() {
+        let c = ctx("/repo");
+        let r = get_refresh(
+            &[event(
+                EventKind::Access(notify::event::AccessKind::Open(
+                    notify::event::AccessMode::Any,
+                )),
+                "/repo/src/main.rs",
+            )],
+            &c,
+        );
+        assert!(r.is_empty(), "read-only access should not refresh, got {r}");
     }
 }

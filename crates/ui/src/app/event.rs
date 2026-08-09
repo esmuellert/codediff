@@ -17,6 +17,8 @@ pub enum Event {
     /// number.
     #[cfg(unix)]
     Signal(i32),
+    /// The watcher detected a change in the repo.
+    FsChanged,
 }
 
 /// Spawns the terminal input reader thread. Must be called after raw mode is

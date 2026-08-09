@@ -14,7 +14,7 @@ use crate::view::Buffer;
 /// Reviews everything that changed under `cwd`, until the reader quits.
 pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<()> {
     let theme = theme_for(theme)?;
-    let request = pipeline::list::Request::worktree(cwd).with_pathspec(pathspec);
+    let request = pipeline::list::Request::worktree(&cwd).with_pathspec(pathspec);
     let files = pipeline::list::get_files(&request)?;
 
     if files.is_empty() {
@@ -23,7 +23,7 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
 
     let mut session = Session::new(Buffer::explorer(files), theme);
     session.open();
-    run(&mut session).context("running the review interface")
+    run(&mut session, &cwd).context("running the review interface")
 }
 
 /// An unknown name is an error; `None` picks from the terminal's capabilities.
