@@ -25,7 +25,7 @@ impl UnchangedRegion {
 
     /// The part still worth collapsing once `keymap_type` lines are kept visible at
     /// each end. `None` when the region is too short to be worth hiding.
-    pub fn hidden(&self, keymap_type: u32, minimum: u32) -> Option<UnchangedRegion> {
+    pub fn collapsible_lines(&self, keymap_type: u32, minimum: u32) -> Option<UnchangedRegion> {
         let trimmed = self.len().saturating_sub(keymap_type.saturating_mul(2));
         if trimmed < minimum.max(1) {
             return None;

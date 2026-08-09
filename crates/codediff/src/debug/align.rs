@@ -196,7 +196,7 @@ fn detail(alignment: &Alignment) {
     println!("unchanged regions");
     for region in alignment.unchanged() {
         let collapsible = region
-            .hidden(3, 4)
+            .collapsible_lines(3, 4)
             .map(|h| format!("  ({} line(s) could be hidden)", h.len()))
             .unwrap_or_default();
         println!(
