@@ -90,7 +90,7 @@ fn line(file: &file_types::File, verbose: bool) -> String {
     }
 
     if let Some(previous) = file
-        .on(file_types::DiffVersion::Original)
+        .path_of_version(file_types::DiffVersion::Original)
         .filter(|original| original.as_str() != file.path().as_str())
     {
         out.push_str(&format!(" <- {}", sanitize(previous.as_str())));

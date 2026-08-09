@@ -83,7 +83,7 @@ fn name(
     theme: &Theme,
 ) -> u16 {
     let path = file.path();
-    let note = match file.only() {
+    let note = match file.is_one_sided() {
         Some(file_types::DiffVersion::Modified) => "   (added)",
         Some(file_types::DiffVersion::Original) => "   (deleted)",
         None => "",

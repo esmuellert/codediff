@@ -9,7 +9,6 @@ pub use file_types::DiffVersion;
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
 use crate::layout::{self, ViewLines};
-use crate::region::{UnchangedRegion, regions};
 use crate::view_line::{ViewLine, blocks, is_well_formed};
 
 /// A diff whose ranges do not describe a coherent pairing.
@@ -281,15 +280,6 @@ impl Alignment {
             .filter(|range| line >= range.start_line && line <= range.end_line)
             .flat_map(|range| span_on(range, line, lines, self.tab_width))
             .collect()
-    }
-
-    /// Runs of lines identical on both sides.
-    pub fn unchanged(&self) -> Vec<UnchangedRegion> {
-        regions(
-            &self.diff,
-            self.original.len() as u32,
-            self.modified.len() as u32,
-        )
     }
 
     /// The move a line takes part in, if any.

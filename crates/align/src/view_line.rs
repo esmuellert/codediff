@@ -87,7 +87,7 @@ impl ViewLine {
     }
 
     /// The line each side shows, if both do.
-    pub fn both(&self) -> Option<(u32, u32)> {
+    pub fn line_pair(&self) -> Option<(u32, u32)> {
         Some((self.original.line()?, self.modified.line()?))
     }
 }
