@@ -187,7 +187,7 @@ impl View {
         let cursor = self.tabs[self.active].pane(pane).viewport.cursor();
 
         let anchor = self.line_at(id, cursor);
-        let flipped = self.buffers.remove(id).flipped();
+        let flipped = self.buffers.remove(id).switch_diff_layout();
         self.buffers.insert(id, flipped);
 
         let landing = anchor.and_then(|(version, line)| {

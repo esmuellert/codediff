@@ -20,7 +20,7 @@ impl Session {
             Action::Buffer(action) => {
                 let count = command.repeat();
                 let (buffer, viewport) = self.view.focused_mut();
-                buffer.act(action, count, viewport);
+                buffer.apply(action, count, viewport);
                 Flow::Continue
             }
             Action::Pane(action) => match action {},
@@ -40,7 +40,7 @@ impl Session {
             Action::View(ViewAction::Open) => {
                 let (buffer, viewport) = self.view.focused_mut();
                 let cursor = viewport.cursor();
-                if buffer.select(cursor) {
+                if buffer.activate(cursor) {
                     let lines = buffer.view_lines();
                     viewport.place(cursor.min(lines.saturating_sub(1)), lines);
                 } else {

@@ -58,7 +58,7 @@ impl Buffer {
     }
 
     /// The same buffer in the other layout. Position is not carried.
-    pub fn flipped(self) -> Self {
+    pub fn switch_diff_layout(self) -> Self {
         Self::of(match self.buffer_type {
             BufferType::SideBySide(d) => BufferType::Inline(Inline::new(d.into_diff())),
             BufferType::Inline(d) => BufferType::SideBySide(SideBySide::new(d.into_diff())),
@@ -132,14 +132,14 @@ impl Buffer {
 
     /// Toggles a directory fold on a list. Returns `true` if handled (row was
     /// a directory), `false` if the row is a file the caller should open.
-    pub fn select(&mut self, cursor: u32) -> bool {
+    pub fn activate(&mut self, cursor: u32) -> bool {
         let BufferType::Explorer(explorer) = &mut self.buffer_type else {
             return false;
         };
         if !explorer.toggle(cursor) {
             return false;
         }
-        self.recount();
+        self.update_line_count();
         true
     }
 
@@ -153,7 +153,7 @@ impl Buffer {
     }
 
     /// Rebuilds the row count after a fold or mode change.
-    pub fn recount(&mut self) {
+    pub fn update_line_count(&mut self) {
         let (view_lines, blocks) = counts(&self.buffer_type);
         self.view_lines = view_lines;
         self.blocks = blocks;
@@ -168,7 +168,7 @@ impl Buffer {
     }
 
     /// Applies a buffer action with the given count.
-    pub fn act(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
+    pub fn apply(&mut self, action: BufferAction, count: u32, view: &mut Viewport) {
         self.exhausted = None;
         match action {
             BufferAction::Motion(motion) => view.motion(motion, count, self.view_lines),
@@ -177,14 +177,14 @@ impl Buffer {
             BufferAction::Toggle => {
                 if let BufferType::Explorer(explorer) = &mut self.buffer_type {
                     explorer.toggle(view.cursor());
-                    self.recount();
+                    self.update_line_count();
                 }
             }
             BufferAction::ToggleViewMode => {
                 if let BufferType::Explorer(explorer) = &mut self.buffer_type {
                     let landing =
                         explorer.reshape_around(view.cursor(), |model| model.toggle_mode());
-                    self.recount();
+                    self.update_line_count();
                     view.place(landing, self.view_lines);
                 }
             }
