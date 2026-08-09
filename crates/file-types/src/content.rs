@@ -22,7 +22,7 @@ pub enum FileContent {
 
 impl FileContent {
     /// Classifies raw bytes.
-    pub fn of(bytes: Option<Vec<u8>>) -> Self {
+    pub fn from_bytes(bytes: Option<Vec<u8>>) -> Self {
         let Some(bytes) = bytes else {
             return FileContent::Absent;
         };
@@ -51,7 +51,7 @@ impl FileContent {
     ///
     /// An added file has no before side, and the diff of "nothing" against
     /// "something" is what makes every line show as added.
-    pub fn or_empty(&self) -> &str {
+    pub fn text_or_empty(&self) -> &str {
         self.text().unwrap_or("")
     }
 
@@ -82,8 +82,8 @@ mod tests {
 
     #[test]
     fn a_zero_byte_means_binary() {
-        assert!(FileContent::of(Some(vec![0x89, b'P', b'N', b'G', 0])).is_binary());
-        assert!(!FileContent::of(Some(b"fn main() {}".to_vec())).is_binary());
+        assert!(FileContent::from_bytes(Some(vec![0x89, b'P', b'N', b'G', 0])).is_binary());
+        assert!(!FileContent::from_bytes(Some(b"fn main() {}".to_vec())).is_binary());
     }
 
     #[test]
@@ -92,19 +92,19 @@ mod tests {
         // first kilobyte is text for our purposes.
         let mut bytes = vec![b'a'; 9000];
         bytes.push(0);
-        assert!(!FileContent::of(Some(bytes)).is_binary());
+        assert!(!FileContent::from_bytes(Some(bytes)).is_binary());
     }
 
     #[test]
     fn bytes_that_are_not_utf8_are_treated_as_binary() {
-        assert!(FileContent::of(Some(vec![0xff, 0xfe, 0xfd])).is_binary());
+        assert!(FileContent::from_bytes(Some(vec![0xff, 0xfe, 0xfd])).is_binary());
     }
 
     #[test]
     fn a_missing_side_is_absent_rather_than_empty() {
         // Absent and empty are different: one file was added, the other was
         // always blank.
-        assert!(matches!(FileContent::of(None), FileContent::Absent));
-        assert_eq!(FileContent::of(None).or_empty(), "");
+        assert!(matches!(FileContent::from_bytes(None), FileContent::Absent));
+        assert_eq!(FileContent::from_bytes(None).text_or_empty(), "");
     }
 }

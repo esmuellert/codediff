@@ -191,7 +191,7 @@ impl File {
     }
 
     /// Where the file is on one side, or `None` if it is not there.
-    pub fn on(&self, version: DiffVersion) -> Option<&RepoPath> {
+    pub fn path_of_version(&self, version: DiffVersion) -> Option<&RepoPath> {
         match version {
             DiffVersion::Original => self.original.as_ref(),
             DiffVersion::Modified => self.modified.as_ref(),
@@ -215,7 +215,7 @@ impl File {
     /// An identity and not a path: nothing can read the file name back out of
     /// it, so whatever needs the language asks [`on`](Self::on) instead.
     pub fn name(&self, version: DiffVersion) -> Option<String> {
-        let path = self.on(version)?;
+        let path = self.path_of_version(version)?;
         Some(match self.rev(version).stored() {
             Some(rev) => format!("{rev}:{path}"),
             None => format!("worktree:{path}"),
@@ -226,7 +226,7 @@ impl File {
     ///
     /// What decides whether there is anything to compare. `Some` means the
     /// reader gets one column, because a second could hold nothing.
-    pub fn only(&self) -> Option<DiffVersion> {
+    pub fn is_one_sided(&self) -> Option<DiffVersion> {
         match (&self.original, &self.modified) {
             (None, Some(_)) => Some(DiffVersion::Modified),
             (Some(_), None) => Some(DiffVersion::Original),
@@ -277,7 +277,7 @@ impl File {
     ///
     /// Never `Untracked` or `Conflicted`, which a path pair cannot show.
     pub fn change_type_of_paths(&self) -> ChangeType {
-        match (self.only(), self.is_renamed()) {
+        match (self.is_one_sided(), self.is_renamed()) {
             (Some(crate::DiffVersion::Modified), _) => ChangeType::Added,
             (Some(crate::DiffVersion::Original), _) => ChangeType::Deleted,
             (None, true) => ChangeType::Moved,
@@ -389,16 +389,16 @@ mod tests {
     #[test]
     fn an_added_file_exists_only_on_the_modified_side() {
         let file = File::added(at("new.rs"), revs());
-        assert_eq!(file.only(), Some(DiffVersion::Modified));
-        assert_eq!(file.on(DiffVersion::Original), None);
+        assert_eq!(file.is_one_sided(), Some(DiffVersion::Modified));
+        assert_eq!(file.path_of_version(DiffVersion::Original), None);
         assert_eq!(file.path().as_str(), "new.rs");
     }
 
     #[test]
     fn a_deleted_file_exists_only_on_the_original_side() {
         let file = File::deleted(at("gone.rs"), revs());
-        assert_eq!(file.only(), Some(DiffVersion::Original));
-        assert_eq!(file.on(DiffVersion::Modified), None);
+        assert_eq!(file.is_one_sided(), Some(DiffVersion::Original));
+        assert_eq!(file.path_of_version(DiffVersion::Modified), None);
         assert_eq!(file.path().as_str(), "gone.rs", "still has a name");
     }
 
@@ -410,11 +410,11 @@ mod tests {
         assert!(file.is_renamed());
         assert_eq!(file.path().as_str(), "new.rs");
         assert_eq!(file.previous_path().map(RepoPath::as_str), Some("old.rs"));
-        assert_eq!(file.only(), None, "both sides exist");
+        assert_eq!(file.is_one_sided(), None, "both sides exist");
     }
 
     #[test]
-    fn a_file_at_one_path_on_both_sides_is_not_a_rename() {
+    fn a_file_at_one_path_of_version_both_sides_is_not_a_rename() {
         let file = File::unchanged_path(at("src/main.rs"), revs());
         assert!(!file.is_renamed());
         assert_eq!(file.previous_path(), None);
@@ -539,7 +539,7 @@ mod tests {
         // and it is two facts rather than one. Folding the revision into the
         // path would lose the half that says where.
         let added = File::added(at("new.rs"), revs());
-        assert_eq!(added.on(DiffVersion::Original), None);
+        assert_eq!(added.path_of_version(DiffVersion::Original), None);
         assert_eq!(
             added.rev(DiffVersion::Original),
             &Rev::Commit(crate::Oid::new("b87b24c"))

@@ -64,7 +64,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     // A file that exists on only one side is not compared against anything, so
     // there is no diff to print — only the file. This is what the interface
     // shows too, in one pane rather than two.
-    if let Some(version) = runner.only() {
+    if let Some(version) = runner.is_one_sided() {
         return one_sided(&runner, version);
     }
 

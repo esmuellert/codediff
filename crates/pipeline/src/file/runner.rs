@@ -42,7 +42,7 @@ impl DiffContent {
 impl SingleFile {
     /// Which side the file exists on.
     pub fn side(&self) -> DiffVersion {
-        self.file.only().unwrap_or(DiffVersion::Modified)
+        self.file.is_one_sided().unwrap_or(DiffVersion::Modified)
     }
 }
 
@@ -60,8 +60,8 @@ impl Runner {
     }
 
     /// The one version this file exists as, or `None` when it exists as both.
-    pub fn only(&self) -> Option<DiffVersion> {
-        self.contents.file().only()
+    pub fn is_one_sided(&self) -> Option<DiffVersion> {
+        self.contents.file().is_one_sided()
     }
 
     /// A picture has no lines, so there is nothing to align.
@@ -72,7 +72,7 @@ impl Runner {
     /// Runs stages two to four.
     pub fn compute_diff(&self) -> Result<DiffContent> {
         let file = self.contents.file().clone();
-        match file.only() {
+        match file.is_one_sided() {
             // Nothing to compare against, so neither two columns nor an
             // interleaving has anything to say.
             Some(version) => Ok(DiffContent::SingleFile(SingleFile {

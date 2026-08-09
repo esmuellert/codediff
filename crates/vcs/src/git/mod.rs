@@ -97,11 +97,11 @@ pub fn read(
     file: &File,
     version: DiffVersion,
 ) -> Result<FileContent> {
-    let Some(path) = file.on(version).cloned() else {
+    let Some(path) = file.path_of_version(version).cloned() else {
         return Ok(FileContent::Absent);
     };
     match file.rev(version).stored() {
-        None => Ok(FileContent::of(worktree::read(&path)?)),
+        None => Ok(FileContent::from_bytes(worktree::read(&path)?)),
         Some(rev) => {
             // Against the working tree, the stored side is converted the way a
             // checkout would convert it. A repository with `core.autocrlf`
@@ -110,9 +110,9 @@ pub fn read(
             // on a file where one line had been edited. The same is true of
             // any clean/smudge filter.
             if file.rev(version.other()) == &Rev::Worktree {
-                return Ok(FileContent::of(cat_file::filtered(repo, rev, &path)?));
+                return Ok(FileContent::from_bytes(cat_file::filtered(repo, rev, &path)?));
             }
-            Ok(FileContent::of(blobs.read(rev, &path)?))
+            Ok(FileContent::from_bytes(blobs.read(rev, &path)?))
         }
     }
 }
