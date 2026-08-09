@@ -1,34 +1,18 @@
 //! The command tree.
-//!
-//! Declared with `clap`'s derive so that flag parsing, `--help`, "did you
-//! mean" and shell completions all come from one description rather than from
-//! six hand-written `match` arms that had to agree with each other.
 
-use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
-
-/// The themes `--theme` accepts, taken from `ui` rather than repeated
-/// here, so a new theme appears in `--help` and in tab completion without
-/// anything else being edited.
-fn themes() -> PossibleValuesParser {
-    PossibleValuesParser::new(ui::Theme::NAMES)
-}
 
 #[derive(Parser)]
 #[command(
     name = "codediff",
     version,
     about = "A standalone, read-only terminal diff reviewer",
-    after_help = "With no arguments this lists every changed file. Name a file to review just\nthat one.",
     disable_help_subcommand = true
 )]
 pub struct Cli {
-    /// File to review (relative to cwd or repository root).
+    /// Narrow to one file (used by tests, not advertised).
+    #[arg(hide = true)]
     pub path: Option<String>,
-
-    /// Colour theme.
-    #[arg(long, value_name = "NAME", value_parser = themes())]
-    pub theme: Option<String>,
 
     /// Panic after taking over the terminal (for testing terminal restore).
     #[arg(long, hide = true)]
@@ -43,9 +27,6 @@ pub enum Command {
     /// Report how this binary was built, and what it found
     Doctor,
 
-    // Hidden from the main help for the reason git's plumbing is hidden from
-    // `git --help`: these exist for bug reports and for driving each crate
-    // from outside, not for daily use. `codediff debug` lists them.
     /// Inspect one layer at a time
     #[command(subcommand, hide = true)]
     Debug(Debug),

@@ -23,19 +23,15 @@ fn main() -> Result<()> {
         panic!("deliberate panic, to check the terminal is restored");
     }
 
-    match (cli.command, cli.path) {
-        (Some(Command::Doctor), _) => {
+    match cli.command {
+        Some(Command::Doctor) => {
             doctor::run();
             Ok(())
         }
-        (Some(Command::Debug(command)), _) => debug::run(command),
-        // A path is a pathspec, not a different mode: `codediff a.rs` is
-        // `codediff` narrowed to one file. One code path, so a file reached by
-        // naming it and the same file reached by pressing enter on its row are
-        // the same comparison — which they were not. See D58.
-        (None, path) => {
+        Some(Command::Debug(command)) => debug::run(command),
+        None => {
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            ui::start(cwd, path.into_iter().collect(), cli.theme.as_deref())
+            ui::start(cwd, cli.path.into_iter().collect(), None)
         }
     }
 }
