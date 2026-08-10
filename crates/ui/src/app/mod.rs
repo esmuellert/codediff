@@ -183,7 +183,7 @@ pub fn run(
 ) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
     session.send_file_request();
-    session.draw(screen.terminal())?;
+    screen.draw(|t| session.draw(t))?;
 
     threads::spawn_reader(tx.clone());
     #[cfg(unix)]
@@ -222,7 +222,7 @@ pub fn run(
         if changed {
             session.send_colour_request();
             session.send_file_request();
-            session.draw(screen.terminal())?;
+            screen.draw(|t| session.draw(t))?;
         }
     }
 }
