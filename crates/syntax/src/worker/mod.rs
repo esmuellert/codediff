@@ -22,12 +22,14 @@
 //! No engine type crosses the boundary — enforced by `Send`.
 
 mod message;
+mod run;
 mod store;
-mod worker;
 
 use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
+
+use channel::Worker;
 
 pub use message::{SyntaxRequest, SyntaxResponse, Version, path_of};
 pub use store::{Colours, Spans, Store};
@@ -51,7 +53,7 @@ impl Syntax {
         let (finished, answers) = channel::<SyntaxResponse>();
         thread::Builder::new()
             .name("syntax".to_owned())
-            .spawn(move || worker::run(&incoming, &finished))
+            .spawn(move || run::run(&incoming, &finished))
             .expect("the syntax thread starts");
         Self {
             requests,
@@ -60,28 +62,9 @@ impl Syntax {
         }
     }
 
-    /// Asks for lines of a file to be coloured.
-    ///
-    /// Returns without waiting. A worker that has stopped — which can only
-    /// happen if it panicked — is not an error worth failing a review over:
-    /// the file simply stays plain.
-    pub fn send(&mut self, request: SyntaxRequest) {
-        if !self.outstanding.insert(request.key.clone()) {
-            return;
-        }
-        let _ = self.requests.send(request);
-    }
-
     /// Whether a file is waiting on a response.
     pub fn busy(&self, key: &str) -> bool {
         self.outstanding.contains(key)
-    }
-
-    /// Whether anything at all is outstanding.
-    ///
-    /// What decides whether the loop waits for a frame or for a key.
-    pub fn working(&self) -> bool {
-        !self.outstanding.is_empty()
     }
 
     /// Everything finished since this was last called.
@@ -124,6 +107,32 @@ impl Syntax {
     }
 }
 
+impl Worker for Syntax {
+    type Request = SyntaxRequest;
+    type Response = SyntaxResponse;
+
+    fn send(&mut self, request: Self::Request) {
+        if !self.outstanding.insert(request.key.clone()) {
+            return;
+        }
+        let _ = self.requests.send(request);
+    }
+
+    fn is_busy(&self) -> bool {
+        !self.outstanding.is_empty()
+    }
+
+    fn poll(&mut self) -> Option<Self::Response> {
+        match self.answers.try_recv() {
+            Ok(response) => {
+                self.finish(&response);
+                Some(response)
+            }
+            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+        }
+    }
+}
+
 impl Default for Syntax {
     fn default() -> Self {
         Self::start()
@@ -154,7 +163,7 @@ mod tests {
     /// Drains until nothing is outstanding, as a frame loop eventually does.
     fn drain(syntax: &mut Syntax) -> Vec<SyntaxResponse> {
         let mut out = Vec::new();
-        while syntax.working() {
+        while syntax.is_busy() {
             match syntax.recv() {
                 Some(response) => out.push(response),
                 None => break,
@@ -171,7 +180,7 @@ mod tests {
         let answers = drain(&mut syntax);
         let lines: usize = answers.iter().map(|a| a.spans.len()).sum();
         assert_eq!(lines, 10, "every line asked for came back");
-        assert!(!syntax.working(), "and nothing is left outstanding");
+        assert!(!syntax.is_busy(), "and nothing is left outstanding");
     }
 
     #[test]
@@ -227,7 +236,7 @@ mod tests {
         syntax.send(request("mystery.qqqqq", &text, 0, 3));
         let answers = drain(&mut syntax);
         assert!(!answers.is_empty(), "answered, even if with nothing");
-        assert!(!syntax.working());
+        assert!(!syntax.is_busy());
     }
 
     #[test]

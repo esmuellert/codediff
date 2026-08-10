@@ -16,7 +16,8 @@ mod mouse;
 mod threads;
 mod workers;
 
-use pipeline::file::Files;
+use channel::Worker;
+use pipeline::file::FileWorker;
 use pipeline::list::ListWorker;
 use ratatui::backend::Backend;
 use ratatui::layout::Rect;
@@ -44,7 +45,7 @@ pub struct Session {
     theme: Theme,
     pub(crate) resolver: Resolver,
     pub(crate) syntax: Syntax,
-    pub(crate) files: Files,
+    pub(crate) files: FileWorker,
     pub(crate) list_worker: ListWorker,
     /// The file the reader last selected, waiting to be sent to the worker.
     pub(crate) selected: Option<file_types::File>,
@@ -68,11 +69,11 @@ pub(crate) struct PendingSelection {
 
 impl Session {
     pub fn new(buffer: Buffer, theme: Theme) -> Self {
-        Self::with_files(buffer, theme, Files::start())
+        Self::with_files(buffer, theme, FileWorker::start())
     }
 
     /// For tests: uses a canned file worker instead of git.
-    pub fn with_files(buffer: Buffer, theme: Theme, files: Files) -> Self {
+    pub fn with_files(buffer: Buffer, theme: Theme, files: FileWorker) -> Self {
         let mut syntax = Syntax::start();
         let mut store = Store::new();
         let mut view = View::single(buffer);
@@ -207,7 +208,7 @@ pub fn run(session: &mut Session, repo_root: &std::path::Path) -> std::io::Resul
         if let Some(event::Event::FsChanged) = ev {
             tracing::debug!("fs change detected");
             let request = pipeline::list::Request::worktree(repo_root);
-            session.list_worker.send_request(request);
+            session.list_worker.send(request);
         }
 
         // A kill signal: restore the terminal and exit immediately.

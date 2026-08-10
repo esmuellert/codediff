@@ -15,6 +15,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 use crate::file::runner::{DiffContent, Runner};
+use channel::Worker;
 use file_types::File;
 
 /// What one request produced.
@@ -25,14 +26,14 @@ pub struct Response {
 }
 
 /// The worker, the two queues to it, and whether one is outstanding.
-pub struct Files {
+pub struct FileWorker {
     requests: Sender<File>,
     answers: Receiver<Response>,
     /// At most one request in flight.
     outstanding: bool,
 }
 
-impl Files {
+impl FileWorker {
     /// Starts the worker thread.
     pub fn start() -> Self {
         let (requests, incoming) = channel::<File>();
@@ -74,22 +75,31 @@ impl Files {
         }
     }
 
-    /// Asks for a file to be compared. Does nothing while one is outstanding.
-    pub fn send_diff_request(&mut self, file: &File) {
+    /// Waits for the response. Blocks — only for tests.
+    pub fn recv(&mut self) -> Option<Response> {
+        let response = self.answers.recv().ok()?;
+        self.outstanding = false;
+        Some(response)
+    }
+}
+
+impl Worker for FileWorker {
+    type Request = File;
+    type Response = Response;
+
+    fn send(&mut self, file: Self::Request) {
         if self.outstanding {
             return;
         }
         self.outstanding = true;
-        let _ = self.requests.send(file.clone());
+        let _ = self.requests.send(file);
     }
 
-    /// Whether a response is outstanding.
-    pub fn is_busy(&self) -> bool {
+    fn is_busy(&self) -> bool {
         self.outstanding
     }
 
-    /// The response, if one has arrived. Never blocks.
-    pub fn poll(&mut self) -> Option<Response> {
+    fn poll(&mut self) -> Option<Self::Response> {
         match self.answers.try_recv() {
             Ok(response) => {
                 self.outstanding = false;
@@ -97,13 +107,6 @@ impl Files {
             }
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
         }
-    }
-
-    /// Waits for the response. Blocks — only for `debug diff-file` and tests.
-    pub fn wait(&mut self) -> Option<Response> {
-        let response = self.answers.recv().ok()?;
-        self.outstanding = false;
-        Some(response)
     }
 }
 

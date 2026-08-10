@@ -15,6 +15,7 @@ file-types.workspace = true
 align.workspace = true
 line-index.workspace = true
 pipeline.workspace = true
+channel.workspace = true
 tracing.workspace = true
 watcher.workspace = true
 syntax.workspace = true

@@ -10,6 +10,7 @@ members = [
     "crates/vscode-diff",
     "crates/line-index",
     "crates/align",
+    "crates/channel",
 
     "crates/vcs",
     "crates/fixtures",
@@ -45,6 +46,7 @@ file-types = { path = "crates/file-types" }
 vscode-diff = { path = "crates/vscode-diff" }
 line-index = { path = "crates/line-index" }
 align = { path = "crates/align" }
+channel = { path = "crates/channel" }
 
 vcs = { path = "crates/vcs" }
 fixtures = { path = "crates/fixtures" }

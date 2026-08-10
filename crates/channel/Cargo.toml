@@ -1,0 +1,9 @@
+[package]
+name = "channel"
+version = "0.14.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[lints]
+workspace = true

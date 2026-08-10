@@ -3,6 +3,7 @@
 //! Every method here is either "send a request" or "take what came back", and
 //! none of them blocks — the main thread checks on every frame via `try_recv`.
 
+use channel::Worker;
 use pipeline::file::Response;
 
 use crate::view::{Buffer, BufferType};
@@ -35,7 +36,7 @@ impl Session {
 
     /// Whether anything on screen is still being coloured.
     pub fn is_colouring(&self) -> bool {
-        self.syntax.working()
+        self.syntax.is_busy()
     }
 
     /// Collects finished syntax spans. Never blocks.
@@ -66,7 +67,7 @@ impl Session {
     /// is free.
     pub fn send_file_request(&mut self) {
         if let Some(file) = &self.selected {
-            self.files.send_diff_request(file);
+            self.files.send(file.clone());
         }
     }
 
@@ -85,7 +86,7 @@ impl Session {
     /// Blocks until the file worker answers. For tests only.
     pub fn has_file_arrived(&mut self) -> bool {
         self.send_file_request();
-        let Some(response) = self.files.wait() else {
+        let Some(response) = self.files.recv() else {
             return false;
         };
         if self.selected.as_ref() != Some(&response.file) {

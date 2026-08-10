@@ -5,7 +5,7 @@
 //! none of the three is the one that happens to own the fixtures.
 
 pub use file_types::{ChangeType, DiffType, File, Oid, RepoPath, Rev, Revs, Stats};
-pub use pipeline::file::{DiffContent, Files};
+pub use pipeline::file::{DiffContent, FileWorker};
 pub use ratatui::buffer::Buffer as Cells;
 pub use ratatui::layout::Rect;
 pub use ratatui::style::Color;
@@ -79,7 +79,7 @@ pub fn unchanged(path: &str) -> File {
 
 /// One version of a file, as the worker would answer with it.
 ///
-/// What a test hands to [`Files::mock`], in the order it expects rows to be
+/// What a test hands to [`FileWorker::mock`], in the order it expects rows to be
 /// opened. No repository is touched and no engine is run — what these check is
 /// what a pane shows, not how its contents were obtained.
 pub fn single_file(file: File, text: &str) -> Result<DiffContent, String> {
@@ -120,7 +120,7 @@ pub fn scripted(
     theme: Theme,
     script: Vec<Result<DiffContent, String>>,
 ) -> Session {
-    Session::with_files(Buffer::explorer(files), theme, Files::mock(script))
+    Session::with_files(Buffer::explorer(files), theme, FileWorker::mock(script))
 }
 
 /// Opens the selected row and waits for its comparison.

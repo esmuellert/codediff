@@ -3,6 +3,7 @@
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
+use channel::Worker;
 use file_types::File;
 
 use super::{Request, get_files};
@@ -28,9 +29,13 @@ impl ListWorker {
             outstanding: false,
         }
     }
+}
 
-    /// Sends a re-list request if no request is already in flight.
-    pub fn send_request(&mut self, request: Request) {
+impl Worker for ListWorker {
+    type Request = Request;
+    type Response = Vec<File>;
+
+    fn send(&mut self, request: Self::Request) {
         if self.outstanding {
             return;
         }
@@ -39,8 +44,11 @@ impl ListWorker {
         }
     }
 
-    /// Returns a new file list if one is ready. Never blocks.
-    pub fn poll(&mut self) -> Option<Vec<File>> {
+    fn is_busy(&self) -> bool {
+        self.outstanding
+    }
+
+    fn poll(&mut self) -> Option<Self::Response> {
         match self.answers.try_recv() {
             Ok(files) => {
                 self.outstanding = false;
@@ -48,10 +56,6 @@ impl ListWorker {
             }
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
         }
-    }
-
-    pub fn is_busy(&self) -> bool {
-        self.outstanding
     }
 }
 

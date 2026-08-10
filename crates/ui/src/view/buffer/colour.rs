@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use channel::Worker;
 use file_types::{DiffVersion, File};
 use pipeline::file;
 
