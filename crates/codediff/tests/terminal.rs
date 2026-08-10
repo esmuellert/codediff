@@ -153,7 +153,7 @@ fn a_one_sided_file_is_drawn_in_one_pane() {
     // what this counts: a file with two sides numbers both, and this one numbers
     // only its own.
     let fixture = Fixture::new("one-sided");
-    let (output, ok) = on_a_terminal(&["untracked.txt"], Some(&fixture.dir), b"q");
+    let (output, ok) = on_a_terminal(&["untracked.txt"], Some(&fixture.dir), b"\tq");
     assert!(ok);
     assert!(output.contains("never added"), "no content:\n{output:?}");
     assert!(!output.contains('╱'), "fillers were drawn:\n{output:?}");
@@ -161,7 +161,7 @@ fn a_one_sided_file_is_drawn_in_one_pane() {
     // A file with two sides, for the contrast: two gutters where this
     // one has a single column of them.
     let two_sided = Fixture::new("one-sided-two-sided");
-    let (both, ok) = on_a_terminal(&["modified.txt"], Some(&two_sided.dir), b"q");
+    let (both, ok) = on_a_terminal(&["modified.txt"], Some(&two_sided.dir), b"\tq");
     assert!(ok);
     assert!(
         gutters(&both) > gutters(&output),
