@@ -20,8 +20,13 @@ Two watch scopes feed one debouncer:
    macOS/Windows: one `Recursive` on the root). Enumerated with the `ignore` crate so
    `target/`, `node_modules/`, and anything in `.gitignore` is never watched at all.
 
-2. **`.git/`** — `NonRecursive` on the git dir (catches `index`, `HEAD`), plus `Recursive`
-   on `.git/refs/` (catches branch moves, tags, stash).
+2. **The git dirs** — `NonRecursive` on the worktree's own git dir (catches `index`, `HEAD`),
+   plus `Recursive` on `refs/` in the shared one (catches branch moves, tags, stash), plus
+   `NonRecursive` on the shared dir itself (catches `packed-refs`) when the two differ.
+
+   They differ in a linked worktree: `.git` there is a *file* reading `gitdir: <path>`, and
+   that directory's `commondir` file names the original `.git`. A plain repository has
+   neither file, and both are `.git` itself.
 
 The `notify-debouncer-full` collapses kernel-level bursts into one batch per 50 ms. The
 batch is handed to `filter::get_refresh`, which:

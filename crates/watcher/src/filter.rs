@@ -7,10 +7,10 @@ use notify::EventKind;
 
 use crate::Refresh;
 
-/// Everything the filter needs to classify a path.
 pub struct Context {
     pub repo_root: std::path::PathBuf,
     pub git_dir: std::path::PathBuf,
+    pub common_dir: std::path::PathBuf,
     pub ignorer: Gitignore,
 }
 
@@ -39,8 +39,12 @@ fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
         return Refresh::default();
     }
 
-    // Path inside .git/?
+    // Path inside a git dir? The private one is asked first: in a worktree it
+    // sits inside the common one, at .git/worktrees/<name>.
     if let Ok(rel) = path.strip_prefix(&ctx.git_dir) {
+        return refresh_for_git_path(rel, path);
+    }
+    if let Ok(rel) = path.strip_prefix(&ctx.common_dir) {
         return refresh_for_git_path(rel, path);
     }
 
@@ -139,7 +143,21 @@ mod tests {
         let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
         Context {
             repo_root,
+            common_dir: git_dir.clone(),
             git_dir,
+            ignorer,
+        }
+    }
+
+    /// A linked worktree at /wt, whose main repository is /repo.
+    fn worktree_ctx() -> Context {
+        let repo_root = PathBuf::from("/wt");
+        let common_dir = PathBuf::from("/repo/.git");
+        let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
+        Context {
+            repo_root,
+            git_dir: common_dir.join("worktrees/wt"),
+            common_dir,
             ignorer,
         }
     }
@@ -154,6 +172,7 @@ mod tests {
         let ignorer = builder.build().unwrap();
         Context {
             repo_root,
+            common_dir: git_dir.clone(),
             git_dir,
             ignorer,
         }
@@ -360,5 +379,87 @@ mod tests {
             &c,
         );
         assert!(r.is_empty(), "read-only access should not refresh, got {r}");
+    }
+
+    // === Linked worktrees ===
+
+    #[test]
+    fn worktree_private_index_sets_index() {
+        let c = worktree_ctx();
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/repo/.git/worktrees/wt/index",
+            )],
+            &c,
+        );
+        assert!(r.index, "the private index is this worktree's, got {r}");
+        assert!(!r.worktree);
+    }
+
+    #[test]
+    fn worktree_private_head_sets_head() {
+        let c = worktree_ctx();
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/repo/.git/worktrees/wt/HEAD",
+            )],
+            &c,
+        );
+        assert!(r.head, "the private HEAD is this worktree's, got {r}");
+    }
+
+    #[test]
+    fn worktree_shared_refs_sets_refs() {
+        let c = worktree_ctx();
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/repo/.git/refs/heads/main",
+            )],
+            &c,
+        );
+        assert!(r.refs, "refs live in the shared dir, got {r}");
+    }
+
+    #[test]
+    fn worktree_shared_packed_refs_sets_refs() {
+        let c = worktree_ctx();
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/repo/.git/packed-refs",
+            )],
+            &c,
+        );
+        assert!(r.refs, "packed-refs lives in the shared dir, got {r}");
+    }
+
+    #[test]
+    fn linked_worktree_file_change_sets_worktree() {
+        let c = worktree_ctx();
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/wt/src/main.rs",
+            )],
+            &c,
+        );
+        assert!(r.worktree);
+        assert!(!r.index && !r.head && !r.refs);
+    }
+
+    #[test]
+    fn worktree_shared_objects_are_skipped() {
+        let c = worktree_ctx();
+        let r = get_refresh(
+            &[event(
+                EventKind::Create(notify::event::CreateKind::File),
+                "/repo/.git/objects/ab/cdef1234",
+            )],
+            &c,
+        );
+        assert!(r.is_empty());
     }
 }
