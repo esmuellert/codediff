@@ -5,7 +5,7 @@
 //! symlink was read through, so an unchanged link looked like a whole file
 //! rewritten.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use file_types::DiffVersion;
@@ -46,7 +46,8 @@ impl Repo {
         Repository::open(&self.dir).expect("opening the repository")
     }
 
-    fn path(&self) -> &Path {
+    #[cfg(unix)]
+    fn path(&self) -> &std::path::Path {
         &self.dir
     }
 }
@@ -114,6 +115,7 @@ fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_symlink_is_its_target_and_not_the_file_it_points_at() {
     let repo = Repo::new("symlink");
     repo.write("real.txt", "many\nlines\nof\ntext\n");

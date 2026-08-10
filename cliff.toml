@@ -1,0 +1,41 @@
+# git-cliff configuration — version calculation and changelog generation.
+#
+# The single job: read commits since the last tag, decide the next semver,
+# and (optionally) produce a changelog body for the GitHub Release.
+
+[bump]
+# feat: → minor, fix: → patch, breaking (!) → minor while below 1.0.
+# Everything else (refactor, docs, chore, build, test, style) → no bump.
+breaking_always_increments_minor = true
+
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") -%}
+### {{ group }}
+{% for commit in commits -%}
+- {{ commit.message }}
+{% endfor %}
+{% endfor -%}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+tag_pattern = "v[0-9]*"
+sort_commits = "newest"
+
+commit_parsers = [
+    { message = "^feat", group = "Features", minor_bump = true },
+    { message = "^fix", group = "Fixes", patch_bump = true },
+    { message = "^refactor", skip = true },
+    { message = "^docs", skip = true },
+    { message = "^chore", skip = true },
+    { message = "^build", skip = true },
+    { message = "^test", skip = true },
+    { message = "^style", skip = true },
+    { message = "^format", skip = true },
+    { message = "^ci", skip = true },
+]

@@ -27,6 +27,7 @@ pub fn repo(dir: &Path) -> Result<()> {
     git(dir, &["init", "-q", "-b", "main"])?;
     git(dir, &["config", "user.email", "fixture@codediff.test"])?;
     git(dir, &["config", "user.name", "codediff fixtures"])?;
+    git(dir, &["config", "core.autocrlf", "false"])?;
     // Renames are only reported when git looks for them.
     git(dir, &["config", "diff.renames", "true"])?;
 
