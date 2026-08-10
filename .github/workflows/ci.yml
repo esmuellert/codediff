@@ -68,6 +68,12 @@ jobs:
             exit 0
           fi
 
+          if git rev-parse "$NEXT_TAG" >/dev/null 2>&1; then
+            echo "Tag $NEXT_TAG already exists — skipping"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "Next release: $NEXT"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
           echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
