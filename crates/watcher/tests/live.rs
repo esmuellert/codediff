@@ -17,6 +17,21 @@ const SHORT: Duration = Duration::from_millis(300);
 /// Long enough for a self-sustaining loop (~15 Hz) to show itself.
 const QUIET: Duration = Duration::from_secs(1);
 
+fn git_in(dir: &Path, args: &[&str]) -> bool {
+    Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
 struct Repo {
     dir: tempfile::TempDir,
 }
@@ -27,18 +42,7 @@ impl Repo {
     }
 
     fn git(&self, args: &[&str]) -> bool {
-        Command::new("git")
-            .args(args)
-            .current_dir(self.path())
-            .env("GIT_AUTHOR_NAME", "Test")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "Test")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success()
+        git_in(self.path(), args)
     }
 }
 
