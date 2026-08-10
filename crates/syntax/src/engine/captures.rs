@@ -5,44 +5,15 @@
 //! prefix, so only names that need a different answer from their prefix appear.
 
 use crate::group::Group;
-use crate::style::Style;
 
 /// One entry, before it is given a pen.
 pub struct Name {
     pub name: &'static str,
     pub group: Group,
-    italic: bool,
 }
 
 const fn name(name: &'static str, group: Group) -> Name {
-    Name {
-        name,
-        group,
-        italic: false,
-    }
-}
-
-impl Name {
-    /// The emphasis this entry carries, with no pen in it yet.
-    ///
-    /// The pen is added by [`palette`](super::palette), which is the only
-    /// place that knows what number this entry has.
-    pub(super) const fn emphasis(&self) -> Style {
-        Style {
-            pen: None,
-            bold: false,
-            italic: self.italic,
-            underline: false,
-            strikethrough: false,
-        }
-    }
-
-    const fn italic(self) -> Self {
-        Self {
-            italic: true,
-            ..self
-        }
-    }
+    Name { name, group }
 }
 
 /// Every capture we recognise.
@@ -56,7 +27,8 @@ pub const NAMES: &[Name] = {
     use Group as T;
     &[
         // --- the shape every language has ---
-        name("comment", T::Comment).italic(),
+        // Upright, for the reason given beside the matcher's `comment`.
+        name("comment", T::Comment),
         name("string", T::String),
         name("string.escape", T::Escape),
         name("string.regex", T::Regexp),
@@ -141,20 +113,6 @@ mod tests {
             assert!(
                 !NAMES[..n].iter().any(|earlier| earlier.name == entry.name),
                 "{} appears twice",
-                entry.name
-            );
-        }
-    }
-
-    #[test]
-    fn only_comments_are_italic() {
-        // The parser's half carries no emphasis of its own beyond this one,
-        // and a stray italic would be visible on every line of a language.
-        for entry in NAMES {
-            assert_eq!(
-                entry.emphasis().italic,
-                entry.group == Group::Comment,
-                "{} is italic and is not a comment",
                 entry.name
             );
         }
