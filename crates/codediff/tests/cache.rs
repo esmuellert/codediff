@@ -17,6 +17,7 @@ use harness::{cells, key, single};
 use ui::crossterm::event::KeyCode;
 use ui::ratatui::buffer::Buffer as Cells;
 use ui::ratatui::style::Color;
+use ui::testing::TestSession;
 use ui::{Session, Theme};
 
 const WIDTH: u16 = 100;
@@ -30,14 +31,14 @@ fn perl(lines: usize) -> String {
 }
 
 /// A session over one Perl file, drawn once so the viewport has a height.
-fn session(lines: usize) -> Session {
-    let mut session = Session::new(single("a.pl", &perl(lines)), Theme::DARK);
+fn session(lines: usize) -> TestSession {
+    let mut session = TestSession::new(single("a.pl", &perl(lines)), Theme::DARK);
     let _ = cells(&mut session, WIDTH, HEIGHT);
     session
 }
 
 /// Presses a key and lets the loop react, as [`ui::run`] does.
-fn press(session: &mut Session, code: KeyCode) {
+fn press(session: &mut TestSession, code: KeyCode) {
     session.handle_event(&key(code));
     session.send_colour_request();
     let _ = cells(session, WIDTH, HEIGHT);
@@ -155,7 +156,7 @@ fn reaching_further_into_a_file_keeps_what_was_already_read() {
 
 #[test]
 fn a_language_nothing_claims_draws_plainly_and_stops_asking() {
-    let mut session = Session::new(single("a.qqqqq", "nothing claims this\n"), Theme::DARK);
+    let mut session = TestSession::new(single("a.qqqqq", "nothing claims this\n"), Theme::DARK);
     let _ = cells(&mut session, WIDTH, HEIGHT);
     session.wait_until_idle();
     assert!(

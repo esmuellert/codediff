@@ -1,101 +1,44 @@
 //! Colouring a file on a separate thread.
 //!
-//! The drawing thread never computes a colour — it asks, draws what it has,
-//! and installs responses as they arrive.
-//!
-//! ```text
-//!  drawing thread                        syntax worker
-//!  ──────────────                        ─────────────
-//!  Store  — every span                   Engine — both engines
-//!
-//!  need lines 0..50
-//!    hit  → draw
-//!    miss → send ─────────────────────►  recv
-//!  draw with what there is               colour it
-//!                                        send ─────┐
-//!  loop {                                          │
-//!    take() ◄──────────────────────────────────────┘
-//!    install, draw
-//!  }
-//! ```
-//!
-//! No engine type crosses the boundary — enforced by `Send`.
+//! The worker sends results via an Emitter. In production it maps to the
+//! event channel; in tests it maps to a local receiver.
 
 mod message;
 mod run;
 mod store;
 
 use std::collections::HashSet;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
-use channel::Worker;
+use channel::{Emitter, Worker};
 
 pub use message::{SyntaxRequest, SyntaxResponse, Version, path_of};
 pub use store::{Colours, Spans, Store};
 
-/// The worker, the two queues to it, and what is outstanding.
+/// The worker handle. Holds only the request channel and outstanding set.
 pub struct Syntax {
     requests: Sender<SyntaxRequest>,
-    answers: Receiver<SyntaxResponse>,
-    /// Files with a request in flight. At most one per file — newer scrolls
-    /// replace the previous request rather than queueing behind it.
     outstanding: HashSet<String>,
 }
 
 impl Syntax {
-    /// Starts the worker.
-    ///
-    /// One thread for the life of the program. It sleeps whenever there is
-    /// nothing to colour, which is nearly always.
-    pub fn start() -> Self {
+    /// Starts the worker thread with the given emitter for results.
+    pub fn start(emitter: Emitter<SyntaxResponse>) -> Self {
         let (requests, incoming) = channel::<SyntaxRequest>();
-        let (finished, answers) = channel::<SyntaxResponse>();
         thread::Builder::new()
             .name("syntax".to_owned())
-            .spawn(move || run::run(&incoming, &finished))
+            .spawn(move || run::run(&incoming, &emitter))
             .expect("the syntax thread starts");
         Self {
             requests,
-            answers,
             outstanding: HashSet::new(),
         }
     }
 
-    /// Whether a file is waiting on a response.
+    /// Whether a specific file is waiting on a response.
     pub fn busy(&self, key: &str) -> bool {
         self.outstanding.contains(key)
-    }
-
-    /// Everything finished since this was last called.
-    ///
-    /// Never blocks. Called once a frame, and costs a few nanoseconds when
-    /// there is nothing.
-    pub fn take(&mut self) -> Vec<SyntaxResponse> {
-        let mut out = Vec::new();
-        loop {
-            match self.answers.try_recv() {
-                Ok(response) => {
-                    self.finish(&response);
-                    out.push(response);
-                }
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return out,
-            }
-        }
-    }
-
-    /// Waits for the next finished piece.
-    ///
-    /// Blocks. Only [`Session::settle`](crate::Session::settle) uses it, and
-    /// only so a test can wait for the colours it is about to assert on; the
-    /// interface itself must never wait for a colour.
-    ///
-    /// `None` means the worker has stopped, which can only happen if it
-    /// panicked.
-    pub fn recv(&mut self) -> Option<SyntaxResponse> {
-        let response = self.answers.recv().ok()?;
-        self.finish(&response);
-        Some(response)
     }
 
     /// Clears a finished request, so the file can be asked about again.
@@ -122,26 +65,17 @@ impl Worker for Syntax {
         !self.outstanding.is_empty()
     }
 
-    fn poll(&mut self) -> Option<Self::Response> {
-        match self.answers.try_recv() {
-            Ok(response) => {
-                self.finish(&response);
-                Some(response)
-            }
-            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
-        }
-    }
-}
-
-impl Default for Syntax {
-    fn default() -> Self {
-        Self::start()
+    fn received(&mut self, response: &Self::Response) {
+        self.finish(response);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::mpsc;
+
+    use channel::Emitter;
 
     use super::*;
 
@@ -160,13 +94,22 @@ mod tests {
         }
     }
 
-    /// Drains until nothing is outstanding, as a frame loop eventually does.
-    fn drain(syntax: &mut Syntax) -> Vec<SyntaxResponse> {
+    /// Creates a Syntax with a local receiver for testing.
+    fn test_syntax() -> (Syntax, mpsc::Receiver<SyntaxResponse>) {
+        let (emitter, rx) = Emitter::local();
+        (Syntax::start(emitter), rx)
+    }
+
+    /// Drains until nothing is outstanding.
+    fn drain(syntax: &mut Syntax, rx: &mpsc::Receiver<SyntaxResponse>) -> Vec<SyntaxResponse> {
         let mut out = Vec::new();
         while syntax.is_busy() {
-            match syntax.recv() {
-                Some(response) => out.push(response),
-                None => break,
+            match rx.recv() {
+                Ok(response) => {
+                    syntax.received(&response);
+                    out.push(response);
+                }
+                Err(_) => break,
             }
         }
         out
@@ -174,10 +117,10 @@ mod tests {
 
     #[test]
     fn a_request_is_answered() {
-        let mut syntax = Syntax::start();
+        let (mut syntax, rx) = test_syntax();
         let text = text(10);
         syntax.send(request("a.rs", &text, 0, 9));
-        let answers = drain(&mut syntax);
+        let answers = drain(&mut syntax, &rx);
         let lines: usize = answers.iter().map(|a| a.spans.len()).sum();
         assert_eq!(lines, 10, "every line asked for came back");
         assert!(!syntax.is_busy(), "and nothing is left outstanding");
@@ -185,73 +128,64 @@ mod tests {
 
     #[test]
     fn a_second_request_for_one_file_is_dropped_rather_than_queued() {
-        // Scrolling changes what is wanted sixty times a second. Sending each
-        // change would build a queue of answers for screens already gone, and
-        // keeping the newest would answer it from a starting point that had
-        // moved. Neither: the asker re-asks when it next draws.
-        let mut syntax = Syntax::start();
+        let (mut syntax, rx) = test_syntax();
         let text = text(20_000);
         syntax.send(request("a.pl", &text, 0, 19_999));
         for last in [100, 200, 300] {
             syntax.send(request("a.pl", &text, 0, last));
         }
         assert_eq!(syntax.outstanding.len(), 1, "one file, one request");
-        drain(&mut syntax);
+        drain(&mut syntax, &rx);
     }
 
     #[test]
     fn a_file_can_be_asked_about_again_once_its_answer_has_arrived() {
-        let mut syntax = Syntax::start();
+        let (mut syntax, rx) = test_syntax();
         let text = text(50);
         let key = "worktree:a.pl".to_owned();
 
         syntax.send(request("a.pl", &text, 0, 9));
         assert!(syntax.busy(&key));
-        let first = drain(&mut syntax);
+        let first = drain(&mut syntax, &rx);
         assert!(!syntax.busy(&key), "and free again afterwards");
 
         let read: u32 = first.iter().map(|a| a.spans.len() as u32).sum();
         syntax.send(request("a.pl", &text, read, 49));
-        let second = drain(&mut syntax);
+        let second = drain(&mut syntax, &rx);
         let total = read + second.iter().map(|a| a.spans.len() as u32).sum::<u32>();
         assert_eq!(total, 50, "the rest of the file arrived on the second ask");
     }
 
     #[test]
     fn two_files_do_not_hold_each_other_up() {
-        let mut syntax = Syntax::start();
+        let (mut syntax, rx) = test_syntax();
         let text = text(10);
         syntax.send(request("a.rs", &text, 0, 9));
         syntax.send(request("b.rs", &text, 0, 9));
         assert_eq!(syntax.outstanding.len(), 2, "one entry each");
-        drain(&mut syntax);
+        drain(&mut syntax, &rx);
     }
 
     #[test]
     fn a_file_no_language_claims_is_still_answered() {
-        // Otherwise the entry for it would never clear, and that file could
-        // never be asked about again.
-        let mut syntax = Syntax::start();
+        let (mut syntax, rx) = test_syntax();
         let text = text(4);
         syntax.send(request("mystery.qqqqq", &text, 0, 3));
-        let answers = drain(&mut syntax);
+        let answers = drain(&mut syntax, &rx);
         assert!(!answers.is_empty(), "answered, even if with nothing");
         assert!(!syntax.is_busy());
     }
 
     #[test]
     fn reading_further_continues_rather_than_starting_again() {
-        // The lines already cached must not come back a second time: the store
-        // refuses a piece that does not continue where the last ended, so a
-        // repeat would be dropped and the file would stop growing.
-        let mut syntax = Syntax::start();
+        let (mut syntax, rx) = test_syntax();
         let text = text(500);
         syntax.send(request("a.pl", &text, 0, 99));
-        let first = drain(&mut syntax);
+        let first = drain(&mut syntax, &rx);
         let read: u32 = first.iter().map(|a| a.spans.len() as u32).sum();
 
         syntax.send(request("a.pl", &text, read, 499));
-        let second = drain(&mut syntax);
+        let second = drain(&mut syntax, &rx);
         assert_eq!(
             second.first().map(|a| a.from),
             Some(read),

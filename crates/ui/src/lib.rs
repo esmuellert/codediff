@@ -17,9 +17,11 @@ mod terminal;
 pub mod theme;
 pub mod view;
 
-pub use app::{Flow, Session, run};
+pub use app::event::Event;
+pub use app::{Flow, Session, Workers, run};
 pub use start::start;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 pub use view::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};
 pub use view::{View, Viewport};
+pub mod testing;

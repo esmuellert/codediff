@@ -5,6 +5,7 @@ use crate::common::*;
 use crossterm::event::{Event, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
+use ui::Session;
 
 /// Sends a mouse event to the session.
 fn mouse(session: &mut Session, kind: MouseEventKind, col: u16, row: u16) {

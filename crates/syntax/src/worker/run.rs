@@ -14,8 +14,9 @@
 //! however little was wanted. A memo for a parsed file is therefore never
 //! made, because there is never anything left over.
 
+use channel::Emitter;
 use std::sync::OnceLock;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
 
 use crate::{Clues, Engine, Highlighted, Palette};
 
@@ -50,7 +51,7 @@ struct Memo {
 }
 
 /// Answers requests until the asker goes away.
-pub fn run(requests: &Receiver<SyntaxRequest>, answers: &Sender<SyntaxResponse>) {
+pub fn run(requests: &Receiver<SyntaxRequest>, answers: &Emitter<SyntaxResponse>) {
     // Blocks. A worker with nothing to do costs nothing at all — no timer, no
     // spin, no wake-ups — which is its ordinary state.
     let mut memos: Vec<Memo> = Vec::new();
@@ -59,7 +60,7 @@ pub fn run(requests: &Receiver<SyntaxRequest>, answers: &Sender<SyntaxResponse>)
     }
 }
 
-fn respond(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mut Vec<Memo>) {
+fn respond(request: &SyntaxRequest, answers: &Emitter<SyntaxResponse>, memos: &mut Vec<Memo>) {
     let lines = request.text.len() as u32;
     let Some(mut reading) = resume(request, memos) else {
         // Nothing claims this language. Answering once with no spans is how
@@ -102,17 +103,13 @@ fn respond(request: &SyntaxRequest, answers: &Sender<SyntaxResponse>, memos: &mu
 
         let more = got <= target && got < lines;
         let sending = std::mem::take(&mut spans);
-        if answers
-            .send(SyntaxResponse {
-                key: request.key.clone(),
-                version: request.version,
-                from: sent,
-                spans: sending,
-                more,
-            })
-            .is_err()
-        {
-            // Nobody is listening any more, which means the review has ended.
+        if !answers.send(SyntaxResponse {
+            key: request.key.clone(),
+            version: request.version,
+            from: sent,
+            spans: sending,
+            more,
+        }) {
             return;
         }
         reading.reached = got;

@@ -9,6 +9,7 @@ pub mod catppuccin;
 pub mod change;
 pub mod code;
 mod colour;
+pub mod icon;
 pub mod tree;
 
 use ratatui::style::Style;
@@ -17,6 +18,7 @@ pub use catppuccin::Flavour;
 pub use change::Change;
 pub use code::Code;
 pub use colour::{Rgb, blend};
+pub use icon::Icon;
 pub use tree::Tree;
 
 /// Every style the interface draws with.

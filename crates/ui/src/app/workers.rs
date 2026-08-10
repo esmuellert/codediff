@@ -1,7 +1,4 @@
-//! Talking to the two background threads: one colours text, one reads files.
-//!
-//! Every method here is either "send a request" or "take what came back", and
-//! none of them blocks — the main thread checks on every frame via `try_recv`.
+//! Talking to the background threads: send requests, apply responses.
 
 use channel::Worker;
 use pipeline::file::Response;
@@ -9,43 +6,27 @@ use pipeline::file::Response;
 use crate::view::{Buffer, BufferType};
 
 use super::Session;
-
-/// Bail-out for [`Session::wait_until_idle`] if the worker and store disagree.
-const IDLE_ANSWERS: u32 = 8;
+use super::event::Event;
 
 impl Session {
-    /// Blocks until all visible lines are coloured. For tests only.
-    pub fn wait_until_idle(&mut self) -> bool {
-        let mut changed = false;
-        let mut idle = 0;
-        while self.is_colouring() && idle < IDLE_ANSWERS {
-            let held = self.store.get_cached_lines();
-            match self.syntax.recv() {
-                Some(response) => changed |= self.store.install(response),
-                None => break,
+    /// Applies a worker result. Returns whether the screen changed.
+    pub fn apply(&mut self, event: Event) -> bool {
+        match event {
+            Event::Coloured(response) => {
+                self.syntax.received(&response);
+                self.store.install(response)
             }
-            idle = if self.store.get_cached_lines() > held {
-                0
-            } else {
-                idle + 1
-            };
-            self.send_colour_request();
+            Event::FileReady(response) => {
+                self.files.received(&response);
+                self.apply_file_response_inner(response)
+            }
+            Event::Listed(files) => {
+                self.list_worker.received(&files);
+                self.view.update_explorer(files);
+                true
+            }
+            _ => false,
         }
-        changed
-    }
-
-    /// Whether anything on screen is still being coloured.
-    pub fn is_colouring(&self) -> bool {
-        self.syntax.is_busy()
-    }
-
-    /// Collects finished syntax spans. Never blocks.
-    pub fn receive_colours(&mut self) -> bool {
-        let mut changed = false;
-        for response in self.syntax.take() {
-            changed |= self.store.install(response);
-        }
-        changed
     }
 
     /// Asks the syntax worker for anything newly visible.
@@ -53,14 +34,19 @@ impl Session {
         self.view.request(&mut self.syntax, &mut self.store);
     }
 
-    /// Records the list selection for the file worker to pick up.
-    pub fn open(&mut self) {
-        self.selected = self.selected_file();
+    /// Whether anything on screen is still being coloured.
+    pub fn is_colouring(&self) -> bool {
+        self.syntax.is_busy()
     }
 
     /// Whether a file comparison is in progress.
     pub fn is_loading_file(&self) -> bool {
         self.files.is_busy()
+    }
+
+    /// Records the list selection for the file worker to pick up.
+    pub fn open(&mut self) {
+        self.selected = self.selected_file();
     }
 
     /// Sends the selected file to the worker if one is pending and the worker
@@ -71,34 +57,13 @@ impl Session {
         }
     }
 
-    /// Collects a finished file comparison. Never blocks.
-    pub fn receive_file(&mut self) -> bool {
-        let Some(response) = self.files.poll() else {
-            return false;
-        };
-        if self.selected.as_ref() != Some(&response.file) {
-            return false;
-        }
-        self.selected = None;
-        self.apply_file_response(response)
-    }
-
-    /// Blocks until the file worker answers. For tests only.
-    pub fn has_file_arrived(&mut self) -> bool {
-        self.send_file_request();
-        let Some(response) = self.files.recv() else {
-            return false;
-        };
-        if self.selected.as_ref() != Some(&response.file) {
-            return false;
-        }
-        self.selected = None;
-        self.apply_file_response(response)
-    }
-
     /// Puts a comparison result on screen, or shows the error on the status
     /// line.
-    fn apply_file_response(&mut self, response: Response) -> bool {
+    fn apply_file_response_inner(&mut self, response: Response) -> bool {
+        if self.selected.as_ref() != Some(&response.file) {
+            return false;
+        }
+        self.selected = None;
         let keep = self
             .is_file_shown(&response.file)
             .then(|| self.view.tab().right_pane_buffer())

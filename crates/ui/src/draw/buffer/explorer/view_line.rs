@@ -11,6 +11,7 @@ use file_types::{ChangeType, File, Stats};
 
 use crate::render::cells;
 use crate::theme::Theme;
+use crate::theme::icon;
 use crate::view::buffer::explorer::ViewLine;
 
 /// The one column that always separates the two sides.
@@ -105,7 +106,7 @@ pub fn draw(
         ViewLine::Heading { name, files, stats } => {
             heading(name, *files, *stats, theme, background)
         }
-        ViewLine::Directory { name, .. } => directory(name, theme, background),
+        ViewLine::Directory { name, open, .. } => directory(name, *open, theme, background),
         ViewLine::File { name, file } => self::file(name, file, theme, background),
     };
     let mut pieces = prefix;
@@ -150,20 +151,25 @@ fn heading(
     (left, Vec::new())
 }
 
-/// A directory: its name, and nothing at the right-hand edge.
-///
-/// Whether it is open is drawn in front of the name, by the arrangement that
-/// knows what nests — see [`tree::prefix`](super::tree::prefix).
-fn directory(name: &str, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<Piece>) {
+/// A directory: its icon and name, and nothing at the right-hand edge.
+fn directory(name: &str, open: bool, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<Piece>) {
+    let ic = icon::folder(open);
     (
-        vec![Piece::fixed(name, background.fg(theme.tree.directory))],
+        vec![
+            Piece::fixed(format!("{} ", ic.glyph), background.fg(ic.color)),
+            Piece::fixed(name, background.fg(theme.tree.directory)),
+        ],
         Vec::new(),
     )
 }
 
-/// A file: its name, where it came from, what it gained, and what happened.
+/// A file: its icon, name, where it came from, what it gained, and what happened.
 fn file(name: &str, file: &File, theme: &Theme, background: Style) -> (Vec<Piece>, Vec<Piece>) {
-    let mut left = vec![Piece::fixed(name, background.fg(theme.tree.name))];
+    let ic = icon::file(file.path().file_name());
+    let mut left = vec![
+        Piece::fixed(format!("{} ", ic.glyph), background.fg(ic.color)),
+        Piece::fixed(name, background.fg(theme.tree.name)),
+    ];
     if let Some(previous) = file.previous_path() {
         left.push(Piece::droppable(
             format!(" ← {previous}"),
@@ -502,5 +508,19 @@ mod tests {
         let count = seen.len();
         seen.dedup();
         assert_eq!(seen.len(), count, "two changes share a letter");
+    }
+
+    #[test]
+    fn the_folder_icon_is_what_says_whether_a_directory_is_open() {
+        // The fold arrow that used to say so is gone: with the same glyph
+        // either way there is nothing left on the row to tell them apart.
+        let theme = Theme::named("basic-dark").expect("a theme");
+        let glyph = |open| {
+            directory("src", open, &theme, Style::default()).0[0]
+                .text
+                .clone()
+        };
+        assert_eq!(glyph(true), format!("{} ", icon::FOLDER_OPEN.glyph));
+        assert_eq!(glyph(false), format!("{} ", icon::FOLDER_CLOSED.glyph));
     }
 }

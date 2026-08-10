@@ -10,7 +10,7 @@
 //!
 //! Nothing here computes a diff, touches git, or colours a line.
 
-mod event;
+pub mod event;
 mod keys;
 mod mouse;
 mod threads;
@@ -67,14 +67,31 @@ pub(crate) struct PendingSelection {
     pub anchor: crate::view::selection::Pos,
 }
 
-impl Session {
-    pub fn new(buffer: Buffer, theme: Theme) -> Self {
-        Self::with_files(buffer, theme, FileWorker::start())
-    }
+/// Pre-built workers, ready to be handed to Session.
+pub struct Workers {
+    pub syntax: Syntax,
+    pub files: FileWorker,
+    pub list_worker: ListWorker,
+}
 
-    /// For tests: uses a canned file worker instead of git.
-    pub fn with_files(buffer: Buffer, theme: Theme, files: FileWorker) -> Self {
-        let mut syntax = Syntax::start();
+impl Workers {
+    /// Spawns all workers with emitters mapped to the event channel.
+    pub fn spawn(tx: &std::sync::mpsc::Sender<event::Event>) -> Self {
+        Self {
+            syntax: Syntax::start(channel::Emitter::new(tx.clone(), event::Event::Coloured)),
+            files: FileWorker::start(channel::Emitter::new(tx.clone(), event::Event::FileReady)),
+            list_worker: ListWorker::start(channel::Emitter::new(tx.clone(), event::Event::Listed)),
+        }
+    }
+}
+
+impl Session {
+    pub fn new(buffer: Buffer, theme: Theme, workers: Workers) -> Self {
+        let Workers {
+            mut syntax,
+            files,
+            list_worker,
+        } = workers;
         let mut store = Store::new();
         let mut view = View::single(buffer);
         view.request(&mut syntax, &mut store);
@@ -84,7 +101,7 @@ impl Session {
             resolver: Resolver::new(),
             syntax,
             files,
-            list_worker: ListWorker::start(),
+            list_worker,
             selected: None,
             store,
             notice: None,
@@ -157,66 +174,50 @@ impl Session {
     }
 }
 
-/// One frame at 60 Hz — how often the loop checks workers while they run.
-const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
-
 /// The main loop. Terminal is restored by `Screen`'s `Drop`.
-pub fn run(session: &mut Session, repo_root: &std::path::Path) -> std::io::Result<()> {
-    use std::sync::mpsc;
-
+pub fn run(
+    session: &mut Session,
+    repo_root: &std::path::Path,
+    tx: std::sync::mpsc::Sender<event::Event>,
+    rx: std::sync::mpsc::Receiver<event::Event>,
+) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
     session.send_file_request();
     session.draw(screen.terminal())?;
 
-    let (tx, rx) = mpsc::channel::<event::Event>();
     threads::spawn_reader(tx.clone());
     #[cfg(unix)]
     threads::spawn_signals(tx.clone());
     threads::spawn_watcher(repo_root, tx);
 
     loop {
-        let busy =
-            session.is_colouring() || session.is_loading_file() || session.list_worker.is_busy();
-        let ev = if busy {
-            rx.recv_timeout(FRAME).ok()
-        } else {
-            rx.recv().ok()
-        };
+        let Ok(ev) = rx.recv() else { return Ok(()) };
 
-        // Collect worker results.
-        let mut changed = session.receive_colours() | session.receive_file();
-
-        // Check list worker for re-list results.
-        if let Some(new_files) = session.list_worker.poll() {
-            session.view.update_explorer(new_files);
-            changed = true;
-        }
-
-        // Handle terminal events.
-        if let Some(event::Event::Terminal(ref e)) = ev {
-            match session.handle_event(e) {
+        // Terminal, signal, and watcher events are handled here.
+        // Worker events are dispatched via apply().
+        let changed = match ev {
+            event::Event::Terminal(ref e) => match session.handle_event(e) {
                 Flow::Quit => return Ok(()),
                 Flow::Suspend => {
                     screen.suspend()?;
-                    changed = true;
+                    true
                 }
-                Flow::Continue => changed = true,
+                Flow::Continue => true,
+            },
+            event::Event::FsChanged => {
+                tracing::debug!("fs change detected");
+                session
+                    .list_worker
+                    .send(pipeline::list::Request::worktree(repo_root));
+                false
             }
-        }
-
-        // Watcher event: re-list if the worker is free.
-        if let Some(event::Event::FsChanged) = ev {
-            tracing::debug!("fs change detected");
-            let request = pipeline::list::Request::worktree(repo_root);
-            session.list_worker.send(request);
-        }
-
-        // A kill signal: restore the terminal and exit immediately.
-        #[cfg(unix)]
-        if let Some(event::Event::Signal(sig)) = ev {
-            crate::terminal::restore();
-            std::process::exit(128 + sig);
-        }
+            #[cfg(unix)]
+            event::Event::Signal(sig) => {
+                crate::terminal::restore();
+                std::process::exit(128 + sig);
+            }
+            other => session.apply(other),
+        };
 
         if changed {
             session.send_colour_request();

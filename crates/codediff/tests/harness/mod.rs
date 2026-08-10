@@ -20,6 +20,7 @@ use ui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ui::ratatui::Terminal;
 use ui::ratatui::backend::TestBackend;
 use ui::ratatui::buffer::Buffer as Cells;
+use ui::testing::TestSession;
 use ui::{Buffer, Session, Theme};
 
 /// The ordinary comparison, since these tests never open a repository.
@@ -86,8 +87,8 @@ fn lone(file: File, contents: &str) -> DiffContent {
 }
 
 /// A session over a side-by-side buffer, in the default dark theme.
-pub fn session(label: &str, before: &str, after: &str) -> Session {
-    Session::new(diff(label, before, after), Theme::DARK)
+pub fn session(label: &str, before: &str, after: &str) -> TestSession {
+    TestSession::new(diff(label, before, after), Theme::DARK)
 }
 
 /// The screen as a grid of cells, for asserting colours.
@@ -115,7 +116,7 @@ pub fn key(code: KeyCode) -> Event {
 }
 
 /// Types a line of keys. `\x1b` is escape; everything else is that character.
-pub fn type_keys(session: &mut Session, keys: &str) -> ui::Flow {
+pub fn type_keys(session: &mut TestSession, keys: &str) -> ui::Flow {
     let mut flow = ui::Flow::Continue;
     for c in keys.chars() {
         let code = match c {
@@ -138,7 +139,7 @@ pub fn type_keys(session: &mut Session, keys: &str) -> ui::Flow {
 ///
 /// A viewport learns its height from a frame rather than from an event, so a
 /// test that never drew would page by nothing at all.
-pub fn measure(session: &mut Session) {
+pub fn measure(session: &mut TestSession) {
     let mut terminal = Terminal::new(TestBackend::new(60, 12)).expect("in-memory terminal");
     session.draw(&mut terminal).expect("draws");
 }

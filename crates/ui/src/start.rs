@@ -21,9 +21,14 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
         bail!("nothing has changed here — there is nothing to review");
     }
 
-    let mut session = Session::new(Buffer::explorer(files), theme);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut session = Session::new(
+        Buffer::explorer(files),
+        theme,
+        crate::app::Workers::spawn(&tx),
+    );
     session.open();
-    run(&mut session, &cwd).context("running the review interface")
+    run(&mut session, &cwd, tx, rx).context("running the review interface")
 }
 
 /// An unknown name is an error; `None` picks from the terminal's capabilities.

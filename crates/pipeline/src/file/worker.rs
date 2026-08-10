@@ -11,11 +11,11 @@
 //!  }
 //! ```
 
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use crate::file::runner::{DiffContent, Runner};
-use channel::Worker;
+use channel::{Emitter, Worker};
 use file_types::File;
 
 /// What one request produced.
@@ -28,32 +28,27 @@ pub struct Response {
 /// The worker, the two queues to it, and whether one is outstanding.
 pub struct FileWorker {
     requests: Sender<File>,
-    answers: Receiver<Response>,
-    /// At most one request in flight.
     outstanding: bool,
 }
 
 impl FileWorker {
     /// Starts the worker thread.
-    pub fn start() -> Self {
+    pub fn start(emitter: Emitter<Response>) -> Self {
         let (requests, incoming) = channel::<File>();
-        let (finished, answers) = channel::<Response>();
         thread::Builder::new()
             .name("file".to_owned())
-            .spawn(move || run(&incoming, &finished))
+            .spawn(move || run(&incoming, &emitter))
             .expect("the file thread starts");
         Self {
             requests,
-            answers,
             outstanding: false,
         }
     }
 
     /// Mock worker for tests. A request past the end
     /// of the script fails.
-    pub fn mock(script: Vec<Result<DiffContent, String>>) -> Self {
+    pub fn mock(script: Vec<Result<DiffContent, String>>, emitter: Emitter<Response>) -> Self {
         let (requests, incoming) = channel::<File>();
-        let (finished, answers) = channel::<Response>();
         thread::Builder::new()
             .name("file-canned".to_owned())
             .spawn(move || {
@@ -62,7 +57,7 @@ impl FileWorker {
                     let content = script
                         .next()
                         .unwrap_or_else(|| Err("nothing left in the script".to_owned()));
-                    if finished.send(Response { file, content }).is_err() {
+                    if !emitter.send(Response { file, content }) {
                         return;
                     }
                 }
@@ -70,16 +65,8 @@ impl FileWorker {
             .expect("the file thread starts");
         Self {
             requests,
-            answers,
             outstanding: false,
         }
-    }
-
-    /// Waits for the response. Blocks — only for tests.
-    pub fn recv(&mut self) -> Option<Response> {
-        let response = self.answers.recv().ok()?;
-        self.outstanding = false;
-        Some(response)
     }
 }
 
@@ -99,22 +86,16 @@ impl Worker for FileWorker {
         self.outstanding
     }
 
-    fn poll(&mut self) -> Option<Self::Response> {
-        match self.answers.try_recv() {
-            Ok(response) => {
-                self.outstanding = false;
-                Some(response)
-            }
-            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
-        }
+    fn received(&mut self, _response: &Self::Response) {
+        self.outstanding = false;
     }
 }
 
 /// Answers requests until the sender is dropped.
-fn run(requests: &Receiver<File>, answers: &Sender<Response>) {
+fn run(requests: &Receiver<File>, answers: &Emitter<Response>) {
     while let Ok(file) = requests.recv() {
         let content = compare(&file);
-        if answers.send(Response { file, content }).is_err() {
+        if !answers.send(Response { file, content }) {
             return;
         }
     }
