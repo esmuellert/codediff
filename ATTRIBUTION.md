@@ -8,7 +8,8 @@ dependencies, vendored Neovim internals and documentation assets — none of whi
 present here.
 
 Everything below is compiled by `crates/vscode-diff-sys/build.rs` from
-`vendor/libvscode-diff/`.
+`vendor/libvscode-diff/`, except the icon table, which is Rust source in
+`crates/ui/src/theme/icon/table.rs`.
 
 ---
 
@@ -40,6 +41,47 @@ Components ported:
 MIT License
 
 Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+### nvim-web-devicons
+
+**License**: MIT License
+**Copyright**: Copyright (c) 2023 nvim-tree
+**Source**: https://github.com/nvim-tree/nvim-web-devicons
+
+`crates/ui/src/theme/icon/table.rs` is a translation of the plugin's two icon
+tables — `lua/nvim-web-devicons/default/icons_by_filename.lua` and
+`icons_by_file_extension.lua` at commit `2ae6958` — into Rust. Every glyph and
+colour is upstream's; only the syntax changed. The lookup order in
+`crates/ui/src/theme/icon.rs` follows the plugin's `get_icon_data`.
+
+The folder icons in the same file are nvim-tree's rather than this plugin's,
+in the colour its `NvimTreeFolderIcon` highlight group uses.
+
+```
+MIT License
+
+Copyright (c) 2023 nvim-tree
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

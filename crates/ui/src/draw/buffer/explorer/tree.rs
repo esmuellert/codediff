@@ -1,4 +1,4 @@
-//! Indent guides and fold arrows for the tree view.
+//! Indent guides for the tree view.
 //!
 //! A guide at a given depth means *an ancestor at that depth has more children
 //! after it* — read off the node's own parents, and blank space rather than a
@@ -21,25 +21,11 @@ use crate::view::buffer::explorer::{NodeId, Tree};
 
 use super::view_line::{Piece, priority};
 
-/// How a directory says whether it is open.
-///
-/// Triangles rather than nerd-font folders, so the list is readable in a
-/// terminal with any font. One place to change if that is ever configurable.
-const OPEN: &str = "▾ ";
-const SHUT: &str = "▸ ";
-
-/// The indent guides and fold arrow for one node.
+/// The indent guides for one node. The folder icon (open/closed) drawn by
+/// `view_line::directory` communicates the expand state.
 pub fn prefix(tree: &Tree, id: NodeId, theme: &Theme, background: Style) -> Vec<Piece> {
     let marker = background.fg(theme.tree.marker);
-    let node = tree.node(id);
-    let mut pieces = vec![Piece::droppable(indent(tree, id), marker, priority::GUIDES)];
-    if node.is_directory() {
-        pieces.push(Piece::fixed(
-            if node.is_open() { OPEN } else { SHUT },
-            marker,
-        ));
-    }
-    pieces
+    vec![Piece::droppable(indent(tree, id), marker, priority::GUIDES)]
 }
 
 /// The columns before a line's name.
@@ -98,10 +84,10 @@ mod tests {
             indents(&explorer),
             vec![
                 "",       // the heading has no indent to describe
-                "└ ▾ ",   // nest, the only thing at the top level
-                "  ├ ▾ ", // nest/a — its ancestor was last, so blank space
+                "└ ",     // nest, the only thing at the top level
+                "  ├ ",   // nest/a — its ancestor was last, so blank space
                 "  │ └ ", // one.txt
-                "  └ ▾ ", // nest/b
+                "  └ ",   // nest/b
                 "    ├ ", // three.txt
                 "    └ ", // two.txt
             ]
@@ -109,11 +95,13 @@ mod tests {
     }
 
     #[test]
-    fn a_shut_directory_says_so_and_an_open_one_says_so() {
+    fn shutting_a_directory_keeps_its_own_guide_and_takes_its_children_away() {
         let mut explorer = Explorer::new(vec![file("src/a.rs"), file("src/b.rs")]);
-        assert!(indents(&explorer)[1].contains(OPEN));
+        assert_eq!(indents(&explorer), vec!["", "└ ", "  ├ ", "  └ "]);
         explorer.toggle(1);
-        assert!(indents(&explorer)[1].contains(SHUT));
+        // Nothing in the indent says which of the two it is: that is the
+        // folder icon's job now.
+        assert_eq!(indents(&explorer), vec!["", "└ "]);
     }
 
     #[test]
