@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  # Cargo — one entry covers the whole workspace.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      tree-sitter:
+        patterns:
+          - "tree-sitter"
+          - "tree-sitter-*"
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+
+  # GitHub Actions — includes the composite action directory.
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Rust toolchain — monthly, since new Rust ships every 6 weeks.
+  - package-ecosystem: "rust-toolchain"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "build"
