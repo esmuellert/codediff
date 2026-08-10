@@ -8,6 +8,11 @@ runs:
       if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@v1
 
+    - name: Fix link.exe PATH conflict
+      if: runner.os == 'Windows'
+      shell: bash
+      run: rm -f "/c/Program Files/Git/usr/bin/link.exe"
+
     - uses: Swatinem/rust-cache@v2
       with:
         cache-on-failure: true
