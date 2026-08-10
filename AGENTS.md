@@ -38,5 +38,8 @@ A test that has never failed proves nothing. Breaking the code also finds design
 
 ## Changing
 
+**Do not commit, push or open a PR unless explicitly asked.**
+Write the file and show it. The user decides when it ships.
+
 **When you move code, only move it.**
 Do not rename, reword or reshape it in the same step. A reader cannot tell a move from an edit when both are in one diff.
