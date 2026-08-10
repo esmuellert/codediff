@@ -57,8 +57,8 @@ pub fn get_files(request: &Request) -> Result<Vec<File>> {
 
     Ok(changes
         .into_iter()
-        .map(|file| match counts.get(file.path().as_str()) {
-            Some(&stats) => file.set_stats(stats),
+        .map(|file| match counts.of(&file) {
+            Some(stats) => file.set_stats(stats),
             None => file,
         })
         .collect())

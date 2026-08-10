@@ -17,5 +17,8 @@ vcs.workspace = true
 vscode-diff.workspace = true
 anyhow.workspace = true
 
+[dev-dependencies]
+fixtures.workspace = true
+
 [lints]
 workspace = true

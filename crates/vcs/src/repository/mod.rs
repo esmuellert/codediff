@@ -15,6 +15,7 @@ pub(crate) mod list;
 mod read;
 
 pub use diff_type::DiffType;
+pub use list::LineStats;
 
 use std::path::Path;
 
