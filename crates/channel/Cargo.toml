@@ -1,8 +1,12 @@
 [package]
 name = "channel"
-version = "0.14.0"
-edition = "2024"
-rust-version = "1.97"
+description = "The contract every background worker follows."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 publish = false
 
 [lints]
