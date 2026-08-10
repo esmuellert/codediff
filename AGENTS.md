@@ -23,6 +23,11 @@ These are the references this project follows. Most things already have a name â
 **Explain in plain words. Reach for a term of art only when it is both shorter and exact.**
 The reader is an expert who checks every claim, so an unexplained word hides nothing â€” it only costs them the moment spent decoding it.
 
+## Running
+
+**Locally, pass `-j` to every cargo command, set to half the machine's cores.**
+Cargo takes all of them by default, which leaves the machine unusable to whoever is sitting at it.
+
 ## Verifying
 
 **Do not state a number or a cause unless you measured it.**
