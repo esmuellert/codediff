@@ -19,8 +19,12 @@ impl Session {
         match command.action {
             Action::Buffer(action) => {
                 let count = command.repeat();
+                let is_motion = matches!(action, crate::input::BufferAction::Motion(_));
                 let (buffer, viewport) = self.view.focused_mut();
                 buffer.apply(action, count, viewport);
+                if is_motion {
+                    self.open();
+                }
                 Flow::Continue
             }
             Action::Pane(action) => match action {},
