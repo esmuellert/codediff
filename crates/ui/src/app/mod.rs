@@ -198,9 +198,9 @@ pub fn run(
             other => session.apply(other),
         };
 
+        session.send_colour_request();
+        session.send_file_request();
         if changed {
-            session.send_colour_request();
-            session.send_file_request();
             screen.draw(|t| session.draw(t))?;
         }
     }

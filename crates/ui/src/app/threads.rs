@@ -30,7 +30,7 @@ pub fn spawn_workers(tx: &Sender<Event>, repo_root: &Path) -> Workers {
     Workers {
         syntax: Syntax::start(channel::Emitter::new(tx.clone(), Event::Coloured)),
         files: FileWorker::start(channel::Emitter::new(tx.clone(), Event::FileReady)),
-        list_worker: ListWorker::start(channel::Emitter::new(tx.clone(), Event::ListRefreshed)),
+        list_worker: ListWorker::start(channel::Emitter::new(tx.clone(), Event::ListRefreshed), 2),
         _watcher: watcher_handle,
     }
 }

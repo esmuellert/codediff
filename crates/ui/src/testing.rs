@@ -50,7 +50,7 @@ impl TestSession {
         let workers = Workers {
             syntax: Syntax::start(Emitter::new(tx.clone(), Event::Coloured)),
             files: FileWorker::start(Emitter::new(tx.clone(), Event::FileReady)),
-            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
+            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed), 2),
             _watcher: None,
         };
         let session = Session::new(buffer, theme, workers);
@@ -66,7 +66,7 @@ impl TestSession {
         let workers = Workers {
             syntax: Syntax::start(Emitter::new(tx.clone(), Event::Coloured)),
             files: FileWorker::mock(script, Emitter::new(tx.clone(), Event::FileReady)),
-            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
+            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed), 2),
             _watcher: None,
         };
         let session = Session::new(buffer, theme, workers);
