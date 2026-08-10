@@ -213,8 +213,8 @@ impl View {
         let cursor = pane.viewport.cursor();
         if let BufferType::Explorer(explorer) = buffer.buffer_type_mut() {
             let landing = explorer.reshape_around(cursor, |e| e.refresh(files));
-            let lines = explorer.view_lines();
-            pane.viewport.place(landing, lines);
+            buffer.update_line_count();
+            pane.viewport.place(landing, buffer.view_lines());
         }
         self.version = Version(self.version.0 + 1);
     }
