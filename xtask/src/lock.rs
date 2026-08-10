@@ -93,7 +93,16 @@ pub fn hash_tree(dir: &Path) -> Result<String> {
         outer.update(inner.finalize());
     }
 
-    Ok(format!("{:x}", outer.finalize()))
+    Ok(hex(&outer.finalize()))
+}
+
+/// Lowercase hex, two digits per byte.
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {

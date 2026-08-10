@@ -60,7 +60,7 @@ watcher = { path = "crates/watcher" }
 # faster in our measurement, and the only backend that carries every grammar.
 # See crates/syntax/README.md and D36.
 syntect = { version = "5", default-features = false, features = ["default-onig"] }
-two-face = { version = "0.4", default-features = false, features = ["syntect-onig"] }
+two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
 
 # The parsing engine, for the languages that have one. A grammar knows that
 # `Rect` in `area: Rect` is a type, which a regex over lines cannot; measured
@@ -110,7 +110,7 @@ crossterm = "0.29"
 crokey = { version = "1.5", default-features = false }
 # Only for suspending: raw mode disables the terminal's own Ctrl-Z handling, so
 # the signal has to be raised by hand. Safe API; no `unsafe` in our crates.
-signal-hook = { version = "0.3", features = ["iterator"] }
+signal-hook = { version = "0.4", features = ["iterator"] }
 # Filesystem watcher: detects worktree and .git changes so the explorer stays
 # current without polling. The debouncer collapses rapid events into one.
 notify = "8.2"
