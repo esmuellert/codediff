@@ -12,7 +12,7 @@ use crate::theme::Theme;
 use crate::view::Buffer;
 
 use pipeline::list::ListWorker;
-use syntax::{Syntax, SyntaxResponse};
+use syntax::Syntax;
 
 /// A Session that owns its event channel, for tests that need to block.
 pub struct TestSession {

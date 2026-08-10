@@ -14,11 +14,11 @@
 mod harness;
 
 use harness::{cells, key, single};
+use ui::Theme;
 use ui::crossterm::event::KeyCode;
 use ui::ratatui::buffer::Buffer as Cells;
 use ui::ratatui::style::Color;
 use ui::testing::TestSession;
-use ui::{Session, Theme};
 
 const WIDTH: u16 = 100;
 const HEIGHT: u16 = 24;

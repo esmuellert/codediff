@@ -4,7 +4,7 @@
 //! Shared by the files beside it rather than owned by one of them.
 
 pub use file_types::{ChangeType, File, Oid, RepoPath, Rev, Revs, Stats};
-pub use pipeline::file::{DiffContent, FileWorker};
+pub use pipeline::file::DiffContent;
 pub use ratatui::buffer::Buffer as Cells;
 pub use ratatui::layout::Rect;
 pub use ratatui::style::Color;
