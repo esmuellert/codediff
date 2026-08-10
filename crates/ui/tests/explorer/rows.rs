@@ -8,10 +8,7 @@
 //! reports facts, and `draw::buffer::explorer` is what turns them into `▾`,
 //! `│ ` and `M`.
 
-#[path = "explorer/common.rs"]
-mod common;
-
-use common::*;
+use crate::common::*;
 
 #[test]
 fn the_list_is_drawn_with_its_sections_guides_and_counts() {

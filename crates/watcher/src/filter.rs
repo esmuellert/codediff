@@ -136,7 +136,7 @@ mod tests {
     fn ctx(root: &str) -> Context {
         let repo_root = PathBuf::from(root);
         let git_dir = repo_root.join(".git");
-        let (ignorer, _) = Gitignore::new(&repo_root.join(".gitignore"));
+        let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
         Context {
             repo_root,
             git_dir,

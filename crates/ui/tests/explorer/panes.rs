@@ -1,12 +1,7 @@
 //! Two panes: the border between them, which one a key means, and what
 //! opening a file does to the one beside the list.
 
-#![allow(dead_code, unused_imports)]
-
-#[path = "explorer/common.rs"]
-mod common;
-
-use common::*;
+use crate::common::*;
 
 #[test]
 fn the_border_runs_the_whole_height_of_the_tab() {

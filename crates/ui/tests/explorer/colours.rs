@@ -3,12 +3,7 @@
 //! Both halves of the same fault: the list came out entirely in the ordinary
 //! text colour, and the diff beside it stayed plain until a key was pressed.
 
-#![allow(dead_code, unused_imports)]
-
-#[path = "explorer/common.rs"]
-mod common;
-
-use common::*;
+use crate::common::*;
 
 /// The colour of the first cell of each row, as the terminal would receive it.
 fn colours(session: &mut Session, width: u16, height: u16, column: u16) -> Vec<Color> {
