@@ -16,7 +16,7 @@ use harness::{cells, diff};
 use ui::ratatui::buffer::Buffer as Cells;
 use ui::ratatui::style::Color;
 use ui::testing::TestSession;
-use ui::{Buffer, Session, Theme};
+use ui::{Buffer, Theme};
 
 /// The colours found on one row, left to right, ignoring runs.
 fn foregrounds(cells: &Cells, y: u16) -> Vec<Color> {

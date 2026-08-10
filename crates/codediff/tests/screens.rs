@@ -17,7 +17,7 @@ mod harness;
 use harness::{cells, column_of, key, screen, session, single, type_keys};
 use ui::crossterm::event::KeyCode;
 use ui::testing::TestSession;
-use ui::{Flow, Session, Theme};
+use ui::{Flow, Theme};
 
 const BEFORE: &str = "one\ntwo\nthree\nfour\nfive";
 const AFTER: &str = "one\nTWO\nthree\ninserted\nfour\nfive";

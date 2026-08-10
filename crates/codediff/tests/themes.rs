@@ -8,7 +8,7 @@ mod harness;
 
 use harness::{cells, diff, screen, session};
 use ui::testing::TestSession;
-use ui::{Session, Theme};
+use ui::{Theme};
 
 const BEFORE: &str = "one\ntwo\nthree\nfour\nfive";
 const AFTER: &str = "one\nTWO\nthree\ninserted\nfour\nfive";

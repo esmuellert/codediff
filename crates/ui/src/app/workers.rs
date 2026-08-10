@@ -5,7 +5,7 @@ use pipeline::file::{FileWorker, Response};
 use pipeline::list::ListWorker;
 use syntax::Syntax;
 
-use crate::view::{Buffer, BufferType};
+use crate::view::Buffer;
 
 use super::Session;
 

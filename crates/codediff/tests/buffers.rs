@@ -12,7 +12,7 @@ mod harness;
 use harness::{added, cells, key, measure, screen, single};
 use ui::crossterm::event::KeyCode;
 use ui::testing::TestSession;
-use ui::{Session, Theme};
+use ui::{Theme};
 
 #[test]
 fn a_file_with_nothing_to_compare_against_gets_one_column() {
