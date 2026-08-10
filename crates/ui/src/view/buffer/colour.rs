@@ -156,7 +156,8 @@ mod tests {
     fn the_staged_and_the_working_copy_of_one_path_do_not_share_a_cache_entry() {
         // The old key said which column a version was drawn in, so both of
         // these were one name over two different sets of bytes.
-        let (emitter, _rx) = channel::Emitter::local();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let emitter = channel::Emitter::new(tx, std::convert::identity);
         let mut syntax = Syntax::start(emitter);
         let mut store = Store::new();
 
@@ -176,7 +177,8 @@ mod tests {
         // The other half, and free: a commit is named by its id, so the before
         // side of every file in a review that happens to be the same blob is
         // the same entry.
-        let (emitter, _rx) = channel::Emitter::local();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let emitter = channel::Emitter::new(tx, std::convert::identity);
         let mut syntax = Syntax::start(emitter);
         let mut store = Store::new();
         request_diff(&diff(Rev::Worktree), &mut syntax, &mut store, Version(1), 0);

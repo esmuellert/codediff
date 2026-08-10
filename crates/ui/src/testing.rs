@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 use channel::Emitter;
+use channel::Worker;
 use pipeline::file::{DiffContent, FileWorker};
 
 use crate::app::event::Event;
@@ -12,7 +13,7 @@ use crate::theme::Theme;
 use crate::view::Buffer;
 
 use pipeline::list::ListWorker;
-use syntax::{Syntax, SyntaxResponse};
+use syntax::Syntax;
 
 /// A Session that owns its event channel, for tests that need to block.
 pub struct TestSession {
@@ -34,9 +35,24 @@ impl std::ops::DerefMut for TestSession {
 }
 
 impl TestSession {
+    /// Whether anything on screen is still being coloured.
+    pub fn is_colouring(&self) -> bool {
+        self.session.workers.syntax.is_busy()
+    }
+
+    /// Whether a file comparison is in progress.
+    pub fn is_loading_file(&self) -> bool {
+        self.session.workers.files.is_busy()
+    }
+
     pub fn new(buffer: Buffer, theme: Theme) -> Self {
         let (tx, rx) = mpsc::channel();
-        let workers = Workers::spawn(&tx);
+        let workers = Workers {
+            syntax: Syntax::start(Emitter::new(tx.clone(), Event::Coloured)),
+            files: FileWorker::start(Emitter::new(tx.clone(), Event::FileReady)),
+            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
+            _watcher: None,
+        };
         let session = Session::new(buffer, theme, workers);
         Self { session, rx }
     }
@@ -50,7 +66,8 @@ impl TestSession {
         let workers = Workers {
             syntax: Syntax::start(Emitter::new(tx.clone(), Event::Coloured)),
             files: FileWorker::mock(script, Emitter::new(tx.clone(), Event::FileReady)),
-            list_worker: ListWorker::start(Emitter::new(tx, Event::Listed)),
+            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
+            _watcher: None,
         };
         let session = Session::new(buffer, theme, workers);
         Self { session, rx }
@@ -60,7 +77,7 @@ impl TestSession {
     pub fn wait_until_idle(&mut self) -> bool {
         let mut changed = false;
         let mut idle = 0;
-        while self.session.is_colouring() && idle < 8 {
+        while self.is_colouring() && idle < 8 {
             match self.rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(event) => {
                     let applied = self.session.apply(event);

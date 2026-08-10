@@ -13,12 +13,11 @@
 pub mod event;
 mod keys;
 mod mouse;
-mod threads;
+pub(crate) mod threads;
 mod workers;
+pub use workers::Workers;
 
 use channel::Worker;
-use pipeline::file::FileWorker;
-use pipeline::list::ListWorker;
 use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
@@ -28,7 +27,7 @@ use crate::input::Resolver;
 use crate::terminal::Screen;
 use crate::theme::Theme;
 use crate::view::{Buffer, PaneId, View};
-use syntax::{Store, Syntax};
+use syntax::Store;
 
 /// What the loop should do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,9 +43,7 @@ pub struct Session {
     pub(crate) view: View,
     theme: Theme,
     pub(crate) resolver: Resolver,
-    pub(crate) syntax: Syntax,
-    pub(crate) files: FileWorker,
-    pub(crate) list_worker: ListWorker,
+    pub(crate) workers: Workers,
     /// The file the reader last selected, waiting to be sent to the worker.
     pub(crate) selected: Option<file_types::File>,
     /// Syntax spans for all open files.
@@ -68,40 +65,16 @@ pub(crate) struct PendingSelection {
 }
 
 /// Pre-built workers, ready to be handed to Session.
-pub struct Workers {
-    pub syntax: Syntax,
-    pub files: FileWorker,
-    pub list_worker: ListWorker,
-}
-
-impl Workers {
-    /// Spawns all workers with emitters mapped to the event channel.
-    pub fn spawn(tx: &std::sync::mpsc::Sender<event::Event>) -> Self {
-        Self {
-            syntax: Syntax::start(channel::Emitter::new(tx.clone(), event::Event::Coloured)),
-            files: FileWorker::start(channel::Emitter::new(tx.clone(), event::Event::FileReady)),
-            list_worker: ListWorker::start(channel::Emitter::new(tx.clone(), event::Event::Listed)),
-        }
-    }
-}
-
 impl Session {
-    pub fn new(buffer: Buffer, theme: Theme, workers: Workers) -> Self {
-        let Workers {
-            mut syntax,
-            files,
-            list_worker,
-        } = workers;
+    pub fn new(buffer: Buffer, theme: Theme, mut workers: Workers) -> Self {
         let mut store = Store::new();
         let mut view = View::single(buffer);
-        view.request(&mut syntax, &mut store);
+        view.request(&mut workers.syntax, &mut store);
         Self {
             view,
             theme,
             resolver: Resolver::new(),
-            syntax,
-            files,
-            list_worker,
+            workers,
             selected: None,
             store,
             notice: None,
@@ -158,6 +131,11 @@ impl Session {
         Ok(())
     }
 
+    /// Records the list selection for the file worker to pick up.
+    pub fn open(&mut self) {
+        self.selected = self.view.selected_file().cloned();
+    }
+
     /// Applies one terminal event — key or mouse.
     pub fn handle_event(&mut self, event: &crossterm::event::Event) -> Flow {
         use crossterm::event::Event;
@@ -185,10 +163,10 @@ pub fn run(
     session.send_file_request();
     session.draw(screen.terminal())?;
 
-    threads::spawn_reader(tx.clone());
+    // Phase 2: start terminal sources after raw mode is on.
+    let _input = threads::Input::start(tx.clone());
     #[cfg(unix)]
-    threads::spawn_signals(tx.clone());
-    threads::spawn_watcher(repo_root, tx);
+    let _signals = threads::Signals::start(tx);
 
     loop {
         let Ok(ev) = rx.recv() else { return Ok(()) };
@@ -204,9 +182,10 @@ pub fn run(
                 }
                 Flow::Continue => true,
             },
-            event::Event::FsChanged => {
+            event::Event::FsChanged(_refresh) => {
                 tracing::debug!("fs change detected");
                 session
+                    .workers
                     .list_worker
                     .send(pipeline::list::Request::worktree(repo_root));
                 false

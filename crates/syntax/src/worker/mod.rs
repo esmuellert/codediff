@@ -96,7 +96,8 @@ mod tests {
 
     /// Creates a Syntax with a local receiver for testing.
     fn test_syntax() -> (Syntax, mpsc::Receiver<SyntaxResponse>) {
-        let (emitter, rx) = Emitter::local();
+        let (tx, rx) = mpsc::channel();
+        let emitter = Emitter::new(tx, std::convert::identity);
         (Syntax::start(emitter), rx)
     }
 

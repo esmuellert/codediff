@@ -57,7 +57,9 @@ fn setup() -> (Repo, Watcher, Receiver<Refresh>) {
     repo.git(&["add", "."]);
     repo.git(&["commit", "-m", "init"]);
 
-    let (watcher, rx) = watcher::start(repo.path()).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let emitter = channel::Emitter::new(tx, std::convert::identity);
+    let watcher = watcher::start(repo.path(), emitter).unwrap();
     std::thread::sleep(Duration::from_millis(500));
     // Drain any events from the setup operations that arrived after start.
     while rx.try_recv().is_ok() {}

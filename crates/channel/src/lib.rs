@@ -1,7 +1,7 @@
 //! The contract every background worker follows, and the channel layer that
 //! delivers results to the main loop without polling.
 
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::Sender;
 
 /// A typed sender that maps results into the app's event type.
 ///
@@ -17,15 +17,6 @@ impl<T: Send + 'static> Emitter<T> {
         Self {
             send: Box::new(move |value| tx.send(wrap(value)).is_ok()),
         }
-    }
-
-    /// Creates an emitter backed by a local channel. For tests.
-    pub fn local() -> (Self, Receiver<T>) {
-        let (tx, rx) = mpsc::channel();
-        let emitter = Self {
-            send: Box::new(move |value| tx.send(value).is_ok()),
-        };
-        (emitter, rx)
     }
 
     /// Delivers one result. Returns `false` if the receiver is gone.
