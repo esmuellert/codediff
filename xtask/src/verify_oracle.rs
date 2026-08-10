@@ -255,29 +255,47 @@ fn build_oracle(root: &Path) -> Result<PathBuf> {
         "diff_tool"
     });
 
-    let compiler = std::env::var("CC").unwrap_or_else(|_| "cc".to_owned());
-    let mut command = Command::new(&compiler);
-    command
-        .arg("-O1")
-        .arg("-w")
-        .arg(format!("-I{}", engine.join("include").display()))
-        .arg(format!("-I{}", engine.join("vendor").display()))
-        .arg(format!("-I{}", out_dir.display()))
-        .arg("-DUTF8PROC_STATIC")
-        .arg("-o")
-        .arg(&exe)
-        .arg(engine.join("diff_tool.c"));
-    for source in SOURCES {
-        command.arg(engine.join(source));
+    if cfg!(target_env = "msvc") {
+        let mut cmd = Command::new("cl");
+        cmd.arg(format!("/I{}", engine.join("include").display()));
+        cmd.arg(format!("/I{}", engine.join("vendor").display()));
+        cmd.arg(format!("/I{}", out_dir.display()));
+        cmd.arg("/DUTF8PROC_STATIC");
+        cmd.arg("/O1");
+        cmd.arg("/W0");
+        cmd.arg(format!("/Fe:{}", exe.display()));
+        cmd.arg(engine.join("diff_tool.c"));
+        for source in SOURCES {
+            cmd.arg(engine.join(source));
+        }
+        let status = cmd.status().context("running cl.exe; is MSVC installed?")?;
+        if !status.success() {
+            bail!("compiling diff_tool with MSVC failed");
+        }
+    } else {
+        let compiler = std::env::var("CC").unwrap_or_else(|_| "cc".to_owned());
+        let mut cmd = Command::new(&compiler);
+        cmd.arg("-O1");
+        cmd.arg("-w");
+        cmd.arg(format!("-I{}", engine.join("include").display()));
+        cmd.arg(format!("-I{}", engine.join("vendor").display()));
+        cmd.arg(format!("-I{}", out_dir.display()));
+        cmd.arg("-DUTF8PROC_STATIC");
+        cmd.arg("-o");
+        cmd.arg(&exe);
+        cmd.arg(engine.join("diff_tool.c"));
+        for source in SOURCES {
+            cmd.arg(engine.join(source));
+        }
+        cmd.arg("-lm");
+        let status = cmd
+            .status()
+            .with_context(|| format!("running {compiler}; is a C compiler installed?"))?;
+        if !status.success() {
+            bail!("compiling diff_tool failed");
+        }
     }
-    command.arg("-lm");
 
-    let status = command
-        .status()
-        .with_context(|| format!("running {compiler}; is a C compiler installed?"))?;
-    if !status.success() {
-        bail!("compiling diff_tool failed");
-    }
     Ok(exe)
 }
 
