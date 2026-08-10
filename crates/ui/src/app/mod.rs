@@ -161,7 +161,7 @@ pub fn run(
 ) -> std::io::Result<()> {
     let mut screen = Screen::open()?;
     session.send_file_request();
-    session.draw(screen.terminal())?;
+    screen.draw(|t| session.draw(t))?;
 
     // Phase 2: start terminal sources after raw mode is on.
     let _input = threads::Input::start(tx.clone());
@@ -201,7 +201,7 @@ pub fn run(
         if changed {
             session.send_colour_request();
             session.send_file_request();
-            session.draw(screen.terminal())?;
+            screen.draw(|t| session.draw(t))?;
         }
     }
 }

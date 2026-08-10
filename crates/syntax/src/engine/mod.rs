@@ -80,20 +80,14 @@ pub fn rules() -> Vec<Rule> {
 }
 
 /// The parser's half, numbered from where the matcher's stops.
+///
+/// Colour and nothing else: no capture asks for a font style.
 fn captures() -> Vec<Capture> {
     let base = scopes::SCOPES.len() as u16;
     captures::NAMES
         .iter()
         .enumerate()
-        .map(|(n, entry)| {
-            Capture::new(
-                entry.name,
-                Style {
-                    pen: Some(Pen(base + n as u16)),
-                    ..entry.emphasis()
-                },
-            )
-        })
+        .map(|(n, entry)| Capture::new(entry.name, Style::pen(Pen(base + n as u16))))
         .collect()
 }
 
@@ -303,6 +297,28 @@ mod tests {
     #[test]
     fn a_pen_from_no_table_names_nothing() {
         assert_eq!(group(Pen(9_999)), None);
+    }
+
+    #[test]
+    fn no_comment_rule_asks_for_a_font_style() {
+        // Colour arrives a frame or two after the text, so anything a comment
+        // wears beyond a colour changes the *shape* of every glyph in it when
+        // it lands, and a screen of comments redraws visibly. Both tables,
+        // because a file goes through whichever engine claims it.
+        let styles = rules()
+            .into_iter()
+            .map(|rule| (rule.selector, rule.style))
+            .chain(captures().into_iter().map(|c| (c.name, c.style)));
+        for (name, style) in styles {
+            if style.pen.and_then(group) != Some(Group::Comment) {
+                continue;
+            }
+            assert_eq!(
+                style,
+                Style::pen(style.pen.expect("just read")),
+                "{name} gives a comment more than a colour"
+            );
+        }
     }
 
     // --- the seam --------------------------------------------------------
