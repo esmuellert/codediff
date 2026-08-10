@@ -28,12 +28,14 @@ fn every_part_of_a_row_is_coloured_by_what_it_is() {
     let change = theme.change;
     let mut session = Session::new(Buffer::explorer(entries()), theme);
 
-    // Row 0 `Changes (3 · +16 -3)`, row 1 `├ ▾ src`, row 5 `└ notes.txt … ??`.
+    // Row 0 `Changes (3 · +16 -3)`, row 1 `├ 📁 src`, row 5 `└ notes.txt … ??`.
     let first = colours(&mut session, 44, 8, 0);
     assert_eq!(first[0], tree.heading, "the section heading");
     assert_eq!(first[1], tree.marker, "an indent guide");
 
-    // Column four of row 1 is the `s` of `src`; of row 5, the `o` of `notes`.
+    // The icon and the space after it push every name two columns right of
+    // its guide: column four is the `s` of `src` on row 1, and the `n` of
+    // `notes.txt` on row 5.
     let fourth = colours(&mut session, 44, 8, 4);
     assert_eq!(fourth[1], tree.directory, "a directory name");
     assert_eq!(fourth[5], tree.name, "a file name");
