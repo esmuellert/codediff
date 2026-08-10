@@ -4,10 +4,9 @@
 # and (optionally) produce a changelog body for the GitHub Release.
 
 [bump]
-# feat: → minor even at 0.x, fix: → patch, breaking (!) → minor while below 1.0.
+# feat: → minor, fix: → patch, breaking (!) → minor while below 1.0.
 # Everything else (refactor, docs, chore, build, test, style) → no bump.
-features_always_bump_minor = true
-breaking_always_bump_major = false
+breaking_always_increments_minor = true
 
 [changelog]
 header = ""
@@ -29,8 +28,8 @@ tag_pattern = "v[0-9]*"
 sort_commits = "newest"
 
 commit_parsers = [
-    { message = "^feat", group = "Features" },
-    { message = "^fix", group = "Fixes" },
+    { message = "^feat", group = "Features", minor_bump = true },
+    { message = "^fix", group = "Fixes", patch_bump = true },
     { message = "^refactor", skip = true },
     { message = "^docs", skip = true },
     { message = "^chore", skip = true },
