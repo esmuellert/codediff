@@ -2,7 +2,7 @@
 //! pane the mouse is hovering over (not the focused one).
 
 use crate::common::*;
-use crossterm::event::{Event, MouseEvent, MouseEventKind};
+use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 use ui::Session;
@@ -114,4 +114,69 @@ fn scroll_targets_the_hovered_pane_not_the_focused_one() {
     // The focused pane (explorer) should NOT have scrolled.
     let explorer_top = session.view().focused().viewport.top();
     assert_eq!(explorer_top, 0, "the focused pane should not have scrolled");
+}
+
+#[test]
+fn a_file_a_refresh_added_can_be_clicked() {
+    let theme = Theme::named("basic-dark").unwrap();
+    let mut session = scripted(only(vec![modified("src/lib.rs")]), theme, vec![]);
+    draw(&mut session, 80, 12);
+
+    session.refresh_list(vec![modified("src/lib.rs"), modified("src/zeta.rs")]);
+    let rows = screen(&mut session, 80, 12);
+    let row = rows
+        .iter()
+        .position(|row| row.contains("zeta.rs"))
+        .expect("the new file is on screen") as u16;
+
+    mouse(
+        &mut session,
+        MouseEventKind::Down(MouseButton::Left),
+        4,
+        row,
+    );
+
+    assert_eq!(
+        session
+            .view()
+            .selected_file()
+            .map(|file| file.path().as_str().to_owned()),
+        Some("src/zeta.rs".to_owned()),
+        "the click did not land on the new file"
+    );
+}
+
+#[test]
+fn a_click_below_a_shortened_list_lands_nowhere() {
+    let theme = Theme::named("basic-dark").unwrap();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs"), modified("src/zeta.rs")]),
+        theme,
+        vec![],
+    );
+    let rows = screen(&mut session, 80, 12);
+    let row = rows
+        .iter()
+        .position(|row| row.contains("zeta.rs"))
+        .expect("both files are on screen") as u16;
+
+    session.refresh_list(vec![modified("src/lib.rs")]);
+    // How many rows the shorter list draws, read off the screen rather than
+    // asked of the buffer, which is the thing under test.
+    let rows = screen(&mut session, 80, 12);
+    let drawn = rows.iter().position(String::is_empty).expect("blank rows") as u32;
+
+    // That row is now past the end of the list.
+    mouse(
+        &mut session,
+        MouseEventKind::Down(MouseButton::Left),
+        4,
+        row,
+    );
+
+    assert!(
+        session.view().focused().viewport.cursor() < drawn,
+        "the cursor left the list: {} of {drawn} rows",
+        session.view().focused().viewport.cursor()
+    );
 }

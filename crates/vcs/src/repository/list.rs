@@ -1,6 +1,8 @@
 //! What changed: the list of files, and how many lines each gained.
 
-use file_types::{ChangeType, File, RepoPath, Rev, Revs, Stage};
+use std::collections::HashMap;
+
+use file_types::{ChangeType, DiffVersion, File, RepoPath, Rev, Revs, Stage, Stats};
 
 use crate::git::diff::name_status::Change;
 use crate::git::diff::numstat::{self, Counts};
@@ -8,6 +10,36 @@ use crate::git::status::{Code, Entry, Untracked};
 use crate::git::{self, GitCommand};
 
 use super::Repository;
+
+/// How many lines each file gained and lost, one set of counts per comparison.
+///
+/// Keyed by the revision a comparison ends at — the working tree for what is
+/// unstaged, the index for what is staged. One map per comparison, because a
+/// path that is staged and then edited again has a count in each, and a single
+/// map keyed by path could hold only whichever was written last.
+#[derive(Debug, Clone, Default)]
+pub struct LineStats {
+    counts: HashMap<Rev, Counts>,
+}
+
+impl LineStats {
+    fn new(comparisons: impl IntoIterator<Item = (Rev, Counts)>) -> Self {
+        Self {
+            counts: comparisons.into_iter().collect(),
+        }
+    }
+
+    /// What this file gained and lost in its own comparison.
+    ///
+    /// `None` when nothing counted it: a binary file, or a file from a
+    /// comparison these counts are not of.
+    pub fn of(&self, file: &File) -> Option<Stats> {
+        self.counts
+            .get(file.rev(DiffVersion::Modified))?
+            .get(file.path().as_str())
+            .copied()
+    }
+}
 
 impl Repository {
     /// Every file that differs, each carrying the two revisions it compares.
@@ -39,7 +71,7 @@ impl Repository {
         }
     }
 
-    /// How many lines each file gained and lost, by path.
+    /// How many lines each file gained and lost, per comparison.
     ///
     /// A failure to count is not a failure to review — the list is correct
     /// without the numbers — so this is the caller's to ignore.
@@ -47,16 +79,16 @@ impl Repository {
         &mut self,
         diff_type: &super::DiffType,
         pathspec: &[String],
-    ) -> crate::Result<Counts> {
+    ) -> crate::Result<LineStats> {
         match git::resolve_command(&self.repo, diff_type)? {
-            GitCommand::Worktree => {
-                let mut counts = numstat::unstaged(&self.repo)?;
-                counts.extend(numstat::staged(&self.repo)?);
-                Ok(counts)
-            }
-            GitCommand::Diff { args, .. } => {
+            GitCommand::Worktree => Ok(LineStats::new([
+                (Rev::Worktree, numstat::unstaged(&self.repo)?),
+                (Rev::Index, numstat::staged(&self.repo)?),
+            ])),
+            GitCommand::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                numstat::diff(&self.repo, &args, pathspec)
+                let counts = numstat::diff(&self.repo, &args, pathspec)?;
+                Ok(LineStats::new([(revs.after, counts)]))
             }
         }
     }

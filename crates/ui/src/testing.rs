@@ -95,6 +95,11 @@ impl TestSession {
         changed
     }
 
+    /// Applies a new file list, as the watcher path does.
+    pub fn refresh_list(&mut self, files: Vec<file_types::File>) -> bool {
+        self.session.apply(Event::ListRefreshed(files))
+    }
+
     /// Blocks until a file response arrives.
     pub fn has_file_arrived(&mut self) -> bool {
         self.session.send_file_request();

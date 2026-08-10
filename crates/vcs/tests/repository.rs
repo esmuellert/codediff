@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use file_types::{ChangeType, DiffVersion, File, FileContent, RepoPath};
+use file_types::{ChangeType, DiffVersion, File, FileContent, RepoPath, Stats};
 use vcs::{DiffType, Repository};
 
 /// A fixture repository in a temporary directory, removed on drop.
@@ -340,4 +340,33 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
         })
         .collect();
     assert_eq!(found, vec!["Changes", "Staged Changes"], "{found:?}");
+}
+
+#[test]
+fn each_comparison_counts_its_own_lines() {
+    // `staged-then-edited.txt` gained a line in the working tree and swapped
+    // one in the index. Counting both comparisons into one map keyed by path
+    // kept only the staged pair, and the explorer drew it on both rows.
+    let fixture = Fixture::new("counts");
+    let mut git = fixture.git();
+    let files = git
+        .get_changed_files(&DiffType::Worktree, &[])
+        .expect("status runs");
+    let counts = git
+        .get_line_stats(&DiffType::Worktree, &[])
+        .expect("counting");
+
+    let found: Vec<(&'static str, Option<Stats>)> = files
+        .iter()
+        .filter(|file| file.path().as_str() == "staged-then-edited.txt")
+        .map(|file| (file.revs().heading(), counts.of(file)))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("Changes", Some(Stats::new(1, 0))),
+            ("Staged Changes", Some(Stats::new(1, 1))),
+        ],
+        "{found:?}"
+    );
 }

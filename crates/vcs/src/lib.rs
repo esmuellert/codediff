@@ -13,6 +13,5 @@ mod repo;
 mod repository;
 
 pub use error::{Error, Result};
-pub use git::diff::numstat::Counts;
 pub use repo::Repo;
-pub use repository::{DiffType, Repository};
+pub use repository::{DiffType, LineStats, Repository};
