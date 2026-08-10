@@ -58,8 +58,23 @@ jobs:
         id: bump
         run: |
           set -euo pipefail
+
+          echo "::group::Debug info"
+          echo "HEAD: $(git rev-parse HEAD)"
+          echo "Tags visible:"
+          git tag -l 'v0.*' | sort -V | tail -5
+          echo "Latest tag: $(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || echo NONE)"
+          echo "Commits since v0.14.0 (first-parent):"
+          git log --oneline --first-parent v0.14.0..HEAD | head -10
+          echo "git-cliff version: $(git-cliff --version)"
+          echo "::endgroup::"
+
+          echo "::group::git-cliff verbose"
+          NEXT_TAG=$(git-cliff --bumped-version -vv 2>&1 | tee /dev/stderr | tail -1)
+          echo "::endgroup::"
+
           CURRENT=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          NEXT_TAG=$(git-cliff --bumped-version)
+          echo "CURRENT=$CURRENT  NEXT_TAG=$NEXT_TAG"
           NEXT="${NEXT_TAG#v}"
 
           if [ "$NEXT" = "$CURRENT" ]; then
