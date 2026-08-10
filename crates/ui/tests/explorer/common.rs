@@ -10,6 +10,7 @@ pub use ratatui::buffer::Buffer as Cells;
 pub use ratatui::layout::Rect;
 pub use ratatui::style::Color;
 pub use std::path::Path;
+pub use ui::testing::TestSession;
 pub use ui::{Buffer, Session, Theme};
 
 /// The two comparisons `codediff` with no arguments produces.
@@ -57,7 +58,7 @@ pub fn entries() -> Vec<File> {
 }
 
 /// Draws a session and returns the screen as text, one string per row.
-pub fn screen(session: &mut Session, width: u16, height: u16) -> Vec<String> {
+pub fn screen(session: &mut TestSession, width: u16, height: u16) -> Vec<String> {
     let mut cells = Cells::empty(Rect::new(0, 0, width, height));
     session.draw_into(&mut cells, Rect::new(0, 0, width, height));
     (0..height)
@@ -119,8 +120,8 @@ pub fn scripted(
     files: Vec<File>,
     theme: Theme,
     script: Vec<Result<DiffContent, String>>,
-) -> Session {
-    Session::with_files(Buffer::explorer(files), theme, FileWorker::mock(script))
+) -> TestSession {
+    TestSession::with_files(Buffer::explorer(files), theme, script)
 }
 
 /// Opens the selected row and waits for its comparison.
@@ -128,7 +129,7 @@ pub fn scripted(
 /// The two calls the loop makes, without a terminal between them. The wait is
 /// what a test may do and the interface may not: the comparison is on a thread
 /// of its own, and an assertion about a pane has to know when to look.
-pub fn open_selected(session: &mut Session) {
+pub fn open_selected(session: &mut TestSession) {
     session.open();
     assert!(session.has_file_arrived(), "nothing was installed");
 }

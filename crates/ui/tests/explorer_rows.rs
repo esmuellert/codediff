@@ -18,7 +18,7 @@ use common::*;
 
 #[test]
 fn the_list_is_drawn_with_its_sections_guides_and_counts() {
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
@@ -51,7 +51,7 @@ fn an_ancestor_that_was_last_leaves_blank_space_and_not_a_guide() {
     // the last of its siblings and has children, so every guide column in it
     // is a `│`. Without a tree shaped like this one, a renderer that drew
     // `│ ` at every depth would pass every other test here.
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(vec![
             untracked("nest/a/one.txt"),
             untracked("nest/b/two.txt"),
@@ -79,7 +79,7 @@ fn the_flat_shape_draws_whole_paths_and_no_guides() {
     // What VS Code's list mode does: no indent, no fold arrows, the whole
     // path on each line. A guide here would draw a tree where there is none.
     // See D69.
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
@@ -102,7 +102,7 @@ fn the_flat_shape_draws_whole_paths_and_no_guides() {
 fn the_reader_starts_on_the_first_file_and_not_on_a_heading() {
     // The failure this prevents: opening on the heading, where the key that
     // opens a file does nothing and the tool looks broken.
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
@@ -112,7 +112,7 @@ fn the_reader_starts_on_the_first_file_and_not_on_a_heading() {
 
 #[test]
 fn a_narrow_pane_keeps_the_name_and_the_status_and_drops_the_rest() {
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
@@ -136,7 +136,7 @@ fn a_narrow_pane_keeps_the_name_and_the_status_and_drops_the_rest() {
 
 #[test]
 fn a_pane_narrower_than_the_names_cuts_them_rather_than_wrapping() {
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
@@ -154,7 +154,7 @@ fn a_pane_narrower_than_the_names_cuts_them_rather_than_wrapping() {
 fn the_status_line_names_the_list_rather_than_a_file() {
     // The failure this prevents: showing the first file's name while the
     // reader is looking at all of them.
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
@@ -170,7 +170,7 @@ fn the_status_line_names_the_list_rather_than_a_file() {
 fn an_empty_list_draws_nothing_rather_than_panicking() {
     // Reachable through a filter that matches no file. The binary refuses to
     // start on a clean tree, but nothing here may depend on that.
-    let mut session = Session::new(
+    let mut session = TestSession::new(
         Buffer::explorer(Vec::new()),
         Theme::named("basic-dark").unwrap(),
     );

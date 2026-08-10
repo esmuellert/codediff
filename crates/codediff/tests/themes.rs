@@ -7,14 +7,15 @@
 mod harness;
 
 use harness::{cells, diff, screen, session};
+use ui::testing::TestSession;
 use ui::{Session, Theme};
 
 const BEFORE: &str = "one\ntwo\nthree\nfour\nfive";
 const AFTER: &str = "one\nTWO\nthree\ninserted\nfour\nfive";
 
 /// The same diff in a named theme.
-fn themed(name: &str) -> Session {
-    Session::new(
+fn themed(name: &str) -> TestSession {
+    TestSession::new(
         diff("src/demo.rs", BEFORE, AFTER),
         Theme::named(name).expect(name),
     )

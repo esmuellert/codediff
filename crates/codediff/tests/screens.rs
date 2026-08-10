@@ -16,12 +16,13 @@ mod harness;
 
 use harness::{cells, column_of, key, screen, session, single, type_keys};
 use ui::crossterm::event::KeyCode;
+use ui::testing::TestSession;
 use ui::{Flow, Session, Theme};
 
 const BEFORE: &str = "one\ntwo\nthree\nfour\nfive";
 const AFTER: &str = "one\nTWO\nthree\ninserted\nfour\nfive";
 
-fn demo() -> Session {
+fn demo() -> TestSession {
     session("src/demo.rs", BEFORE, AFTER)
 }
 
@@ -242,7 +243,7 @@ fn a_diff_the_engine_abandoned_says_so_on_screen() {
     );
 
     let buffer = harness::with_diff("src/demo.rs", BEFORE, AFTER, abandoned);
-    let mut s = Session::new(buffer, Theme::DARK);
+    let mut s = TestSession::new(buffer, Theme::DARK);
     assert!(
         screen(&mut s, 60, 8).contains("PARTIAL"),
         "an abandoned diff was not announced"
@@ -293,7 +294,7 @@ fn reading_inline_gives_the_text_more_room_than_two_columns() {
 fn a_file_with_no_second_version_has_only_one_way_to_be_read() {
     // `t` is bound at the view level, so it reaches a single-file buffer too.
     // Nothing to lay out two ways, so it must be inert rather than an error.
-    let mut s = Session::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
+    let mut s = TestSession::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
     let before = screen(&mut s, 40, 4);
     type_keys(&mut s, "t");
     assert_eq!(screen(&mut s, 40, 4), before);

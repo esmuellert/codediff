@@ -11,7 +11,7 @@ mod common;
 use common::*;
 
 /// The colour of the first cell of each row, as the terminal would receive it.
-fn colours(session: &mut Session, width: u16, height: u16, column: u16) -> Vec<Color> {
+fn colours(session: &mut TestSession, width: u16, height: u16, column: u16) -> Vec<Color> {
     let area = Rect::new(0, 0, width, height);
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
@@ -26,7 +26,7 @@ fn every_part_of_a_row_is_coloured_by_what_it_is() {
     let theme = Theme::named("basic-dark").unwrap();
     let tree = theme.tree;
     let change = theme.change;
-    let mut session = Session::new(Buffer::explorer(entries()), theme);
+    let mut session = TestSession::new(Buffer::explorer(entries()), theme);
 
     // Row 0 `Changes (3 · +16 -3)`, row 1 `├ 📁 src`, row 5 `└ notes.txt … ??`.
     let first = colours(&mut session, 44, 8, 0);
@@ -63,7 +63,7 @@ fn every_status_letter_has_a_colour_of_its_own() {
         File::deleted(at("gone.rs"), staged_revs()),
         File::renamed(at("was.rs"), at("now.rs"), staged_revs()),
     ];
-    let mut session = Session::new(Buffer::explorer(files), theme);
+    let mut session = TestSession::new(Buffer::explorer(files), theme);
     let letters = colours(&mut session, 40, 12, 39);
     // Unstaged in name order, then staged in name order.
     assert_eq!(letters[1], change.conflicted, "clash.rs");
@@ -195,7 +195,8 @@ fn a_heading_and_a_status_letter_are_bold_in_every_theme() {
     use ratatui::style::Modifier;
 
     for name in ["basic-dark", "catppuccin-mocha"] {
-        let mut session = Session::new(Buffer::explorer(entries()), Theme::named(name).unwrap());
+        let mut session =
+            TestSession::new(Buffer::explorer(entries()), Theme::named(name).unwrap());
         let area = Rect::new(0, 0, 44, 8);
         let mut cells = Cells::empty(area);
         session.draw_into(&mut cells, area);

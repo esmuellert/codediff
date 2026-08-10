@@ -7,6 +7,7 @@ use common::*;
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
+use ui::Session;
 use ui::view::selection::{Selection, SelectionColumn};
 
 /// Returns the active selection, or panics.
@@ -37,7 +38,7 @@ fn draw(session: &mut Session, width: u16, height: u16) {
     session.draw_into(&mut cells, area);
 }
 
-fn setup_diff_session() -> Session {
+fn setup_diff_session() -> TestSession {
     let theme = Theme::named("basic-dark").unwrap();
     let long: String = (0..50)
         .map(|n| format!("line {n} with some text\n"))
