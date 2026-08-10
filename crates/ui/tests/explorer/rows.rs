@@ -11,10 +11,7 @@
 //! The icons are written as `\u{…}` escapes, as `theme::icon::table` writes
 //! them, so a column in one of these literals is not a column on screen.
 
-#[path = "explorer/common.rs"]
-mod common;
-
-use common::*;
+use crate::common::*;
 
 #[test]
 fn the_list_is_drawn_with_its_sections_guides_and_counts() {

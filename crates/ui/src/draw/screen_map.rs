@@ -77,8 +77,10 @@ mod tests {
     use crate::view::PaneId;
 
     fn map_with_two_panes() -> ScreenMap {
-        let mut m = ScreenMap::default();
-        m.body = Rect::new(0, 0, 120, 29);
+        let mut m = ScreenMap {
+            body: Rect::new(0, 0, 120, 29),
+            ..ScreenMap::default()
+        };
         m.panes.push((PaneId::new(0), Rect::new(0, 0, 40, 29)));
         m.panes.push((PaneId::new(1), Rect::new(41, 0, 79, 29)));
         m.text_areas.push(TextArea {

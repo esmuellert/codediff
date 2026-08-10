@@ -8,7 +8,7 @@
 //! directory, or a file — and the characters live in `draw`, beside the theme
 //! that colours them. These tests are about which lines exist and in what
 //! order, so they spell that the way a reader recognises it. What is really
-//! drawn is asserted in `explorer_rows.rs`, against a screen.
+//! drawn is asserted in `explorer/rows.rs`, against a screen.
 
 use file_types::{ChangeType, File, Oid, RepoPath, Rev, Revs, Stats};
 use std::path::Path;
@@ -76,7 +76,7 @@ fn spell(explorer: &Explorer, line: u32) -> String {
 /// The guide columns before a line, read off the node's own parents.
 ///
 /// Empty in the flat shape, which has no ancestors — and is what
-/// `explorer_rows.rs` checks against a screen.
+/// `explorer/rows.rs` checks against a screen.
 fn indent(explorer: &Explorer, line: u32) -> String {
     let Some((tree, id)) = explorer.nested_at(line) else {
         return String::new();

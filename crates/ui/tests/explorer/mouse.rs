@@ -1,11 +1,8 @@
 //! Mouse behaviour: scroll moves the view (not the cursor), and targets the
 //! pane the mouse is hovering over (not the focused one).
 
-#[path = "explorer/common.rs"]
-mod common;
-
-use common::*;
-use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
+use crate::common::*;
+use crossterm::event::{Event, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 use ui::Session;

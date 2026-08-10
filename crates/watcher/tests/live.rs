@@ -17,8 +17,6 @@ const SHORT: Duration = Duration::from_millis(300);
 /// Long enough for a self-sustaining loop (~15 Hz) to show itself.
 const QUIET: Duration = Duration::from_secs(1);
 
-/// Time to let watches settle after start.
-
 struct Repo {
     dir: tempfile::TempDir,
 }
@@ -347,7 +345,7 @@ fn rapid_edits_coalesce() {
     // Wait for all debounce windows to close.
     std::thread::sleep(Duration::from_secs(1));
     let mut count = 0;
-    while let Ok(_) = rx.try_recv() {
+    while rx.try_recv().is_ok() {
         count += 1;
     }
     assert!(
@@ -368,7 +366,7 @@ fn build_in_ignored_dir_triggers_nothing() {
     }
     std::thread::sleep(Duration::from_millis(500));
     let mut count = 0;
-    while let Ok(_) = rx.try_recv() {
+    while rx.try_recv().is_ok() {
         count += 1;
     }
     assert_eq!(count, 0, "ignored dir writes should trigger 0, got {count}");
@@ -406,7 +404,7 @@ fn heavy_non_ignored_writes_stay_responsive() {
     // Wait for all debounce windows to close.
     std::thread::sleep(Duration::from_secs(2));
     let mut count = 0;
-    while let Ok(_) = rx.try_recv() {
+    while rx.try_recv().is_ok() {
         count += 1;
     }
 

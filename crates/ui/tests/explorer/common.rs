@@ -1,10 +1,9 @@
 //! What every explorer test needs: a repository's worth of entries, and a
 //! way to draw a session and read the screen back.
 //!
-//! Shared by the three files beside it rather than by one of them, so that
-//! none of the three is the one that happens to own the fixtures.
+//! Shared by the files beside it rather than owned by one of them.
 
-pub use file_types::{ChangeType, DiffType, File, Oid, RepoPath, Rev, Revs, Stats};
+pub use file_types::{ChangeType, File, Oid, RepoPath, Rev, Revs, Stats};
 pub use pipeline::file::{DiffContent, FileWorker};
 pub use ratatui::buffer::Buffer as Cells;
 pub use ratatui::layout::Rect;

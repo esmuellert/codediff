@@ -1,9 +1,6 @@
 //! Integration tests for mouse text selection.
 
-#[path = "explorer/common.rs"]
-mod common;
-
-use common::*;
+use crate::common::*;
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
@@ -240,11 +237,11 @@ fn selection_highlight_appears_in_rendered_cells() {
     let sel_bg = ratatui::style::Color::Indexed(17);
     let mut found_selection_bg = false;
     for x in 90..=100 {
-        if let Some(cell) = cells.cell((x, 3)) {
-            if cell.bg == sel_bg {
-                found_selection_bg = true;
-                break;
-            }
+        if let Some(cell) = cells.cell((x, 3))
+            && cell.bg == sel_bg
+        {
+            found_selection_bg = true;
+            break;
         }
     }
     assert!(
@@ -382,10 +379,10 @@ fn selection_highlight_matches_click_position() {
     mouse(&mut session, MouseEventKind::Down(MouseButton::Left), 90, 5);
     mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), 91, 5);
 
-    // The anchor line should correspond to screen row 5.
-    let sel = sel(&session);
-    // After place(), top may shift due to SCROLLOFF — but the anchor must
-    // still match the view_line at screen row 5 when drawn.
+    // A selection exists. Which line it anchored to is read off the screen
+    // below: after place(), top may shift due to SCROLLOFF, but the anchor
+    // must still match the view line at screen row 5 when drawn.
+    sel(&session);
     let area = Rect::new(0, 0, 120, 30);
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
