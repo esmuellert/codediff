@@ -20,8 +20,8 @@ use anyhow::{Result, bail};
 
 use checks::{
     check_banned_names, check_blind_dirs, check_clock_free, check_edges, check_engine_confinement,
-    check_non_blocking, check_purity, check_threads, check_type_names, check_unsafe_policy,
-    pending_names,
+    check_inherited_metadata, check_non_blocking, check_purity, check_threads, check_type_names,
+    check_unsafe_policy, pending_names,
 };
 
 pub fn run() -> Result<()> {
@@ -32,6 +32,7 @@ pub fn run() -> Result<()> {
     check_purity(&root, &mut failures)?;
     check_clock_free(&root, &mut failures)?;
     check_unsafe_policy(&root, &mut failures)?;
+    check_inherited_metadata(&root, &mut failures)?;
     check_engine_confinement(&root, &mut failures)?;
     check_type_names(&root, &mut failures)?;
     check_blind_dirs(&root, &mut failures)?;
@@ -48,7 +49,7 @@ pub fn run() -> Result<()> {
     }
 
     println!(
-        "lint-arch: purity, clocks, threads, blocking, unsafe policy, engine\n            confinement, names and module boundaries clean"
+        "lint-arch: purity, clocks, threads, blocking, unsafe policy, engine\n            confinement, names, module boundaries and inherited metadata clean"
     );
     println!("  edge rules: {applied} applied, {pending} awaiting their crate");
     if !pending_names(&root)?.is_empty() {

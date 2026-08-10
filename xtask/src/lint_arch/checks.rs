@@ -8,7 +8,8 @@ use anyhow::Result;
 use std::path::Path;
 
 use super::files::{
-    crate_manifests, declares_dependency, inherits_workspace_lints, package_name, rel, rust_files,
+    Field, crate_manifests, declares_dependency, inherits_workspace_lints, package_field,
+    package_name, rel, rust_files,
 };
 use super::rules::*;
 
@@ -123,6 +124,26 @@ pub fn check_unsafe_policy(root: &Path, failures: &mut Vec<String>) -> Result<()
             failures.push(format!(
                 "`{name}` must declare `[lints] workspace = true`, which forbids unsafe code"
             ));
+        }
+    }
+    Ok(())
+}
+
+pub fn check_inherited_metadata(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for manifest in crate_manifests(root)? {
+        let name = package_name(&manifest)?;
+        for field in INHERITED_PACKAGE_FIELDS {
+            match package_field(&manifest, field)? {
+                Field::Inherited => {}
+                Field::Literal => failures.push(format!(
+                    "`{name}` writes its own `{field}`; use `{field}.workspace = true` \
+                     so [workspace.package] stays the only one"
+                )),
+                Field::Absent if REQUIRED_PACKAGE_FIELDS.contains(field) => failures.push(format!(
+                    "`{name}` declares no `{field}`; use `{field}.workspace = true`"
+                )),
+                Field::Absent => {}
+            }
         }
     }
     Ok(())

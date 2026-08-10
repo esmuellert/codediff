@@ -102,6 +102,34 @@ pub const CLOCK_MARKERS: &[&str] = &["std::time", "Instant", "SystemTime", "Dura
 /// Crates exempt from `unsafe_code = "forbid"`, with the policy they use instead.
 pub const UNSAFE_EXEMPT: &[&str] = &["vscode-diff-sys", "vscode-diff"];
 
+/// Package fields a crate must inherit from `[workspace.package]` rather than
+/// write out itself.
+///
+/// `version` is the one that matters, and the reason the rest are here. Two
+/// crates have already shipped a literal one, and a literal version agrees
+/// with the workspace's only until either moves — after which `codediff
+/// doctor` reports a number that no tag matches. The others travel with it:
+/// a crate writing its own `edition` or `license` is the same mistake
+/// somewhere nobody looks.
+///
+/// `description` is absent on purpose. Every crate needs its own.
+pub const INHERITED_PACKAGE_FIELDS: &[&str] = &[
+    "version",
+    "edition",
+    "rust-version",
+    "license",
+    "repository",
+    "authors",
+];
+
+/// Fields that must be there at all, not merely inherited when present.
+///
+/// Cargo fills a missing `version` in with 0.0.0 rather than complaining, so
+/// omitting it breaks the single source as quietly as writing one out.
+/// `xtask` carries no `repository` or `authors`, which is why the rest are
+/// only checked when present.
+pub const REQUIRED_PACKAGE_FIELDS: &[&str] = &["version"];
+
 /// A syntax engine may only be named inside this directory, so that swapping
 /// engines touches nothing else. See docs/plan/05-decisions.md D17.
 pub const ENGINE_CRATES: &[&str] = &["syntect", "tree_sitter"];

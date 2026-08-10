@@ -41,6 +41,31 @@ pub fn package_name(manifest: &Path) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("{} has no package.name", manifest.display()))
 }
 
+/// How a `[package]` field is written: inherited, spelled out, or missing.
+pub enum Field {
+    Inherited,
+    Literal,
+    Absent,
+}
+
+pub fn package_field(manifest: &Path, field: &str) -> Result<Field> {
+    let value: toml::Table = std::fs::read_to_string(manifest)?.parse()?;
+    let Some(found) = value.get("package").and_then(|p| p.get(field)) else {
+        return Ok(Field::Absent);
+    };
+    // `version.workspace = true` parses as a table; a literal is a string,
+    // and `authors` is a list.
+    let inherited = found
+        .get("workspace")
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(false);
+    Ok(if inherited {
+        Field::Inherited
+    } else {
+        Field::Literal
+    })
+}
+
 pub fn crate_manifests(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     for base in ["crates", "xtask"] {
