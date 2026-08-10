@@ -268,7 +268,9 @@ fn build_oracle(root: &Path) -> Result<PathBuf> {
         for source in SOURCES {
             cmd.arg(engine.join(source));
         }
-        let status = cmd.status().context("running cl.exe; is MSVC installed?")?;
+        let status = cmd
+            .status()
+            .context("running cl.exe; is MSVC dev environment set up?")?;
         if !status.success() {
             bail!("compiling diff_tool with MSVC failed");
         }

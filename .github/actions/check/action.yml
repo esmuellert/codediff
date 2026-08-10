@@ -4,6 +4,10 @@ description: All validation steps for one platform cell.
 runs:
   using: composite
   steps:
+    - name: Set up MSVC
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
     - uses: Swatinem/rust-cache@v2
       with:
         cache-on-failure: true

@@ -1,0 +1,4 @@
+# Keep line endings consistent across platforms. The vendored test pairs and
+# golden files are byte-compared — CRLF conversion would produce spurious
+# failures on Windows.
+* text=auto eol=lf

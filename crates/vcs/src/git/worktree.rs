@@ -49,6 +49,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn a_symlink_reads_as_where_it_points() {
         let dir = std::env::temp_dir().join("codediff-symlink-test");
         let _ = std::fs::remove_dir_all(&dir);

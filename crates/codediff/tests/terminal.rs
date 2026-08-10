@@ -1,4 +1,5 @@
 //! Giving the terminal back.
+#![cfg(unix)]
 //!
 //! The one failure mode a read-only reviewer must never have: quitting, or
 //! crashing, and leaving a shell with no echo, an invisible cursor and the
