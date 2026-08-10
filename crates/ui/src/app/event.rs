@@ -13,11 +13,11 @@ pub enum Event {
     #[cfg(unix)]
     Signal(i32),
     /// The watcher detected a change in the repo.
-    FsChanged,
+    FsChanged(watcher::Refresh),
     /// The syntax worker coloured a chunk.
     Coloured(SyntaxResponse),
     /// The file worker finished a diff.
     FileReady(Response),
     /// The list worker returned a new file list.
-    Listed(Vec<file_types::File>),
+    ListRefreshed(Vec<file_types::File>),
 }

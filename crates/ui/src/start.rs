@@ -25,7 +25,7 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
     let mut session = Session::new(
         Buffer::explorer(files),
         theme,
-        crate::app::Workers::spawn(&tx),
+        crate::app::threads::spawn_workers(&tx, &cwd),
     );
     session.open();
     run(&mut session, &cwd, tx, rx).context("running the review interface")

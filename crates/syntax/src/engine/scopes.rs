@@ -70,10 +70,14 @@ pub const SCOPES: &[Scope] = {
     use Group as T;
     &[
         // --- comments ---
-        scope("comment", T::Comment).italic(),
+        // Colour only. Catppuccin slants comments and ships `no_italic` to
+        // undo it; VS Code's Dark+ leaves them upright. Colour lands a frame
+        // or two after the text does, and a slant makes that landing a change
+        // of shape rather than of hue, which is the one the eye catches.
+        scope("comment", T::Comment),
         // The `//` belongs to the comment, not to the punctuation. Without
         // this every comment in the file starts with two grey characters.
-        scope("punctuation.definition.comment", T::Comment).italic(),
+        scope("punctuation.definition.comment", T::Comment),
         // --- strings ---
         scope("string", T::String),
         // Its quotes, and only its quotes. A bare `punctuation.definition

@@ -5,7 +5,7 @@
 
 use std::io::{self, Stdout, Write};
 
-use crossterm::{ExecutableCommand, cursor, event, terminal};
+use crossterm::{ExecutableCommand, QueueableCommand, cursor, event, terminal};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
@@ -26,6 +26,21 @@ impl Screen {
 
     pub fn terminal(&mut self) -> &mut Terminal<CrosstermBackend<Stdout>> {
         &mut self.terminal
+    }
+
+    /// Draws one frame, bracketed in synchronized output (DEC mode 2026).
+    ///
+    /// The terminal holds the previous frame on screen while receiving
+    /// updates, then flips once at the end. This prevents partial-frame
+    /// tearing that otherwise occurs when a redraw spans multiple pty reads.
+    pub fn draw<F>(&mut self, f: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error>,
+    {
+        io::stdout().queue(terminal::BeginSynchronizedUpdate)?;
+        let result = f(&mut self.terminal);
+        let _ = io::stdout().execute(terminal::EndSynchronizedUpdate);
+        result
     }
 
     /// Restores the terminal, sends SIGTSTP, and re-takes on resume.
@@ -60,6 +75,8 @@ fn take() -> io::Result<()> {
 /// Undoes [`take`]. Ignores errors (runs from Drop and from the panic hook).
 pub fn restore() {
     let mut stdout = io::stdout();
+    // End any in-progress synchronized update so the terminal isn't frozen.
+    let _ = stdout.write_all(b"\x1b[?2026l");
     let _ = stdout.execute(cursor::Show);
     let _ = stdout.execute(event::DisableMouseCapture);
     let _ = stdout.execute(terminal::LeaveAlternateScreen);

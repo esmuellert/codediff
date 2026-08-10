@@ -1,13 +1,14 @@
 //! The watcher thread: raw notify + manual debounce → one Refresh per window.
 //!
-//! Uses `notify::RecommendedWatcher` directly (pure epoll, zero idle CPU)
-//! instead of `notify-debouncer-full` (which polls at ~80Hz).
+//! Uses `notify::RecommendedWatcher` directly (pure epoll, zero idle CPU).
+//! Results are sent via an Emitter — no forwarding thread needed.
 
 use std::path::Path;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use channel::Emitter;
 use ignore::gitignore::GitignoreBuilder;
 use notify::{RecommendedWatcher, Watcher as NotifyWatcher};
 
@@ -23,13 +24,10 @@ pub struct Watcher {
     _watcher: RecommendedWatcher,
 }
 
-/// Starts watching the repo. Returns the handle and a receiver for refresh
-/// events.
-pub fn start(repo_root: &Path) -> anyhow::Result<(Watcher, Receiver<Refresh>)> {
+/// Starts watching the repo. Sends Refresh via the emitter when changes occur.
+pub fn start(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<Watcher> {
     let repo_root = repo_root.canonicalize()?;
     let git_dir = repo_root.join(".git");
-
-    let (tx_refresh, rx_refresh) = mpsc::channel::<Refresh>();
 
     // Internal channel: raw notify events → debounce thread.
     let (tx_raw, rx_raw) = mpsc::channel::<notify::Event>();
@@ -50,14 +48,13 @@ pub fn start(repo_root: &Path) -> anyhow::Result<(Watcher, Receiver<Refresh>)> {
         .spawn(move || {
             while let Ok(first) = rx_raw.recv() {
                 let mut batch = vec![first];
-                // Drain everything that arrives within DEBOUNCE.
                 while let Ok(ev) = rx_raw.recv_timeout(DEBOUNCE) {
                     batch.push(ev);
                 }
                 let refresh = filter::get_refresh(&batch, &ctx);
                 if !refresh.is_empty() {
                     tracing::info!(%refresh, events = batch.len(), "refresh triggered");
-                    if tx_refresh.send(refresh).is_err() {
+                    if !emitter.send(refresh) {
                         break;
                     }
                 }
@@ -85,7 +82,7 @@ pub fn start(repo_root: &Path) -> anyhow::Result<(Watcher, Receiver<Refresh>)> {
     }
     tracing::info!(count = watch_roots.len(), "watcher started");
 
-    Ok((Watcher { _watcher: watcher }, rx_refresh))
+    Ok(Watcher { _watcher: watcher })
 }
 
 fn build_ignorer(repo_root: &Path) -> ignore::gitignore::Gitignore {

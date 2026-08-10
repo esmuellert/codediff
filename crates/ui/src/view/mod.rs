@@ -159,9 +159,16 @@ impl View {
     }
 
     /// Puts a buffer beside the list, splitting the tab if needed.
+    /// Puts a buffer beside the list, preserving cursor if the same file is
+    /// already showing.
     pub fn show(&mut self, buffer: Buffer) {
         self.selection = None;
-        // Reuse the existing slot so we don't accumulate every file ever opened.
+        // Preserve cursor when re-showing the same file.
+        let keep = self.tabs[self.active]
+            .right_pane_buffer()
+            .filter(|&id| self.buffers[id.0].file() == buffer.file())
+            .map(|id| self.pane_for(id).viewport.cursor());
+
         let id = match self.tabs[self.active].right_pane_buffer() {
             Some(id) => {
                 self.buffers[id.0] = buffer;
@@ -174,6 +181,26 @@ impl View {
         };
         self.version = Version(self.version.0 + 1);
         self.tabs[self.active].set_right_pane(id);
+
+        if let Some(line) = keep {
+            let rows = self.buffers[id.0].view_lines();
+            let pane_id = self.tabs[self.active].ids().last().unwrap();
+            self.tabs[self.active]
+                .pane_mut(pane_id)
+                .viewport
+                .place(line.min(rows.saturating_sub(1)), rows);
+        }
+    }
+
+    /// The file under the focused explorer cursor, if any.
+    pub fn selected_file(&self) -> Option<&file_types::File> {
+        let pane = self.focused();
+        let buffer = &self.buffers[pane.buffer.0];
+        let cursor = pane.viewport.cursor();
+        match buffer.buffer_type() {
+            BufferType::Explorer(explorer) => explorer.file(cursor),
+            _ => None,
+        }
     }
 
     /// Replaces the explorer's file list, preserving cursor position.
