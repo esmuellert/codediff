@@ -91,12 +91,12 @@ impl Store {
     /// Does not count as a use. Drawing asks for this many times a frame, and
     /// what should keep an entry alive is a reader looking at the file, which
     /// is what [`want`](Self::want) records.
-    pub fn get(&self, key: &str) -> Option<&Colours> {
+    pub fn get_colours(&self, key: &str) -> Option<&Colours> {
         self.entries.get(key)
     }
 
     /// How many lines of a file are already coloured.
-    pub fn have(&self, key: &str) -> u32 {
+    pub fn get_lines_coloured(&self, key: &str) -> u32 {
         self.entries.get(key).map_or(0, Colours::lines)
     }
 
@@ -105,7 +105,7 @@ impl Store {
     /// Called when a request is about to be sent. A file whose content has
     /// changed loses what was cached of it, because the old colours describe
     /// text that is gone.
-    pub fn start(&mut self, key: &str, version: Version) {
+    pub fn ensure_cache(&mut self, key: &str, version: Version) {
         match self.entries.get_mut(key) {
             Some(colours) if colours.version == version => {}
             Some(colours) => {
@@ -255,18 +255,18 @@ mod tests {
     #[test]
     fn a_file_never_asked_for_has_nothing() {
         let store = Store::new();
-        assert!(store.get(&key("a.rs")).is_none());
-        assert_eq!(store.have(&key("a.rs")), 0);
+        assert!(store.get_colours(&key("a.rs")).is_none());
+        assert_eq!(store.get_lines_coloured(&key("a.rs")), 0);
     }
 
     #[test]
     fn what_is_installed_can_be_read_back() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         assert!(store.install(piece(&a, Version(1), 0, 3, false)));
-        assert_eq!(store.have(&a), 3);
-        assert!(!store.get(&a).unwrap().line(0).is_empty());
+        assert_eq!(store.get_lines_coloured(&a), 3);
+        assert!(!store.get_colours(&a).unwrap().line(0).is_empty());
     }
 
     #[test]
@@ -275,29 +275,29 @@ mod tests {
         // last ended is stale, and taking it would misplace every line after.
         let mut store = Store::new();
         let a = key("a.rs");
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         assert!(!store.install(piece(&a, Version(1), 5, 2, false)));
-        assert_eq!(store.have(&a), 0);
+        assert_eq!(store.get_lines_coloured(&a), 0);
     }
 
     #[test]
     fn an_answer_for_content_that_has_changed_is_thrown_away() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.start(&a, Version(2));
+        store.ensure_cache(&a, Version(2));
         assert!(!store.install(piece(&a, Version(1), 0, 3, false)));
-        assert_eq!(store.have(&a), 0);
+        assert_eq!(store.get_lines_coloured(&a), 0);
     }
 
     #[test]
     fn asking_again_for_new_content_forgets_the_old_colours() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         store.install(piece(&a, Version(1), 0, 4, false));
-        store.start(&a, Version(2));
+        store.ensure_cache(&a, Version(2));
         assert_eq!(
-            store.have(&a),
+            store.get_lines_coloured(&a),
             0,
             "the old colours describe text that is gone"
         );
@@ -313,10 +313,10 @@ mod tests {
         // The whole point: come back to a file and it is still coloured.
         let mut store = Store::new();
         let a = key("a.rs");
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         store.install(piece(&a, Version(1), 0, 4, false));
-        store.start(&a, Version(1));
-        assert_eq!(store.have(&a), 4);
+        store.ensure_cache(&a, Version(1));
+        assert_eq!(store.get_lines_coloured(&a), 4);
     }
 
     #[test]
@@ -331,28 +331,31 @@ mod tests {
         let mut store = Store::new();
         let (a, b, c) = (key("a.rs"), key("b.rs"), key("c.rs"));
         for file in [&a, &b, &c] {
-            store.start(file, Version(1));
+            store.ensure_cache(file, Version(1));
             store.install(piece(file, Version(1), 0, BUDGET / 2, false));
         }
-        assert!(store.get(&a).is_none(), "the oldest went");
-        assert!(store.get(&c).is_some(), "the newest stayed");
+        assert!(store.get_colours(&a).is_none(), "the oldest went");
+        assert!(store.get_colours(&c).is_some(), "the newest stayed");
     }
 
     #[test]
     fn looking_at_a_file_again_saves_it_from_eviction() {
         let mut store = Store::new();
         let (a, b, c) = (key("a.rs"), key("b.rs"), key("c.rs"));
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         store.install(piece(&a, Version(1), 0, BUDGET / 2, false));
-        store.start(&b, Version(1));
+        store.ensure_cache(&b, Version(1));
         store.install(piece(&b, Version(1), 0, BUDGET / 4, false));
 
-        store.start(&a, Version(1)); // looked at again
+        store.ensure_cache(&a, Version(1)); // looked at again
 
-        store.start(&c, Version(1));
+        store.ensure_cache(&c, Version(1));
         store.install(piece(&c, Version(1), 0, BUDGET / 2, false));
-        assert!(store.get(&a).is_some(), "recently wanted, so kept");
-        assert!(store.get(&b).is_none(), "the least recent went instead");
+        assert!(store.get_colours(&a).is_some(), "recently wanted, so kept");
+        assert!(
+            store.get_colours(&b).is_none(),
+            "the least recent went instead"
+        );
     }
 
     #[test]
@@ -361,9 +364,9 @@ mod tests {
         // over and over.
         let mut store = Store::new();
         let a = key("huge.rs");
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         store.install(piece(&a, Version(1), 0, BUDGET + 10, false));
-        assert_eq!(store.have(&a), BUDGET as u32 + 10);
+        assert_eq!(store.get_lines_coloured(&a), BUDGET as u32 + 10);
     }
 
     #[test]
@@ -379,9 +382,9 @@ mod tests {
     fn line_numbers_are_counted_from_one() {
         let mut store = Store::new();
         let a = key("a.rs");
-        store.start(&a, Version(1));
+        store.ensure_cache(&a, Version(1));
         store.install(piece(&a, Version(1), 0, 2, false));
-        let colours = store.get(&a).unwrap();
+        let colours = store.get_colours(&a).unwrap();
         let spans = Spans::One(colours);
         assert!(
             spans.line(DiffVersion::Modified, 0).is_empty(),

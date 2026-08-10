@@ -92,8 +92,8 @@ fn request(
         return;
     }
     let last = upto.min(lines - 1);
-    store.start(&key, version);
-    let have = store.have(&key);
+    store.ensure_cache(&key, version);
+    let have = store.get_lines_coloured(&key);
     if have > last {
         return;
     }
@@ -113,7 +113,7 @@ fn request(
 /// derived — storing it beside the file is how a copy comes to disagree
 /// with what it was copied from.
 fn colours<'a>(store: &'a Store, file: &File, side: DiffVersion) -> Option<&'a Colours> {
-    file.name(side).and_then(|key| store.get(&key))
+    file.name(side).and_then(|key| store.get_colours(&key))
 }
 
 #[cfg(test)]
