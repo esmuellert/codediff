@@ -32,7 +32,7 @@ jobs:
           - { name: macos-arm64,   runner: macos-15         }
           - { name: macos-x64,     runner: macos-15-intel   }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/check
 
   version:
@@ -45,7 +45,7 @@ jobs:
       tag: ${{ steps.bump.outputs.tag }}
       released: ${{ steps.bump.outputs.released }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -89,7 +89,7 @@ jobs:
           - { name: macos-arm64,   runner: macos-15         }
           - { name: macos-x64,     runner: macos-15-intel   }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: taiki-e/install-action@v2
         with:
@@ -130,7 +130,7 @@ jobs:
             -DestinationPath "dist/codediff-${{ needs.version.outputs.version }}-${{ matrix.name }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codediff-${{ matrix.name }}
           path: dist/*
@@ -145,12 +145,12 @@ jobs:
     steps:
       - name: Generate GitHub App Token
         id: generate_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
@@ -175,7 +175,7 @@ jobs:
       - name: Generate release notes
         run: git-cliff --unreleased --strip header -o RELEASE_NOTES.md
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: codediff-*
