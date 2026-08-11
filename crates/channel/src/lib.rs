@@ -1,6 +1,10 @@
 //! The contract every background worker follows, and the channel layer that
 //! delivers results to the main loop without polling.
 
+mod slot;
+
+pub use slot::Slot;
+
 use std::sync::mpsc::Sender;
 
 /// A typed sender that maps results into the app's event type.
@@ -30,13 +34,12 @@ pub trait Worker {
     type Request;
     type Response;
 
-    /// Sends a request. Never blocks. May be silently dropped if the worker
-    /// is already busy — the caller re-asks later.
+    /// Sends a request. Replaces any waiting request with the newer one.
     fn send(&mut self, request: Self::Request);
 
-    /// Whether anything is in flight.
+    /// Whether anything is waiting or in flight.
     fn is_busy(&self) -> bool;
 
-    /// Acknowledges a response arrived. Clears the in-flight state.
+    /// Acknowledges a response arrived.
     fn received(&mut self, response: &Self::Response);
 }
