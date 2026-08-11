@@ -159,6 +159,20 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    fn f5_asks_for_a_rebuild_in_a_debug_build() {
+        use crate::input::program::ProgramAction;
+
+        for &keymap_type in KeymapType::ALL {
+            assert_eq!(
+                lookup(keymap_type, &[key!(f5)]),
+                Match::Exact(Action::Program(ProgramAction::Rebuild)),
+                "{keymap_type:?} cannot ask for a rebuild"
+            );
+        }
+    }
+
+    #[test]
     fn no_binding_is_a_proper_prefix_of_another() {
         // The rule the whole resolver rests on. Break it and either the longer
         // binding becomes unreachable or the shorter one needs a timeout.

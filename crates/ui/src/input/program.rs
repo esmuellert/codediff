@@ -15,6 +15,9 @@ pub enum ProgramAction {
     Quit,
     /// Hand the terminal back until the reader brings us forward.
     Suspend,
+    /// Leave, so that a supervisor can rebuild this binary and start it again.
+    #[cfg(debug_assertions)]
+    Rebuild,
 }
 
 const fn program(keys: &'static [KeyCombination], action: ProgramAction) -> Binding {
@@ -32,4 +35,8 @@ pub const BINDINGS: &[Binding] = &[
     program(&[key!(esc)], ProgramAction::Quit),
     program(&[key!(ctrl - c)], ProgramAction::Quit),
     program(&[key!(ctrl - z)], ProgramAction::Suspend),
+    // Only in a debug build: `cargo xtask dev` is what acts on it, and a
+    // released binary has nothing to rebuild with.
+    #[cfg(debug_assertions)]
+    program(&[key!(f5)], ProgramAction::Rebuild),
 ];

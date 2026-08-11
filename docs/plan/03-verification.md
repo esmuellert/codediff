@@ -157,6 +157,7 @@ human-readable artifact and the regression fixture are the same file.
 | `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies; `forbid(unsafe_code)` present where required | S1 |
 | `cargo xtask verify-oracle` | our diff output matches upstream `diff_tool` on every fixture | S2 |
 | `cargo xtask fixture-repo <dir>` | builds the fixture repository, prints the manifest | S5 |
+| `cargo xtask dev [dir] [args...]` | runs `codediff`, rebuilding and starting it again each time F5 exits it | S13 |
 | `cargo xtask drift` | lines and `pub` counts per crate, for trend tracking | later |
 
 `drift` is named for what it measures. It is not `health`, which would collide with

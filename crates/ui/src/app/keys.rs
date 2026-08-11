@@ -54,6 +54,8 @@ impl Session {
             }
             Action::Program(ProgramAction::Quit) => Flow::Quit,
             Action::Program(ProgramAction::Suspend) => Flow::Suspend,
+            #[cfg(debug_assertions)]
+            Action::Program(ProgramAction::Rebuild) => Flow::Rebuild,
         }
     }
 }

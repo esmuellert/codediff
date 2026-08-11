@@ -18,7 +18,7 @@ pub mod theme;
 pub mod view;
 
 pub use app::event::Event;
-pub use app::{Flow, Session, Workers, run};
+pub use app::{Exit, Flow, Session, Workers, run};
 pub use start::start;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};

@@ -7,12 +7,12 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 
-use crate::app::{Session, run};
+use crate::app::{Exit, Session, run};
 use crate::theme::Theme;
 use crate::view::Buffer;
 
 /// Reviews everything that changed under `cwd`, until the reader quits.
-pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<()> {
+pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<Exit> {
     let theme = theme_for(theme)?;
     let request = pipeline::list::Request::worktree(&cwd).with_pathspec(pathspec);
     let files = pipeline::list::get_files(&request)?;
