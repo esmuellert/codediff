@@ -8,6 +8,7 @@
 //! Three of these tasks — `verify-c`, `lint-size` and `lint-arch` — exist to
 //! turn the rules in docs/plan into build failures.
 
+mod dev;
 mod lint_arch;
 mod lint_size;
 mod lock;
@@ -29,6 +30,7 @@ fn main() -> Result<()> {
         Some("verify-oracle") => verify_oracle::run(),
         Some("lint-size") => lint_size::run(),
         Some("lint-arch") => lint_arch::run(),
+        Some("dev") => dev::run(&args[1..]),
         Some("fixture-repo") => match args.get(1) {
             Some(dir) => fixtures::repo(std::path::Path::new(dir)).map_err(Into::into),
             None => anyhow::bail!("usage: cargo xtask fixture-repo <dir>"),
@@ -60,6 +62,9 @@ Architecture enforcement
 
 Fixtures
   fixture-repo <dir>                   build a git repository in a known state
+
+Development
+  dev [dir] [args...]                  run codediff, rebuilding it on F5
 "
     );
 }

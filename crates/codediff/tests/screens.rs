@@ -153,14 +153,14 @@ fn resizing_smaller_keeps_the_cursor_on_screen() {
 }
 
 #[test]
-fn quitting_is_the_only_way_the_loop_ends() {
+fn only_quitting_and_the_debug_rebuild_end_the_loop() {
     let mut s = demo();
     for code in [
         KeyCode::Char('j'),
         KeyCode::Char('k'),
         KeyCode::Char('x'),
         KeyCode::Tab,
-        KeyCode::F(5),
+        KeyCode::F(6),
     ] {
         assert_eq!(
             s.handle_event(&key(code)),
@@ -168,6 +168,12 @@ fn quitting_is_the_only_way_the_loop_ends() {
             "{code:?} should not quit"
         );
     }
+    // A debug build has one more way out, and only there: F5 leaves so that
+    // `cargo xtask dev` can rebuild.
+    #[cfg(debug_assertions)]
+    assert_eq!(s.handle_event(&key(KeyCode::F(5))), Flow::Rebuild);
+    #[cfg(not(debug_assertions))]
+    assert_eq!(s.handle_event(&key(KeyCode::F(5))), Flow::Continue);
     assert_eq!(s.handle_event(&key(KeyCode::Char('q'))), Flow::Quit);
 }
 

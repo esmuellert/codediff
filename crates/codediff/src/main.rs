@@ -12,10 +12,16 @@ mod text;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use std::process::ExitCode;
 
 use cli::{Cli, Command};
 
-fn main() -> Result<()> {
+/// What we exit with when the reader asks for a rebuild; `cargo xtask dev`
+/// reads it and starts us again. Only a debug build can produce it — the key
+/// that asks for a rebuild is not bound in a release one.
+const REBUILD_EXIT_CODE: u8 = 42;
+
+fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
 
     if let Some(log_path) = &cli.log {
@@ -35,12 +41,19 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Command::Doctor) => {
             doctor::run();
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
-        Some(Command::Debug(command)) => debug::run(command),
+        Some(Command::Debug(command)) => {
+            debug::run(command)?;
+            Ok(ExitCode::SUCCESS)
+        }
         None => {
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            ui::start(cwd, cli.path.into_iter().collect(), None)
+            let outcome = ui::start(cwd, cli.path.into_iter().collect(), None)?;
+            Ok(match outcome {
+                ui::Exit::Quit => ExitCode::SUCCESS,
+                ui::Exit::Rebuild => ExitCode::from(REBUILD_EXIT_CODE),
+            })
         }
     }
 }

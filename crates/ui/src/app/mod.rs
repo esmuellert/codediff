@@ -36,6 +36,16 @@ pub enum Flow {
     /// Give the terminal back until the reader brings us forward again.
     Suspend,
     Quit,
+    /// Leave, so that a supervisor can rebuild and start us again. Produced
+    /// only by a debug build.
+    Rebuild,
+}
+
+/// Why the loop stopped, for whoever chooses the exit code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exit {
+    Quit,
+    Rebuild,
 }
 
 /// One review session — the entire running program state.
@@ -158,7 +168,7 @@ pub fn run(
     repo_root: &std::path::Path,
     tx: std::sync::mpsc::Sender<event::Event>,
     rx: std::sync::mpsc::Receiver<event::Event>,
-) -> std::io::Result<()> {
+) -> std::io::Result<Exit> {
     let mut screen = Screen::open()?;
     session.send_file_request();
     screen.draw(|t| session.draw(t))?;
@@ -169,13 +179,16 @@ pub fn run(
     let _signals = threads::Signals::start(tx);
 
     loop {
-        let Ok(ev) = rx.recv() else { return Ok(()) };
+        let Ok(ev) = rx.recv() else {
+            return Ok(Exit::Quit);
+        };
 
         // Terminal, signal, and watcher events are handled here.
         // Worker events are dispatched via apply().
         let changed = match ev {
             event::Event::Terminal(ref e) => match session.handle_event(e) {
-                Flow::Quit => return Ok(()),
+                Flow::Quit => return Ok(Exit::Quit),
+                Flow::Rebuild => return Ok(Exit::Rebuild),
                 Flow::Suspend => {
                     screen.suspend()?;
                     true
