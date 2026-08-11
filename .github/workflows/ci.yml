@@ -119,7 +119,15 @@ jobs:
         run: |
           got="$(./target/release/codediff --version)"
           echo "$got"
-          echo "$got" | grep -q "${{ needs.version.outputs.version }}"
+          test "$got" = "codediff ${{ needs.version.outputs.version }}"
+
+      - name: Verify version (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $got = (& .\target\release\codediff.exe --version).Trim()
+          $want = "codediff ${{ needs.version.outputs.version }}"
+          if ($got -cne $want) { throw "expected '$want', got '$got'" }
 
       - name: Archive (unix)
         if: runner.os != 'Windows'
