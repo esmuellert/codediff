@@ -178,6 +178,7 @@ jobs:
           git add Cargo.toml Cargo.lock
           git commit -m "release: ${{ needs.version.outputs.tag }} [skip ci]"
           git tag "${{ needs.version.outputs.tag }}"
+          git pull --rebase origin main
           git push origin main --tags
 
       - name: Generate release notes
