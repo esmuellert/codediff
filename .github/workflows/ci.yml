@@ -193,6 +193,9 @@ jobs:
 
           # Notes MUST be generated before the tag: --unreleased after tagging
           # finds nothing, which is why every prior release had an empty body.
+          # Delete any local tag first — on "Re-run failed jobs" after a
+          # successful push, fetch-tags pulls it back and empties the set.
+          git tag -d "$TAG" 2>/dev/null || true
           git-cliff --unreleased --tag "$TAG" --strip header -o RELEASE_NOTES.md
 
           git tag -a "$TAG" -m "$TAG"
