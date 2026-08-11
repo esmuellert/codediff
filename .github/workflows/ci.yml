@@ -174,7 +174,7 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff,cargo-edit
+          tool: cargo-edit
 
       - name: Commit and tag
         id: publish
@@ -191,12 +191,8 @@ jobs:
           git add Cargo.toml Cargo.lock
           git commit -m "release: $TAG [skip ci]"
 
-          # Notes MUST be generated before the tag: --unreleased after tagging
-          # finds nothing, which is why every prior release had an empty body.
-          # Delete any local tag first — on "Re-run failed jobs" after a
-          # successful push, fetch-tags pulls it back and empties the set.
+          # Delete any local tag first — on re-run, fetch-tags pulls it back.
           git tag -d "$TAG" 2>/dev/null || true
-          git-cliff --unreleased --tag "$TAG" --strip header -o RELEASE_NOTES.md
 
           git tag -a "$TAG" -m "$TAG"
 
@@ -243,5 +239,5 @@ jobs:
         run: |
           gh release create "${{ needs.version.outputs.tag }}" \
             --title "${{ needs.version.outputs.tag }}" \
-            --notes-file RELEASE_NOTES.md \
+            --generate-notes \
             dist/*
