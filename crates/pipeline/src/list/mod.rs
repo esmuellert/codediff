@@ -46,6 +46,7 @@ impl Request {
 
 /// Every file the request finds, each with what it gained and lost.
 pub fn get_files(request: &Request) -> Result<Vec<File>> {
+    tracing::info!("listing files");
     let mut repository = Repository::open(&request.repo).context("opening a repository")?;
     let changes = repository
         .get_changed_files(&request.diff_type, &request.pathspec)
@@ -55,11 +56,13 @@ pub fn get_files(request: &Request) -> Result<Vec<File>> {
         .get_line_stats(&request.diff_type, &request.pathspec)
         .unwrap_or_default();
 
-    Ok(changes
+    let files: Vec<File> = changes
         .into_iter()
         .map(|file| match counts.of(&file) {
             Some(stats) => file.set_stats(stats),
             None => file,
         })
-        .collect())
+        .collect();
+    tracing::info!(count = files.len(), "listed files");
+    Ok(files)
 }

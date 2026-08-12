@@ -13,6 +13,9 @@ use crate::view::Buffer;
 
 /// Reviews everything that changed under `cwd`, until the reader quits.
 pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<Exit> {
+    tracing::info!("codediff {}", env!("CARGO_PKG_VERSION"));
+    tracing::info!(cwd = %cwd.display());
+
     let theme = theme_for(theme)?;
     let request = pipeline::list::Request::worktree(&cwd).with_pathspec(pathspec);
     let files = pipeline::list::get_files(&request)?;
@@ -22,12 +25,14 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
     }
 
     let (tx, rx) = std::sync::mpsc::channel();
+    tracing::info!("spawning workers");
     let mut session = Session::new(
         Buffer::explorer(files),
         theme,
         crate::app::threads::spawn_workers(&tx, &cwd),
     );
     session.open();
+    tracing::info!("startup complete");
     run(&mut session, &cwd, tx, rx).context("running the review interface")
 }
 

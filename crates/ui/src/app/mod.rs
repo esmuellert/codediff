@@ -182,9 +182,11 @@ pub fn run(
         let Ok(ev) = rx.recv() else {
             return Ok(Exit::Quit);
         };
+        tracing::info!(event = ev.name(), "received");
 
         // Terminal, signal, and watcher events are handled here.
         // Worker events are dispatched via apply().
+        let reason = ev.name();
         let changed = match ev {
             event::Event::Terminal(ref e) => match session.handle_event(e) {
                 Flow::Quit => return Ok(Exit::Quit),
@@ -214,6 +216,7 @@ pub fn run(
         session.send_colour_request();
         session.send_file_request();
         if changed {
+            tracing::info!(reason, "draw");
             screen.draw(|t| session.draw(t))?;
         }
     }

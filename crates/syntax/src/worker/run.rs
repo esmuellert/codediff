@@ -61,6 +61,7 @@ pub fn run(requests: &Receiver<SyntaxRequest>, answers: &Emitter<SyntaxResponse>
 }
 
 fn respond(request: &SyntaxRequest, answers: &Emitter<SyntaxResponse>, memos: &mut Vec<Memo>) {
+    tracing::info!(path = %request.key, from = request.have, "colouring");
     let lines = request.text.len() as u32;
     let Some(mut reading) = resume(request, memos) else {
         // Nothing claims this language. Answering once with no spans is how

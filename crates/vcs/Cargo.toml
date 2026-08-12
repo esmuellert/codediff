@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 file-types.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true
