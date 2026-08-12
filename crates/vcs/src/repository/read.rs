@@ -16,6 +16,7 @@ impl Repository {
         file: &File,
         version: DiffVersion,
     ) -> crate::Result<FileContent> {
+        tracing::info!(path = %file.path(), ?version, "reading file");
         if self.blobs.is_none() {
             self.blobs = Some(crate::git::cat_file::Batch::open(&self.repo)?);
         }

@@ -21,3 +21,17 @@ pub enum Event {
     /// The list worker returned a new file list.
     ListRefreshed(Vec<file_types::File>),
 }
+
+impl Event {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Terminal(_) => "input",
+            #[cfg(unix)]
+            Self::Signal(_) => "signal",
+            Self::FsChanged(_) => "fs-changed",
+            Self::Coloured(_) => "coloured",
+            Self::FileReady(_) => "file-ready",
+            Self::ListRefreshed(_) => "list-refreshed",
+        }
+    }
+}

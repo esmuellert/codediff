@@ -95,6 +95,7 @@ impl Worker for FileWorker {
 fn run(requests: &Receiver<File>, answers: &Emitter<Response>) {
     while let Ok(file) = requests.recv() {
         let content = compare(&file);
+        tracing::info!(path = %file.path(), "file ready");
         if !answers.send(Response { file, content }) {
             return;
         }

@@ -1426,6 +1426,7 @@ dependencies = [
  "channel",
  "file-types",
  "fixtures",
+ "tracing",
  "vcs",
  "vscode-diff",
 ]
@@ -2083,6 +2084,7 @@ dependencies = [
  "file-types",
  "line-index",
  "syntect",
+ "tracing",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -2783,6 +2785,7 @@ version = "0.16.2"
 dependencies = [
  "file-types",
  "fixtures",
+ "tracing",
 ]
 
 [[package]]

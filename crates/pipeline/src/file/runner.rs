@@ -88,6 +88,7 @@ impl Runner {
             None => {
                 let original = self.contents.version(DiffVersion::Original);
                 let modified = self.contents.version(DiffVersion::Modified);
+                tracing::info!(path = %file.path(), lines = modified.len(), "computing diff");
                 let changed = diff::compute(&original, &modified)?;
                 let alignment = diff::align(changed, &original, &modified)?;
                 Ok(DiffContent::Diff(Diff { file, alignment }))
