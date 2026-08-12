@@ -11,11 +11,10 @@
 //!  }
 //! ```
 
-use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use crate::file::runner::{DiffContent, Runner};
-use channel::{Emitter, Worker};
+use channel::{Emitter, Slot, Worker};
 use file_types::File;
 
 /// What one request produced.
@@ -25,48 +24,42 @@ pub struct Response {
     pub content: Result<DiffContent, String>,
 }
 
-/// The worker, the two queues to it, and whether one is outstanding.
+/// The worker and the slot to it.
 pub struct FileWorker {
-    requests: Sender<File>,
-    outstanding: bool,
+    requests: Slot<File>,
 }
 
 impl FileWorker {
     /// Starts the worker thread.
     pub fn start(emitter: Emitter<Response>) -> Self {
-        let (requests, incoming) = channel::<File>();
+        let job = move |file: File| {
+            let content = compare(&file);
+            tracing::info!(path = %file.path(), "file ready");
+            emitter.send(Response { file, content })
+        };
+        let (requests, worker_loop) = Slot::new(job);
         thread::Builder::new()
             .name("file".to_owned())
-            .spawn(move || run(&incoming, &emitter))
+            .spawn(worker_loop)
             .expect("the file thread starts");
-        Self {
-            requests,
-            outstanding: false,
-        }
+        Self { requests }
     }
 
-    /// Mock worker for tests. A request past the end
-    /// of the script fails.
+    /// Mock worker for tests.
     pub fn mock(script: Vec<Result<DiffContent, String>>, emitter: Emitter<Response>) -> Self {
-        let (requests, incoming) = channel::<File>();
+        let mut script = script.into_iter();
+        let job = move |file: File| {
+            let content = script
+                .next()
+                .unwrap_or_else(|| Err("nothing left in the script".to_owned()));
+            emitter.send(Response { file, content })
+        };
+        let (requests, worker_loop) = Slot::new(job);
         thread::Builder::new()
             .name("file-canned".to_owned())
-            .spawn(move || {
-                let mut script = script.into_iter();
-                while let Ok(file) = incoming.recv() {
-                    let content = script
-                        .next()
-                        .unwrap_or_else(|| Err("nothing left in the script".to_owned()));
-                    if !emitter.send(Response { file, content }) {
-                        return;
-                    }
-                }
-            })
+            .spawn(worker_loop)
             .expect("the file thread starts");
-        Self {
-            requests,
-            outstanding: false,
-        }
+        Self { requests }
     }
 }
 
@@ -75,31 +68,14 @@ impl Worker for FileWorker {
     type Response = Response;
 
     fn send(&mut self, file: Self::Request) {
-        if self.outstanding {
-            return;
-        }
-        self.outstanding = true;
-        let _ = self.requests.send(file);
+        self.requests.put(file);
     }
 
     fn is_busy(&self) -> bool {
-        self.outstanding
+        self.requests.is_busy()
     }
 
-    fn received(&mut self, _response: &Self::Response) {
-        self.outstanding = false;
-    }
-}
-
-/// Answers requests until the sender is dropped.
-fn run(requests: &Receiver<File>, answers: &Emitter<Response>) {
-    while let Ok(file) = requests.recv() {
-        let content = compare(&file);
-        tracing::info!(path = %file.path(), "file ready");
-        if !answers.send(Response { file, content }) {
-            return;
-        }
-    }
+    fn received(&mut self, _response: &Self::Response) {}
 }
 
 /// Runs the four stages. Nothing is cached between calls. See D51.
