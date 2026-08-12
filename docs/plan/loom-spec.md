@@ -49,11 +49,11 @@ sentence.
 |---|---|---|
 | crate name | `loom`, macros in `loom-macros` | one plain English word, like `align` and `syntax`; both crates are `publish = false` so the name on crates.io is a coincidence |
 | layout engine | our own, integer cells, linear solve delegated to `ratatui::layout::Layout` | flexbox cannot say "if this does not fit, do not draw it", which is what `render::layout`'s tests demand |
-| state access in listeners | thread-local runtime, no `cx` parameter | `cursor.set(cursor.get() + 1)` is the line that makes this feel like React rather than like Rust arguing with you |
+| state access in listeners | thread-local runtime, no `cx` parameter | `cursor.set(cursor.cloned() + 1)` is the line that makes this feel like React rather than like Rust arguing with you |
 | worker replies | typed handles with a generation check | a `TaskId` token says where to deliver; a generation says whether it is still wanted |
 | render parameter | `scope` | `cx` reads as "context", and context is a different thing here |
 | state handle | `State<T> = { scope, slot }`, `Copy`, no arena | the workspace forbids `unsafe`, and the hook slot is already the storage |
-| a second, quiet state type | none — `State::edit_silently` instead | one idea, one word; a `Ref<T>` beside `std::cell::Ref` is two words for one idea |
+| a second, quiet state type | none — `State::edit_without_redraw` instead | one idea, one word; a `Ref<T>` beside `std::cell::Ref` is two words for one idea |
 | context storage | parent walk keyed by `TypeId`, read recorded as `(TypeId, version)` | there is no provider node to reconcile, and the recorded version is the twenty lines that keep `memo` honest |
 | provider syntax | `provide_context(scope, value)` at the top of a render | it adds no node to the tree; a `Provider` component can be written on top of it in eight lines |
 | listeners in `rsx!` | one `listeners:` prop built by a chain | one prop, one type, no macro magic, and an unknown handler is an unknown method |
@@ -184,7 +184,7 @@ pub struct Part {
     /// `Component::render`, with the props type erased.
     pub render: fn(&dyn std::any::Any, &mut Scope) -> Node,
     /// Props equality, for `#[component(memo)]`. `None` means "always re-run".
-    pub same: Option<fn(&dyn std::any::Any, &dyn std::any::Any) -> bool>,
+    pub props_equal: Option<fn(&dyn std::any::Any, &dyn std::any::Any) -> bool>,
 }
 
 pub type Children = Vec<Node>;
@@ -193,7 +193,7 @@ impl Node {
     /// What `#[component]`'s `Element::build` calls.
     pub fn part<C: Component>(props: C::Props, key: Option<Key>) -> Node;
     /// What a built-in host's `Element::build` calls.
-    pub fn host(host: Host) -> Node;
+    pub fn from_host(host: Host) -> Node;
 }
 
 /// What names a child across frames.
@@ -283,23 +283,23 @@ impl<T> Eq for State<T> {}
 
 impl<T: 'static> State<T> {
     /// Reads. The closure keeps the borrow short and typed.
-    pub fn with<R>(self, look: impl FnOnce(&T) -> R) -> R;
+    pub fn read<R>(self, look: impl FnOnce(&T) -> R) -> R;
     /// Reads a copy, for the small case.
-    pub fn get(self) -> T where T: Clone;
+    pub fn cloned(self) -> T where T: Clone;
     /// Writes, and redraws the owning component.
     pub fn set(self, value: T);
     /// Writes, and redraws the owning component only if the value changed.
     ///
     /// React's bail-out, made explicit because Rust can check it: a component
     /// that recomputes the same value every render must not mark anything.
-    pub fn put(self, value: T) where T: PartialEq;
+    pub fn set_if_changed(self, value: T) where T: PartialEq;
     /// Writes in place, and redraws the owning component.
     pub fn edit<R>(self, change: impl FnOnce(&mut T) -> R) -> R;
     /// Writes in place without redrawing, for a value the frame is already
     /// about to read — a viewport height, a syntax cache.
-    pub fn edit_silently<R>(self, change: impl FnOnce(&mut T) -> R) -> R;
+    pub fn edit_without_redraw<R>(self, change: impl FnOnce(&mut T) -> R) -> R;
     /// Whether the owning component is still mounted.
-    pub fn alive(self) -> bool;
+    pub fn is_mounted(self) -> bool;
 }
 ```
 
@@ -386,7 +386,7 @@ impl<'a> Paint<'a> {
     /// `area` intersected with every clipping ancestor.
     pub fn clip(&self) -> Rect;
     /// Whether this node holds focus.
-    pub fn focused(&self) -> bool;
+    pub fn has_focus(&self) -> bool;
 }
 ```
 
@@ -453,14 +453,14 @@ pub struct Listeners { /* private */ }
 
 impl Listeners {
     pub fn new() -> Self;
-    pub fn key(self, listen: impl Fn(KeyCombination) -> Bubble + 'static) -> Self;
-    pub fn mouse(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
+    pub fn on_key(self, listen: impl Fn(KeyCombination) -> Bubble + 'static) -> Self;
+    pub fn on_mouse(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
     /// Positive is down. Separate from `mouse` because it is the one mouse
     /// event routed by position that is not a click.
-    pub fn wheel(self, listen: impl Fn(i32) -> Bubble + 'static) -> Self;
-    pub fn focus(self, listen: impl Fn(bool) + 'static) -> Self;
+    pub fn on_wheel(self, listen: impl Fn(i32) -> Bubble + 'static) -> Self;
+    pub fn on_focus(self, listen: impl Fn(bool) + 'static) -> Self;
     /// An application value routed to focus and then upward.
-    pub fn message<T: 'static>(self, listen: impl Fn(&T) -> Bubble + 'static) -> Self;
+    pub fn on_message<T: 'static>(self, listen: impl Fn(&T) -> Bubble + 'static) -> Self;
 }
 
 /// Registered by `use_focus`.
@@ -472,10 +472,10 @@ pub struct Focus {
 
 impl Focus {
     /// Ask for focus.
-    pub fn take(self);
-    /// The next focusable in paint order, wrapping.
-    pub fn next(self);
-    pub fn previous(self);
+    pub fn request(self);
+    /// Move focus to the next focusable in paint order, wrapping.
+    pub fn move_next(self);
+    pub fn move_previous(self);
 }
 
 /// Route every mouse event to this node until the button comes up or
@@ -501,7 +501,7 @@ pub struct Completion<T: 'static> { /* private; holds a Weak to the runtime */ }
 impl<T: 'static> Completion<T> {
     /// Delivers. Returns whether it was taken.
     pub fn complete(self, value: T) -> bool;
-    pub fn wanted(&self) -> bool;
+    pub fn is_wanted(&self) -> bool;
 }
 
 /// A many-shot reply address, for a worker that answers in pieces.
@@ -511,8 +511,8 @@ impl<T: 'static> Clone for Subscription<T> {}
 
 impl<T: 'static> Subscription<T> {
     /// Delivers one piece. Returns whether it was taken.
-    pub fn send(&self, value: T) -> bool;
-    pub fn wanted(&self) -> bool;
+    pub fn deliver(&self, value: T) -> bool;
+    pub fn is_wanted(&self) -> bool;
     pub fn close(self);
 }
 
@@ -545,7 +545,7 @@ impl Tree {
     pub fn draw(&mut self, cells: &mut Cells, area: Rect);
     /// Routes a key to the focused scope, then upward. Returns whether one
     /// listener stopped it.
-    pub fn key(&mut self, key: crokey::KeyCombination) -> bool;
+    pub fn press(&mut self, key: crokey::KeyCombination) -> bool;
     pub fn mouse(&mut self, event: crossterm::event::MouseEvent) -> bool;
     /// Routes an application value the same way a key goes.
     pub fn message<T: 'static>(&mut self, value: T) -> bool;
@@ -553,10 +553,10 @@ impl Tree {
     pub fn needs_draw(&self) -> bool;
     /// How many render-and-layout rounds the last `draw` took. One, unless
     /// `use_size` changed something. Capped at 4 (R5.6.2).
-    pub fn rounds(&self) -> usize;
+    pub fn layout_rounds(&self) -> usize;
     /// Mark everything. What a terminal resize does.
     pub fn redraw_all(&mut self);
-    pub fn focused(&self) -> Option<ScopeId>;
+    pub fn focused_scope(&self) -> Option<ScopeId>;
 }
 ```
 
@@ -575,7 +575,7 @@ impl Harness {
     /// Mounts `C` at `width` × `height`. Does not draw.
     pub fn new<C: Component>(props: C::Props, width: u16, height: u16) -> Self;
     /// Provides a context value above the root, for a component that reads one.
-    pub fn give<T: Clone + 'static>(self, value: T) -> Self;
+    pub fn provide<T: Clone + 'static>(self, value: T) -> Self;
     /// Replaces the root's props.
     pub fn set_props<C: Component>(&mut self, props: C::Props) -> &mut Self;
 
@@ -585,12 +585,12 @@ impl Harness {
     pub fn force_draw(&mut self) -> &mut Self;
 
     /// The screen as text, one string per row, trailing blanks trimmed.
-    pub fn rows(&mut self) -> Vec<String>;
-    pub fn row(&mut self, y: u16) -> String;
+    pub fn screen(&mut self) -> Vec<String>;
+    pub fn screen_row(&mut self, y: u16) -> String;
     pub fn style_at(&mut self, x: u16, y: u16) -> Style;
     pub fn cells(&mut self) -> &Cells;
 
-    pub fn key(&mut self, key: crokey::KeyCombination) -> &mut Self;
+    pub fn press(&mut self, key: crokey::KeyCombination) -> &mut Self;
     pub fn click(&mut self, x: u16, y: u16) -> &mut Self;
     pub fn drag(&mut self, x: u16, y: u16) -> &mut Self;
     pub fn release(&mut self, x: u16, y: u16) -> &mut Self;
@@ -599,17 +599,17 @@ impl Harness {
     pub fn resize(&mut self, width: u16, height: u16) -> &mut Self;
 
     /// The scope tree as indented text: name, key, rectangle.
-    pub fn tree(&mut self) -> String;
+    pub fn tree_text(&mut self) -> String;
     /// The rectangle of the first scope with this component name.
     pub fn area_of(&self, name: &str) -> Option<Rect>;
     /// How many times a component of this name has run since the harness was
     /// built. The primitive behind every memo and reconciliation test.
-    pub fn renders_of(&self, name: &str) -> usize;
+    pub fn render_count_of(&self, name: &str) -> usize;
     /// How many component functions ran during the last `draw`.
-    pub fn renders(&self) -> usize;
+    pub fn render_count(&self) -> usize;
     /// How many layout rounds the last `draw` took. One, unless `use_size`
     /// changed something.
-    pub fn rounds(&self) -> usize;
+    pub fn layout_rounds(&self) -> usize;
     pub fn focused_name(&self) -> Option<&'static str>;
     pub fn needs_draw(&self) -> bool;
 }
@@ -940,7 +940,7 @@ callback panics (P7.1).
 Why `use_size` exists at all, in this program's own terms: `draw/pane.rs`
 currently calls `viewport.set_height(rect.height, …)` *during* the draw, which
 is a state write in the paint pass and is forbidden by R7.1.4. The replacement
-is `use_size` in the render pass followed by `view.edit_silently(|v|
+is `use_size` in the render pass followed by `view.edit_without_redraw(|v|
 v.set_height(h, rows))` — silent, because the frame about to be painted is the
 one that will read it, so there is nothing to redraw for.
 
@@ -955,7 +955,7 @@ framework exists; `use_state` cannot be written without it.
 
 ```rust
 // scope.rs
-struct Live {
+struct Mounted {
     name: &'static str,
     type_id: TypeId,
     key: Option<Key>,
@@ -967,7 +967,7 @@ struct Live {
     /// changed.
     props: Rc<dyn Any>,
     render: fn(&dyn Any, &mut Scope) -> Node,
-    same: Option<fn(&dyn Any, &dyn Any) -> bool>,
+    props_equal: Option<fn(&dyn Any, &dyn Any) -> bool>,
 
     /// Values offered to descendants, by TypeId, with a version.
     given: Vec<(TypeId, Rc<dyn Any>, u64)>,
@@ -1110,7 +1110,7 @@ is not painted and its children are not visited.
 
 **R7.1.4** Paint writes cells and nothing else. `State::set`, `State::edit` and
 `redraw()` called from inside a paint callback panic (P7.2). `State::with`,
-`State::get` and `State::edit_silently` are legal.
+`State::get` and `State::edit_without_redraw` are legal.
 *test: `setting_state_while_painting_is_refused`*
 
 **R7.1.5** The paint walk records, for every node that has a listener or is
@@ -1289,7 +1289,7 @@ It may not call a hook — it holds no `Scope`.
 *test: `a_reply_handler_may_set_state`*
 
 **R9.1.4** `Subscription<T>` is `Clone`, so one worker request can be answered
-by several pieces held in different places in the bridge. `Completion<T>` is
+by several pieces held in different places in the pending. `Completion<T>` is
 not.
 *test: `a_subscription_can_be_held_twice`*
 
@@ -1303,10 +1303,10 @@ already carries the `File` it answers, so a token would be an address only `ui`
 could read, living in a crate that cannot read it. The syntax worker already
 carries `key` and `version` for the same purpose.
 
-The bridge is in `ui`:
+The pending is in `ui`:
 
 ```rust
-// crates/ui/src/app/bridge.rs
+// crates/ui/src/app/pending.rs
 /// What a component asks the loop to do. Posted to the outbox during a render
 /// or an effect, drained by `Session` after the frame.
 pub enum Request {
@@ -1337,7 +1337,7 @@ impl Outbox {
 
 /// Replies the loop is still holding an address for.
 #[derive(Default)]
-pub struct Bridge {
+pub struct PendingReplies {
     file: Option<loom::Completion<pipeline::file::Response>>,
     colour: std::collections::HashMap<String, loom::Subscription<syntax::SyntaxResponse>>,
 }
@@ -1346,17 +1346,17 @@ pub struct Bridge {
 The loop's half:
 
 ```
-Request::Open      →  bridge.file = Some(reply);  workers.files.send(file)
+Request::Open      →  pending.file = Some(reply);  workers.files.send(file)
 Event::FileReady   →  workers.files.received(&response);
-                      bridge.file.take().is_some_and(|reply| reply.complete(response))
+                      pending.file.take().is_some_and(|reply| reply.complete(response))
 
-Request::Colour    →  for request in &requests { bridge.colour.insert(request.key.clone(), reply.clone()) }
+Request::Colour    →  for request in &requests { pending.colour.insert(request.key.clone(), reply.clone()) }
                       for request in requests  { workers.syntax.send(request) }
 Event::Coloured    →  workers.syntax.received(&response);
                       let last = !response.more;
                       let key = response.key.clone();
-                      bridge.colour.get(&key).is_some_and(|reply| reply.send(response));
-                      if last { bridge.colour.remove(&key); }
+                      pending.colour.get(&key).is_some_and(|reply| reply.send(response));
+                      if last { pending.colour.remove(&key); }
 
 Request::Program   →  the Flow the loop returns from `Session::drain`
 ```
@@ -1397,14 +1397,14 @@ on every piece.
 
 *Addressed:* the reply reaches one scope, because the `Subscription` names one
 scope's effect slot. No other component is told anything. A pane that is not
-showing that file has no address in the bridge and hears nothing.
+showing that file has no address in the pending and hears nothing.
 
 *Overlap test:* the handler installs the piece into the shared store and then
 redraws **only if the piece covers a line the pane is showing**:
 
 ```rust
 let from = response.from;
-let taken = store.edit_silently(|store| store.install(response));
+let taken = store.edit_without_redraw(|store| store.install(response));
 if taken && from < visible.end {
     redraw();
 }
@@ -1432,7 +1432,7 @@ pane keeps its last child tree and is painted without being run (R6.3.3).
 
 **R9.4.4** The store is one `use_state(scope, Store::new)` at the root, provided
 as context by its `State<Store>` handle, which is `Copy`. Reading it costs no
-clone and writing it is `edit_silently`, so installing spans never by itself
+clone and writing it is `edit_without_redraw`, so installing spans never by itself
 redraws anything.
 *test: `installing_spans_does_not_redraw_by_itself`*
 
@@ -1689,7 +1689,7 @@ a State was used after ExplorerPane was removed
 state may only be used inside a component, a listener, an effect or a worker reply
 ```
 
-**P4.5 — re-entrant `with`, `edit` or `edit_silently` on one state.** Nesting
+**P4.5 — re-entrant `with`, `edit` or `edit_without_redraw` on one state.** Nesting
 them on *different* states is legal and is how a canvas reads a buffer, a
 viewport and a store at once.
 
@@ -1722,7 +1722,7 @@ draw was called from inside a paint callback
 ```
 
 **P7.2 — R7.1.4.** Only `set`, `put`, `edit` and `redraw()`; `with`, `get` and
-`edit_silently` are legal while painting.
+`edit_without_redraw` are legal while painting.
 
 ```text
 DiffPane: state was set while painting — paint reads, it does not write
@@ -1836,7 +1836,7 @@ fn a_narrow_status_bar_drops_the_summary_rather_than_overlapping_the_path() {
         },
         16, 1,
     )
-    .give(Theme::DARK);
+    .provide(Theme::DARK);
 
     assert_eq!(screen.draw().row(0).chars().count(), 16);
     assert!(!screen.row(0).contains("changes"));
@@ -1849,7 +1849,7 @@ and answers questions about the tree:
 ```rust
 #[test]
 fn clicking_a_row_moves_the_cursor_and_opens_the_file() {
-    let mut screen = Harness::new::<ExplorerPane>(props(), 40, 10).give(Theme::DARK);
+    let mut screen = Harness::new::<ExplorerPane>(props(), 40, 10).provide(Theme::DARK);
     screen.draw().click(3, 4);
     assert_eq!(screen.row(4).trim_start().split(' ').next(), Some("app.rs"));
 }
@@ -1858,8 +1858,8 @@ fn clicking_a_row_moves_the_cursor_and_opens_the_file() {
 fn a_span_batch_runs_one_component() {
     let mut screen = Harness::new::<Screen>(props(), 80, 24);
     screen.draw();
-    // … deliver a batch through the bridge …
-    assert_eq!(screen.renders(), 1, "only the pane showing the file");
+    // … deliver a batch through the pending …
+    assert_eq!(screen.render_count(), 1, "only the pane showing the file");
 }
 ```
 
@@ -1886,7 +1886,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/lib.rs` | crate doc, the whole public surface in one screen | 60 | `crates/ui/src/lib.rs`, 27 |
 | `src/node.rs` | `Node`, `Host`, `Part`, `Key`, `Element`, the `From` impls | 150 | |
 | `src/component.rs` | `Component`, the erased render pointer, the props comparison pointer | 80 | |
-| `src/scope.rs` | `Scope`, `ScopeId`, `Live`, the slab and its free list, parent and child walking | 190 | |
+| `src/scope.rs` | `Scope`, `ScopeId`, `Mounted`, the slab and its free list, parent and child walking | 190 | |
 | `src/tree.rs` | `Tree` — the object the application owns | 200 | |
 | `src/frame.rs` | the seven steps of §5.6, the round caps | 180 | |
 | `src/reconcile.rs` | flattening, positional and keyed matching, mount, update, unmount | 260 | |
@@ -2080,7 +2080,7 @@ Measured: `view/mod.rs` 284, `view/tab.rs` 245, `view/pane.rs` 23.
 
 ### Phase 8 — workers
 
-`Outbox`, `Request` and `Bridge` as §9.2. `Session::send_file_request` and
+`Outbox`, `Request` and `PendingReplies` as §9.2. `Session::send_file_request` and
 `send_colour_request` become one `Session::drain`. `ui::view::buffer::colour`
 gains a function that returns the `SyntaxRequest`s instead of sending them, so
 the pane can build them in its effect (R9.4.5); everything else in that file is
@@ -2106,7 +2106,7 @@ pub struct Session {
     /// Requests components raised and the loop has not yet sent.
     outbox: Rc<Outbox>,
     /// Reply addresses the loop is holding.
-    bridge: Bridge,
+    pending: PendingReplies,
 }
 
 impl Session {
@@ -2145,7 +2145,7 @@ loop {
     let Ok(event) = rx.recv() else { return Ok(Exit::Quit) };
     match event {
         Event::Terminal(CrosstermEvent::Key(_)) => {
-            if let Some(key) = input::press(&event) { session.tree.key(key); }
+            if let Some(key) = input::press(&event) { session.tree.press(key); }
         }
         Event::Terminal(CrosstermEvent::Mouse(mouse)) => { session.tree.mouse(mouse); }
         Event::Terminal(CrosstermEvent::Resize(..)) => session.tree.redraw_all(),
@@ -2204,7 +2204,7 @@ pub struct Status {
 }
 ```
 
-`Request`, `Outbox` and `Bridge` are §9.2.
+`Request`, `Outbox` and `PendingReplies` are §9.2.
 
 ## A.1 `StatusBar`
 
@@ -2342,7 +2342,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     use_effect(scope, files.clone(), move |files, _| {
         let files = files.to_vec();
         let landing = buffer.edit(|buffer| {
-            let cursor = view.with(Viewport::cursor);
+            let cursor = view.read(Viewport::cursor);
             let BufferType::Explorer(explorer) = buffer.buffer_type_mut() else {
                 return None;
             };
@@ -2357,30 +2357,30 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
 
     // The height the frame is about to be painted at, recorded silently:
     // the frame that will read it is the one being prepared.
-    let rows = buffer.with(Buffer::view_lines);
-    view.edit_silently(|v| v.set_height(u32::from(area.height), rows));
+    let rows = buffer.read(Buffer::view_lines);
+    view.edit_without_redraw(|v| v.set_height(u32::from(area.height), rows));
 
     // What the status line says while this pane has focus. A list of changed
     // files is not a diff, so it has no changes to count.
     if focus.has {
-        status.put(Status {
+        status.set_if_changed(Status {
             file: None,
-            view_line: view.with(Viewport::cursor),
+            view_line: view.read(Viewport::cursor),
             view_lines: rows,
             ..Status::default()
         });
     }
 
     let chose = move || {
-        let cursor = view.with(Viewport::cursor);
-        buffer.with(|buffer| match buffer.buffer_type() {
+        let cursor = view.read(Viewport::cursor);
+        buffer.read(|buffer| match buffer.buffer_type() {
             BufferType::Explorer(explorer) => explorer.file(cursor).cloned(),
             _ => None,
         })
     };
 
     let listeners = Listeners::new()
-        .key(move |key: KeyCombination| {
+        .on_key(move |key: KeyCombination| {
             let Resolution::Run(command) = keys.edit(|r| r.key(key, KeymapType::Explorer)) else {
                 return Bubble::Stop;   // a count, a prefix, or nothing bound
             };
@@ -2394,10 +2394,10 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                     Bubble::Stop
                 }
                 Action::View(ViewAction::Open) => {
-                    let cursor = view.with(Viewport::cursor);
+                    let cursor = view.read(Viewport::cursor);
                     let folded = buffer.edit(|b| b.activate(cursor));
                     if folded {
-                        let rows = buffer.with(Buffer::view_lines);
+                        let rows = buffer.read(Buffer::view_lines);
                         view.edit(|v| v.place(cursor.min(rows.saturating_sub(1)), rows));
                     } else if let Some(file) = chose() {
                         message(Chosen(file));
@@ -2408,18 +2408,18 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                 _ => { message(command); Bubble::Stop }
             }
         })
-        .wheel(move |lines| {
-            let rows = buffer.with(Buffer::view_lines);
+        .on_wheel(move |lines| {
+            let rows = buffer.read(Buffer::view_lines);
             view.edit(|v| v.scroll(lines, rows));
             Bubble::Stop
         })
-        .mouse(move |mouse: Mouse| {
+        .on_mouse(move |mouse: Mouse| {
             if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
                 return Bubble::Continue;
             }
-            focus.take();
-            let rows = buffer.with(Buffer::view_lines);
-            let line = view.with(Viewport::top) + u32::from(mouse.local.y);
+            focus.request();
+            let rows = buffer.read(Buffer::view_lines);
+            let line = view.read(Viewport::top) + u32::from(mouse.local.y);
             if line < rows {
                 view.edit(|v| v.place(line, rows));
                 if let Some(file) = chose() {
@@ -2432,9 +2432,9 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     let has_focus = focus.has;
     let paint = Rc::new(move |paint: &mut loom::Paint<'_>| {
         let area = paint.area();
-        buffer.with(|buffer| {
+        buffer.read(|buffer| {
             let BufferType::Explorer(explorer) = buffer.buffer_type() else { return };
-            view.with(|view| {
+            view.read(|view| {
                 crate::draw::buffer::explorer::draw(
                     paint.cells(), area, explorer, view, &theme, has_focus,
                 );
@@ -2475,7 +2475,7 @@ use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Scope, Size, St
            use_state};
 use syntax::{Store, SyntaxResponse, Version};
 
-use crate::app::bridge::{Outbox, Request};
+use crate::app::pending::{Outbox, Request};
 use crate::app::message::Status;
 use crate::draw::Look;
 use crate::input::{Action, KeymapType, Resolution, Resolver};
@@ -2497,19 +2497,19 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
     let focus = use_focus(scope);
     let area = use_size(scope);
 
-    let rows = buffer.with(|b| b.as_ref().map_or(0, Buffer::view_lines));
-    view.edit_silently(|v| v.set_height(u32::from(area.height), rows));
-    let visible = view.with(|v| v.visible(rows));
-    let keymap = buffer.with(|b| b.as_ref().map_or(KeymapType::default(), Buffer::keymap_type));
+    let rows = buffer.read(|b| b.as_ref().map_or(0, Buffer::view_lines));
+    view.edit_without_redraw(|v| v.set_height(u32::from(area.height), rows));
+    let visible = view.read(|v| v.visible(rows));
+    let keymap = buffer.read(|b| b.as_ref().map_or(KeymapType::default(), Buffer::keymap_type));
 
     if focus.has {
         // `draw::screen::summary`, moved to the pane that knows the answers.
-        status.put(buffer.with(|b| b.as_ref().map_or_else(Status::default, |b| Status {
+        status.set_if_changed(buffer.read(|b| b.as_ref().map_or_else(Status::default, |b| Status {
             file: b.file().cloned().map(Rc::new),
-            view_line: view.with(Viewport::cursor),
+            view_line: view.read(Viewport::cursor),
             view_lines: b.view_lines(),
             changes: b.blocks().len(),
-            change: b.block_at(view.with(Viewport::cursor)),
+            change: b.block_at(view.read(Viewport::cursor)),
             timed_out: b.hit_timeout(),
             exhausted: b.exhausted(),
         })));
@@ -2517,14 +2517,14 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
 
     // Colour. The deps say what has arrived as well as what is needed, so
     // installing a piece asks for the next one and nothing else does. R9.4.5.
-    let coloured = store.with(|store| buffer.with(|b| {
+    let coloured = store.read(|store| buffer.read(|b| {
         b.as_ref().map_or((0, 0), |b| b.coloured_lines(store))
     }));
     let end = visible.end;
     use_effect(scope, (*version, end, coloured), move |_, effect| {
         let reply = effect.subscription(move |response: SyntaxResponse| {
             let from = response.from;
-            let taken = store.edit_silently(|store| store.install(response));
+            let taken = store.edit_without_redraw(|store| store.install(response));
             // Only a piece covering a line this pane is showing is worth a
             // frame. `end` is a view line, which is never below the file line
             // at the same place, so this never skips a redraw that was needed.
@@ -2532,8 +2532,8 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
                 redraw();
             }
         });
-        let requests = store.edit_silently(|store| {
-            buffer.with(|b| b.as_ref()
+        let requests = store.edit_without_redraw(|store| {
+            buffer.read(|b| b.as_ref()
                 .map(|b| b.colour_requests(store, *version, end + MARGIN))
                 .unwrap_or_default())
         });
@@ -2545,7 +2545,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
     });
 
     let listeners = Listeners::new()
-        .key(move |key| {
+        .on_key(move |key| {
             let Resolution::Run(command) = keys.edit(|r| r.key(key, keymap)) else {
                 return Bubble::Stop;
             };
@@ -2559,13 +2559,13 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
                 _ => { message(command); Bubble::Stop }
             }
         })
-        .wheel(move |lines| {
-            let rows = buffer.with(|b| b.as_ref().map_or(0, Buffer::view_lines));
+        .on_wheel(move |lines| {
+            let rows = buffer.read(|b| b.as_ref().map_or(0, Buffer::view_lines));
             view.edit(|v| v.scroll(lines, rows));
             Bubble::Stop
         })
-        .mouse(move |mouse| {
-            focus.take();
+        .on_mouse(move |mouse| {
+            focus.request();
             // A drag that leaves the column still belongs to it. R8.4.1.
             if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
                 loom::capture_pointer();
@@ -2576,10 +2576,10 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
     let has_focus = focus.has;
     let paint = Rc::new(move |paint: &mut loom::Paint<'_>| {
         let area = paint.area();
-        buffer.with(|buffer| {
+        buffer.read(|buffer| {
             let Some(buffer) = buffer else { return };
-            store.with(|store| {
-                view.with(|view| {
+            store.read(|store| {
+                view.read(|view| {
                     // Byte for byte, today's `draw::buffer::draw` call.
                     let look = Look { theme: &theme, syntax: true, store };
                     crate::draw::buffer::draw(
@@ -2626,7 +2626,7 @@ use loom::{Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners
            provide_context, rsx, use_effect, use_state};
 use syntax::{Store, Version};
 
-use crate::app::bridge::{Outbox, Request};
+use crate::app::pending::{Outbox, Request};
 use crate::app::message::{Chosen, Status};
 use crate::input::{Action, Command, Resolver, TabAction, ViewAction};
 use crate::theme::Theme;
@@ -2663,7 +2663,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // shown — R9.3.3, which is what `apply_file_response`'s `if
     // self.selected.as_ref() != Some(&response.file)` was for.
     let post_open = post.clone();
-    use_effect(scope, chosen.get(), move |chosen, effect| {
+    use_effect(scope, chosen.cloned(), move |chosen, effect| {
         let Some(file) = chosen.clone() else { return };
         let reply = effect.completion(move |response: pipeline::file::Response| {
             match response.content {
@@ -2680,11 +2680,11 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
 
     let post_program = post.clone();
     let listeners = Listeners::new()
-        .message(move |Chosen(file): &Chosen| {
+        .on_message(move |Chosen(file): &Chosen| {
             chosen.set(Some(file.clone()));
             Bubble::Stop
         })
-        .message(move |command: &Command| match command.action {
+        .on_message(move |command: &Command| match command.action {
             Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
                 // Focus order is paint order, so "the next pane" needs no
                 // table of its own. R8.2.2.
@@ -2711,17 +2711,17 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // The key is the file, so re-opening the same file keeps the same scope
     // and therefore the same viewport, while a different file gets a fresh
     // one. R6.1.4.
-    let shown = opened.with(|b| b.as_ref()
+    let shown = opened.read(|b| b.as_ref()
         .and_then(Buffer::file)
         .map(|f| f.path().as_str().to_owned()));
     let split = shown.is_some();
 
     let explorer = Layout {
-        width: if split { Size::Cells(left.get()) } else { Size::Fill(1) },
+        width: if split { Size::Cells(left.cloned()) } else { Size::Fill(1) },
         min_width: 8,
         ..Default::default()
     };
-    let shown_status = status.get();
+    let shown_status = status.cloned();
 
     rsx! {
         Column {
@@ -2746,7 +2746,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                     Column {
                         layout: Layout { width: Size::Fill(1), min_width: 20, ..Default::default() },
                         ..,
-                        DiffPane { key: name, buffer: opened, version: version.get() }
+                        DiffPane { key: name, buffer: opened, version: version.cloned() }
                     }
                 }
             }
@@ -2755,7 +2755,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                 file: shown_status.file, view_line: shown_status.view_line,
                 view_lines: shown_status.view_lines, changes: shown_status.changes,
                 change: shown_status.change, timed_out: shown_status.timed_out,
-                exhausted: shown_status.exhausted, notice: notice.get(),
+                exhausted: shown_status.exhausted, notice: notice.cloned(),
             }
         }
     }
