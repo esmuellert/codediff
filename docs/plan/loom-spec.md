@@ -85,9 +85,8 @@ repository, that name is used.
 | **canvas** | the host that hands its rectangle to a painting function | escape hatch |
 | **too small** | what a container paints when its children cannot meet their minimum — the repository's existing words | |
 | **hidden** | mounted, out of layout, unpainted, unhittable — Neovim's word for a loaded buffer nobody is showing | |
-| **listener** | a closure a host registers for keys, mouse, focus or messages | handler (banned by `lint-arch`) |
+| **listener** | a closure a host registers for keys, mouse or focus | handler (banned by `lint-arch`) |
 | **bubble** | offering an event to each ancestor in turn until one stops it | |
-| **message** | an application value routed through the tree, focus first then upward | |
 | **completion** | a one-shot reply address | task |
 | **subscription** | a many-shot reply address | stream |
 | **generation** | the counter that makes a stale address fail rather than land on a stranger | |
@@ -119,7 +118,7 @@ mod tree;
 pub mod testing;
 
 pub use component::Component;
-pub use event::{Bubble, Focus, Listeners, Mouse, capture_pointer, message, release_pointer};
+pub use event::{Bubble, Focus, Listeners, Mouse, capture_pointer, release_pointer};
 pub use hook::{
     Completion, Effect, State, Subscription, context, provide_context, redraw, try_context,
     use_effect, use_focus, use_memo, use_size, use_state,
@@ -459,8 +458,6 @@ impl Listeners {
     /// event routed by position that is not a click.
     pub fn on_wheel(self, listen: impl Fn(i32) -> Bubble + 'static) -> Self;
     pub fn on_focus(self, listen: impl Fn(bool) + 'static) -> Self;
-    /// An application value routed to focus and then upward.
-    pub fn on_message<T: 'static>(self, listen: impl Fn(&T) -> Bubble + 'static) -> Self;
 }
 
 /// Registered by `use_focus`.
@@ -482,10 +479,13 @@ impl Focus {
 /// `release_pointer` is called. Called from inside a mouse listener.
 pub fn capture_pointer();
 pub fn release_pointer();
-
-/// Hand a value to my parent. Called from inside a listener.
-pub fn message<T: 'static>(value: T);
 ```
+
+A child tells an ancestor something by calling a function the ancestor gave it
+— as a prop, or through context when it sits several levels down. That is
+React's pattern and it needs nothing from the framework: `Rc<dyn Fn(T)>` is
+already `Clone + 'static`, so it is a context value like any other. §10 shows
+both ends.
 
 ### 3.8 Worker replies
 
@@ -547,8 +547,6 @@ impl Tree {
     /// listener stopped it.
     pub fn press(&mut self, key: crokey::KeyCombination) -> bool;
     pub fn mouse(&mut self, event: crossterm::event::MouseEvent) -> bool;
-    /// Routes an application value the same way a key goes.
-    pub fn message<T: 'static>(&mut self, value: T) -> bool;
     /// Whether anything has been marked for redraw since the last `draw`.
     pub fn needs_draw(&self) -> bool;
     /// How many render-and-layout rounds the last `draw` took. One, unless
@@ -595,7 +593,6 @@ impl Harness {
     pub fn drag(&mut self, x: u16, y: u16) -> &mut Self;
     pub fn release(&mut self, x: u16, y: u16) -> &mut Self;
     pub fn wheel(&mut self, x: u16, y: u16, lines: i32) -> &mut Self;
-    pub fn message<T: 'static>(&mut self, value: T) -> &mut Self;
     pub fn resize(&mut self, width: u16, height: u16) -> &mut Self;
 
     /// The scope tree as indented text: name, key, rectangle.
@@ -1167,8 +1164,8 @@ before the file name for the same reason.
 
 ## 8. Events
 
-Three payloads, one walk. A key and a message start at focus; a mouse event
-starts at the deepest node under the pointer; all three then climb.
+Two payloads, one walk. A key starts at focus; a mouse event starts at the
+deepest node under the pointer; both then climb.
 
 ### 8.1 Hit-testing
 
@@ -1217,21 +1214,12 @@ parent, up to the root, stopping at the first listener that returns
 A wheel event is routed by position and climbs the same way.
 *test: `a_wheel_over_an_unlistening_child_reaches_the_pane`*
 
-**R8.3.3** `message(value)` inside a listener hands `value` to the *parent* of
-the scope whose listener is running, and it climbs from there. A message
-listener is matched by `TypeId`; a scope with no listener for that type is
-skipped rather than being an error.
-*test: `a_message_starts_at_the_parent_of_whoever_sent_it`*
-
-**R8.3.4** `Tree::message(value)` starts at the focused scope and climbs.
-*test: `a_message_from_the_loop_starts_at_focus`*
-
-**R8.3.5** A scope that has been unmounted during the same dispatch is skipped
+**R8.3.3** A scope that has been unmounted during the same dispatch is skipped
 by the rest of the walk.
 *test: `a_listener_that_closes_its_own_pane_does_not_climb_into_a_ghost`*
 
-**R8.3.6** `Tree::key`, `Tree::mouse` and `Tree::message` return whether a
-listener stopped the event.
+**R8.3.4** `Tree::key` and `Tree::mouse` return whether a listener stopped the
+event.
 *test: `an_unbound_key_reports_that_nobody_took_it`*
 
 The climb is exactly the layering `input/keymap.rs::live()` walks by hand today
@@ -1511,6 +1499,26 @@ The contexts this application has, and where they are offered:
 | `State<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
 | `State<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
 | `Rc<Outbox>` | `Screen` | `Screen`, `DiffPane` |
+| `Open` | `Screen` | `ExplorerPane` |
+| `Run` | `Screen` | `ExplorerPane`, `DiffPane` |
+
+### Talking to an ancestor
+
+A child that has something to tell an ancestor calls a function the ancestor
+gave it. A parent passes it as a prop; anything deeper reads it from context.
+Both are ordinary values — a callback context is
+`#[derive(Clone)] pub struct Open(pub Rc<dyn Fn(File)>)`, and R10.1.6 is why it
+is a newtype rather than a bare `Rc<dyn Fn(File)>`.
+
+There is no upward-routed payload. A framework one would let a child announce
+something into the air and let whichever ancestor happens to be listening take
+it, which reads well in a demo and fails silently when nobody is: no compiler
+error, no panic, nothing on screen. A callback that is not provided panics at
+`context` naming the type and the component (P10.1), and a callback that is not
+passed does not compile.
+
+What it costs is that every level between the two must carry the value. Context
+is the answer to that, and it is the same answer React gives.
 
 ---
 
@@ -1753,7 +1761,7 @@ row 9 is outside the 8-row screen
 |---|---|
 | `try_context::<T>` | `None` |
 | `Completion::complete`, `Subscription::send` | `false` when refused |
-| `Tree::key`, `Tree::mouse`, `Tree::message` | `false` when nobody stopped it |
+| `Tree::key`, `Tree::mouse` | `false` when nobody stopped it |
 | `use_size` before the first layout | `Rect::ZERO` |
 | `Focus::take`, `Focus::next`, `Focus::previous` with nothing focusable | no-op |
 | `State::put` with an equal value | writes, marks nothing |
@@ -1843,8 +1851,8 @@ fn a_narrow_status_bar_drops_the_summary_rather_than_overlapping_the_path() {
 }
 ```
 
-**A behaviour, through events.** The harness sends keys, clicks and messages,
-and answers questions about the tree:
+**A behaviour, through events.** The harness sends keys and clicks, and answers
+questions about the tree:
 
 ```rust
 #[test]
@@ -1905,9 +1913,9 @@ today — that is a measurement; the estimate beside it is not.
 | `src/paint/text.rs` | `Text`, and the one `measure` in the crate | 110 | |
 | `src/event/mod.rs` | `Bubble`, `Mouse`, `Listeners`, `Focus` | 140 | |
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
-| `src/event/route.rs` | key, mouse, wheel and message routing; focus order | 200 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
+| `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,690** | |
+| | **`loom`** | **≈ 3,670** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -2061,8 +2069,9 @@ becomes `use_state` in the diff pane, and pointer capture (R8.4) replaces the
 ### Phase 6 — the keyboard
 
 Each pane resolves keys through the `State<Resolver>` it reads from context and
-handles the actions it owns; everything else goes up with `message(command)`.
-Bubbling (R8.3) replaces `keymap::live()`'s hand-written innermost-first walk.
+handles the actions it owns; everything else goes to the `Run` callback the
+root put in context. Bubbling (R8.3) replaces `keymap::live()`'s hand-written
+innermost-first walk.
 `input::keymap`'s `const` tables and `input::Resolver` are untouched, so
 `lint-arch`'s clock rule over `crates/ui/src/input` still holds. `app/keys.rs`
 (61 lines) shrinks to the program-level bindings on the root: quit, suspend,
@@ -2179,19 +2188,35 @@ now. `loom` contains no `spawn`, so `THREAD_FILES` gains no entry.
 Real types throughout: `Theme`, `Viewport`, `Explorer`, `Buffer`, `File`,
 `Resolver`, `Store`, `Alignment`.
 
-Two small application types, both in `ui`:
+Three small application types, all in `ui`:
 
 ```rust
-// crates/ui/src/app/message.rs
-/// A row the reader activated. Sent by the explorer, taken by the root.
-pub struct Chosen(pub file_types::File);
+// crates/ui/src/app/callback.rs
+use std::rc::Rc;
 
+/// Open this file. Provided by the root, called by the explorer when the
+/// reader lands on a row.
+#[derive(Clone)]
+pub struct Open(pub Rc<dyn Fn(file_types::File)>);
+
+/// Carry out a command this pane does not own. Provided by the root, called by
+/// whichever pane resolved the key.
+#[derive(Clone)]
+pub struct Run(pub Rc<dyn Fn(crate::input::Command)>);
+```
+
+Newtypes rather than bare `Rc<dyn Fn(_)>` because context is keyed by type
+(R10.1.6), and because the name says which way the value goes.
+
+```rust
+// crates/ui/src/app/status.rs
 /// What the status line says.
 ///
 /// `draw::status::Status`, owned rather than borrowed, because props are
-/// `'static`. Whichever pane holds focus `put`s this during its own render;
-/// the root reads it and hands it to `StatusBar`. `put` rather than `set`, so
-/// the second, identical write marks nothing and the frame settles (R6.3.4).
+/// `'static`. Whichever pane holds focus writes this during its own render;
+/// the root reads it and hands it to `StatusBar`. `set_if_changed` rather than
+/// `set`, so the second, identical write marks nothing and the frame settles
+/// (R6.3.4).
 #[derive(Clone, PartialEq, Default)]
 pub struct Status {
     pub file: Option<std::rc::Rc<file_types::File>>,
@@ -2318,18 +2343,21 @@ use crokey::KeyCombination;
 use crossterm::event::{MouseButton, MouseEventKind};
 use file_types::File;
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Scope, Size, State,
-           component, context, message, rsx, use_effect, use_focus, use_size, use_state};
+           component, context, rsx, use_effect, use_focus, use_size, use_state};
 
 use crate::input::{Action, BufferAction, KeymapType, Resolution, Resolver, ViewAction};
 use crate::theme::Theme;
 use crate::view::{Buffer, BufferType, Viewport};
-use crate::app::message::{Chosen, Status};
+use crate::app::callback::{Open, Run};
+use crate::app::status::Status;
 
 #[component]
 pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     let theme = context::<Theme>(scope);
     let keys = context::<State<Resolver>>(scope);
     let status = context::<State<Status>>(scope);
+    let Open(open) = context::<Open>(scope);
+    let Run(run) = context::<Run>(scope);
 
     let buffer = use_state(scope, || Buffer::explorer(files.to_vec()));
     let view = use_state(scope, Viewport::new);
@@ -2379,6 +2407,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
         })
     };
 
+    let open_key = open.clone();
     let listeners = Listeners::new()
         .on_key(move |key: KeyCombination| {
             let Resolution::Run(command) = keys.edit(|r| r.key(key, KeymapType::Explorer)) else {
@@ -2389,7 +2418,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                     let moved = matches!(action, BufferAction::Motion(_));
                     buffer.edit(|b| view.edit(|v| b.apply(action, command.repeat(), v)));
                     if moved && let Some(file) = chose() {
-                        message(Chosen(file));
+                        open_key(file);
                     }
                     Bubble::Stop
                 }
@@ -2400,12 +2429,13 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                         let rows = buffer.read(Buffer::view_lines);
                         view.edit(|v| v.place(cursor.min(rows.saturating_sub(1)), rows));
                     } else if let Some(file) = chose() {
-                        message(Chosen(file));
+                        open_key(file);
                     }
                     Bubble::Stop
                 }
-                // Tab, view and program actions belong further out.
-                _ => { message(command); Bubble::Stop }
+                // Tab, view and program actions belong further out. The root
+                // gave us the function that carries them out.
+                _ => { run(command); Bubble::Stop }
             }
         })
         .on_wheel(move |lines| {
@@ -2423,7 +2453,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
             if line < rows {
                 view.edit(|v| v.place(line, rows));
                 if let Some(file) = chose() {
-                    message(Chosen(file));
+                    open(file);
                 }
             }
             Bubble::Stop
@@ -2471,12 +2501,13 @@ repository and none of it is touched.
 use std::rc::Rc;
 
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Scope, Size, State,
-           component, context, message, redraw, rsx, use_effect, use_focus, use_size,
+           component, context, redraw, rsx, use_effect, use_focus, use_size,
            use_state};
 use syntax::{Store, SyntaxResponse, Version};
 
 use crate::app::pending::{Outbox, Request};
-use crate::app::message::Status;
+use crate::app::callback::Run;
+use crate::app::status::Status;
 use crate::draw::Look;
 use crate::input::{Action, KeymapType, Resolution, Resolver};
 use crate::theme::Theme;
@@ -2492,6 +2523,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
     let keys = context::<State<Resolver>>(scope);
     let post = context::<Rc<Outbox>>(scope);
     let status = context::<State<Status>>(scope);
+    let Run(run) = context::<Run>(scope);
 
     let view = use_state(scope, Viewport::new);
     let focus = use_focus(scope);
@@ -2556,7 +2588,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
                     });
                     Bubble::Stop
                 }
-                _ => { message(command); Bubble::Stop }
+                _ => { run(command); Bubble::Stop }
             }
         })
         .on_wheel(move |lines| {
@@ -2621,13 +2653,14 @@ Replaces `draw/screen.rs`, `draw/tab.rs`, `draw/pane.rs`, `view/tab.rs`,
 use std::rc::Rc;
 
 use file_types::File;
-use loom::{Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners,
-           Node, Row, RowProps, Scope, Size, Text, TextProps, component, context,
+use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
+           Node, Row, RowProps, Scope, Size, Text, TextProps, component,
            provide_context, rsx, use_effect, use_state};
 use syntax::{Store, Version};
 
 use crate::app::pending::{Outbox, Request};
-use crate::app::message::{Chosen, Status};
+use crate::app::callback::{Open, Run};
+use crate::app::status::Status;
 use crate::input::{Action, Command, Resolver, TabAction, ViewAction};
 use crate::theme::Theme;
 use crate::view::Buffer;
@@ -2646,17 +2679,40 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     let keys = use_state(scope, Resolver::new);
     let status = use_state(scope, Status::default);
 
-    provide_context(scope, theme);
-    provide_context(scope, post.clone());
-    provide_context(scope, store);
-    provide_context(scope, keys);
-    provide_context(scope, status);
-
     let opened = use_state(scope, || None::<Buffer>);
     let notice = use_state(scope, || None::<Rc<str>>);
     let chosen = use_state(scope, || None::<File>);
     let version = use_state(scope, || Version(1));
     let left = use_state(scope, || DEFAULT_LEFT);
+
+    // The two things a pane asks the root to do. Every capture is a `State`
+    // handle, which is `Copy` and two integers wide, so rebuilding these each
+    // render costs one allocation apiece.
+    let post_program = post.clone();
+    provide_context(scope, Open(Rc::new(move |file: File| chosen.set(Some(file)))));
+    provide_context(scope, Run(Rc::new(move |command: Command| match command.action {
+        Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
+            // Focus order is paint order, so "the next pane" needs no table of
+            // its own. R8.2.2.
+        }
+        Action::Tab(TabAction::WidenLeft) => left.edit(|n| *n = (*n + 2).min(MAX_LEFT)),
+        Action::Tab(TabAction::NarrowLeft) => {
+            left.edit(|n| *n = n.saturating_sub(2).max(MIN_LEFT));
+        }
+        Action::View(ViewAction::ToggleLayout) => opened.edit(|b| {
+            if let Some(buffer) = b.take() {
+                *b = Some(buffer.switch_diff_layout());
+            }
+        }),
+        Action::Program(action) => post_program.send(Request::Program(action)),
+        _ => {}
+    })));
+
+    provide_context(scope, theme);
+    provide_context(scope, post.clone());
+    provide_context(scope, store);
+    provide_context(scope, keys);
+    provide_context(scope, status);
 
     // Ask for the file the reader chose. The reply address is created here,
     // so a reply for a file they have since left is refused rather than
@@ -2678,36 +2734,6 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
         post_open.send(Request::Open { file, reply });
     });
 
-    let post_program = post.clone();
-    let listeners = Listeners::new()
-        .on_message(move |Chosen(file): &Chosen| {
-            chosen.set(Some(file.clone()));
-            Bubble::Stop
-        })
-        .on_message(move |command: &Command| match command.action {
-            Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
-                // Focus order is paint order, so "the next pane" needs no
-                // table of its own. R8.2.2.
-                Bubble::Stop
-            }
-            Action::Tab(TabAction::WidenLeft) => {
-                left.edit(|n| *n = (*n + 2).min(MAX_LEFT));
-                Bubble::Stop
-            }
-            Action::Tab(TabAction::NarrowLeft) => {
-                left.edit(|n| *n = n.saturating_sub(2).max(MIN_LEFT));
-                Bubble::Stop
-            }
-            Action::View(ViewAction::ToggleLayout) => {
-                opened.edit(|b| if let Some(buffer) = b.take() {
-                    *b = Some(buffer.switch_diff_layout());
-                });
-                Bubble::Stop
-            }
-            Action::Program(action) => { post_program.send(Request::Program(action)); Bubble::Stop }
-            _ => Bubble::Continue,
-        });
-
     // The key is the file, so re-opening the same file keeps the same scope
     // and therefore the same viewport, while a different file gets a fresh
     // one. R6.1.4.
@@ -2726,7 +2752,6 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     rsx! {
         Column {
             layout: Layout { height: Size::Fill(1), ..Default::default() },
-            listeners,
             too_small: Some(rsx! {
                 Text { text: "terminal too small".into(), style: theme.normal, .. }
             }),
@@ -2781,7 +2806,7 @@ failing the whole screen" becomes the `too_small` climb of R5.4.2.
 | `View::version` | `version: State<Version>` in `Screen` |
 | `View::request` | the syntax effect in `DiffPane` (R9.4.5) |
 | `View::update_explorer` | the `files` effect in `ExplorerPane` |
-| `View::selected_file` | `Chosen`, sent upward (R8.3.3) |
+| `View::selected_file` | `chosen: State<Option<File>>` in `Screen`, set through the `Open` callback |
 | `View::keymap_type` | each pane's own `KeymapType`, at the point it resolves a key |
 | `ScreenMap` | the paint walk's record (R7.1.5) |
 | `Look` | `Theme` and `State<Store>` in context |

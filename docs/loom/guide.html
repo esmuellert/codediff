@@ -508,13 +508,13 @@
       <tr><th>Direction</th><th>Carries</th><th>How</th></tr>
       <tr><td>Down</td><td>props</td><td>the parent writes them in <code>rsx!</code></td></tr>
       <tr><td>Down, skipping levels</td><td>context</td><td><code>provide_context</code> above, <code>context::&lt;T&gt;</code> below</td></tr>
-      <tr><td>Up</td><td>messages</td><td><code>message(value)</code> in a listener, caught by an ancestor</td></tr>
+      <tr><td>Up</td><td>callbacks</td><td>the ancestor passes a function down, the child calls it</td></tr>
     </table>
 
     <p>
       A child never holds a reference to its parent. When the explorer wants a
-      file opened, it sends a value upward and something above decides what
-      that means.
+      file opened, it calls a function the root gave it and the root decides
+      what that means.
     </p>
 
     <div class="callout">
@@ -1326,8 +1326,7 @@ focus.<span class="fnc">move_previous</span>();</code></pre>
     .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop })
     .<span class="fnc">on_mouse</span>(<span class="kw">move</span> |mouse| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop })
     .<span class="fnc">on_wheel</span>(<span class="kw">move</span> |lines| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop })
-    .<span class="fnc">on_focus</span>(<span class="kw">move</span> |has| { <span class="cm">/* … */</span> })
-    .<span class="fnc">on_message</span>(<span class="kw">move</span> |chosen: &amp;<span class="ty">Chosen</span>| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop });
+    .<span class="fnc">on_focus</span>(<span class="kw">move</span> |has| { <span class="cm">/* … */</span> });
 
 <span class="fnc">rsx!</span> { <span class="ty">Canvas</span> { listeners, focusable: <span class="kw">true</span>, .. } }</code></pre>
 
@@ -1343,7 +1342,6 @@ focus.<span class="fnc">move_previous</span>();</code></pre>
       <tr><th>Event</th><th>Starts at</th><th>Then</th></tr>
       <tr><td>key</td><td>the focused node</td><td>up through its ancestors</td></tr>
       <tr><td>mouse, wheel</td><td>the deepest node under the pointer</td><td>up through its ancestors</td></tr>
-      <tr><td>message</td><td>the focused node</td><td>up through its ancestors</td></tr>
     </table>
 
     <p>
@@ -1386,28 +1384,55 @@ focus.<span class="fnc">move_previous</span>();</code></pre>
       thing a capture phase would have been for.
     </p>
 
-    <h2 id="messages">Asking a parent <a class="anchor" href="#messages">#</a></h2>
+    <h2 id="asking-a-parent">Asking a parent <a class="anchor" href="#asking-a-parent">#</a></h2>
 
     <p>
-      When only an ancestor can do the thing, send a value upward. The child
-      holds no reference to anything above it.
+      When only an ancestor can do the thing, it hands you a function and you
+      call it. The child holds no reference to anything above it — just a
+      closure it was given.
     </p>
 
-<pre><code><span class="cm">// the explorer, in a listener</span>
-<span class="fnc">message</span>(<span class="ty">Chosen</span>(file));
+<pre><code><span class="cm">// the root, once</span>
+<span class="fnc">provide_context</span>(scope, <span class="ty">Open</span>(<span class="ty">Rc</span>::<span class="fnc">new</span>(<span class="kw">move</span> |file: <span class="ty">File</span>| opened.<span class="fnc">set</span>(<span class="ty">Some</span>(file)))));
 
-<span class="cm">// the root, listening</span>
-.<span class="fnc">on_message</span>(<span class="kw">move</span> |<span class="ty">Chosen</span>(file): &amp;<span class="ty">Chosen</span>| {
-    opened.<span class="fnc">set</span>(<span class="ty">Some</span>(file.<span class="fnc">clone</span>()));
+<span class="cm">// the explorer: read it while rendering, call it from the listener</span>
+<span class="kw">let</span> <span class="ty">Open</span>(open) = <span class="fnc">context</span>::&lt;<span class="ty">Open</span>&gt;(scope);
+<span class="ty">Listeners</span>::<span class="fnc">new</span>().<span class="fnc">on_key</span>(<span class="kw">move</span> |key| {
+    <span class="kw">if</span> key == <span class="fnc">key!</span>(enter) { <span class="fnc">open</span>(file); }
     <span class="ty">Bubble</span>::Stop
 })</code></pre>
+
+    <p>
+      Read it during the render, like any context. A listener never sees
+      <code>scope</code>, so it captures the closure the way it captures a
+      <code>State</code> handle.
+    </p>
+
+    <p>
+      A parent one level up passes the same closure as a prop instead. Context
+      is for when there are levels in between that have no interest in it.
+    </p>
+
+    <div class="callout">
+      <span class="label">Under the hood</span>
+      <p>
+        <code>Open</code> is
+        <code>struct Open(Rc&lt;dyn Fn(File)&gt;)</code> — an ordinary value,
+        not a framework type. It is a newtype rather than a bare
+        <code>Rc&lt;dyn Fn(File)&gt;</code> because context is keyed by type,
+        and because the name says which way the value goes.
+      </p>
+    </div>
 
     <div class="callout">
       <span class="label">Note</span>
       <p>
-        A message is an ordinary value of your own type. There is no bus and
-        no registry — it rises through the same path a key does, and any
-        ancestor may take it.
+        There is no upward-routed event. A framework one would let a child
+        announce something and let whichever ancestor happens to be listening
+        take it — which fails silently when nobody is: no error, no panic,
+        nothing on screen. A callback nobody provided panics at
+        <code>context</code> naming the type; a callback nobody passed does
+        not compile.
       </p>
     </div>
 
@@ -1533,12 +1558,15 @@ b.rs replies → 2 == 2 → delivered</span></code></pre>
     <span class="kw">let</span> rows = buffer.<span class="fnc">read</span>(<span class="ty">Buffer</span>::view_lines);
     view.<span class="fnc">edit_without_redraw</span>(|v| v.<span class="fnc">set_height</span>(area.height.<span class="fnc">into</span>(), rows));
 
+    <span class="kw">let</span> <span class="ty">Open</span>(open) = <span class="fnc">context</span>::&lt;<span class="ty">Open</span>&gt;(scope);
+    <span class="kw">let</span> open_click = open.<span class="fnc">clone</span>();
+
     <span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
         .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| <span class="kw">match</span> key {
             <span class="fnc">key!</span>(j) =&gt; { <span class="fnc">step</span>(view, rows,  <span class="num">1</span>); <span class="ty">Bubble</span>::Stop }
             <span class="fnc">key!</span>(k) =&gt; { <span class="fnc">step</span>(view, rows, -<span class="num">1</span>); <span class="ty">Bubble</span>::Stop }
             <span class="fnc">key!</span>(enter) =&gt; {
-                <span class="kw">if let</span> <span class="ty">Some</span>(file) = <span class="fnc">file_at</span>(buffer, view) { <span class="fnc">message</span>(<span class="ty">Chosen</span>(file)) }
+                <span class="kw">if let</span> <span class="ty">Some</span>(file) = <span class="fnc">file_at</span>(buffer, view) { <span class="fnc">open</span>(file) }
                 <span class="ty">Bubble</span>::Stop
             }
             _ =&gt; <span class="ty">Bubble</span>::Continue,
@@ -1547,7 +1575,7 @@ b.rs replies → 2 == 2 → delivered</span></code></pre>
             <span class="kw">let</span> line = view.<span class="fnc">read</span>(<span class="ty">Viewport</span>::top) + <span class="ty">u32</span>::<span class="fnc">from</span>(mouse.local.y);
             <span class="kw">if</span> line &lt; rows {
                 view.<span class="fnc">edit</span>(|v| v.<span class="fnc">place</span>(line, rows));
-                <span class="kw">if let</span> <span class="ty">Some</span>(file) = <span class="fnc">file_at</span>(buffer, view) { <span class="fnc">message</span>(<span class="ty">Chosen</span>(file)) }
+                <span class="kw">if let</span> <span class="ty">Some</span>(file) = <span class="fnc">file_at</span>(buffer, view) { <span class="fnc">open_click</span>(file) }
             }
             <span class="ty">Bubble</span>::Stop
         })
@@ -1564,8 +1592,9 @@ b.rs replies → 2 == 2 → delivered</span></code></pre>
 }</code></pre>
 
     <p>
-      Nothing above this reaches into it. When it wants a file opened it sends
-      <code>Chosen</code> upward and something above decides what that means.
+      Nothing above this reaches into it. When it wants a file opened it calls
+      <code>open</code>, and whoever provided that closure decides what it
+      means.
     </p>
 
     <div class="pager">
@@ -1648,11 +1677,10 @@ b.rs replies → 2 == 2 → delivered</span></code></pre>
     <span class="kw">let</span> opened = <span class="fnc">use_state</span>(scope, || <span class="ty">None</span>::&lt;<span class="ty">File</span>&gt;);
     <span class="kw">let</span> left   = <span class="fnc">use_state</span>(scope, || <span class="num">40</span><span class="ty">u16</span>);
 
+    <span class="cm">// What a pane calls when the reader lands on a file.</span>
+    <span class="fnc">provide_context</span>(scope, <span class="ty">Open</span>(<span class="ty">Rc</span>::<span class="fnc">new</span>(<span class="kw">move</span> |file| opened.<span class="fnc">set</span>(<span class="ty">Some</span>(file)))));
+
     <span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
-        .<span class="fnc">on_message</span>(<span class="kw">move</span> |<span class="ty">Chosen</span>(file): &amp;<span class="ty">Chosen</span>| {
-            opened.<span class="fnc">set</span>(<span class="ty">Some</span>(file.<span class="fnc">clone</span>()));
-            <span class="ty">Bubble</span>::Stop
-        })
         .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| <span class="kw">match</span> key {
             <span class="fnc">key!</span>(<span class="str">'&gt;'</span>) =&gt; { left.<span class="fnc">edit</span>(|w| *w = (*w + <span class="num">4</span>).<span class="fnc">min</span>(<span class="num">100</span>)); <span class="ty">Bubble</span>::Stop }
             <span class="fnc">key!</span>(<span class="str">'&lt;'</span>) =&gt; { left.<span class="fnc">edit</span>(|w| *w = w.<span class="fnc">saturating_sub</span>(<span class="num">4</span>).<span class="fnc">max</span>(<span class="num">12</span>)); <span class="ty">Bubble</span>::Stop }
@@ -1737,8 +1765,8 @@ b.rs replies → 2 == 2 → delivered</span></code></pre>
 
     <p>
       Input goes in with <code>press</code>, <code>click</code>,
-      <code>drag</code>, <code>release</code>, <code>wheel</code>,
-      <code>message</code> and <code>resize</code>.
+      <code>drag</code>, <code>release</code>, <code>wheel</code> and
+      <code>resize</code>.
     </p>
 
     <div class="callout">
@@ -1821,13 +1849,13 @@ b.rs replies → 2 == 2 → delivered</span></code></pre>
     <table>
       <tr><th>Name</th><th>Is</th></tr>
       <tr><td><code>Listeners</code></td><td>the closures a node registers</td></tr>
-      <tr><td><code>on_key</code> … <code>on_message</code></td><td>one per kind of event</td></tr>
+      <tr><td><code>on_key</code> … <code>on_focus</code></td><td>one per kind of event</td></tr>
       <tr><td><code>Bubble</code></td><td><code>Stop</code> — mine; <code>Continue</code> — try my parent</td></tr>
       <tr><td><code>Mouse</code></td><td>the event, with <code>at</code> and <code>local</code></td></tr>
       <tr><td><code>Focus</code></td><td><code>has</code>, <code>request</code>, <code>move_next</code>, <code>move_previous</code></td></tr>
       <tr><td><code>has_focus()</code></td><td>whether a node holds focus, asked of its placement</td></tr>
       <tr><td><code>capture_pointer</code> / <code>release_pointer</code></td><td>keep a drag with the node it started on</td></tr>
-      <tr><td><code>message(v)</code></td><td>hand a value to an ancestor</td></tr>
+
     </table>
 
     <h2 id="n-workers">Workers <a class="anchor" href="#n-workers">#</a></h2>
