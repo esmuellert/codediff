@@ -1012,92 +1012,921 @@ sets state on every render never settles</span></code></pre>
     <section id="use-effect">
     <div class="crumb">Hooks</div>
     <h1><code>use_effect</code></h1>
-    <p class="lede">Work to do after the frame is painted, when a dependency changed.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Work to do after the frame is painted — ask a worker for something, start
+      a watcher, react to a prop that changed.
+    </p>
+
+    <div class="learn">
+      <h2>You will learn</h2>
+      <ul>
+        <li>When an effect runs, and when it does not</li>
+        <li>How cleanup works without a cleanup function</li>
+        <li>How to reach a worker from inside one</li>
+      </ul>
+    </div>
+
+    <h2 id="effect-reference">Reference <a class="anchor" href="#effect-reference">#</a></h2>
+
+<pre><code><span class="fnc">use_effect</span>(scope, file.<span class="fnc">clone</span>(), <span class="kw">move</span> |file, effect| {
+    <span class="cm">// runs after paint, whenever `file` differs from last time</span>
+});</code></pre>
+
+    <table>
+      <tr><th>Parameter</th><th>Means</th></tr>
+      <tr><td><code>deps</code></td><td>Compared with <code>PartialEq</code> against the last render. Equal means skip.</td></tr>
+      <tr><td><code>run</code></td><td>Gets the deps and an <code>Effect</code>, which is how you reach a worker.</td></tr>
+    </table>
+
+    <p>
+      Effects run <strong>after paint</strong>, in a terminal for the same
+      reason React runs them after commit: draw the frame first, then go ask
+      for more.
+    </p>
+
+    <h2 id="cleanup">Cleanup is a value, not a callback <a class="anchor" href="#cleanup">#</a></h2>
+
+    <p>
+      React returns a function. Here you return a <em>value</em>, and dropping
+      it is the cleanup — which composes, because a thing that must be stopped
+      already stops itself when dropped.
+    </p>
+
+<pre><code><span class="fnc">use_effect</span>(scope, path.<span class="fnc">clone</span>(), <span class="kw">move</span> |path, _| {
+    <span class="ty">Watcher</span>::<span class="fnc">watch</span>(path)      <span class="cm">// returned, so it is kept</span>
+});                             <span class="cm">// dropped when `path` changes → stops</span></code></pre>
+
+    <p>
+      Return <code>()</code> when there is nothing to keep. No
+      <code>Option&lt;Box&lt;dyn FnOnce()&gt;&gt;</code> anywhere.
+    </p>
+
+    <h2 id="asking-a-worker">Asking a worker <a class="anchor" href="#asking-a-worker">#</a></h2>
+
+    <p>
+      The <code>Effect</code> handle makes a reply address that belongs to your
+      component. See <a href="#workers">Workers</a> for what happens on the
+      other end.
+    </p>
+
+<pre><code><span class="kw">let</span> buffer = <span class="fnc">use_state</span>(scope, || <span class="ty">None</span>);
+<span class="kw">let</span> outbox = <span class="fnc">context</span>::&lt;<span class="ty">Rc</span>&lt;<span class="ty">Outbox</span>&gt;&gt;(scope);
+
+<span class="fnc">use_effect</span>(scope, file.<span class="fnc">clone</span>(), <span class="kw">move</span> |file, effect| {
+    <span class="kw">let</span> reply = effect.<span class="fnc">completion</span>(<span class="kw">move</span> |response| {
+        buffer.<span class="fnc">set</span>(<span class="ty">Some</span>(response.<span class="fnc">into_buffer</span>()));
+    });
+    outbox.<span class="fnc">send</span>(<span class="ty">Request</span>::Open { file: file.<span class="fnc">clone</span>(), reply });
+});</code></pre>
+
+    <div class="callout pitfall">
+      <span class="label">Pitfall</span>
+      <p>
+        <strong>The deps decide everything.</strong> Pass a value that changes
+        when you want the effect to re-run — and only then. A
+        <code>Vec</code> rebuilt every render is never equal to the last one,
+        so the effect runs every frame.
+      </p>
+<pre><code><span class="cm">// ✗ a fresh Vec every render — the effect never stops firing</span>
+<span class="fnc">use_effect</span>(scope, files.<span class="fnc">to_vec</span>(), <span class="cm">/* … */</span>);
+
+<span class="cm">// ✓ an Rc compares by contents, and the parent only rebuilds it on a change</span>
+<span class="fnc">use_effect</span>(scope, files.<span class="fnc">clone</span>(), <span class="cm">/* … */</span>);</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        Run it once and never again by passing <code>()</code> as the deps —
+        <code>()</code> is always equal to itself.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#use-state"><span class="dir">Previous</span><span class="to">use_state</span></a>
+      <a class="next" href="#use-memo"><span class="dir">Next</span><span class="to">use_memo</span></a>
+    </div>
     </section>
 
     <section id="use-memo">
     <div class="crumb">Hooks</div>
     <h1><code>use_memo</code></h1>
-    <p class="lede">A value recomputed only when its dependencies change.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      A value recomputed only when its dependencies change. For work you would
+      not want to repeat every frame.
+    </p>
+
+<pre><code><span class="kw">let</span> spans = <span class="fnc">use_memo</span>(scope, version, |v| <span class="fnc">highlight</span>(&amp;text, *v));</code></pre>
+
+    <p>
+      Returns an <code>Rc&lt;T&gt;</code> — the same one, until
+      <code>deps</code> differ.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        Reach for this when the computation is expensive, not by habit. A
+        comparison and an <code>Rc</code> are not free either, and most values
+        in a terminal frame are cheap to rebuild.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#use-effect"><span class="dir">Previous</span><span class="to">use_effect</span></a>
+      <a class="next" href="#use-size"><span class="dir">Next</span><span class="to">use_size</span></a>
+    </div>
     </section>
 
     <section id="use-size">
     <div class="crumb">Hooks</div>
     <h1><code>use_size</code></h1>
-    <p class="lede">The rectangle this component was given, before it paints.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      The rectangle this component was given — available <em>before</em> it
+      paints, so a pane can size its contents to itself in the same frame.
+    </p>
+
+<pre><code><span class="kw">let</span> area = <span class="fnc">use_size</span>(scope);
+view.<span class="fnc">edit_without_redraw</span>(|v| v.<span class="fnc">set_height</span>(area.height.<span class="fnc">into</span>(), rows));</code></pre>
+
+    <h2 id="size-ordering">Why this is not a frame behind <a class="anchor" href="#size-ordering">#</a></h2>
+
+    <p>
+      Layout happens before paint, and a component whose size changed is run
+      again before the frame is painted. So the height you read is the height
+      you are about to be drawn at, not the one from last time.
+    </p>
+
+<pre><code><span class="cm">reconcile → lay out → (size changed? run again) → paint → effects</span></code></pre>
+
+    <p>
+      That loop is capped at four rounds. A component that changes its own size
+      every round would otherwise never settle.
+    </p>
+
+    <div class="callout pitfall">
+      <span class="label">Pitfall</span>
+      <p>
+        Write the height with <code>edit_without_redraw</code>. Marking here
+        would ask for a redraw of the frame you are in the middle of preparing.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#use-memo"><span class="dir">Previous</span><span class="to">use_memo</span></a>
+      <a class="next" href="#use-focus"><span class="dir">Next</span><span class="to">use_focus</span></a>
+    </div>
     </section>
 
     <section id="use-focus">
     <div class="crumb">Hooks</div>
     <h1><code>use_focus</code></h1>
-    <p class="lede">Register as focusable, and ask whether you hold it.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Register as focusable, ask whether you hold it, and move it.
+    </p>
+
+<pre><code><span class="kw">let</span> focus = <span class="fnc">use_focus</span>(scope);
+
+<span class="kw">if</span> focus.has { <span class="cm">/* paint the brighter border */</span> }
+
+focus.<span class="fnc">request</span>();        <span class="cm">// take it</span>
+focus.<span class="fnc">move_next</span>();      <span class="cm">// the next focusable, wrapping</span>
+focus.<span class="fnc">move_previous</span>();</code></pre>
+
+    <p>
+      Tab order is paint order, which is the order you wrote the tree in.
+    </p>
+
+    <div class="pager">
+      <a href="#use-size"><span class="dir">Previous</span><span class="to">use_size</span></a>
+      <a class="next" href="#context"><span class="dir">Next</span><span class="to">Context</span></a>
+    </div>
     </section>
 
     <section id="context">
     <div class="crumb">Hooks</div>
     <h1>Context</h1>
-    <p class="lede">Values an ancestor offers to everything below it — the theme, a worker channel.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Values an ancestor offers to everything below it — the theme, a worker
+      outbox, the key resolver. Read at any depth without threading props.
+    </p>
+
+    <div class="learn">
+      <h2>You will learn</h2>
+      <ul>
+        <li>How to offer a value and how to read it</li>
+        <li>What happens when two ancestors offer the same type</li>
+        <li>Why memoised components do not go stale</li>
+      </ul>
+    </div>
+
+    <h2 id="ctx-offer">Offering and reading <a class="anchor" href="#ctx-offer">#</a></h2>
+
+<pre><code><span class="cm">// near the root, once</span>
+<span class="fnc">provide_context</span>(scope, theme);
+
+<span class="cm">// five levels down, without anyone between knowing</span>
+<span class="kw">let</span> theme = <span class="fnc">context</span>::&lt;<span class="ty">Theme</span>&gt;(scope);</code></pre>
+
+    <p>
+      Reading walks up the parent chain and stops at the first ancestor that
+      offered that type. Missing means a panic naming the type
+      (<code>P10.1</code>); <code>try_context</code> answers
+      <code>None</code> instead.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        There is no <code>&lt;Provider&gt;</code> component.
+        <code>provide_context</code> at the top of a render does the same job
+        and adds no node to the tree.
+      </p>
+    </div>
+
+    <h2 id="ctx-shadow">Shadowing <a class="anchor" href="#ctx-shadow">#</a></h2>
+
+    <p>
+      Context is keyed by type. A nearer ancestor shadows a further one — so
+      two different values of the same type need two newtypes, not one.
+    </p>
+
+<pre><code><span class="cm">// ✗ both are Rc&lt;str&gt;; the inner one wins everywhere below it</span>
+<span class="fnc">provide_context</span>(scope, title);
+<span class="fnc">provide_context</span>(scope, subtitle);
+
+<span class="cm">// ✓ two types, two contexts</span>
+<span class="fnc">provide_context</span>(scope, <span class="ty">Title</span>(title));
+<span class="fnc">provide_context</span>(scope, <span class="ty">Subtitle</span>(subtitle));</code></pre>
+
+    <details class="callout hood">
+        <summary>Under the hood</summary>
+        <div class="body">
+          <p>
+            Every read is recorded on the scope as
+            <code>(TypeId, version)</code>. When a provider offers a different
+            value the version moves, and any memoised component that recorded
+            that type re-renders even though its props did not change.
+          </p>
+          <p>
+            Twenty lines, and without them memoisation would be a correctness
+            bug rather than an optimisation.
+          </p>
+        </div>
+    </details>
+
+    <h2 id="ctx-custom-hook">Writing your own hook <a class="anchor" href="#ctx-custom-hook">#</a></h2>
+
+    <p>
+      A hook is any function that takes <code>scope</code> and calls other
+      hooks. Nothing special marks it — the same rule applies, so call it
+      unconditionally.
+    </p>
+
+<pre><code><span class="cm">/// Resolve a key against this pane's keymap.</span>
+<span class="kw">fn</span> <span class="fnc">use_keymap</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, kind: <span class="ty">KeymapType</span>) -&gt; <span class="ty">State</span>&lt;<span class="ty">Resolver</span>&gt; {
+    <span class="kw">let</span> keys = <span class="fnc">context</span>::&lt;<span class="ty">State</span>&lt;<span class="ty">Resolver</span>&gt;&gt;(scope);
+    <span class="fnc">use_effect</span>(scope, kind, <span class="kw">move</span> |kind, _| keys.<span class="fnc">edit</span>(|r| r.<span class="fnc">enter</span>(*kind)));
+    keys
+}</code></pre>
+
+    <p>
+      This is React's custom-hook pattern with nothing added:
+      <code>useDebounce</code> is <code>useState</code> plus
+      <code>useEffect</code>, and so is this.
+    </p>
+
+    <div class="pager">
+      <a href="#use-focus"><span class="dir">Previous</span><span class="to">use_focus</span></a>
+      <a class="next" href="#events"><span class="dir">Next</span><span class="to">Events</span></a>
+    </div>
     </section>
 
     <section id="events">
     <div class="crumb">Reacting</div>
     <h1>Events</h1>
-    <p class="lede">Keys go to focus and bubble upward. Mouse goes to the deepest rectangle under the pointer.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Keys go to whoever has focus and rise until something stops them. Mouse
+      goes to the deepest rectangle under the pointer and does the same.
+    </p>
+
+    <div class="learn">
+      <h2>You will learn</h2>
+      <ul>
+        <li>How to listen, and how to say you handled it</li>
+        <li>Why keys and mouse are routed differently</li>
+        <li>How a drag stays with the thing it started on</li>
+        <li>How a child asks its parent for something</li>
+      </ul>
+    </div>
+
+    <h2 id="listening">Listening <a class="anchor" href="#listening">#</a></h2>
+
+<pre><code><span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
+    .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop })
+    .<span class="fnc">on_mouse</span>(<span class="kw">move</span> |mouse| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop })
+    .<span class="fnc">on_wheel</span>(<span class="kw">move</span> |lines| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop })
+    .<span class="fnc">on_focus</span>(<span class="kw">move</span> |has| { <span class="cm">/* … */</span> })
+    .<span class="fnc">on_message</span>(<span class="kw">move</span> |chosen: &amp;<span class="ty">Chosen</span>| { <span class="cm">/* … */</span> <span class="ty">Bubble</span>::Stop });
+
+<span class="fnc">rsx!</span> { <span class="ty">Canvas</span> { listeners, focusable: <span class="kw">true</span>, .. } }</code></pre>
+
+    <table>
+      <tr><th>Return</th><th>Means</th></tr>
+      <tr><td><code>Bubble::Stop</code></td><td>Mine. Nothing above me sees it.</td></tr>
+      <tr><td><code>Bubble::Continue</code></td><td>Not mine. Offer it to my parent.</td></tr>
+    </table>
+
+    <h2 id="routing">Two ways to route <a class="anchor" href="#routing">#</a></h2>
+
+    <table>
+      <tr><th>Event</th><th>Starts at</th><th>Then</th></tr>
+      <tr><td>key</td><td>the focused node</td><td>up through its ancestors</td></tr>
+      <tr><td>mouse, wheel</td><td>the deepest node under the pointer</td><td>up through its ancestors</td></tr>
+      <tr><td>message</td><td>the focused node</td><td>up through its ancestors</td></tr>
+    </table>
+
+    <p>
+      This is the layering the current code writes by hand — buffer, then pane,
+      then tab, then view, innermost first. Here the tree <em>is</em> the
+      layering.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        <code>Mouse</code> carries both <code>at</code> (where on screen) and
+        <code>local</code> (where inside your rectangle). Use
+        <code>local</code> — it is already relative to you.
+      </p>
+    </div>
+
+    <h2 id="dragging">Dragging <a class="anchor" href="#dragging">#</a></h2>
+
+    <p>
+      A text selection must keep receiving mouse events even when the pointer
+      leaves the column it started in. Capture the pointer:
+    </p>
+
+<pre><code>.<span class="fnc">on_mouse</span>(<span class="kw">move</span> |mouse| {
+    <span class="kw">match</span> mouse.kind {
+        <span class="ty">MouseEventKind</span>::Down(<span class="ty">MouseButton</span>::Left) =&gt; {
+            <span class="fnc">capture_pointer</span>();
+            anchor.<span class="fnc">set</span>(<span class="ty">Some</span>(mouse.local));
+        }
+        <span class="ty">MouseEventKind</span>::Up(_) =&gt; <span class="fnc">release_pointer</span>(),
+        _ =&gt; {}
+    }
+    <span class="ty">Bubble</span>::Stop
+})</code></pre>
+
+    <p>
+      While captured, every mouse event goes to that node regardless of where
+      the pointer is. There is no capture <em>phase</em> — this is the only
+      thing a capture phase would have been for.
+    </p>
+
+    <h2 id="messages">Asking a parent <a class="anchor" href="#messages">#</a></h2>
+
+    <p>
+      When only an ancestor can do the thing, send a value upward. The child
+      holds no reference to anything above it.
+    </p>
+
+<pre><code><span class="cm">// the explorer, in a listener</span>
+<span class="fnc">message</span>(<span class="ty">Chosen</span>(file));
+
+<span class="cm">// the root, listening</span>
+.<span class="fnc">on_message</span>(<span class="kw">move</span> |<span class="ty">Chosen</span>(file): &amp;<span class="ty">Chosen</span>| {
+    opened.<span class="fnc">set</span>(<span class="ty">Some</span>(file.<span class="fnc">clone</span>()));
+    <span class="ty">Bubble</span>::Stop
+})</code></pre>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        A message is an ordinary value of your own type. There is no bus and
+        no registry — it rises through the same path a key does, and any
+        ancestor may take it.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#context"><span class="dir">Previous</span><span class="to">Context</span></a>
+      <a class="next" href="#workers"><span class="dir">Next</span><span class="to">Workers</span></a>
+    </div>
     </section>
 
     <section id="workers">
     <div class="crumb">Reacting</div>
     <h1>Workers</h1>
-    <p class="lede">Ask a thread for something, and have the answer reach the component that asked.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Ask a thread for something and have the answer arrive at the component
+      that asked — not at a global inbox that has to work out who wanted it.
+    </p>
+
+    <div class="learn">
+      <h2>You will learn</h2>
+      <ul>
+        <li>Which of the two reply addresses you want</li>
+        <li>What a generation prevents</li>
+        <li>How this replaces one pending slot on <code>Session</code></li>
+      </ul>
+    </div>
+
+    <h2 id="two-addresses">Two addresses <a class="anchor" href="#two-addresses">#</a></h2>
+
+    <table>
+      <tr><th>Type</th><th>Replies</th><th>For</th></tr>
+      <tr><td><code>Completion&lt;T&gt;</code></td><td>one, then spent</td><td>a file diff</td></tr>
+      <tr><td><code>Subscription&lt;T&gt;</code></td><td>many, until closed</td><td>syntax spans, arriving in pieces</td></tr>
+    </table>
+
+    <p>Both are made inside an effect, because that is where the request goes out.</p>
+
+<pre><code><span class="fnc">use_effect</span>(scope, file.<span class="fnc">clone</span>(), <span class="kw">move</span> |file, effect| {
+    <span class="kw">let</span> reply = effect.<span class="fnc">completion</span>(<span class="kw">move</span> |response| {
+        buffer.<span class="fnc">set</span>(<span class="ty">Some</span>(response.<span class="fnc">into_buffer</span>()));
+    });
+    outbox.<span class="fnc">send</span>(<span class="ty">Request</span>::Open { file: file.<span class="fnc">clone</span>(), reply });
+});</code></pre>
+
+    <p>
+      The closure runs when the worker answers, with your component entered —
+      so it may set state and ask for a redraw. It may not call a hook; it
+      holds no <code>scope</code>.
+    </p>
+
+    <h2 id="generations">What a generation prevents <a class="anchor" href="#generations">#</a></h2>
+
+    <p>
+      You open <code>a.rs</code>. Before it finishes you open
+      <code>b.rs</code>. Then <code>a.rs</code>'s reply lands.
+    </p>
+
+<pre><code><span class="cm">open a.rs   → effect runs, address generation 1
+open b.rs   → deps changed, effect runs again, generation 2
+a.rs replies → address says 1, the slot says 2 → refused
+b.rs replies → 2 == 2 → delivered</span></code></pre>
+
+    <p>
+      The address carries the scope, the effect's slot, and the generation.
+      A reply that arrives after the deps changed, or after the component
+      unmounted, is refused rather than applied to whatever is there now.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        Today this case is handled by <code>Session</code> comparing the
+        response's file against the one it is still waiting for. That check
+        disappears: the address either matches or it does not.
+      </p>
+    </div>
+
+    <h2 id="the-loop">What the loop does <a class="anchor" href="#the-loop">#</a></h2>
+
+    <p>
+      Components post requests to an outbox; the loop drains it after the
+      frame, sends to the real workers, and delivers answers back to the
+      addresses that came with them.
+    </p>
+
+<pre><code><span class="ty">Event</span>::FileReady(response) =&gt; {
+    pending.file.<span class="fnc">take</span>().<span class="fnc">is_some_and</span>(|reply| reply.<span class="fnc">complete</span>(response))
+}</code></pre>
+
+    <p>
+      One line, and it does not know what a diff is or which pane wanted one.
+    </p>
+
+    <div class="pager">
+      <a href="#events"><span class="dir">Previous</span><span class="to">Events</span></a>
+      <a class="next" href="#recipe-list"><span class="dir">Next</span><span class="to">A list pane</span></a>
+    </div>
     </section>
 
     <section id="recipe-list">
     <div class="crumb">Recipes</div>
     <h1>A list pane</h1>
-    <p class="lede">The explorer, whole: its list, its folds, its cursor, its clicks.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      The explorer, whole. It owns its list, its folds and its cursor; it
+      paints with the code that paints it today; and when a file is chosen it
+      says so upward.
+    </p>
+
+<pre><code><span class="at">#[component]</span>
+<span class="kw">fn</span> <span class="fnc">ExplorerPane</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, files: <span class="ty">Rc</span>&lt;[<span class="ty">File</span>]&gt;) -&gt; <span class="ty">Node</span> {
+    <span class="kw">let</span> theme  = <span class="fnc">context</span>::&lt;<span class="ty">Theme</span>&gt;(scope);
+    <span class="kw">let</span> buffer = <span class="fnc">use_state</span>(scope, || <span class="ty">Buffer</span>::<span class="fnc">explorer</span>(files.<span class="fnc">to_vec</span>()));
+    <span class="kw">let</span> view   = <span class="fnc">use_state</span>(scope, <span class="ty">Viewport</span>::new);
+    <span class="kw">let</span> focus  = <span class="fnc">use_focus</span>(scope);
+    <span class="kw">let</span> area   = <span class="fnc">use_size</span>(scope);
+
+    <span class="cm">// The watcher gave a new list. Rebuild it, and keep the reader on the
+    // file they were looking at.</span>
+    <span class="fnc">use_effect</span>(scope, files.<span class="fnc">clone</span>(), <span class="kw">move</span> |files, _| {
+        <span class="kw">let</span> landing = buffer.<span class="fnc">edit</span>(|b| b.<span class="fnc">refresh</span>(files.<span class="fnc">to_vec</span>()));
+        view.<span class="fnc">edit</span>(|v| v.<span class="fnc">place</span>(landing, buffer.<span class="fnc">read</span>(<span class="ty">Buffer</span>::view_lines)));
+    });
+
+    <span class="kw">let</span> rows = buffer.<span class="fnc">read</span>(<span class="ty">Buffer</span>::view_lines);
+    view.<span class="fnc">edit_without_redraw</span>(|v| v.<span class="fnc">set_height</span>(area.height.<span class="fnc">into</span>(), rows));
+
+    <span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
+        .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| <span class="kw">match</span> key {
+            <span class="fnc">key!</span>(j) =&gt; { <span class="fnc">step</span>(view, rows,  <span class="num">1</span>); <span class="ty">Bubble</span>::Stop }
+            <span class="fnc">key!</span>(k) =&gt; { <span class="fnc">step</span>(view, rows, -<span class="num">1</span>); <span class="ty">Bubble</span>::Stop }
+            <span class="fnc">key!</span>(enter) =&gt; {
+                <span class="kw">if let</span> <span class="ty">Some</span>(file) = <span class="fnc">file_at</span>(buffer, view) { <span class="fnc">message</span>(<span class="ty">Chosen</span>(file)) }
+                <span class="ty">Bubble</span>::Stop
+            }
+            _ =&gt; <span class="ty">Bubble</span>::Continue,
+        })
+        .<span class="fnc">on_mouse</span>(<span class="kw">move</span> |mouse| {
+            <span class="kw">let</span> line = view.<span class="fnc">read</span>(<span class="ty">Viewport</span>::top) + <span class="ty">u32</span>::<span class="fnc">from</span>(mouse.local.y);
+            <span class="kw">if</span> line &lt; rows {
+                view.<span class="fnc">edit</span>(|v| v.<span class="fnc">place</span>(line, rows));
+                <span class="kw">if let</span> <span class="ty">Some</span>(file) = <span class="fnc">file_at</span>(buffer, view) { <span class="fnc">message</span>(<span class="ty">Chosen</span>(file)) }
+            }
+            <span class="ty">Bubble</span>::Stop
+        })
+        .<span class="fnc">on_wheel</span>(<span class="kw">move</span> |lines| { view.<span class="fnc">edit</span>(|v| v.<span class="fnc">scroll</span>(lines, rows)); <span class="ty">Bubble</span>::Stop });
+
+    <span class="fnc">rsx!</span> {
+        <span class="ty">Canvas</span> {
+            width: <span class="fnc">Fill</span>(<span class="num">1</span>), height: <span class="fnc">Fill</span>(<span class="num">1</span>), focusable: <span class="kw">true</span>, listeners, ..,
+            paint: <span class="kw">move</span> |area, cells| {
+                <span class="fnc">draw_explorer</span>(cells, area, &amp;buffer.<span class="fnc">read</span>(|b| b), &amp;view.<span class="fnc">read</span>(|v| v), theme)
+            },
+        }
+    }
+}</code></pre>
+
+    <p>
+      Nothing above this reaches into it. When it wants a file opened it sends
+      <code>Chosen</code> upward and something above decides what that means.
+    </p>
+
+    <div class="pager">
+      <a href="#workers"><span class="dir">Previous</span><span class="to">Workers</span></a>
+      <a class="next" href="#recipe-diff"><span class="dir">Next</span><span class="to">A diff pane</span></a>
+    </div>
     </section>
 
     <section id="recipe-diff">
     <div class="crumb">Recipes</div>
     <h1>A diff pane</h1>
-    <p class="lede">Two columns of code, painted by the code that already paints them.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Two columns of code, painted by the code that already paints them.
+      Nothing in <code>render/</code> changes.
+    </p>
+
+<pre><code><span class="at">#[component]</span>
+<span class="kw">fn</span> <span class="fnc">DiffPane</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, file: <span class="ty">File</span>) -&gt; <span class="ty">Node</span> {
+    <span class="kw">let</span> theme  = <span class="fnc">context</span>::&lt;<span class="ty">Theme</span>&gt;(scope);
+    <span class="kw">let</span> outbox = <span class="fnc">context</span>::&lt;<span class="ty">Rc</span>&lt;<span class="ty">Outbox</span>&gt;&gt;(scope);
+    <span class="kw">let</span> buffer = <span class="fnc">use_state</span>(scope, || <span class="ty">None</span>::&lt;<span class="ty">Rc</span>&lt;<span class="ty">Buffer</span>&gt;&gt;);
+    <span class="kw">let</span> view   = <span class="fnc">use_state</span>(scope, <span class="ty">Viewport</span>::new);
+    <span class="kw">let</span> area   = <span class="fnc">use_size</span>(scope);
+
+    <span class="cm">// Ask for the diff whenever the file changes. A reply for a file we have
+    // since navigated away from is refused by its generation.</span>
+    <span class="fnc">use_effect</span>(scope, file.<span class="fnc">clone</span>(), <span class="kw">move</span> |file, effect| {
+        <span class="kw">let</span> reply = effect.<span class="fnc">completion</span>(<span class="kw">move</span> |response| {
+            buffer.<span class="fnc">set</span>(<span class="ty">Some</span>(<span class="ty">Rc</span>::<span class="fnc">new</span>(<span class="ty">Buffer</span>::<span class="fnc">diff</span>(response))));
+        });
+        outbox.<span class="fnc">send</span>(<span class="ty">Request</span>::Open { file: file.<span class="fnc">clone</span>(), reply });
+    });
+
+    <span class="kw">let</span> <span class="ty">Some</span>(buffer) = buffer.<span class="fnc">cloned</span>() <span class="kw">else</span> {
+        <span class="kw">return</span> <span class="fnc">rsx!</span> { <span class="ty">Text</span> { text: <span class="str">"loading…"</span>, style: theme.normal } };
+    };
+
+    view.<span class="fnc">edit_without_redraw</span>(|v| v.<span class="fnc">set_height</span>(area.height.<span class="fnc">into</span>(), buffer.<span class="fnc">view_lines</span>()));
+
+    <span class="fnc">rsx!</span> {
+        <span class="ty">Canvas</span> {
+            width: <span class="fnc">Fill</span>(<span class="num">1</span>), height: <span class="fnc">Fill</span>(<span class="num">1</span>),
+            min_width: <span class="fnc">Cells</span>(<span class="num">20</span>), focusable: <span class="kw">true</span>, ..,
+            paint: <span class="kw">move</span> |area, cells| {
+                <span class="cm">// today's draw/buffer/side_by_side.rs, unchanged</span>
+                <span class="fnc">draw_side_by_side</span>(cells, area, &amp;buffer, &amp;view.<span class="fnc">read</span>(|v| v), theme);
+            },
+        }
+    }
+}</code></pre>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        The early return before the buffer arrives is legal because the hooks
+        above it all ran. Returning before a hook is what breaks
+        (<code>P4.2</code>).
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#recipe-list"><span class="dir">Previous</span><span class="to">A list pane</span></a>
+      <a class="next" href="#recipe-root"><span class="dir">Next</span><span class="to">The root</span></a>
+    </div>
     </section>
 
     <section id="recipe-root">
     <div class="crumb">Recipes</div>
     <h1>The root</h1>
-    <p class="lede">What holds the panes together, and what <code>Session</code> becomes.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      What holds the panes together — and what is left of <code>Session</code>
+      afterwards.
+    </p>
+
+<pre><code><span class="at">#[component]</span>
+<span class="kw">fn</span> <span class="fnc">Screen</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, files: <span class="ty">Rc</span>&lt;[<span class="ty">File</span>]&gt;, theme: <span class="ty">Theme</span>) -&gt; <span class="ty">Node</span> {
+    <span class="fnc">provide_context</span>(scope, theme);
+    <span class="fnc">provide_context</span>(scope, <span class="fnc">use_state</span>(scope, <span class="ty">Outbox</span>::default));
+
+    <span class="kw">let</span> opened = <span class="fnc">use_state</span>(scope, || <span class="ty">None</span>::&lt;<span class="ty">File</span>&gt;);
+    <span class="kw">let</span> left   = <span class="fnc">use_state</span>(scope, || <span class="num">40</span><span class="ty">u16</span>);
+
+    <span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
+        .<span class="fnc">on_message</span>(<span class="kw">move</span> |<span class="ty">Chosen</span>(file): &amp;<span class="ty">Chosen</span>| {
+            opened.<span class="fnc">set</span>(<span class="ty">Some</span>(file.<span class="fnc">clone</span>()));
+            <span class="ty">Bubble</span>::Stop
+        })
+        .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| <span class="kw">match</span> key {
+            <span class="fnc">key!</span>(<span class="str">'&gt;'</span>) =&gt; { left.<span class="fnc">edit</span>(|w| *w = (*w + <span class="num">4</span>).<span class="fnc">min</span>(<span class="num">100</span>)); <span class="ty">Bubble</span>::Stop }
+            <span class="fnc">key!</span>(<span class="str">'&lt;'</span>) =&gt; { left.<span class="fnc">edit</span>(|w| *w = w.<span class="fnc">saturating_sub</span>(<span class="num">4</span>).<span class="fnc">max</span>(<span class="num">12</span>)); <span class="ty">Bubble</span>::Stop }
+            _ =&gt; <span class="ty">Bubble</span>::Continue,
+        });
+
+    <span class="kw">let</span> shown = opened.<span class="fnc">cloned</span>();
+
+    <span class="fnc">rsx!</span> {
+        <span class="ty">Column</span> {
+            height: <span class="fnc">Fill</span>(<span class="num">1</span>), listeners,
+            too_small: <span class="fnc">rsx!</span> { <span class="ty">Text</span> { text: <span class="str">"terminal too small"</span> } }, ..,
+
+            <span class="ty">Row</span> { height: <span class="fnc">Fill</span>(<span class="num">1</span>), ..,
+                <span class="ty">Column</span> {
+                    width: <span class="kw">if</span> shown.<span class="fnc">is_some</span>() { <span class="fnc">Cells</span>(left.<span class="fnc">cloned</span>()) } <span class="kw">else</span> { <span class="fnc">Fill</span>(<span class="num">1</span>) },
+                    min_width: <span class="fnc">Cells</span>(<span class="num">8</span>), border: <span class="kw">true</span>, ..,
+                    <span class="ty">ExplorerPane</span> { files: files.<span class="fnc">clone</span>() }
+                }
+                <span class="kw">if let</span> <span class="ty">Some</span>(file) = shown {
+                    <span class="ty">Column</span> { width: <span class="fnc">Fill</span>(<span class="num">1</span>), min_width: <span class="fnc">Cells</span>(<span class="num">20</span>), border: <span class="kw">true</span>, ..,
+                        <span class="ty">DiffPane</span> { file }
+                    }
+                }
+            }
+
+            <span class="ty">StatusBar</span> { file: shown }
+        }
+    }
+}</code></pre>
+
+    <h2 id="what-session-becomes">What <code>Session</code> becomes <a class="anchor" href="#what-session-becomes">#</a></h2>
+
+<pre><code><span class="kw">pub struct</span> <span class="ty">Session</span> {
+    tree:    <span class="ty">loom</span>::<span class="ty">Tree</span>,
+    workers: <span class="ty">Workers</span>,
+    pending: <span class="ty">PendingReplies</span>,
+}</code></pre>
+
+    <p>
+      A tree, two worker handles, and the addresses it has not answered yet.
+      No <code>view</code>, no <code>selected</code>, no
+      <code>screen_map</code>, no <code>pending_selection</code>.
+    </p>
+
+    <div class="pager">
+      <a href="#recipe-diff"><span class="dir">Previous</span><span class="to">A diff pane</span></a>
+      <a class="next" href="#testing"><span class="dir">Next</span><span class="to">Testing</span></a>
+    </div>
     </section>
 
     <section id="testing">
     <div class="crumb">Recipes</div>
     <h1>Testing</h1>
-    <p class="lede">Mount a component, draw it, read the screen back as text.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Mount a component, draw it, read the screen back as text. No terminal,
+      no session, no worker.
+    </p>
+
+<pre><code><span class="attr">#[test]</span>
+<span class="kw">fn</span> <span class="fnc">j_moves_the_cursor_down</span>() {
+    <span class="kw">let mut</span> h = <span class="ty">Harness</span>::<span class="fnc">new</span>::&lt;<span class="ty">ExplorerPane</span>&gt;(props, <span class="num">40</span>, <span class="num">10</span>)
+        .<span class="fnc">provide</span>(<span class="ty">Theme</span>::<span class="fnc">named</span>(<span class="str">"basic-dark"</span>).<span class="fnc">unwrap</span>());
+
+    h.<span class="fnc">press</span>(<span class="fnc">key!</span>(j));
+
+    <span class="fnc">assert_eq!</span>(h.<span class="fnc">screen_row</span>(<span class="num">1</span>), <span class="str">"› src/app.rs"</span>);
+}</code></pre>
+
+    <h2 id="what-harness-gives">What the harness gives you <a class="anchor" href="#what-harness-gives">#</a></h2>
+
+    <table>
+      <tr><th>Call</th><th>Answers</th></tr>
+      <tr><td><code>screen()</code></td><td>every row as a string, trailing blanks trimmed</td></tr>
+      <tr><td><code>screen_row(y)</code></td><td>one row</td></tr>
+      <tr><td><code>style_at(x, y)</code></td><td>the style of one cell</td></tr>
+      <tr><td><code>tree_text()</code></td><td>the scope tree, indented: name, key, rectangle</td></tr>
+      <tr><td><code>area_of(name)</code></td><td>where a component landed</td></tr>
+      <tr><td><code>render_count_of(name)</code></td><td>how many times it ran — the primitive behind every memo test</td></tr>
+      <tr><td><code>layout_rounds()</code></td><td>how many passes the last draw took</td></tr>
+    </table>
+
+    <p>
+      Input goes in with <code>press</code>, <code>click</code>,
+      <code>drag</code>, <code>release</code>, <code>wheel</code>,
+      <code>message</code> and <code>resize</code>.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        The existing suite does not change. <code>Session::draw_into</code>
+        keeps its signature through every migration phase, so the 1,500 lines
+        of explorer tests that assert the screen as text stay exactly as they
+        are — and stay green.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#recipe-root"><span class="dir">Previous</span><span class="to">The root</span></a>
+      <a class="next" href="#every-name"><span class="dir">Next</span><span class="to">Every name</span></a>
+    </div>
     </section>
 
     <section id="every-name">
     <div class="crumb">Reference</div>
     <h1>Every name</h1>
-    <p class="lede">The whole vocabulary in one table — for checking that each name earns its place.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      The whole vocabulary in one table — for checking that each name says what
+      it does without opening a file.
+    </p>
+
+    <h2 id="n-writing">Writing a component <a class="anchor" href="#n-writing">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>#[component]</code></td><td>turns a function into a component and generates its props struct</td></tr>
+      <tr><td><code>rsx!</code></td><td>describes a frame as a tree</td></tr>
+      <tr><td><code>Scope</code></td><td>your own slot — what hooks need. The first parameter</td></tr>
+      <tr><td><code>Node</code></td><td>what a component returns</td></tr>
+      <tr><td><code>Children</code></td><td>the prop that receives nested nodes</td></tr>
+      <tr><td><code>Key</code></td><td>names a child across frames, so its state follows it</td></tr>
+    </table>
+
+    <h2 id="n-hooks">Hooks <a class="anchor" href="#n-hooks">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>use_state</code></td><td>a value that survives a redraw</td></tr>
+      <tr><td><code>use_effect</code></td><td>work after paint, when deps changed</td></tr>
+      <tr><td><code>use_memo</code></td><td>a value recomputed only when deps change</td></tr>
+      <tr><td><code>use_size</code></td><td>the rectangle you were given</td></tr>
+      <tr><td><code>use_focus</code></td><td>register as focusable; ask whether you hold it</td></tr>
+      <tr><td><code>provide_context</code></td><td>offer a value to everything below</td></tr>
+      <tr><td><code>context</code> / <code>try_context</code></td><td>read the nearest ancestor's value; panic or <code>None</code></td></tr>
+      <tr><td><code>redraw</code></td><td>run this component again next frame</td></tr>
+    </table>
+
+    <h2 id="n-state">Reading and writing state <a class="anchor" href="#n-state">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>State&lt;T&gt;</code></td><td>a <code>Copy</code> handle to one slot</td></tr>
+      <tr><td><code>read(f)</code></td><td>borrow briefly</td></tr>
+      <tr><td><code>cloned()</code></td><td>take a copy</td></tr>
+      <tr><td><code>set(v)</code></td><td>replace, always redraw</td></tr>
+      <tr><td><code>set_if_changed(v)</code></td><td>replace, redraw only if it differs</td></tr>
+      <tr><td><code>edit(f)</code></td><td>change in place, redraw</td></tr>
+      <tr><td><code>edit_without_redraw(f)</code></td><td>change in place, do not redraw</td></tr>
+      <tr><td><code>is_mounted()</code></td><td>whether the owning component is still there</td></tr>
+    </table>
+
+    <h2 id="n-layout">Layout <a class="anchor" href="#n-layout">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>Row</code> / <code>Column</code></td><td>divide along one axis</td></tr>
+      <tr><td><code>Stack</code></td><td>paint children over each other — overlays</td></tr>
+      <tr><td><code>Gap</code></td><td>empty space that takes a size</td></tr>
+      <tr><td><code>Divider</code></td><td>a one-cell rule</td></tr>
+      <tr><td><code>Text</code></td><td>the one host that measures itself</td></tr>
+      <tr><td><code>Canvas</code></td><td>hands its rectangle to a painting function</td></tr>
+      <tr><td><code>Size</code></td><td><code>Cells</code>, <code>Fill</code>, <code>Percent</code>, <code>Auto</code></td></tr>
+      <tr><td><code>Edges</code></td><td>padding on four sides</td></tr>
+      <tr><td><code>Axis</code></td><td>which way a container divides</td></tr>
+      <tr><td><code>too_small</code></td><td>what a container paints when its children will not fit</td></tr>
+    </table>
+
+    <h2 id="n-events">Events <a class="anchor" href="#n-events">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>Listeners</code></td><td>the closures a node registers</td></tr>
+      <tr><td><code>on_key</code> … <code>on_message</code></td><td>one per kind of event</td></tr>
+      <tr><td><code>Bubble</code></td><td><code>Stop</code> — mine; <code>Continue</code> — try my parent</td></tr>
+      <tr><td><code>Mouse</code></td><td>the event, with <code>at</code> and <code>local</code></td></tr>
+      <tr><td><code>Focus</code></td><td><code>has</code>, <code>request</code>, <code>move_next</code>, <code>move_previous</code></td></tr>
+      <tr><td><code>has_focus()</code></td><td>whether a node holds focus, asked of its placement</td></tr>
+      <tr><td><code>capture_pointer</code> / <code>release_pointer</code></td><td>keep a drag with the node it started on</td></tr>
+      <tr><td><code>message(v)</code></td><td>hand a value to an ancestor</td></tr>
+    </table>
+
+    <h2 id="n-workers">Workers <a class="anchor" href="#n-workers">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>Effect</code></td><td>what an effect body is handed; makes reply addresses</td></tr>
+      <tr><td><code>Completion&lt;T&gt;</code></td><td>a one-shot reply address</td></tr>
+      <tr><td><code>Subscription&lt;T&gt;</code></td><td>a many-shot reply address</td></tr>
+      <tr><td><code>complete(v)</code> / <code>deliver(v)</code></td><td>hand a reply to its address</td></tr>
+      <tr><td><code>is_wanted()</code></td><td>whether the address is still live</td></tr>
+      <tr><td><code>close()</code></td><td>end a subscription; no further pieces are taken</td></tr>
+      <tr><td><code>completion</code> / <code>subscription</code></td><td>make an address, on the <code>Effect</code> handle</td></tr>
+    </table>
+
+    <h2 id="n-runtime">Runtime and testing <a class="anchor" href="#n-runtime">#</a></h2>
+    <table>
+      <tr><th>Name</th><th>Is</th></tr>
+      <tr><td><code>Tree</code></td><td>the object the application owns</td></tr>
+      <tr><td><code>draw</code>, <code>press</code>, <code>mouse</code></td><td>the loop's three verbs</td></tr>
+      <tr><td><code>needs_draw</code>, <code>redraw_all</code></td><td>whether to draw; mark everything</td></tr>
+      <tr><td><code>set_props</code></td><td>replace the root's props — how new files reach the tree</td></tr>
+      <tr><td><code>focused_scope</code></td><td>which scope holds focus</td></tr>
+      <tr><td><code>Harness</code></td><td>a component and a screen, with no terminal</td></tr>
+      <tr><td><code>screen</code>, <code>screen_row</code>, <code>style_at</code></td><td>read the frame back</td></tr>
+      <tr><td><code>render_count_of</code></td><td>how many times a component ran</td></tr>
+      <tr><td><code>render_count</code></td><td>how many components ran in the last draw</td></tr>
+      <tr><td><code>force_draw</code></td><td>draw whether or not anything was marked</td></tr>
+      <tr><td><code>focused_name</code></td><td>the name of the focused component</td></tr>
+      <tr><td><code>Probe</code></td><td>a component that renders nothing and counts — for identity tests</td></tr>
+      <tr><td><code>tree_text</code></td><td>the scope tree, printed</td></tr>
+    </table>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        <code>Host</code>, <code>Part</code> and <code>Element</code> are the
+        machinery <code>rsx!</code> builds with. You will see them in an error
+        message; you will not type them.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#testing"><span class="dir">Previous</span><span class="to">Testing</span></a>
+      <a class="next" href="#panics"><span class="dir">Next</span><span class="to">Panics</span></a>
+    </div>
     </section>
 
     <section id="panics">
     <div class="crumb">Reference</div>
     <h1>Panics</h1>
-    <p class="lede">Every panic, its message, and what caused it.</p>
-    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    <p class="lede">
+      Everything that stops the program, and what you did. Everything else
+      answers with <code>Option</code>, <code>Result</code> or
+      <code>bool</code>.
+    </p>
+
+    <h2 id="p-hooks">Hooks <a class="anchor" href="#p-hooks">#</a></h2>
+
+    <table>
+      <tr><th></th><th>You did</th></tr>
+      <tr><td><code>P4.1</code></td><td>called a hook inside an <code>if</code> or a loop, so slot 2 changed shape</td></tr>
+      <tr><td><code>P4.2</code></td><td>returned early, so this render called fewer hooks than the last</td></tr>
+      <tr><td><code>P4.3</code></td><td>used a state handle after its component was removed</td></tr>
+      <tr><td><code>P4.4</code></td><td>used a state handle outside a component, listener, effect or reply</td></tr>
+      <tr><td><code>P4.5</code></td><td>edited one state from inside its own edit</td></tr>
+    </table>
+
+<pre><code><span class="cm">StatusBar: hook 2 was a State at status.rs:14, and is an Effect
+here at status.rs:19. Hooks must run in the same order every
+render — none inside an if, a loop, or after an early return.</span></code></pre>
+
+    <h2 id="p-render">Rendering <a class="anchor" href="#p-render">#</a></h2>
+
+    <table>
+      <tr><th></th><th>You did</th></tr>
+      <tr><td><code>P5.1</code></td><td>set state on every render, so the frame never settled</td></tr>
+      <tr><td><code>P6.1</code></td><td>keyed some children of a list and not others</td></tr>
+      <tr><td><code>P6.2</code></td><td>gave two children the same key</td></tr>
+      <tr><td><code>P7.1</code></td><td>called <code>draw</code> from inside a paint callback</td></tr>
+      <tr><td><code>P7.2</code></td><td>set state while painting</td></tr>
+      <tr><td><code>P7.3</code></td><td>painted outside your clip (debug builds only)</td></tr>
+      <tr><td><code>P10.1</code></td><td>read a context nothing above provided</td></tr>
+    </table>
+
+<pre><code><span class="cm">DiffPane ran 17 times in one frame — a component that
+sets state on every render never settles</span></code></pre>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        Every one of these is a mistake in the calling code, not a condition to
+        handle. There are no error boundaries: a panic belongs in a backtrace
+        with the terminal restored, which it is.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#every-name"><span class="dir">Previous</span><span class="to">Every name</span></a>
+    </div>
     </section>
 
   </article>
