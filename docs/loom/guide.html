@@ -1,0 +1,1168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>use_state — loom</title>
+<style>
+  :root {
+    /* Ink */
+    --text:        #23272f;
+    --text-soft:   #404756;
+    --text-faint:  #6a7183;
+
+    /* Accent — one blue, used for links, the active nav item, and one
+       callout border. Nowhere else. */
+    --accent:      #087ea4;
+    --accent-soft: #e6f3f7;
+
+    /* Surfaces */
+    --page:        #ffffff;
+    --surface:     #f6f7f9;
+    --rule:        #e6e8eb;
+    --rule-soft:   #f0f1f3;
+
+    /* Callouts */
+    --note-edge:   #087ea4;
+    --note-fill:   #f4fafd;
+    --pitfall-edge:#b26100;
+    --pitfall-fill:#fdf7ed;
+    --hood-edge:   #7c5cbf;
+    --hood-fill:   #f9f7fd;
+
+    /* Code tokens — GitHub light, which every Rust reader already knows */
+    --tok-kw:      #cf222e;
+    --tok-fn:      #8250df;
+    --tok-type:    #0550ae;
+    --tok-str:     #0a3069;
+    --tok-num:     #0550ae;
+    --tok-comment: #6e7781;
+    --tok-attr:    #953800;
+
+    /* Type */
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* Rhythm */
+    --rail-start: 260px;
+    --rail-end:   220px;
+    --prose:      68ch;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scroll-padding-block-start: 2rem; }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font: 400 16px/1.7 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Three columns ─────────────────────────────────────────────────── */
+
+  .layout {
+    display: grid;
+    grid-template-columns: var(--rail-start) minmax(0, 1fr) var(--rail-end);
+    gap: 3rem;
+    max-width: 1400px;
+    margin-inline: auto;
+    padding-inline: 2rem;
+  }
+
+  .rail {
+    position: sticky;
+    inset-block-start: 0;
+    block-size: 100vh;
+    overflow-y: auto;
+    padding-block: 2.5rem;
+    font-size: 14px;
+  }
+
+  .rail::-webkit-scrollbar { inline-size: 6px; }
+  .rail::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+
+  /* ── Inline-start nav ──────────────────────────────────────────────── */
+
+  .brand {
+    font: 600 17px/1 var(--sans);
+    letter-spacing: -0.01em;
+    margin-block-end: 0.35rem;
+  }
+  .brand .dim { color: var(--text-faint); font-weight: 400; }
+
+  .tagline {
+    color: var(--text-faint);
+    font-size: 13px;
+    margin-block-end: 2rem;
+  }
+
+  .nav-group { margin-block-end: 1.6rem; }
+
+  .nav-group h2 {
+    font: 600 11px/1 var(--sans);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 0 0 0.6rem;
+    padding-inline-start: 0.85rem;
+  }
+
+  .nav-group a {
+    display: block;
+    padding: 0.28rem 0.85rem;
+    color: var(--text-soft);
+    text-decoration: none;
+    border-inline-start: 2px solid transparent;
+    margin-inline-start: -2px;
+  }
+  .nav-group a:hover { color: var(--text); background: var(--rule-soft); }
+
+  .nav-group a.here {
+    color: var(--accent);
+    font-weight: 600;
+    border-inline-start-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .nav-group a code {
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 0.92em;
+    background: none;
+    padding: 0;
+  }
+
+  /* ── Article ───────────────────────────────────────────────────────── */
+
+  article {
+    max-inline-size: var(--prose);
+    padding-block: 2.5rem 6rem;
+  }
+
+  /* One long page; each section is what the nav jumps to. */
+  section { scroll-margin-block-start: 1.5rem; }
+  section + section { margin-block-start: 5rem; }
+
+  section > h1 {
+    padding-block-start: 3rem;
+    border-block-start: 3px solid var(--rule);
+  }
+  section:first-of-type > h1 { padding-block-start: 0; border-block-start: 0; }
+
+  .crumb {
+    font-size: 13px;
+    color: var(--text-faint);
+    margin-block-end: 0.6rem;
+  }
+
+  h1 {
+    font: 700 40px/1.15 var(--sans);
+    letter-spacing: -0.025em;
+    margin: 0 0 0.75rem;
+  }
+  h1 code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    font-weight: 700;
+    background: none;
+    padding: 0;
+  }
+
+  .lede {
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--text-soft);
+    margin: 0 0 2rem;
+  }
+
+  .learn {
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 1.1rem 1.4rem;
+    margin-block-end: 2.75rem;
+    background: var(--page);
+  }
+  .learn h2 {
+    font: 600 13px/1 var(--sans);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 0 0 0.65rem;
+    border: 0;
+    padding: 0;
+  }
+  .learn ul { margin: 0; padding-inline-start: 1.15rem; }
+  .learn li { margin-block: 0.3rem; color: var(--text-soft); }
+
+  h2 {
+    font: 600 27px/1.3 var(--sans);
+    letter-spacing: -0.015em;
+    margin: 3.25rem 0 1rem;
+    padding-block-start: 1.5rem;
+    border-block-start: 1px solid var(--rule);
+  }
+
+  h3 {
+    font: 600 19px/1.4 var(--sans);
+    margin: 2rem 0 0.7rem;
+  }
+
+  h2 code, h3 code { font-family: var(--mono); font-size: 0.9em; background: none; padding: 0; }
+
+  p { margin: 0 0 1.1rem; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Anchor affordance — appears on hover, never in the way */
+  .anchor {
+    color: var(--rule);
+    text-decoration: none;
+    margin-inline-start: 0.4rem;
+    font-weight: 400;
+    opacity: 0;
+  }
+  h2:hover .anchor, h3:hover .anchor { opacity: 1; }
+  .anchor:hover { color: var(--accent); text-decoration: none; }
+
+  ul, ol { margin: 0 0 1.1rem; padding-inline-start: 1.4rem; }
+  li { margin-block: 0.35rem; }
+
+  strong { font-weight: 600; }
+
+  /* ── Code ──────────────────────────────────────────────────────────── */
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.875em;
+    background: var(--surface);
+    padding: 0.12em 0.35em;
+    border-radius: 4px;
+  }
+
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 1.1rem 1.3rem;
+    overflow-x: auto;
+    margin: 0 0 1.4rem;
+    position: relative;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+
+  /* Copy affordance — visual only */
+  pre::after {
+    content: "copy";
+    position: absolute;
+    inset-block-start: 0.55rem;
+    inset-inline-end: 0.7rem;
+    font: 500 11px/1 var(--sans);
+    color: var(--text-faint);
+    background: var(--page);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 0.3rem 0.5rem;
+    opacity: 0;
+    transition: opacity .12s;
+  }
+  pre:hover::after { opacity: 1; }
+
+  .kw   { color: var(--tok-kw); }
+  .fnc  { color: var(--tok-fn); }
+  .ty   { color: var(--tok-type); }
+  .str  { color: var(--tok-str); }
+  .num  { color: var(--tok-num); }
+  .cm   { color: var(--tok-comment); font-style: italic; }
+  .at   { color: var(--tok-attr); }
+
+  /* ── Callouts ──────────────────────────────────────────────────────── */
+
+  .callout {
+    border-inline-start: 3px solid var(--note-edge);
+    background: var(--note-fill);
+    border-radius: 0 8px 8px 0;
+    padding: 1rem 1.3rem;
+    margin: 0 0 1.5rem;
+  }
+  .callout .label {
+    font: 600 11px/1 var(--sans);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--note-edge);
+    display: block;
+    margin-block-end: 0.55rem;
+  }
+  .callout > :last-child { margin-block-end: 0; }
+  .callout pre { background: #fff; }
+
+  .callout.pitfall { border-inline-start-color: var(--pitfall-edge); background: var(--pitfall-fill); }
+  .callout.pitfall .label { color: var(--pitfall-edge); }
+
+  .callout.hood { border-inline-start-color: var(--hood-edge); background: var(--hood-fill); padding: 0; }
+  .callout.hood summary {
+    font: 600 11px/1 var(--sans);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--hood-edge);
+    cursor: pointer;
+    padding: 1rem 1.3rem;
+    list-style: none;
+  }
+  .callout.hood summary::-webkit-details-marker { display: none; }
+  .callout.hood summary::before { content: "▸ "; }
+  .callout.hood[open] summary::before { content: "▾ "; }
+  .callout.hood .body { padding: 0 1.3rem 1rem; }
+  .callout.hood .body > :last-child { margin-block-end: 0; }
+
+  /* ── Table ─────────────────────────────────────────────────────────── */
+
+  table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    margin: 0 0 1.5rem;
+    font-size: 14.5px;
+  }
+  th {
+    text-align: start;
+    font-weight: 600;
+    padding: 0.55rem 0.8rem;
+    border-block-end: 1px solid var(--rule);
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  td {
+    padding: 0.6rem 0.8rem;
+    border-block-end: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  td code { white-space: nowrap; }
+
+  /* ── Pager ─────────────────────────────────────────────────────────── */
+
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-block-start: 4rem;
+    padding-block-start: 1.5rem;
+    border-block-start: 1px solid var(--rule);
+  }
+  .pager a {
+    display: block;
+    padding: 0.85rem 1.1rem;
+    border: 1px solid var(--rule);
+    border-radius: 9px;
+    min-inline-size: 180px;
+  }
+  .pager a:hover { border-color: var(--accent); text-decoration: none; }
+  .pager .dir { display: block; font-size: 12px; color: var(--text-faint); margin-block-end: 0.15rem; }
+  .pager .to  { font-weight: 600; }
+  .pager .next { text-align: end; }
+
+  /* ── Inline-end TOC ────────────────────────────────────────────────── */
+
+  .toc h2 {
+    font: 600 11px/1 var(--sans);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 0 0 0.75rem;
+    border: 0;
+    padding: 0;
+  }
+  .toc a {
+    display: block;
+    padding: 0.22rem 0 0.22rem 0.8rem;
+    color: var(--text-faint);
+    text-decoration: none;
+    border-inline-start: 2px solid var(--rule-soft);
+    font-size: 13px;
+  }
+  .toc a:hover { color: var(--text); }
+  .toc a.here { color: var(--accent); border-inline-start-color: var(--accent); }
+  .toc a.sub { padding-inline-start: 1.6rem; }
+
+  /* ── Collapse ──────────────────────────────────────────────────────── */
+
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: var(--rail-start) minmax(0, 1fr); }
+    .toc { display: none; }
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 1.25rem; }
+    .nav { position: static; block-size: auto; overflow: visible;
+           border-block-end: 1px solid var(--rule); padding-block-end: 1.5rem; }
+    article { padding-block-start: 1.75rem; }
+    h1 { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── nav ──────────────────────────────────────────────────────── -->
+  <nav class="rail nav">
+    <div class="brand">loom <span class="dim">guide</span></div>
+    <div class="tagline">Components for a terminal.</div>
+
+    <div class="nav-group">
+      <h2>Start</h2>
+      <a href="#overview">Overview</a>
+      <a href="#writing">Writing a component</a>
+    </div>
+
+    <div class="nav-group">
+      <h2>Describing</h2>
+      <a href="#rsx"><code>rsx!</code></a>
+      <a href="#layout">Layout</a>
+      <a href="#canvas"><code>Canvas</code></a>
+    </div>
+
+    <div class="nav-group">
+      <h2>Hooks</h2>
+      <a href="#use-state"><code>use_state</code></a>
+      <a href="#use-effect"><code>use_effect</code></a>
+      <a href="#use-memo"><code>use_memo</code></a>
+      <a href="#use-size"><code>use_size</code></a>
+      <a href="#use-focus"><code>use_focus</code></a>
+      <a href="#context">Context</a>
+    </div>
+
+    <div class="nav-group">
+      <h2>Reacting</h2>
+      <a href="#events">Events</a>
+      <a href="#workers">Workers</a>
+    </div>
+
+    <div class="nav-group">
+      <h2>Recipes</h2>
+      <a href="#recipe-list">A list pane</a>
+      <a href="#recipe-diff">A diff pane</a>
+      <a href="#recipe-root">The root</a>
+      <a href="#testing">Testing</a>
+    </div>
+
+    <div class="nav-group">
+      <h2>Reference</h2>
+      <a href="#every-name">Every name</a>
+      <a href="#panics">Panics</a>
+    </div>
+  </nav>
+
+  <!-- ── article ──────────────────────────────────────────────────── -->
+  <article>
+
+    <section id="overview">
+    <div class="crumb">Start</div>
+    <h1>Overview</h1>
+    <p class="lede">
+      <code>loom</code> is a component framework for a terminal. You write
+      functions that return a description of what to show; the runtime decides
+      which live instance each one is, hands it a rectangle, and routes events
+      back to it.
+    </p>
+
+    <div class="learn">
+      <h2>You will learn</h2>
+      <ul>
+        <li>What a component is, and what it is not</li>
+        <li>Where state lives</li>
+        <li>How an event finds the component that cares</li>
+        <li>Where your existing painting code goes</li>
+      </ul>
+    </div>
+
+    <h2 id="the-shape">The shape <a class="anchor" href="#the-shape">#</a></h2>
+
+<pre><code><span class="at">#[component]</span>
+<span class="kw">fn</span> <span class="fnc">StatusBar</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, file: <span class="ty">Option</span>&lt;<span class="ty">File</span>&gt;, line: <span class="ty">u32</span>) -&gt; <span class="ty">Node</span> {
+    <span class="fnc">rsx!</span> {
+        <span class="ty">Row</span> { height: <span class="fnc">Cells</span>(<span class="num">1</span>), ..,
+            <span class="ty">Text</span> { text: <span class="fnc">name_of</span>(file) }
+            <span class="ty">Gap</span>  { width: <span class="fnc">Fill</span>(<span class="num">1</span>), .. }
+            <span class="ty">Text</span> { text: <span class="fnc">format!</span>(<span class="str">"line {line}"</span>) }
+        }
+    }
+}</code></pre>
+
+    <p>
+      That is the whole contract. No trait to implement, no lifecycle methods,
+      no rectangle arithmetic.
+    </p>
+
+    <h2 id="three-directions">Three directions <a class="anchor" href="#three-directions">#</a></h2>
+
+    <table>
+      <tr><th>Direction</th><th>Carries</th><th>How</th></tr>
+      <tr><td>Down</td><td>props</td><td>the parent writes them in <code>rsx!</code></td></tr>
+      <tr><td>Down, skipping levels</td><td>context</td><td><code>provide_context</code> above, <code>context::&lt;T&gt;</code> below</td></tr>
+      <tr><td>Up</td><td>messages</td><td><code>message(value)</code> in a listener, caught by an ancestor</td></tr>
+    </table>
+
+    <p>
+      A child never holds a reference to its parent. When the explorer wants a
+      file opened, it sends a value upward and something above decides what
+      that means.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        There is no virtual DOM diff of cells. <code>ratatui</code> already
+        compares the previous and current buffers and writes only what
+        changed. What reconciliation buys here is <em>identity</em> — knowing
+        which live component a tree position is, and therefore whose state is
+        whose.
+      </p>
+    </div>
+
+    <h2 id="where-painting-goes">Where painting goes <a class="anchor" href="#where-painting-goes">#</a></h2>
+
+    <p>
+      A component is worth having when it needs identity: state that survives a
+      frame, its own focus, its own events, its own slot in the layout. A line
+      of syntax-highlighted text needs none of those, so it stays a function.
+    </p>
+
+<pre><code><span class="cm">Component tree      ← identity, focus, events, state   (~8 of these)
+     │
+   Canvas           ← the seam
+     │
+ render/ functions  ← pure painting, unchanged</span></code></pre>
+
+    <p>
+      Everything already in <code>render/</code> — <code>cells.rs</code>,
+      <code>line.rs</code>, <code>gutter.rs</code>, <code>column.rs</code> —
+      keeps working untouched, called inside a
+      <a href="#canvas"><code>Canvas</code></a>.
+    </p>
+
+    <div class="pager">
+      <a class="next" href="#writing" style="margin-inline-start:auto">
+        <span class="dir">Next</span>
+        <span class="to">Writing a component</span>
+      </a>
+    </div>
+    </section>
+
+    <section id="writing">
+    <div class="crumb">Start</div>
+    <h1>Writing a component</h1>
+    <p class="lede">
+      One function, one file. Its state, its layout, its painting and its keys
+      all live together.
+    </p>
+
+    <h2 id="the-signature">The signature <a class="anchor" href="#the-signature">#</a></h2>
+
+<pre><code><span class="at">#[component]</span>
+<span class="kw">fn</span> <span class="fnc">Counter</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, start: <span class="ty">u32</span>) -&gt; <span class="ty">Node</span> { <span class="cm">/* … */</span> }</code></pre>
+
+    <p>
+      The first parameter is always <code>scope: &amp;mut Scope</code> — your
+      own slot, which hooks need. Every parameter after it becomes a field of
+      the generated props struct, so the caller writes them as a struct
+      literal and a typo is a compile error naming the field.
+    </p>
+
+    <table>
+      <tr><th>You write</th><th>The macro generates</th></tr>
+      <tr><td><code>fn Counter(scope, start: u32)</code></td><td><code>struct CounterProps { start: u32 }</code></td></tr>
+      <tr><td><code>Counter { start: 3 }</code></td><td><code>Counter::build(CounterProps { start: 3 })</code></td></tr>
+    </table>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        Props are <code>'static</code> — no borrowing from the frame. Share
+        large values with <code>Rc</code>; that is one pointer increment per
+        frame, and it buys memo comparison and listeners that outlive the
+        render.
+      </p>
+    </div>
+
+    <h2 id="a-whole-one">A whole one <a class="anchor" href="#a-whole-one">#</a></h2>
+
+<pre><code><span class="at">#[component]</span>
+<span class="kw">fn</span> <span class="fnc">Counter</span>(scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>, start: <span class="ty">u32</span>) -&gt; <span class="ty">Node</span> {
+    <span class="kw">let</span> theme = <span class="fnc">context</span>::&lt;<span class="ty">Theme</span>&gt;(scope);
+    <span class="kw">let</span> count = <span class="fnc">use_state</span>(scope, || start);
+
+    <span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
+        .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| <span class="kw">match</span> key {
+            <span class="fnc">key!</span>(j) =&gt; { count.<span class="fnc">edit</span>(|c| *c += <span class="num">1</span>); <span class="ty">Bubble</span>::Stop }
+            <span class="fnc">key!</span>(k) =&gt; { count.<span class="fnc">edit</span>(|c| *c = c.<span class="fnc">saturating_sub</span>(<span class="num">1</span>)); <span class="ty">Bubble</span>::Stop }
+            _       =&gt; <span class="ty">Bubble</span>::Continue,
+        });
+
+    <span class="fnc">rsx!</span> {
+        <span class="ty">Row</span> { height: <span class="fnc">Cells</span>(<span class="num">1</span>), fill: theme.normal, listeners, ..,
+            <span class="ty">Text</span> { text: <span class="fnc">format!</span>(<span class="str">"count {}"</span>, count.<span class="fnc">cloned</span>()) }
+        }
+    }
+}</code></pre>
+
+    <p>
+      Hooks first, then the listeners, then the shape. That order is a habit,
+      not a rule — but hooks must run unconditionally, so putting them at the
+      top makes it obvious that they do.
+    </p>
+
+    <div class="pager">
+      <a href="#overview">
+        <span class="dir">Previous</span>
+        <span class="to">Overview</span>
+      </a>
+      <a class="next" href="#rsx">
+        <span class="dir">Next</span>
+        <span class="to">rsx!</span>
+      </a>
+    </div>
+    </section>
+
+
+    <section id="rsx">
+    <div class="crumb">Describing</div>
+    <h1><code>rsx!</code></h1>
+    <p class="lede">
+      The shape of a frame, written as a tree you can read. Props are a struct
+      literal, so the compiler checks them by name.
+    </p>
+
+    <h2 id="props">Props <a class="anchor" href="#props">#</a></h2>
+
+<pre><code><span class="ty">ExplorerPane</span> { files: files.<span class="fnc">clone</span>(), focused: <span class="kw">true</span> }</code></pre>
+
+    <p>
+      A misspelled prop is <em>"struct <code>ExplorerPaneProps</code> has no
+      field named <code>focusd</code>"</em>, pointing at your token. A missing
+      one is <em>"missing field <code>files</code>"</em>. No builder can beat
+      that.
+    </p>
+
+    <h2 id="defaults">Defaults <a class="anchor" href="#defaults">#</a></h2>
+
+<pre><code><span class="cm">// no props written — every default</span>
+<span class="ty">Row</span> { <span class="ty">Column</span> { <span class="ty">Text</span> { text: <span class="str">"hello"</span> } } }
+
+<span class="cm">// one prop written — `..` supplies the rest</span>
+<span class="ty">Row</span> { gap: <span class="num">1</span>, .., <span class="ty">Column</span> { <span class="cm">/* … */</span> } }</code></pre>
+
+    <p>
+      Write no props and you get the defaults; write <code>..</code> and you
+      get the rest of them. Built-in hosts derive <code>Default</code>; your
+      own components normally do not, so their props are all required.
+    </p>
+
+    <h2 id="control-flow">Control flow <a class="anchor" href="#control-flow">#</a></h2>
+
+<pre><code><span class="ty">Column</span> {
+    <span class="kw">if let</span> <span class="ty">Some</span>(buffer) = shown {
+        <span class="ty">DiffPane</span> { buffer }
+    } <span class="kw">else</span> {
+        <span class="ty">Text</span> { text: <span class="str">"nothing open"</span> }
+    }
+
+    <span class="kw">for</span> file <span class="kw">in</span> files.<span class="fnc">iter</span>() {
+        <span class="ty">Row</span> { key: file.<span class="fnc">path</span>(), .., <span class="ty">Text</span> { text: file.<span class="fnc">name</span>() } }
+    }
+}</code></pre>
+
+    <div class="callout pitfall">
+      <span class="label">Pitfall</span>
+      <p>
+        <strong>Key every child of a list, or none of them.</strong> A key is
+        what carries a child's state when the list is reordered. Half-keyed
+        lists panic (<code>P6.1</code>), and duplicate keys panic
+        (<code>P6.2</code>).
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#writing"><span class="dir">Previous</span><span class="to">Writing a component</span></a>
+      <a class="next" href="#layout"><span class="dir">Next</span><span class="to">Layout</span></a>
+    </div>
+    </section>
+
+    <section id="layout">
+    <div class="crumb">Describing</div>
+    <h1>Layout</h1>
+    <p class="lede">
+      One axis per container, in whole terminal cells. No floats, no rounding,
+      no flexbox.
+    </p>
+
+    <h2 id="sizes">Sizes <a class="anchor" href="#sizes">#</a></h2>
+
+    <table>
+      <tr><th>Size</th><th>Means</th></tr>
+      <tr><td><code>Cells(n)</code></td><td>exactly <code>n</code> cells</td></tr>
+      <tr><td><code>Fill(w)</code></td><td>a share of what is left, by weight</td></tr>
+      <tr><td><code>Percent(n)</code></td><td>a share of the parent, rounded down</td></tr>
+      <tr><td><code>Auto</code></td><td>as much as the content measures</td></tr>
+    </table>
+
+<pre><code><span class="ty">Row</span> {
+    <span class="ty">Column</span> { width: <span class="fnc">Cells</span>(<span class="num">40</span>), min_width: <span class="fnc">Cells</span>(<span class="num">8</span>),  .., <span class="ty">ExplorerPane</span> { files } }
+    <span class="ty">Column</span> { width: <span class="fnc">Fill</span>(<span class="num">1</span>),   min_width: <span class="fnc">Cells</span>(<span class="num">20</span>), .., <span class="ty">DiffPane</span> { buffer } }
+}</code></pre>
+
+    <h2 id="too-small">When it does not fit <a class="anchor" href="#too-small">#</a></h2>
+
+    <p>
+      Flexbox squashes. This does not: if any child would fall below its
+      <code>min</code>, the container assigns nothing and paints its
+      <code>too_small</code> node instead.
+    </p>
+
+<pre><code><span class="ty">Column</span> {
+    too_small: <span class="fnc">rsx!</span> { <span class="ty">Text</span> { text: <span class="str">"terminal too small"</span> } }, ..,
+    <span class="cm">/* … */</span>
+}</code></pre>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        This is the rule the current code writes by hand as a returned
+        <code>bool</code> threaded through four functions. Here it is a
+        property of the container.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#rsx"><span class="dir">Previous</span><span class="to">rsx!</span></a>
+      <a class="next" href="#canvas"><span class="dir">Next</span><span class="to">Canvas</span></a>
+    </div>
+    </section>
+
+    <section id="canvas">
+    <div class="crumb">Describing</div>
+    <h1><code>Canvas</code></h1>
+    <p class="lede">
+      A leaf that says: give me a rectangle, I will paint it myself.
+    </p>
+
+    <p>
+      A diff pane shows forty lines of syntax-highlighted text over a hundred
+      and twenty columns. Expressing each character as a node would be
+      thousands of nodes to reconcile every frame, for nothing — none of them
+      remember anything or respond to anything.
+    </p>
+
+<pre><code><span class="ty">Canvas</span> {
+    width: <span class="fnc">Fill</span>(<span class="num">1</span>), height: <span class="fnc">Fill</span>(<span class="num">1</span>), focusable: <span class="kw">true</span>, listeners, ..,
+    paint: <span class="kw">move</span> |area: <span class="ty">Rect</span>, cells: &amp;<span class="kw">mut</span> <span class="ty">Cells</span>| {
+        <span class="cm">// today's draw code, unchanged</span>
+        <span class="kw">let</span> <span class="ty">Some</span>(frame) = render::layout::<span class="fnc">columns</span>(area, divider, orig, mods) <span class="kw">else</span> { <span class="kw">return</span> };
+        <span class="kw">for</span> (side, column) <span class="kw">in</span> frame.<span class="fnc">columns</span>() {
+            render::column::<span class="fnc">draw</span>(cells, column, side, &amp;lines, painter);
+        }
+    },
+}</code></pre>
+
+    <table>
+      <tr><th>The framework decides</th><th>Your paint decides</th></tr>
+      <tr><td>where the rectangle is</td><td>what goes in it</td></tr>
+      <tr><td>who has focus</td><td>—</td></tr>
+      <tr><td>which component was clicked</td><td>which line was clicked</td></tr>
+      <tr><td>what survives the frame</td><td>—</td></tr>
+    </table>
+
+    <div class="callout pitfall">
+      <span class="label">Pitfall</span>
+      <p>
+        Paint reads; it does not write. <code>set</code> or <code>edit</code>
+        from inside a paint callback panics (<code>P7.2</code>).
+        <code>read</code>, <code>cloned</code> and
+        <code>edit_without_redraw</code> are legal.
+      </p>
+    </div>
+
+    <div class="pager">
+      <a href="#layout"><span class="dir">Previous</span><span class="to">Layout</span></a>
+      <a class="next" href="#use-state"><span class="dir">Next</span><span class="to">use_state</span></a>
+    </div>
+    </section>
+
+    <section id="use-state">
+    <div class="crumb">Hooks</div>
+    <h1><code>use_state</code></h1>
+    <p class="lede">
+      <code>use_state</code> gives a component a value that survives a redraw —
+      a cursor row, a fold, a scroll position.
+    </p>
+
+    <div class="learn">
+      <h2>You will learn</h2>
+      <ul>
+        <li>How to add state to a component</li>
+        <li>Which of the five ways to write it you want</li>
+        <li>Why the handle works inside an event listener</li>
+        <li>When a write redraws and when it does not</li>
+      </ul>
+    </div>
+
+    <h2 id="reference">Reference <a class="anchor" href="#reference">#</a></h2>
+
+    <p>Call it at the top of your component, once per value.</p>
+
+<pre><code><span class="kw">let</span> cursor = <span class="fnc">use_state</span>(scope, || <span class="num">0</span><span class="ty">u32</span>);</code></pre>
+
+    <p>
+      The closure runs once, when the component mounts. On every render after
+      that it is ignored and you get the value that is already there.
+    </p>
+
+    <h3 id="signature">Signature <a class="anchor" href="#signature">#</a></h3>
+
+<pre><code><span class="at">#[track_caller]</span>
+<span class="kw">pub fn</span> <span class="fnc">use_state</span>&lt;<span class="ty">T</span>: <span class="ty">'static</span>&gt;(
+    scope: &amp;<span class="kw">mut</span> <span class="ty">Scope</span>,
+    first: <span class="kw">impl</span> <span class="ty">FnOnce</span>() -&gt; <span class="ty">T</span>,
+) -&gt; <span class="ty">State</span>&lt;<span class="ty">T</span>&gt;;</code></pre>
+
+    <table>
+      <tr><th>Parameter</th><th>Means</th></tr>
+      <tr><td><code>scope</code></td><td>Your component's own slot. The first parameter every component takes.</td></tr>
+      <tr><td><code>first</code></td><td>Builds the value the first time. Never called again.</td></tr>
+    </table>
+
+    <p>
+      It returns a <code>State&lt;T&gt;</code> — a handle, not the value. The
+      handle is eight bytes naming a slot, so it is <code>Copy</code>: move it
+      into as many listeners as you like without cloning anything.
+    </p>
+
+    <h2 id="reading">Reading <a class="anchor" href="#reading">#</a></h2>
+
+<pre><code><span class="cm">// Borrow briefly. The closure keeps the borrow short and typed.</span>
+<span class="kw">let</span> row = cursor.<span class="fnc">read</span>(|c| *c);
+<span class="kw">let</span> line = view.<span class="fnc">read</span>(<span class="ty">Viewport</span>::cursor);
+
+<span class="cm">// Or take a copy, when that is all you want.</span>
+<span class="kw">let</span> row = cursor.<span class="fnc">cloned</span>();</code></pre>
+
+    <p>
+      Prefer <code>read</code> for anything larger than a number.
+      <code>cloned</code> copies, and copying a <code>Vec</code> every frame is
+      a cost you did not mean to pay.
+    </p>
+
+    <h2 id="writing">Writing <a class="anchor" href="#writing">#</a></h2>
+
+    <p>Three ways, and they differ only in when they redraw.</p>
+
+    <table>
+      <tr><th>Call</th><th>Writes</th><th>Redraws</th></tr>
+      <tr><td><code>set(v)</code></td><td>replaces</td><td>always</td></tr>
+      <tr><td><code>set_if_changed(v)</code></td><td>replaces</td><td>only if it differs</td></tr>
+      <tr><td><code>edit(f)</code></td><td>in place</td><td>always</td></tr>
+      <tr><td><code>edit_without_redraw(f)</code></td><td>in place</td><td>never</td></tr>
+    </table>
+
+<pre><code>cursor.<span class="fnc">set</span>(<span class="num">5</span>);
+cursor.<span class="fnc">edit</span>(|c| *c += <span class="num">1</span>);
+
+<span class="cm">// Recomputed every render from props — only mark when it really moved.</span>
+divider.<span class="fnc">set_if_changed</span>(width / <span class="num">2</span>);</code></pre>
+
+    <p>
+      <code>edit_without_redraw</code> is for a value the frame is already
+      about to read — a viewport height the layout just settled, a syntax
+      span that arrived for a line already on screen. Marking there would
+      redraw the frame you are in the middle of preparing.
+    </p>
+
+    <div class="callout pitfall">
+      <span class="label">Pitfall</span>
+      <p>
+        <strong>Call <code>use_state</code> unconditionally.</strong> Never
+        inside an <code>if</code>, a loop, or after an early return. Slots are
+        found by call order, so a skipped call shifts every hook after it.
+      </p>
+<pre><code><span class="cm">// ✗ the second render finds a Memo where it left a State</span>
+<span class="kw">if</span> split {
+    <span class="kw">let</span> width = <span class="fnc">use_state</span>(scope, || <span class="num">40</span>);
+}
+
+<span class="cm">// ✓ always call it; branch on the value instead</span>
+<span class="kw">let</span> width = <span class="fnc">use_state</span>(scope, || <span class="num">40</span>);
+<span class="kw">let</span> shown = <span class="kw">if</span> split { width.<span class="fnc">cloned</span>() } <span class="kw">else</span> { <span class="num">0</span> };</code></pre>
+      <p>
+        The first render that diverges panics, naming both call sites
+        (<code>P4.1</code>).
+      </p>
+    </div>
+
+    <h2 id="in-a-listener">In a listener <a class="anchor" href="#in-a-listener">#</a></h2>
+
+    <p>
+      A listener runs long after your render returned, and it has no
+      <code>scope</code>. The handle is what carries over.
+    </p>
+
+<pre><code><span class="kw">let</span> cursor = <span class="fnc">use_state</span>(scope, || <span class="num">0</span><span class="ty">u32</span>);
+<span class="kw">let</span> rows = buffer.<span class="fnc">read</span>(<span class="ty">Buffer</span>::view_lines);
+
+<span class="kw">let</span> listeners = <span class="ty">Listeners</span>::<span class="fnc">new</span>()
+    .<span class="fnc">on_key</span>(<span class="kw">move</span> |key| <span class="kw">match</span> key {
+        <span class="fnc">key!</span>(j) =&gt; { cursor.<span class="fnc">edit</span>(|c| *c = (*c + <span class="num">1</span>).<span class="fnc">min</span>(rows - <span class="num">1</span>)); <span class="ty">Bubble</span>::Stop }
+        <span class="fnc">key!</span>(k) =&gt; { cursor.<span class="fnc">edit</span>(|c| *c = c.<span class="fnc">saturating_sub</span>(<span class="num">1</span>)); <span class="ty">Bubble</span>::Stop }
+        _       =&gt; <span class="ty">Bubble</span>::Continue,
+    });</code></pre>
+
+    <p>
+      Both closures capture <code>cursor</code> by <code>move</code>, and both
+      work — because the handle is <code>Copy</code>, not because anything was
+      cloned.
+    </p>
+
+    <div class="callout">
+      <span class="label">Note</span>
+      <p>
+        You cannot call a hook inside a listener, and the compiler says so:
+        listeners are <code>'static</code> closures, and
+        <code>&amp;mut Scope</code> is not. React's first rule, enforced by the
+        type system instead of a lint.
+      </p>
+    </div>
+
+    <h2 id="during-render">Writing during render <a class="anchor" href="#during-render">#</a></h2>
+
+    <p>
+      Legal, and how a component reacts to its own props — but a write marks
+      the component, so a component that writes a <em>different</em> value
+      every render never settles.
+    </p>
+
+    <div class="callout pitfall">
+      <span class="label">Pitfall</span>
+      <p>
+        Sixteen renders of one component in one frame is a bug, not a slow
+        frame. The runtime stops and says so:
+      </p>
+<pre><code><span class="cm">DiffPane ran 17 times in one frame — a component that
+sets state on every render never settles</span></code></pre>
+      <p>
+        Reach for <code>set_if_changed</code> when the value is derived from
+        props, and <code>edit_without_redraw</code> when the frame is already
+        going to read it.
+      </p>
+    </div>
+
+    <details class="callout hood">
+      <summary>Under the hood</summary>
+      <div class="body">
+        <p>
+          <code>State&lt;T&gt;</code> is two integers — the scope that owns it
+          and the slot index inside that scope.
+        </p>
+<pre><code><span class="kw">pub struct</span> <span class="ty">State</span>&lt;<span class="ty">T</span>&gt; {
+    scope: <span class="ty">ScopeId</span>,
+    slot:  <span class="ty">u16</span>,
+    _value: <span class="ty">PhantomData</span>&lt;<span class="ty">T</span>&gt;,
+}</code></pre>
+        <p>
+          The value itself lives in the slot the hook allocated. Nothing is
+          duplicated and no arena is involved, which is how the handle stays
+          <code>Copy</code> without the <code>unsafe</code> that other
+          frameworks need for the same trick.
+        </p>
+        <p>
+          When the component unmounts, its slots drop and the scope's
+          generation is bumped, so a handle that outlived its component fails
+          a check (<code>P4.3</code>) rather than reading a stranger's value.
+        </p>
+      </div>
+    </details>
+
+    <h2 id="see-also">See also <a class="anchor" href="#see-also">#</a></h2>
+
+    <ul>
+      <li><a href="#use-memo"><code>use_memo</code></a> — when the value is derived from something else</li>
+      <li><a href="#use-size"><code>use_size</code></a> — for the rectangle you were given</li>
+      <li><a href="#events">Events</a> — where listeners come from</li>
+      <li><a href="#workers">Workers</a> — for a value that arrives from a thread</li>
+    </ul>
+
+    <div class="pager">
+      <a href="#canvas">
+        <span class="dir">Previous</span>
+        <span class="to">Canvas</span>
+      </a>
+      <a class="next" href="#use-effect">
+        <span class="dir">Next</span>
+        <span class="to">use_effect</span>
+      </a>
+    </div>
+    </section>
+
+    <section id="use-effect">
+    <div class="crumb">Hooks</div>
+    <h1><code>use_effect</code></h1>
+    <p class="lede">Work to do after the frame is painted, when a dependency changed.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="use-memo">
+    <div class="crumb">Hooks</div>
+    <h1><code>use_memo</code></h1>
+    <p class="lede">A value recomputed only when its dependencies change.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="use-size">
+    <div class="crumb">Hooks</div>
+    <h1><code>use_size</code></h1>
+    <p class="lede">The rectangle this component was given, before it paints.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="use-focus">
+    <div class="crumb">Hooks</div>
+    <h1><code>use_focus</code></h1>
+    <p class="lede">Register as focusable, and ask whether you hold it.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="context">
+    <div class="crumb">Hooks</div>
+    <h1>Context</h1>
+    <p class="lede">Values an ancestor offers to everything below it — the theme, a worker channel.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="events">
+    <div class="crumb">Reacting</div>
+    <h1>Events</h1>
+    <p class="lede">Keys go to focus and bubble upward. Mouse goes to the deepest rectangle under the pointer.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="workers">
+    <div class="crumb">Reacting</div>
+    <h1>Workers</h1>
+    <p class="lede">Ask a thread for something, and have the answer reach the component that asked.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="recipe-list">
+    <div class="crumb">Recipes</div>
+    <h1>A list pane</h1>
+    <p class="lede">The explorer, whole: its list, its folds, its cursor, its clicks.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="recipe-diff">
+    <div class="crumb">Recipes</div>
+    <h1>A diff pane</h1>
+    <p class="lede">Two columns of code, painted by the code that already paints them.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="recipe-root">
+    <div class="crumb">Recipes</div>
+    <h1>The root</h1>
+    <p class="lede">What holds the panes together, and what <code>Session</code> becomes.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="testing">
+    <div class="crumb">Recipes</div>
+    <h1>Testing</h1>
+    <p class="lede">Mount a component, draw it, read the screen back as text.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="every-name">
+    <div class="crumb">Reference</div>
+    <h1>Every name</h1>
+    <p class="lede">The whole vocabulary in one table — for checking that each name earns its place.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+    <section id="panics">
+    <div class="crumb">Reference</div>
+    <h1>Panics</h1>
+    <p class="lede">Every panic, its message, and what caused it.</p>
+    <div class="callout"><span class="label">Note</span><p>Not written yet.</p></div>
+    </section>
+
+  </article>
+
+  <!-- ── on this page ─────────────────────────────────────────────── -->
+  <aside class="rail toc">
+    <h2>On this page</h2>
+    <div id="toc-links"></div>
+  </aside>
+
+</div>
+
+<script>
+  // One long page. The nav marks the section you are in; the rail lists that
+  // section's headings and marks the one you are at.
+  const sections = [...document.querySelectorAll('article section[id]')];
+  const navLinks = new Map([...document.querySelectorAll('.nav-group a')]
+    .map(a => [a.getAttribute('href').slice(1), a]));
+  const rail = document.getElementById('toc-links');
+
+  let showing = null;
+
+  function showSection(section) {
+    if (section === showing) return;
+    showing = section;
+
+    navLinks.forEach(a => a.classList.remove('here'));
+    navLinks.get(section.id)?.classList.add('here');
+
+    rail.innerHTML = '';
+    for (const head of section.querySelectorAll('h2[id], h3[id]')) {
+      const a = document.createElement('a');
+      a.href = '#' + head.id;
+      a.textContent = head.textContent.replace(/#$/, '').trim();
+      if (head.tagName === 'H3') a.className = 'sub';
+      rail.append(a);
+    }
+    markHeading();
+  }
+
+  function markHeading() {
+    if (!showing) return;
+    const heads = [...showing.querySelectorAll('h2[id], h3[id]')];
+    let at = heads[0];
+    for (const head of heads) {
+      if (head.getBoundingClientRect().top < 120) at = head;
+    }
+    rail.querySelectorAll('a').forEach(a =>
+      a.classList.toggle('here', a.getAttribute('href').slice(1) === at?.id));
+  }
+
+  // Whichever section covers the top third of the window is the one you are in.
+  function whichSection() {
+    let current = sections[0];
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= window.innerHeight / 3) current = section;
+    }
+    showSection(current);
+    markHeading();
+  }
+
+  addEventListener('scroll', whichSection, { passive: true });
+  addEventListener('hashchange', () => setTimeout(whichSection, 0));
+  whichSection();
+</script>
+
+</body>
+</html>

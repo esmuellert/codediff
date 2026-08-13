@@ -1109,8 +1109,8 @@ is not painted and its children are not visited.
 *test: `a_node_clipped_to_nothing_is_skipped`*
 
 **R7.1.4** Paint writes cells and nothing else. `State::set`, `State::edit` and
-`redraw()` called from inside a paint callback panic (P7.2). `State::with`,
-`State::get` and `State::edit_without_redraw` are legal.
+`redraw()` called from inside a paint callback panic (P7.2). `State::read`,
+`State::cloned` and `State::edit_without_redraw` are legal.
 *test: `setting_state_while_painting_is_refused`*
 
 **R7.1.5** The paint walk records, for every node that has a listener or is
@@ -1721,8 +1721,8 @@ ExplorerPane: two children share the key "src/main.rs"
 draw was called from inside a paint callback
 ```
 
-**P7.2 — R7.1.4.** Only `set`, `put`, `edit` and `redraw()`; `with`, `get` and
-`edit_without_redraw` are legal while painting.
+**P7.2 — R7.1.4.** Only `set`, `set_if_changed`, `edit` and `redraw()`; `read`,
+`cloned` and `edit_without_redraw` are legal while painting.
 
 ```text
 DiffPane: state was set while painting — paint reads, it does not write
@@ -1740,7 +1740,7 @@ ExplorerPane painted at (39, 4), outside its clip 0,0 40x9
 no ui::theme::Theme was provided above StatusBar
 ```
 
-**P14.1 — `Harness::row` out of range.** A test helper: a wrong index is a
+**P14.1 — `Harness::screen_row` out of range.** A test helper: a wrong index is a
 broken test, not a condition to handle.
 
 ```text
