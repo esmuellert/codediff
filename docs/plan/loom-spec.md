@@ -48,7 +48,7 @@ sentence.
 | question | choice | why |
 |---|---|---|
 | crate name | `loom`, macros in `loom-macros` | one plain English word, like `align` and `syntax`; both crates are `publish = false` so the name on crates.io is a coincidence |
-| layout engine | our own, integer cells, linear solve delegated to `ratatui::layout::Layout` | flexbox cannot say "if this does not fit, do not draw it", which is what `render::layout`'s tests demand |
+| layout model | CSS flexbox, implemented here in whole cells | the model is proven and documented; the crate is not the model. `f32` rounded back to cells is where column drift comes from, and CSS cannot say "if this does not fit, do not draw it" — so we take the algorithm and replace overflow with refusal (§5.6) |
 | state access in listeners | thread-local runtime, no `cx` parameter | `cursor.set(cursor.cloned() + 1)` is the line that makes this feel like React rather than like Rust arguing with you |
 | worker replies | typed handles with a generation check | a `TaskId` token says where to deliver; a generation says whether it is still wanted |
 | render parameter | `scope` | `cx` reads as "context", and context is a different thing here |
@@ -123,7 +123,7 @@ pub use hook::{
     Completion, Effect, State, Subscription, context, provide_context, redraw, try_context,
     use_effect, use_focus, use_memo, use_size, use_state,
 };
-pub use layout::{Axis, Edges, Layout, Size};
+pub use layout::{Basis, Edges, Layout};
 pub use node::{Children, Element, Key, Node};
 pub use paint::{Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps,
     Paint, Row, RowProps, Stack, StackProps, Text, TextProps};
@@ -166,7 +166,7 @@ pub struct Host {
     pub layout: Layout,
     /// Ink on cells. `None` for a container that only arranges its children.
     pub paint: Option<Rc<dyn Fn(&mut Paint<'_>)>>,
-    /// Measured on the main axis when `Size::Auto`. `None` measures as zero.
+    /// Measured on the main axis when `Basis::Auto`. `None` measures as zero.
     pub measure: Option<fn(&Host, u16) -> (u16, u16)>,
     pub listeners: Listeners,
     pub focusable: bool,
@@ -308,33 +308,74 @@ impl<T: 'static> State<T> {
 // layout/mod.rs
 use ratatui::style::Style;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+/// CSS flexbox, in whole cells, minus the parts nothing here uses.
+///
+/// Every field is a flexbox property under its CSS name, so "two `grow: 1`
+/// beside one `Length(40)`" has an answer you can look up rather than one we
+/// had to invent. §5 lists what is left out and the one thing added.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Layout {
-    pub axis: Axis,
-    pub width: Size,
-    pub height: Size,
-    /// Below this the parent gives up and paints its `too_small` node.
+    // As an item of its parent.
+    /// `flex-basis` — the size asked for on the parent's main axis, before
+    /// growing or shrinking.
+    pub basis: Basis,
+    /// `flex-grow` — shares of the space left over. 0 takes none.
+    pub grow: u16,
+    /// `flex-shrink` — shares of the overflow to give back. 0 never shrinks.
+    pub shrink: u16,
+    /// `min-width` / `min-height`. Nothing shrinks below these, and a parent
+    /// that cannot honour them is too small (§5.5).
     pub min_width: u16,
     pub min_height: u16,
-    pub pad: Edges,
-    /// Cells between children.
+    /// `max-width` / `max-height`. Nothing grows past these.
+    pub max_width: Option<u16>,
+    pub max_height: Option<u16>,
+
+    // As a container of its children.
+    /// `gap` — cells between children.
     pub gap: u16,
-    /// Painted before the children.
+    /// `padding` — cells inside the edges, taken off before the children.
+    pub pad: Edges,
+
+    // Neither.
+    /// Painted before the children. CSS would call this `background`.
     pub fill: Option<Style>,
-    /// Children are given rectangles no larger than this node's.
+    /// `overflow: hidden` — children get rectangles no larger than this node's.
     pub clip: bool,
-    /// Mounted, out of layout, unpainted, unhittable.
+    /// `display: none`, except that the scope and its hooks stay alive:
+    /// out of layout, unpainted, unhittable, still remembering.
     pub hidden: bool,
 }
 
+/// CSS's defaults: `flex: 0 1 auto`.
+impl Default for Layout {
+    fn default() -> Self {
+        Self {
+            basis: Basis::Auto,
+            grow: 0,
+            shrink: 1,
+            min_width: 0,
+            min_height: 0,
+            max_width: None,
+            max_height: None,
+            gap: 0,
+            pad: Edges::default(),
+            fill: None,
+            clip: false,
+            hidden: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Size {
-    /// As much as the content measures.
+pub enum Basis {
+    /// As much as the content measures. CSS `flex-basis: auto`.
     #[default]
     Auto,
-    Cells(u16),
-    /// A share of what the fixed children left.
-    Fill(u16),
+    /// Exactly this many cells. `Length`, not `Cells`, because `Cells` is
+    /// already this crate's name for the cell grid.
+    Length(u16),
+    /// A share of the container's inner size on the main axis.
     Percent(u16),
 }
 
@@ -351,14 +392,11 @@ impl Edges {
     pub const fn sides(n: u16) -> Self;
     pub const fn rows(n: u16) -> Self;
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Axis {
-    #[default]
-    Column,
-    Row,
-}
 ```
+
+There is no `axis` field. `Row` lays its children out across and `Column` lays
+them down, which is what those words mean; a `Layout` that disagreed with the
+host holding it would be a contradiction the type should not be able to state.
 
 `Layout`, not `Style`: `Style` means colour in every file of this repository.
 
@@ -399,7 +437,7 @@ pub struct Row;      pub struct RowProps      { pub layout: Layout, pub listener
 pub struct Column;   pub struct ColumnProps   { /* the same fields */ }
 /// Children painted over one another, in declaration order.
 pub struct Stack;    pub struct StackProps    { /* the same fields */ }
-/// Empty space. `Gap { layout: Layout { width: Size::Fill(1), .. } }` pushes.
+/// Empty space. `Gap { layout: Layout { grow: 1, .. } }` pushes what follows away.
 pub struct Gap;      pub struct GapProps      { pub layout: Layout }
 /// One cell of `symbol`, repeated down or across.
 pub struct Divider;  pub struct DividerProps  { pub layout: Layout,
@@ -415,8 +453,6 @@ pub struct Canvas;   pub struct CanvasProps   { pub layout: Layout, pub listener
                                                 pub focusable: bool,
                                                 pub paint: std::rc::Rc<dyn Fn(&mut Paint<'_>)> }
 
-impl Default for RowProps { /* Axis::Row */ }
-impl Default for ColumnProps { /* Axis::Column */ }
 // … and so on; every host's props derive or implement `Default`.
 ```
 
@@ -550,7 +586,7 @@ impl Tree {
     /// Whether anything has been marked for redraw since the last `draw`.
     pub fn needs_draw(&self) -> bool;
     /// How many render-and-layout rounds the last `draw` took. One, unless
-    /// `use_size` changed something. Capped at 4 (R5.6.2).
+    /// `use_size` changed something. Capped at 4 (R5.8.2).
     pub fn layout_rounds(&self) -> usize;
     /// Mark everything. What a terminal resize does.
     pub fn redraw_all(&mut self);
@@ -782,118 +818,251 @@ for this; we ship a panic that names both lines.
 
 ## 5. Layout
 
-Integer cells, one axis per container, two passes. The linear solve is
-delegated to `ratatui::layout::Layout`, which is already a dependency, is
-solved by `kasuari`, and is cached thread-locally.
+CSS flexbox, in whole cells, minus the parts nothing here uses, plus one rule
+CSS has no word for.
 
-### 5.1 Sizes
+Borrowed rather than invented, and borrowed under its own names. A layout model
+is a thing readers ask questions of — *two `grow: 1` beside one `Length(40)`,
+who wins when it does not fit?* — and every such question about flexbox already
+has an answer written down by someone else, checked by four browser engines and
+twenty years of use. An invented model answers each one for the first time, in
+a conversation, at the moment someone hits it.
 
-| `Size` | means | maps to |
-|---|---|---|
-| `Auto` | as much as the content measures | `Constraint::Length(measured)` |
-| `Cells(n)` | exactly `n` | `Constraint::Length(n)` |
-| `Fill(n)` | share `n` of what the fixed children left | `Constraint::Fill(n)` |
-| `Percent(n)` | `n`% of the container's inner size | `Constraint::Percentage(n)` |
+### 5.1 What is borrowed, left out, and added
 
-**R5.1.1** A container arranges its children along `layout.axis`; the other
-axis is the container's inner size, less padding.
+| borrowed | CSS |
+|---|---|
+| `basis` | `flex-basis` |
+| `grow` | `flex-grow` |
+| `shrink` | `flex-shrink` |
+| `min_width`, `min_height` | `min-width`, `min-height` |
+| `max_width`, `max_height` | `max-width`, `max-height` |
+| `gap` | `gap` |
+| `pad` | `padding` |
+| `clip` | `overflow: hidden` |
+| `hidden` | `display: none` |
+| stretch on the cross axis | `align-items: stretch`, the default |
+| children packed from the start | `justify-content: flex-start`, the default |
+| the sizing algorithm of §5.4 | the CSS Flexbox spec's *resolve flexible lengths* |
+
+**Left out**, each with a definition to copy the day it is wanted: `flex-wrap`,
+`align-content`, `align-items` and `align-self`, `justify-content`, `order`,
+`position: absolute`, `aspect-ratio`, baseline alignment, auto margins, and the
+`flex` shorthand. Nothing in this program centres anything — even *terminal too
+small* is written at column 0.
+
+**Added**, three things:
+
+1. **`too_small`** (§5.5). CSS's answer to "does not fit" is to overflow. This
+   program's answer, in six places already, is `return None` — draw a message
+   instead of a corrupt frame.
+2. **A wider screen never shows less than a narrower one** (R5.5.4). CSS
+   promises nothing of the sort; `render::layout` has tested it for months.
+3. **Integer tie-breaking** (R5.4.7). CSS is fractional and browsers round
+   differently. Whole cells and a fixed rule are what stop columns drifting as
+   a pane is resized.
+
+That is the whole distance between this and flexbox: one behaviour, one
+guarantee, one rounding rule.
+
+### 5.2 What a node asks for
+
+**R5.2.1** A `Row` lays its children out across; a `Column` lays them down.
+That direction is the container's **main axis**; the other is its **cross
+axis**. There is no `axis` field: the host name says it.
 *test: `a_row_stacks_across_and_a_column_stacks_down`*
 
-**R5.1.2** `min_width` and `min_height` are cells, not a `Size`. A minimum of
-"as much as the content wants" says nothing.
+**R5.2.2** `basis` is the size a child asks for on its parent's main axis. The
+same `Layout` on a child of a `Row` asks about width and on a child of a
+`Column` asks about height.
+*test: `the_same_basis_means_width_in_a_row_and_height_in_a_column`*
+
+**R5.2.3** `min_width`, `min_height`, `max_width` and `max_height` are cells,
+and they name an axis outright rather than following the parent's. A minimum of
+"as much as the content wants" says nothing, and a minimum that changed meaning
+when its parent changed direction would be worse than none.
 *test: `a_minimum_is_a_number_of_cells`*
 
-**R5.1.3** A `Part` has no box of its own. It contributes the box of the node
+**R5.2.4** A `Part` has no box of its own. It contributes the box of the node
 it returned. A `Fragment` contributes its children, spliced into the parent's
 child list in order. An `Empty` contributes nothing.
 *test: `a_component_is_not_a_box_of_its_own`*
 
-**R5.1.4** A node with `layout.hidden` is skipped by measure, assign, paint,
-hit-testing and focus order, and keeps its scope and its hooks.
+**R5.2.5** A node with `hidden` is skipped by measure, resolve, paint,
+hit-testing and focus order, and keeps its scope and its hooks. `display: none`
+that remembers.
 *test: `a_hidden_pane_keeps_its_viewport`*
 
-### 5.2 The measure pass — bottom-up
+### 5.3 The measure pass — bottom-up
 
-**R5.2.1** A host with a `measure` function is asked. Only `Text` has one; it
+Only `Basis::Auto` needs it, and only `Text` answers.
+
+**R5.3.1** A host with a `measure` function is asked. Only `Text` has one; it
 answers `(ratatui::text::Span::styled(text, style).width(), 1)`.
 *test: `text_measures_its_own_width_in_cells`*
 
-**R5.2.2** A container measures as the sum of its children along its axis, plus
-`gap` between each pair, plus padding; and as the largest child across its axis,
+**R5.3.2** A container measures as the sum of its children along its main axis,
+plus `gap` between each pair, plus padding; and as the largest child across it,
 plus padding.
 *test: `a_row_measures_as_the_sum_of_its_children_and_its_gaps`*
 
-**R5.2.3** A child whose size on an axis is `Cells`, `Percent` or `Fill`
-measures as that, not as its content. `Percent` and `Fill` measure as zero,
-because what they are a share of is not known until the assign pass.
+**R5.3.3** A child whose `basis` is `Length` measures as that, not as its
+content. A child whose `basis` is `Percent` measures as zero, because what it
+is a share of is not known until §5.4.
 *test: `a_fixed_child_measures_as_its_size_not_its_content`*
 
-**R5.2.4** A `Canvas` with `Size::Auto` measures as zero. A canvas paints
+**R5.3.4** A `Canvas` with `Basis::Auto` measures as zero. A canvas paints
 whatever it is given; it has no content to ask.
 *test: `a_canvas_asks_for_nothing`*
 
-**R5.2.5** Measurement never reads state and never runs a component. It is a
+**R5.3.5** Measurement never reads state and never runs a component. It is a
 function of the node tree the render pass produced.
 *test: `measuring_runs_no_component`*
 
-### 5.3 The assign pass — top-down
+### 5.4 Resolving the main axis
 
-**R5.3.1** A container subtracts `pad` from its rectangle, then maps each
-visible child's size on its axis to a `Constraint` per R5.1, then calls
-`ratatui::layout::Layout::new(direction, constraints).spacing(gap).split(inner)`.
-`Flex` is left at its default, `Flex::Start`.
-*test: `assign_hands_the_solver_one_constraint_per_child`*
+The CSS Flexbox algorithm *resolve flexible lengths*, with `u16` in place of
+`f32`, one line, no wrap.
 
-**R5.3.2** The rectangles a container hands out tile its inner rectangle in
-order, except for space no child claimed, which stays with the container and
-shows its `fill`.
+**R5.4.1 — hypothetical size.** For each visible child: `Auto` takes what it
+measured, `Length(n)` takes `n`, `Percent(n)` takes `n`% of the container's
+inner main size rounded down. Each is then clamped to that child's minimum and
+maximum on the main axis.
+*test: `a_percent_child_is_a_share_of_the_inner_size`*
+
+**R5.4.2 — free space.** Inner main size, less the gaps between children, less
+the sum of the hypothetical sizes. Positive means room to grow; negative means
+too much was asked for.
+*test: `free_space_counts_the_gaps`*
+
+**R5.4.3 — growing.** Positive free space is handed to children with
+`grow > 0`, in proportion to their `grow`. A child with `grow: 0` keeps its
+hypothetical size. Nothing grows past its maximum.
+*test: `two_growing_children_split_what_the_fixed_one_left`*
+
+**R5.4.4 — shrinking.** Negative free space is taken back from children with
+`shrink > 0`, in proportion to `shrink × hypothetical size` — CSS's scaled
+shrink factor, so a wide child gives up more than a narrow one at the same
+`shrink`. Nothing shrinks below its minimum.
+*test: `a_wide_child_gives_up_more_than_a_narrow_one`*
+
+**R5.4.5 — freezing.** After growing and shrinking, any child outside its
+minimum or maximum on the main axis — including one that never moved — is
+frozen at that bound, and the pass runs again over the rest with the space that
+is left. It repeats at most once per child, because each round freezes at least
+one.
+*test: `a_child_frozen_at_its_minimum_pushes_the_rest_smaller`*
+
+**R5.4.6 — order.** Children are placed along the main axis in child order,
+each `gap` cells after the previous, starting at the inner rectangle's near
+edge. Space nobody claimed stays at the far end, with the container, and shows
+its `fill`.
 *test: `children_tile_the_container_in_order`*
 
-**R5.3.3** A child's rectangle is intersected with its parent's clip when the
-parent has `layout.clip`. `Layout::default()` has it off; `CanvasProps::default()`
+**R5.4.7 — the remainder.** Growing and shrinking divide integers, so a
+remainder is left over. It is handed out one cell at a time, to the children
+with the largest fractional part, ties to the earlier child. Three equal
+children of a hundred cells are 34, 33, 33 — the same three every frame, so a
+column does not shift when something elsewhere redraws.
+*test: `an_odd_split_is_the_same_two_frames_running`*
+
+**Worked, against the code it replaces.** `render::layout::split` divides the
+body between the list and the diff: `MIN_LIST` 8, a 1-cell divider, `MIN_RIGHT`
+20, the reader's divider at 40. Run today, it answers:
+
+```
+width 80 -> 40/1/39
+width 50 -> 29/1/20
+width 29 ->  8/1/20
+width 28 -> refused
+```
+
+As flexbox: the list is `basis: Length(40), shrink: 1, min_width: 8`; the
+divider is `basis: Length(1), shrink: 0`; the diff is `grow: 1,
+basis: Length(0), min_width: 20`.
+
+*At 80* the hypothetical sizes are 40, 1, 0 and free space is 39, so the diff
+grows to 39 (R5.4.3), above its minimum. **40/1/39**.
+
+*At 50* free space is 9, the diff grows to 9, which is below its minimum, so it
+freezes at 20 (R5.4.5) and the pass runs again over the rest: 50 − 1 − 20 = 29
+for the list, above its own minimum. **29/1/20**.
+
+*At 29* free space is −12, so the list shrinks to 28 (R5.4.4 — it is the only
+child with a non-zero scaled shrink factor). The diff is still at 0, below its
+minimum, so it freezes at 20 and the pass runs again: 29 − 1 − 20 = 8 for the
+list, exactly its minimum. **8/1/20**.
+
+*At 28* the minimums sum to 8 + 1 + 20 = 29, which does not fit, so the row is
+too small (§5.6) — the same threshold as `split`'s
+`area.width < MIN_LIST + 1 + MIN_RIGHT`.
+
+Four numbers, four hand-written branches replaced by one algorithm somebody
+else already debugged.
+*test: `the_flex_pass_reproduces_the_split_it_replaces`*
+
+### 5.5 The cross axis, and the rectangles
+
+**R5.5.1** A child's cross size is the container's inner cross size, clamped by
+that child's minimum and maximum on that axis. This is `align-items: stretch`,
+and it is the only alignment there is.
+*test: `a_child_of_a_row_is_as_tall_as_the_row`*
+
+**R5.5.2** A container subtracts `pad` from its rectangle before any of §5.4.
+*test: `padding_comes_off_before_the_children_are_measured_against_it`*
+
+**R5.5.3** A child's rectangle is intersected with its parent's clip when the
+parent has `clip`. `Layout::default()` has it off; `CanvasProps::default()`
 supplies a `Layout` with it on, because a canvas is where unbounded painting
 would otherwise happen.
 *test: `a_clipping_parent_shrinks_its_children`*
 
-**R5.3.4** `Stack` gives every child the container's whole inner rectangle.
+**R5.5.4** `Stack` gives every child the container's whole inner rectangle. It
+has no main axis and §5.4 does not run.
 *test: `a_stack_gives_every_child_the_same_rectangle`*
 
-**R5.3.5** A rectangle of zero width or zero height is legal. Its subtree is
+**R5.5.5** A rectangle of zero width or zero height is legal. Its subtree is
 assigned, painted as nothing, and hit-tested as nothing.
 *test: `a_zero_width_pane_paints_nothing_and_does_not_panic`*
 
-### 5.4 Too small
+### 5.6 Too small
 
-**R5.4.1** After the split, a container compares each child's assigned width
-and height against that child's `min_width` and `min_height`. If any child
-falls short, the container is too small.
+The one behaviour CSS does not have. Everything above is flexbox; this is not.
+
+**R5.6.1** After §5.4, a container compares each child's assigned width and
+height against that child's `min_width` and `min_height`. If any child is still
+short — because shrinking ran out of room, not because the child asked for less
+— the container is too small.
 *test: `a_child_below_its_minimum_makes_its_parent_too_small`*
 
-**R5.4.2** A container that is too small assigns nothing below it and paints
+**R5.6.2** A container that is too small assigns nothing below it and paints
 its `too_small` node in its own rectangle. If it has no `too_small` node, the
 condition passes to *its* parent.
 *test: `too_small_climbs_until_someone_answers_for_it`*
 
-**R5.4.3** A `too_small` node is laid out and painted as an ordinary child, and
+**R5.6.3** A `too_small` node is laid out and painted as an ordinary child, and
 may itself be too small, which climbs again.
 *test: `a_too_small_message_that_does_not_fit_climbs_again`*
 
-**R5.4.4** A wider screen never shows less than a narrower one. This is
-`render::layout`'s existing property, carried up into the framework: a
-container that fits at *n* cells fits at *n + 1*.
+**R5.6.4** A wider screen never shows less than a narrower one: a container
+that fits at *n* cells fits at *n + 1*. This is `render::layout`'s existing
+property, carried up into the framework.
 *test: `a_wider_screen_never_shows_less_than_a_narrower_one`*
 
-`too_small` is the one piece of framework support this application's behaviour
-needs and CSS has no word for. It replaces `draw/screen.rs::too_small` and the
-`bool` `draw/tab.rs` threads back up through four functions.
+Where CSS overflows, this refuses. That is the whole difference, and it is
+load-bearing: overflow is what R5.6.4 forbids, because a squashed pane at
+*n + 1* cells can show less than an unsquashed one at *n*. It replaces
+`draw/screen.rs::too_small` and the `bool` `draw/tab.rs` threads back up
+through four functions.
 
-### 5.5 What is not here
+### 5.7 What is not here
 
-No wrap, no `align-self`, no absolute positioning, no aspect ratio, no baseline.
-Nothing in this program uses one, and each is a rule a reader would have to know
-before they could predict a frame.
-
-### 5.6 `use_size`, and the round cap
+No wrap, no `align-self`, no absolute positioning, no aspect ratio, no
+baseline, no `order`. Each is defined by CSS and can be added under its own
+name the day something needs it — which is the point of borrowing the model
+rather than inventing one. Until then each is a rule a reader would have to
+learn before they could predict a frame.
+### 5.8 `use_size`, and the round cap
 
 The pass order inside one `Tree::draw`:
 
@@ -909,13 +1078,13 @@ The pass order inside one `Tree::draw`:
 7  leave the runtime
 ```
 
-**R5.6.1** `use_size` answers `Rect::ZERO` on the render in which its component
+**R5.8.1** `use_size` answers `Rect::ZERO` on the render in which its component
 mounts, and the rectangle from the previous layout round of the same frame
 afterwards. A component that calls it therefore renders at least twice on the
 frame it mounts.
 *test: `a_component_that_asks_its_size_renders_twice_when_it_mounts`*
 
-**R5.6.2** Steps 2 and 3 repeat at most **4** times per frame. On the 4th round
+**R5.8.2** Steps 2 and 3 repeat at most **4** times per frame. On the 4th round
 the areas from that round are painted and the frame completes; `Tree::layout_rounds()`
 reports 4, which is how a test sees it — `loom` depends on `ratatui`,
 `crossterm` and `crokey` and nothing else, so it cannot log. Four is slack, not
@@ -924,13 +1093,13 @@ one — a pane's height reaches `Viewport::set_height`, which moves `top` and
 never its own rectangle.
 *test: `a_component_that_changes_size_every_round_still_paints_a_frame`*
 
-**R5.6.3** A component may be re-rendered at most **16** times in one frame.
+**R5.8.3** A component may be re-rendered at most **16** times in one frame.
 The 17th panics (P5.1). Sixteen is chosen, not measured: it is far above
 anything a settling tree does and far below a number that would hang a
 terminal.
 *test: `a_component_that_sets_state_on_every_render_panics_rather_than_hanging`*
 
-**R5.6.4** `Tree::draw` is not re-entrant. Calling it from inside a paint
+**R5.8.4** `Tree::draw` is not re-entrant. Calling it from inside a paint
 callback panics (P7.1).
 *test: `drawing_from_inside_a_painter_is_refused`*
 
@@ -1724,7 +1893,7 @@ viewport and a store at once.
 a State was edited from inside its own edit
 ```
 
-**P5.1 — R5.6.3.**
+**P5.1 — R5.8.3.**
 
 ```text
 DiffPane ran 17 times in one frame — a component that sets state on every render never settles
@@ -1742,7 +1911,7 @@ Screen: child 2 has a key and child 3 does not — key every child of a list or 
 ExplorerPane: two children share the key "src/main.rs"
 ```
 
-**P7.1 — R5.6.4.**
+**P7.1 — R5.8.4.**
 
 ```text
 draw was called from inside a paint callback
@@ -1790,7 +1959,7 @@ row 9 is outside the 8-row screen
 | a canvas writing outside the cell grid | dropped by `Buffer::cell_mut`, which answers `Option` |
 | a `for` over an empty iterator | `Node::Fragment(vec![])`, which flattens to nothing |
 | a component returning `Node::Empty` | a scope with no children |
-| the 5th layout round in one frame | painted with round 4's rectangles; `Tree::layout_rounds()` reports 4 (R5.6.2) |
+| the 5th layout round in one frame | painted with round 4's rectangles; `Tree::layout_rounds()` reports 4 (R5.8.2) |
 | a reply for a component that unmounted | refused, value dropped (R9.3.1) |
 | a span batch the store refuses | no redraw (R9.4.1) |
 
@@ -1925,8 +2094,8 @@ today — that is a measurement; the estimate beside it is not.
 | `src/hook/context.rs` | `provide_context`, `context`, `try_context`, versions | 110 | |
 | `src/hook/worker.rs` | `Completion`, `Subscription`, `Effect`, the generation checks | 170 | |
 | `src/hook/screen.rs` | `use_size`, `use_focus` | 110 | |
-| `src/layout/mod.rs` | `Layout`, `Size`, `Edges`, `Axis` | 110 | |
-| `src/layout/solve.rs` | measure, assign, the `Constraint` mapping, `too_small` | 230 | `crates/ui/src/render/layout.rs`, 437 with tests |
+| `src/layout/mod.rs` | `Layout`, `Basis`, `Edges` | 110 | |
+| `src/layout/flex.rs` | measure, the §5.4 resolve, the cross axis, `too_small` | 250 | `crates/ui/src/render/layout.rs`, 437 with tests |
 | `src/paint/mod.rs` | the walk, clipping, `Paint`, the debug clip guard | 160 | `draw/screen.rs` 97 + `tab.rs` 73 + `pane.rs` 66 |
 | `src/paint/host.rs` | `Row`, `Column`, `Stack`, `Gap`, `Divider`, `Canvas` and their props | 220 | |
 | `src/paint/text.rs` | `Text`, and the one `measure` in the crate | 110 | |
@@ -2260,7 +2429,7 @@ before the file name and that is text fitting, not layout (§7.3).
 use std::rc::Rc;
 
 use file_types::File;
-use loom::{Canvas, CanvasProps, Layout, Node, Row, RowProps, Scope, Size, Text, TextProps,
+use loom::{Basis, Canvas, CanvasProps, Layout, Node, Row, RowProps, Scope, Text, TextProps,
            component, context, rsx, use_size};
 use ratatui::buffer::Buffer as Cells;
 
@@ -2297,7 +2466,8 @@ pub fn StatusBar(
 
     let base = theme.status;
     let row = Layout {
-        height: Size::Cells(1),
+        basis: Basis::Length(1),
+        shrink: 0,
         pad: loom::Edges::sides(1),
         gap: 2,
         fill: Some(base),
@@ -2311,14 +2481,14 @@ pub fn StatusBar(
     rsx! {
         Row { layout: row, ..,
             if let Some(why) = notice.clone() {
-                Text { layout: Layout { width: Size::Fill(1), ..Default::default() },
+                Text { layout: Layout { grow: 1, ..Default::default() },
                        text: why, style: base.patch(theme.warning) }
             } else if let Some(file) = shown {
                 // `name` from draw/status.rs, moved and not otherwise touched:
                 // it drops the rename source, then the directory, and never
                 // the file name.
                 Canvas {
-                    layout: Layout { width: Size::Fill(1), ..Default::default() },
+                    layout: Layout { grow: 1, ..Default::default() },
                     paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                         let area = paint.area();
                         name(paint.cells(), area, &file, area.width, base, path, dim);
@@ -2326,7 +2496,7 @@ pub fn StatusBar(
                     ..
                 }
             } else {
-                Text { layout: Layout { width: Size::Fill(1), ..Default::default() },
+                Text { layout: Layout { grow: 1, ..Default::default() },
                        text: "changed files".into(), style: base.patch(path) }
             }
 
@@ -2361,7 +2531,7 @@ use std::rc::Rc;
 use crokey::KeyCombination;
 use crossterm::event::{MouseButton, MouseEventKind};
 use file_types::File;
-use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Scope, Size, State,
+use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Scope, State,
            component, context, rsx, use_effect, use_focus, use_size, use_state};
 
 use crate::input::{Action, BufferAction, KeymapType, Resolution, Resolver, ViewAction};
@@ -2494,8 +2664,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     rsx! {
         Canvas {
             layout: Layout {
-                width: Size::Fill(1), height: Size::Fill(1),
-                min_width: 8, clip: true, ..Default::default()
+                grow: 1, min_width: 8, clip: true, ..Default::default()
             },
             focusable: true,
             listeners,
@@ -2519,7 +2688,7 @@ repository and none of it is touched.
 ```rust
 use std::rc::Rc;
 
-use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Scope, Size, State,
+use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Scope, State,
            component, context, redraw, rsx, use_effect, use_focus, use_size,
            use_state};
 use syntax::{Store, SyntaxResponse, Version};
@@ -2644,8 +2813,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
     rsx! {
         Canvas {
             layout: Layout {
-                width: Size::Fill(1), height: Size::Fill(1),
-                min_width: 20, clip: true, ..Default::default()
+                grow: 1, min_width: 20, clip: true, ..Default::default()
             },
             focusable: true,
             listeners,
@@ -2673,7 +2841,7 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
-           Node, Row, RowProps, Scope, Size, Text, TextProps, component,
+           Basis, Node, Row, RowProps, Scope, Text, TextProps, component,
            provide_context, rsx, use_effect, use_state};
 use syntax::{Store, Version};
 
@@ -2761,8 +2929,13 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
         .map(|f| f.path().as_str().to_owned()));
     let split = shown.is_some();
 
+    // The list asks for the width the reader chose and gives it back when the
+    // diff needs its minimum — R5.4.4 and R5.4.5, which is what
+    // `render::layout::split`'s clamp did by hand.
     let explorer = Layout {
-        width: if split { Size::Cells(left.cloned()) } else { Size::Fill(1) },
+        basis: if split { Basis::Length(left.cloned()) } else { Basis::Auto },
+        grow: if split { 0 } else { 1 },
+        shrink: 1,
         min_width: 8,
         ..Default::default()
     };
@@ -2770,25 +2943,27 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
 
     rsx! {
         Column {
-            layout: Layout { height: Size::Fill(1), ..Default::default() },
+            layout: Layout { grow: 1, ..Default::default() },
             too_small: Some(rsx! {
                 Text { text: "terminal too small".into(), style: theme.normal, .. }
             }),
             ..,
 
-            Row { layout: Layout { height: Size::Fill(1), ..Default::default() }, ..,
+            Row { layout: Layout { grow: 1, ..Default::default() }, ..,
                 Column { layout: explorer, ..,
                     ExplorerPane { files: files.clone() }
                 }
 
                 if let Some(name) = shown {
                     Divider {
-                        layout: Layout { width: Size::Cells(1), ..Default::default() },
+                        layout: Layout { basis: Basis::Length(1), shrink: 0,
+                                         ..Default::default() },
                         symbol: "│",
                         style: theme.normal.patch(theme.divider),
                     }
                     Column {
-                        layout: Layout { width: Size::Fill(1), min_width: 20, ..Default::default() },
+                        layout: Layout { grow: 1, basis: Basis::Length(0),
+                                         min_width: 20, ..Default::default() },
                         ..,
                         DiffPane { key: name, buffer: opened, version: version.cloned() }
                     }
