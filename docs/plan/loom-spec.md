@@ -18,7 +18,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | element tree | a value describing one frame, built by `rsx!`, thrown away after reconciliation |
 | reconciliation | matching this frame's description against the live instance tree, so state has an owner |
 | function components | `#[component] fn Name(scope: &mut Scope, …) -> Node` |
-| hooks | `use_state`, `use_memo`, `use_effect`, `use_size`, `use_focus`, context |
+| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_size`, `use_focus`, context |
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
@@ -49,11 +49,11 @@ sentence.
 |---|---|---|
 | crate name | `loom`, macros in `loom-macros` | one plain English word, like `align` and `syntax`; both crates are `publish = false` so the name on crates.io is a coincidence |
 | layout model | CSS flexbox, implemented here in whole cells | the model is proven and documented; the crate is not the model. `f32` rounded back to cells is where column drift comes from, and CSS cannot say "if this does not fit, do not draw it" — so we take the algorithm and replace overflow with refusal (§5.6) |
-| state access in listeners | thread-local runtime, no `cx` parameter | `cursor.set(cursor.cloned() + 1)` is the line that makes this feel like React rather than like Rust arguing with you |
+| state access in listeners | a render snapshot plus a `SetState<T>` handle | `let (cursor, set_cursor) = use_state(…)` and `set_cursor.update(|n| n + 1)` are React's value-and-setter model in Rust |
 | worker replies | typed handles with a generation check | a `TaskId` token says where to deliver; a generation says whether it is still wanted |
 | render parameter | `scope` | `cx` reads as "context", and context is a different thing here |
-| state handle | `State<T> = { scope, slot }`, `Copy`, no arena | the workspace forbids `unsafe`, and the hook slot is already the storage |
-| a second, quiet state type | none — `State::edit_without_redraw` instead | one idea, one word; a `Ref<T>` beside `std::cell::Ref` is two words for one idea |
+| state setter | `SetState<T> = { scope, slot }`, `Copy`, no arena | the value is a snapshot for this render; the small handle is what listeners keep |
+| mutable value without redraw | `use_ref`, returning `Ref<T>` | state stays immutable and React-like; large models and imperative caches have an explicit home |
 | context storage | parent walk keyed by `TypeId`, read recorded as `(TypeId, version)` | there is no provider node to reconcile, and the recorded version is the twenty lines that keep `memo` honest |
 | provider syntax | `provide_context(scope, value)` at the top of a render | it adds no node to the tree; a `Provider` component can be written on top of it in eight lines |
 | listeners in `rsx!` | one `listeners:` prop built by a chain | one prop, one type, no macro magic, and an unknown handler is an unknown method |
@@ -76,6 +76,9 @@ repository, that name is used.
 | **component** | a function you write, with props and hooks | |
 | **scope** | the live instance of a component: its identity, its hook slots, its rectangle | fiber, instance |
 | **slot** | one hook's storage inside a scope | |
+| **state** | a value that survives redraws; a component reads one snapshot of it per render | live mutable handle |
+| **setter** | the `Copy` handle that queues a state's next value | state |
+| **ref** | a mutable hook value with silent writes | state |
 | **props** | a `'static` struct, one field per parameter | attributes |
 | **key** | what names a child across frames, so state follows it when a list is reordered | id |
 | **mount / update / unmount** | the three things reconciliation does to a scope | |
@@ -120,8 +123,8 @@ pub mod testing;
 pub use component::Component;
 pub use event::{Bubble, Focus, Listeners, Mouse, capture_pointer, release_pointer};
 pub use hook::{
-    Completion, Effect, State, Subscription, context, provide_context, redraw, try_context,
-    use_effect, use_focus, use_memo, use_size, use_state,
+    Completion, Effect, Ref, SetState, Subscription, context, provide_context, redraw,
+    try_context, use_effect, use_focus, use_memo, use_ref, use_size, use_state,
 };
 pub use layout::{Basis, Edges, Layout};
 pub use node::{Children, Element, Key, Node};
@@ -259,48 +262,77 @@ impl Scope {
 }
 ```
 
-### 3.4 State
+### 3.4 State and refs
 
 ```rust
 // hook/state.rs
 use std::marker::PhantomData;
 
-/// A place a component keeps something between frames.
+/// Queues the next value of one state slot.
 ///
 /// Two integers naming a hook slot, so it is `Copy` and `'static` and can be
 /// moved into as many listeners as you like.
-pub struct State<T: 'static> {
+pub struct SetState<T: 'static> {
+    scope: ScopeId,
+    slot: u16,
+    value: PhantomData<fn(T)>,
+}
+
+impl<T> Clone for SetState<T> { fn clone(&self) -> Self { *self } }
+impl<T> Copy for SetState<T> {}
+impl<T> PartialEq for SetState<T> { /* scope and slot */ }
+impl<T> Eq for SetState<T> {}
+
+impl<T: 'static> SetState<T> {
+    /// Whether the owning component is still mounted.
+    pub fn is_mounted(self) -> bool;
+}
+
+impl<T: PartialEq + 'static> SetState<T> {
+    /// Queue a value. If the committed value is equal, skip the render.
+    pub fn set(self, value: T);
+    /// Queue a function of the previous queued value. Updates run in call
+    /// order; if the committed value is equal, skip the render.
+    pub fn update(self, update: impl FnOnce(T) -> T + 'static);
+}
+```
+
+React's setter accepts a value or a function. Rust gives those two argument
+shapes the methods `set` and `update`.
+
+```rust
+// hook/reference.rs
+/// A mutable value that survives renders without causing one.
+///
+/// The Rust form of React's `useRef`: the value stays in the hook slot and
+/// this `Copy` handle keeps borrows short.
+pub struct Ref<T: 'static> {
     scope: ScopeId,
     slot: u16,
     value: PhantomData<fn() -> T>,
 }
 
-impl<T> Clone for State<T> { fn clone(&self) -> Self { *self } }
-impl<T> Copy for State<T> {}
-impl<T> PartialEq for State<T> { /* scope and slot */ }
-impl<T> Eq for State<T> {}
+impl<T> Clone for Ref<T> { fn clone(&self) -> Self { *self } }
+impl<T> Copy for Ref<T> {}
+impl<T> PartialEq for Ref<T> { /* scope and slot */ }
+impl<T> Eq for Ref<T> {}
 
-impl<T: 'static> State<T> {
-    /// Reads. The closure keeps the borrow short and typed.
+impl<T: 'static> Ref<T> {
+    /// Borrow briefly.
     pub fn read<R>(self, look: impl FnOnce(&T) -> R) -> R;
-    /// Reads a copy, for the small case.
-    pub fn cloned(self) -> T where T: Clone;
-    /// Writes, and redraws the owning component.
-    pub fn set(self, value: T);
-    /// Writes, and redraws the owning component only if the value changed.
-    ///
-    /// React's bail-out, made explicit because Rust can check it: a component
-    /// that recomputes the same value every render must not mark anything.
-    pub fn set_if_changed(self, value: T) where T: PartialEq;
-    /// Writes in place, and redraws the owning component.
+    /// Mutate in place. The write is silent.
     pub fn edit<R>(self, change: impl FnOnce(&mut T) -> R) -> R;
-    /// Writes in place without redrawing, for a value the frame is already
-    /// about to read — a viewport height, a syntax cache.
-    pub fn edit_without_redraw<R>(self, change: impl FnOnce(&mut T) -> R) -> R;
+    /// Replace the value. The write is silent.
+    pub fn replace(self, value: T);
+    ///
     /// Whether the owning component is still mounted.
     pub fn is_mounted(self) -> bool;
 }
 ```
+
+Use state for a value that describes the frame. Use a ref for a large mutable
+model, an imperative cache, or a value updated independently of rendering.
+Call `redraw()` when a ref mutation changes the visible frame.
 
 ### 3.5 Layout
 
@@ -523,6 +555,10 @@ React's pattern and it needs nothing from the framework: `Rc<dyn Fn(T)>` is
 already `Clone + 'static`, so it is a context value like any other. §10 shows
 both ends.
 
+State follows the same split. A render reads the snapshot returned by
+`use_state`; a listener keeps the accompanying `SetState<T>` and calls `set`
+or `update`.
+
 ### 3.8 Worker replies
 
 ```rust
@@ -672,14 +708,25 @@ struct Hooks {
 }
 
 enum Slot {
-    /// The value, behind its own cell so two different states can be read at
-    /// once without the runtime itself staying borrowed.
-    State(std::rc::Rc<std::cell::RefCell<dyn std::any::Any>>),
+    /// The committed value and its queued direct or functional updates.
+    State(Box<dyn PendingState>),
+    /// Mutable storage that never marks its owner by itself.
+    Ref(std::rc::Rc<std::cell::RefCell<dyn std::any::Any>>),
     Memo(MemoSlot),
     Effect(EffectSlot),
     Context(ContextSlot),
     Size,
     Focus,
+}
+
+struct StateSlot<T> {
+    value: T,
+    pending: Vec<StateUpdate<T>>,
+}
+
+enum StateUpdate<T> {
+    Set(T),
+    Update(Box<dyn FnOnce(T) -> T>),
 }
 ```
 
@@ -703,12 +750,31 @@ panics with both call sites when they disagree (P4.1).
 
 ```rust
 // hook/state.rs
-/// A value that survives a render.
+/// One render's value and a stable setter for its next value.
 ///
-/// Re-runs: never — `first` is called once, when the component mounts.
+/// `first` runs once, when the component mounts. Pending updates are applied
+/// in call order before a later render, and the returned `T` is that render's
+/// snapshot.
 /// Panics: P4.1, P4.2.
 #[track_caller]
-pub fn use_state<T: 'static>(scope: &mut Scope, first: impl FnOnce() -> T) -> State<T>;
+pub fn use_state<T: Clone + PartialEq + 'static>(
+    scope: &mut Scope,
+    first: impl FnOnce() -> T,
+) -> (T, SetState<T>);
+```
+
+The clone is the snapshot returned to the component. Small values are copied;
+large immutable values live in an `Rc<T>`. A large value that is meant to be
+mutated in place belongs in `use_ref`.
+
+```rust
+// hook/reference.rs
+/// Mutable storage that survives a render without scheduling one.
+///
+/// `first` runs once. Reads and writes go through the returned `Ref<T>`.
+/// Panics: P4.1, P4.2.
+#[track_caller]
+pub fn use_ref<T: 'static>(scope: &mut Scope, first: impl FnOnce() -> T) -> Ref<T>;
 ```
 
 ```rust
@@ -1069,7 +1135,8 @@ The pass order inside one `Tree::draw`:
 ```
 1  enter the runtime
 2  render round:   reconcile from the root, then drain the redraw set,
-                   parents before children
+                   parents before children; apply each scope's queued state
+                   updates immediately before deciding whether it must run
 3  layout round:   measure bottom-up, assign top-down, write each scope's area
 4  if any scope that called use_size was assigned a rectangle other than the
    one use_size returned in step 2  →  mark it, go back to 2
@@ -1106,9 +1173,9 @@ callback panics (P7.1).
 Why `use_size` exists at all, in this program's own terms: `draw/pane.rs`
 currently calls `viewport.set_height(rect.height, …)` *during* the draw, which
 is a state write in the paint pass and is forbidden by R7.1.4. The replacement
-is `use_size` in the render pass followed by `view.edit_without_redraw(|v|
-v.set_height(h, rows))` — silent, because the frame about to be painted is the
-one that will read it, so there is nothing to redraw for.
+is `use_size` in the render pass followed by
+`view.edit(|v| v.set_height(h, rows))`, where `view` came from `use_ref`.
+The current frame reads the new height during paint.
 
 ---
 
@@ -1116,8 +1183,8 @@ one that will read it, so there is nothing to redraw for.
 
 The scope tree is what survives a frame. Reconciliation decides, for each node
 this frame produced, which live scope it is — and therefore which hook slots,
-which `use_state` values, which effect cleanups. That is the whole reason the
-framework exists; `use_state` cannot be written without it.
+which state values and refs, which effect cleanups. That is the whole reason
+the framework exists; `use_state` cannot be written without it.
 
 ```rust
 // scope.rs
@@ -1214,9 +1281,9 @@ the scope's children. On return the scope goes back into the slab, and if
 `paint`, `listeners` and `focusable`, and its children are reconciled in place.
 A host has no hooks and no render of its own, so there is nothing to compare
 and nothing to skip: every visit replaces all four. This is what makes a
-listener the one the current frame built. The closures captured last frame's
-`State` handles, which are still valid — but they may also have captured props
-or local values that have since changed.
+listener the one the current frame built. The closures captured that render's
+state snapshots and stable `SetState` or `Ref` handles; a later render replaces
+them with closures carrying the later snapshots.
 *test: `a_listener_is_the_one_the_last_render_built`*
 
 **R6.2.4 — the skipped keep what they have.** A subtree left untouched by
@@ -1234,8 +1301,8 @@ created on the way through. Then its children are mounted, in order.
 this order: its effect tasks are closed, so an outstanding reply is refused;
 its effect cleanups are dropped, deepest first; its context offers are dropped;
 its focus and hit registrations are removed; its hook slots are dropped; the
-slab entry is freed and its generation bumped, so every `State<T>` and every
-`Completion<T>` naming it now fails its check (P4.3, R9.3.1).
+slab entry is freed and its generation bumped, so every `SetState<T>`,
+`Ref<T>` and `Completion<T>` naming it now fails its check (P4.3, R9.3.1).
 *test: `unmounting_runs_the_deepest_cleanup_first`*
 *test: `a_reply_for_a_component_that_went_away_is_refused`*
 
@@ -1257,13 +1324,24 @@ its last child list, its rectangle and its listeners. It is still walked by
 paint.
 *test: `a_clean_component_is_painted_without_being_run`*
 
-**R6.3.4** `State::set_if_changed` marks the owner only when the value is not
-equal to the one already there. `set` and `edit` always mark. This is what lets
-a child report something upward — a status line's contents — during its own
-render without the two of them marking each other for ever: the second write is
-equal, so nothing is marked, and the frame settles.
+**R6.3.4** Every `SetState` call appends to that slot's queue. Direct `set(v)`
+entries carry the value computed by the render or listener that called them.
+Functional `update(f)` entries receive the result of the entry before them.
+The call marks the owner pending, and the queue is applied in call order before
+the owning component next runs.
+*test: `two_direct_sets_use_one_render_snapshot`*
+*test: `functional_updates_compose_in_call_order`*
+
+**R6.3.5** `set` and `update` compare the fully applied value with the committed
+one. An equal result clears the pending mark. This lets a child report a status
+value during render; repeating the same value settles the frame.
 *test: `writing_the_same_value_marks_nothing`*
 *test: `the_status_line_settles_in_one_frame`*
+
+**R6.3.6** `Ref::edit` and `Ref::replace` never mark a scope. A caller that
+changed something the frame describes calls `redraw()` or a state setter. This
+is the same line React draws between `useRef` and `useState`.
+*test: `editing_a_ref_does_not_redraw`*
 
 ---
 
@@ -1290,9 +1368,9 @@ before its children are painted.
 is not painted and its children are not visited.
 *test: `a_node_clipped_to_nothing_is_skipped`*
 
-**R7.1.4** Paint writes cells and nothing else. `State::set`, `State::edit` and
-`redraw()` called from inside a paint callback panic (P7.2). `State::read`,
-`State::cloned` and `State::edit_without_redraw` are legal.
+**R7.1.4** Paint writes cells and nothing else. Every `SetState` method,
+`Ref::edit`, `Ref::replace` and `redraw()` called from inside a paint callback
+panic (P7.2). Captured state snapshots and `Ref::read` are legal.
 *test: `setting_state_while_painting_is_refused`*
 
 **R7.1.5** The paint walk records, for every node that has a listener or is
@@ -1324,7 +1402,8 @@ into it (R5.2.4).
 *test: `a_canvas_asks_for_nothing`*
 
 **R7.2.3** A canvas is `Rc<dyn Fn(&mut Paint<'_>)>`, rebuilt every render. It
-captures `Copy` state handles, so rebuilding it costs no clone of any model.
+captures that render's small state snapshots and `Copy` refs to large models,
+so rebuilding it clones no buffer or store.
 *test: `a_canvas_closure_reads_this_frames_state`*
 
 ### 7.3 `Piece::droppable` stays inside a `Canvas`
@@ -1580,7 +1659,7 @@ redraws **only if the piece covers a line the pane is showing**:
 
 ```rust
 let from = response.from;
-let taken = store.edit_without_redraw(|store| store.install(response));
+let taken = store.edit(|store| store.install(response));
 if taken && from < visible.end {
     redraw();
 }
@@ -1606,10 +1685,10 @@ pane keeps its last child tree and is painted without being run (R6.3.3).
 *test: `a_span_batch_runs_one_component`* — asserted with
 `Harness::render_count() == 1`.
 
-**R9.4.4** The store is one `use_state(scope, Store::new)` at the root, provided
-as context by its `State<Store>` handle, which is `Copy`. Reading it costs no
-clone and writing it is `edit_without_redraw`, so installing spans never by itself
-redraws anything.
+**R9.4.4** The store is one `use_ref(scope, Store::new)` at the root, provided
+as context by its `Ref<Store>` handle, which is `Copy`. Reading it costs no
+clone and writing it is silent, so installing spans never by itself redraws
+anything.
 *test: `installing_spans_does_not_redraw_by_itself`*
 
 **R9.4.5** The pane asks for more by depending on how much has arrived. Its
@@ -1684,9 +1763,10 @@ The contexts this application has, and where they are offered:
 | type | offered by | read by |
 |---|---|---|
 | `Theme` (`Copy`) | `Screen` | every component that paints |
-| `State<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
-| `State<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
-| `Rc<Outbox>` | `Screen` | `Screen`, `DiffPane` |
+| `Ref<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
+| `Ref<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
+| `SetState<Status>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
+| `Rc<Outbox>` | `Screen` props | `Screen`, `DiffPane` |
 | `Open` | `Screen` | `ExplorerPane` |
 | `Run` | `Screen` | `ExplorerPane`, `DiffPane` |
 
@@ -1873,24 +1953,24 @@ StatusBar: this render called 3 hooks and the last one called 5. Hooks must run
 in the same order every render.
 ```
 
-**P4.3 — a state handle was captured into something that outlived its component.**
+**P4.3 — a setter or ref was captured into something that outlived its component.**
 
 ```text
-a State was used after ExplorerPane was removed
+a SetState was used after ExplorerPane was removed
 ```
 
-**P4.4 — a state handle was used with no runtime entered.**
+**P4.4 — a setter or ref was used with no runtime entered.**
 
 ```text
-state may only be used inside a component, a listener, an effect or a worker reply
+state setters and refs may only be used while loom is running a component, listener, effect, worker reply or painter
 ```
 
-**P4.5 — re-entrant `with`, `edit` or `edit_without_redraw` on one state.** Nesting
-them on *different* states is legal and is how a canvas reads a buffer, a
-viewport and a store at once.
+**P4.5 — `edit` or `replace` on one ref while that ref is borrowed.** Nested
+reads are legal. Borrowing *different* refs is legal and is how a canvas reads
+a buffer, a viewport and a store at once.
 
 ```text
-a State was edited from inside its own edit
+a Ref was borrowed from inside its own borrow
 ```
 
 **P5.1 — R5.8.3.**
@@ -1917,11 +1997,12 @@ ExplorerPane: two children share the key "src/main.rs"
 draw was called from inside a paint callback
 ```
 
-**P7.2 — R7.1.4.** Only `set`, `set_if_changed`, `edit` and `redraw()`; `read`,
-`cloned` and `edit_without_redraw` are legal while painting.
+**P7.2 — R7.1.4.** Every `SetState` method, `Ref::edit`, `Ref::replace` and
+`redraw()` are forbidden; captured snapshots and `Ref::read` are legal while
+painting.
 
 ```text
-DiffPane: state was set while painting — paint reads, it does not write
+DiffPane changed component data while painting — paint callbacks may only write cells
 ```
 
 **P7.3 — R7.2.1. Debug builds only.**
@@ -1952,7 +2033,7 @@ row 9 is outside the 8-row screen
 | `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
 | `use_size` before the first layout | `Rect::ZERO` |
 | `Focus::request`, `Focus::move_next`, `Focus::move_previous` with nothing focusable | no-op |
-| `State::set_if_changed` with an equal value | writes, marks nothing |
+| `SetState::set` or `update` ending at an equal value | commits the value, runs no component |
 | a container too small for its children | paints its `too_small` node (R5.4) |
 | a rectangle of zero width or height | painted as nothing (R5.3.5) |
 | `Harness::area_of` for an unknown name | `None` |
@@ -1994,6 +2075,8 @@ proves nothing.
 | **I13** | `loom` names no application crate. | `cargo xtask lint-arch` | add `use ui::Theme;` to `crates/loom/src/paint/text.rs` |
 | **I14** | Every file in `loom` and `loom-macros` is under the 300-line soft cap. | `cargo xtask lint-size` | concatenate `reconcile.rs` and `scope.rs` |
 | **I15** | `Session::draw_into(&mut Cells, Rect)` keeps its signature through every migration phase, and `crates/ui/tests/explorer/*` (1,505 lines across six files) and `crates/codediff/tests/screens.rs` pass unchanged. | the existing suites, run at the end of every phase | change any phase's screen output by one cell |
+| **I16** | One render sees one state snapshot; direct setters use that snapshot and functional setters compose in call order. | `functional_updates_compose_in_call_order` | make `SetState::update` capture the render snapshot instead of the queued value |
+| **I17** | Mutating a ref never schedules a component by itself. | `editing_a_ref_does_not_redraw` | mark the owner in `Ref::edit` |
 
 ### 13.1 The test that is the net
 
@@ -2087,8 +2170,9 @@ today — that is a measurement; the estimate beside it is not.
 | `src/frame.rs` | the seven steps of §5.6, the round caps | 180 | |
 | `src/reconcile.rs` | flattening, positional and keyed matching, mount, update, unmount | 260 | |
 | `src/current.rs` | the thread-local, the guard that enters and leaves it | 100 | |
-| `src/hook/mod.rs` | `Slot`, `Hooks`, `use_hook`, order checking, `redraw` | 130 | |
-| `src/hook/state.rs` | `State<T>` and its five verbs | 190 | |
+| `src/hook/mod.rs` | `Slot`, `Hooks`, `use_hook`, order checking, `redraw` | 140 | |
+| `src/hook/state.rs` | state snapshots, `SetState<T>`, the ordered update queue | 230 | |
+| `src/hook/reference.rs` | `Ref<T>`, short borrows and silent mutation | 120 | |
 | `src/hook/memo.rs` | `use_memo` | 80 | |
 | `src/hook/effect.rs` | `use_effect`, the effect queue, cleanup by `Drop` | 170 | |
 | `src/hook/context.rs` | `provide_context`, `context`, `try_context`, versions | 110 | |
@@ -2103,7 +2187,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
 | `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,670** | |
+| | **`loom`** | **≈ 3,840** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -2136,8 +2220,8 @@ workspace = true
 ```
 
 No taffy, no `generational-box`, no async runtime, no new workspace
-dependency. `unsafe_code = "forbid"` holds, which is the constraint that
-produced `State<T>`'s design.
+dependency. `unsafe_code = "forbid"` holds. `SetState<T>` and `Ref<T>` are checked slot
+handles.
 
 ### 14.4 The `lint_arch` entries
 
@@ -2256,7 +2340,7 @@ becomes `use_state` in the diff pane, and pointer capture (R8.4) replaces the
 
 ### Phase 6 — the keyboard
 
-Each pane resolves keys through the `State<Resolver>` it reads from context and
+Each pane resolves keys through the `Ref<Resolver>` it reads from context and
 handles the actions it owns; everything else goes to the `Run` callback the
 root put in context. Bubbling (R8.3) replaces `keymap::live()`'s hand-written
 innermost-first walk.
@@ -2267,11 +2351,13 @@ rebuild.
 
 ### Phase 7 — state moves in
 
-`View`, `Tab` and `Pane` dissolve into `use_state` in the components that own
-them. `Buffer` and `Viewport` stay exactly as they are — they are a good model
-and the framework has no opinion about them. `BufferId` and `PaneId` disappear,
-because the indirection they exist to provide — a pane cannot hold `&mut Buffer`
-without making `View` self-referential — is what `ScopeId` provides now.
+`View`, `Tab` and `Pane` dissolve into state snapshots for small declarative
+values and refs for `Buffer`, `Viewport`, `Resolver` and `Store`. `Outbox`
+remains an `Rc` prop because the session drains the same object after a frame.
+Those model types stay exactly as they are — the framework has no opinion
+about them. `BufferId` and `PaneId` disappear, because the indirection they
+exist to provide — a pane cannot hold `&mut Buffer` without making `View`
+self-referential — is what `ScopeId` plus a checked `Ref<T>` provides now.
 
 Measured: `view/mod.rs` 284, `view/tab.rs` 245, `view/pane.rs` 23.
 
@@ -2402,9 +2488,9 @@ Newtypes rather than bare `Rc<dyn Fn(_)>` because context is keyed by type
 ///
 /// `draw::status::Status`, owned rather than borrowed, because props are
 /// `'static`. Whichever pane holds focus writes this during its own render;
-/// the root reads it and hands it to `StatusBar`. `set_if_changed` rather than
-/// `set`, so the second, identical write marks nothing and the frame settles
-/// (R6.3.4).
+/// the root reads the next snapshot and hands it to `StatusBar`. `SetState::set`
+/// compares values, so the second, identical write runs nothing and the frame
+/// settles (R6.3.5).
 #[derive(Clone, PartialEq, Default)]
 pub struct Status {
     pub file: Option<std::rc::Rc<file_types::File>>,
@@ -2531,8 +2617,9 @@ use std::rc::Rc;
 use crokey::KeyCombination;
 use crossterm::event::{MouseButton, MouseEventKind};
 use file_types::File;
-use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Scope, State,
-           component, context, rsx, use_effect, use_focus, use_size, use_state};
+use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Ref, Scope,
+           SetState, component, context, redraw, rsx, use_effect, use_focus,
+           use_ref, use_size};
 
 use crate::input::{Action, BufferAction, KeymapType, Resolution, Resolver, ViewAction};
 use crate::theme::Theme;
@@ -2543,13 +2630,13 @@ use crate::app::status::Status;
 #[component]
 pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     let theme = context::<Theme>(scope);
-    let keys = context::<State<Resolver>>(scope);
-    let status = context::<State<Status>>(scope);
+    let keys = context::<Ref<Resolver>>(scope);
+    let status = context::<SetState<Status>>(scope);
     let Open(open) = context::<Open>(scope);
     let Run(run) = context::<Run>(scope);
 
-    let buffer = use_state(scope, || Buffer::explorer(files.to_vec()));
-    let view = use_state(scope, Viewport::new);
+    let buffer = use_ref(scope, || Buffer::explorer(files.to_vec()));
+    let view = use_ref(scope, Viewport::new);
     let focus = use_focus(scope);
     let area = use_size(scope);
 
@@ -2569,18 +2656,19 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
         });
         if let Some((landing, rows)) = landing {
             view.edit(|v| v.place(landing, rows));
+            redraw();
         }
     });
 
     // The height the frame is about to be painted at, recorded silently:
     // the frame that will read it is the one being prepared.
     let rows = buffer.read(Buffer::view_lines);
-    view.edit_without_redraw(|v| v.set_height(u32::from(area.height), rows));
+    view.edit(|v| v.set_height(u32::from(area.height), rows));
 
     // What the status line says while this pane has focus. A list of changed
     // files is not a diff, so it has no changes to count.
     if focus.has {
-        status.set_if_changed(Status {
+        status.set(Status {
             file: None,
             view_line: view.read(Viewport::cursor),
             view_lines: rows,
@@ -2606,6 +2694,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                 Action::Buffer(action) => {
                     let moved = matches!(action, BufferAction::Motion(_));
                     buffer.edit(|b| view.edit(|v| b.apply(action, command.repeat(), v)));
+                    redraw();
                     if moved && let Some(file) = chose() {
                         open_key(file);
                     }
@@ -2620,6 +2709,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                     } else if let Some(file) = chose() {
                         open_key(file);
                     }
+                    redraw();
                     Bubble::Stop
                 }
                 // Tab, view and program actions belong further out. The root
@@ -2630,6 +2720,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
         .on_wheel(move |lines| {
             let rows = buffer.read(Buffer::view_lines);
             view.edit(|v| v.scroll(lines, rows));
+            redraw();
             Bubble::Stop
         })
         .on_mouse(move |mouse: Mouse| {
@@ -2641,6 +2732,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
             let line = view.read(Viewport::top) + u32::from(mouse.local.y);
             if line < rows {
                 view.edit(|v| v.place(line, rows));
+                redraw();
                 if let Some(file) = chose() {
                     open(file);
                 }
@@ -2688,9 +2780,9 @@ repository and none of it is touched.
 ```rust
 use std::rc::Rc;
 
-use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Scope, State,
-           component, context, redraw, rsx, use_effect, use_focus, use_size,
-           use_state};
+use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Ref, Scope,
+           SetState, component, context, redraw, rsx, use_effect, use_focus,
+           use_ref, use_size};
 use syntax::{Store, SyntaxResponse, Version};
 
 use crate::app::pending::{Outbox, Request};
@@ -2705,26 +2797,26 @@ use crate::view::{Buffer, Viewport};
 const MARGIN: u32 = 2_000;
 
 #[component]
-pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Version) -> Node {
+pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version) -> Node {
     let theme = context::<Theme>(scope);
-    let store = context::<State<Store>>(scope);
-    let keys = context::<State<Resolver>>(scope);
+    let store = context::<Ref<Store>>(scope);
+    let keys = context::<Ref<Resolver>>(scope);
     let post = context::<Rc<Outbox>>(scope);
-    let status = context::<State<Status>>(scope);
+    let status = context::<SetState<Status>>(scope);
     let Run(run) = context::<Run>(scope);
 
-    let view = use_state(scope, Viewport::new);
+    let view = use_ref(scope, Viewport::new);
     let focus = use_focus(scope);
     let area = use_size(scope);
 
     let rows = buffer.read(|b| b.as_ref().map_or(0, Buffer::view_lines));
-    view.edit_without_redraw(|v| v.set_height(u32::from(area.height), rows));
+    view.edit(|v| v.set_height(u32::from(area.height), rows));
     let visible = view.read(|v| v.visible(rows));
     let keymap = buffer.read(|b| b.as_ref().map_or(KeymapType::default(), Buffer::keymap_type));
 
     if focus.has {
         // `draw::screen::summary`, moved to the pane that knows the answers.
-        status.set_if_changed(buffer.read(|b| b.as_ref().map_or_else(Status::default, |b| Status {
+        status.set(buffer.read(|b| b.as_ref().map_or_else(Status::default, |b| Status {
             file: b.file().cloned().map(Rc::new),
             view_line: view.read(Viewport::cursor),
             view_lines: b.view_lines(),
@@ -2744,7 +2836,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
     use_effect(scope, (*version, end, coloured), move |_, effect| {
         let reply = effect.subscription(move |response: SyntaxResponse| {
             let from = response.from;
-            let taken = store.edit_without_redraw(|store| store.install(response));
+            let taken = store.edit(|store| store.install(response));
             // Only a piece covering a line this pane is showing is worth a
             // frame. `end` is a view line, which is never below the file line
             // at the same place, so this never skips a redraw that was needed.
@@ -2752,7 +2844,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
                 redraw();
             }
         });
-        let requests = store.edit_without_redraw(|store| {
+        let requests = store.edit(|store| {
             buffer.read(|b| b.as_ref()
                 .map(|b| b.colour_requests(store, *version, end + MARGIN))
                 .unwrap_or_default())
@@ -2774,6 +2866,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
                     buffer.edit(|b| {
                         if let Some(b) = b { view.edit(|v| b.apply(action, command.repeat(), v)) }
                     });
+                    redraw();
                     Bubble::Stop
                 }
                 _ => { run(command); Bubble::Stop }
@@ -2782,6 +2875,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
         .on_wheel(move |lines| {
             let rows = buffer.read(|b| b.as_ref().map_or(0, Buffer::view_lines));
             view.edit(|v| v.scroll(lines, rows));
+            redraw();
             Bubble::Stop
         })
         .on_mouse(move |mouse| {
@@ -2823,13 +2917,13 @@ pub fn DiffPane(scope: &mut Scope, buffer: State<Option<Buffer>>, version: Versi
 }
 ```
 
-Note which state lives where, and why it matters. The `Viewport` is the pane's
-own, keyed by file name in the root (below), so re-opening a file the reader
-was on keeps their cursor and opening a different one starts at its top —
-which is `View::show`'s `keep` and `Tab::set_right_pane`'s fresh pane, both for
-free. The `Buffer` belongs to the root, because that is where the worker's
-reply lands. Scrolling therefore marks one component; opening a file marks the
-root, once.
+Note which storage lives where, and why it matters. The `Viewport` is the
+pane's ref, keyed by file name in the root (below), so re-opening a file the
+reader was on keeps their cursor and opening a different one starts at its top
+— which is `View::show`'s `keep` and `Tab::set_right_pane`'s fresh pane, both
+for free. The `Buffer` is a root ref because that is where the worker's reply
+lands. Scrolling edits the pane's ref and redraws that pane; opening a file
+updates root state once.
 
 ## A.4 `Screen`, the root
 
@@ -2842,7 +2936,7 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
            Basis, Node, Row, RowProps, Scope, Text, TextProps, component,
-           provide_context, rsx, use_effect, use_state};
+           provide_context, rsx, use_effect, use_ref, use_state};
 use syntax::{Store, Version};
 
 use crate::app::pending::{Outbox, Request};
@@ -2862,35 +2956,39 @@ const MAX_LEFT: u16 = 100;
 
 #[component]
 pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbox>) -> Node {
-    let store = use_state(scope, Store::new);
-    let keys = use_state(scope, Resolver::new);
-    let status = use_state(scope, Status::default);
+    let store = use_ref(scope, Store::new);
+    let keys = use_ref(scope, Resolver::new);
+    let opened = use_ref(scope, || None::<Buffer>);
 
-    let opened = use_state(scope, || None::<Buffer>);
-    let notice = use_state(scope, || None::<Rc<str>>);
-    let chosen = use_state(scope, || None::<File>);
-    let version = use_state(scope, || Version(1));
-    let left = use_state(scope, || DEFAULT_LEFT);
+    let (status, set_status) = use_state(scope, Status::default);
+    let (notice, set_notice) = use_state(scope, || None::<Rc<str>>);
+    let (chosen, set_chosen) = use_state(scope, || None::<File>);
+    let (version, set_version) = use_state(scope, || Version(1));
+    let (left, set_left) = use_state(scope, || DEFAULT_LEFT);
 
-    // The two things a pane asks the root to do. Every capture is a `State`
-    // handle, which is `Copy` and two integers wide, so rebuilding these each
-    // render costs one allocation apiece.
+    // The two things a pane asks the root to do. Setters and refs are `Copy`
+    // slot handles, so rebuilding these callbacks costs one allocation apiece.
     let post_program = post.clone();
-    provide_context(scope, Open(Rc::new(move |file: File| chosen.set(Some(file)))));
+    provide_context(scope, Open(Rc::new(move |file: File| set_chosen.set(Some(file)))));
     provide_context(scope, Run(Rc::new(move |command: Command| match command.action {
         Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
             // Focus order is paint order, so "the next pane" needs no table of
             // its own. R8.2.2.
         }
-        Action::Tab(TabAction::WidenLeft) => left.edit(|n| *n = (*n + 2).min(MAX_LEFT)),
-        Action::Tab(TabAction::NarrowLeft) => {
-            left.edit(|n| *n = n.saturating_sub(2).max(MIN_LEFT));
+        Action::Tab(TabAction::WidenLeft) => {
+            set_left.update(|n| (n + 2).min(MAX_LEFT));
         }
-        Action::View(ViewAction::ToggleLayout) => opened.edit(|b| {
-            if let Some(buffer) = b.take() {
-                *b = Some(buffer.switch_diff_layout());
-            }
-        }),
+        Action::Tab(TabAction::NarrowLeft) => {
+            set_left.update(|n| n.saturating_sub(2).max(MIN_LEFT));
+        }
+        Action::View(ViewAction::ToggleLayout) => {
+            opened.edit(|b| {
+                if let Some(buffer) = b.take() {
+                    *b = Some(buffer.switch_diff_layout());
+                }
+            });
+            set_version.update(|v| Version(v.0 + 1));
+        }
         Action::Program(action) => post_program.send(Request::Program(action)),
         _ => {}
     })));
@@ -2899,23 +2997,23 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     provide_context(scope, post.clone());
     provide_context(scope, store);
     provide_context(scope, keys);
-    provide_context(scope, status);
+    provide_context(scope, set_status);
 
     // Ask for the file the reader chose. The reply address is created here,
     // so a reply for a file they have since left is refused rather than
     // shown — R9.3.3, which is what `apply_file_response`'s `if
     // self.selected.as_ref() != Some(&response.file)` was for.
     let post_open = post.clone();
-    use_effect(scope, chosen.cloned(), move |chosen, effect| {
+    use_effect(scope, chosen.clone(), move |chosen, effect| {
         let Some(file) = chosen.clone() else { return };
         let reply = effect.completion(move |response: pipeline::file::Response| {
             match response.content {
                 Ok(content) => {
-                    opened.set(Some(Buffer::diff(content)));
-                    notice.set(None);
-                    version.edit(|v| v.0 += 1);
+                    opened.replace(Some(Buffer::diff(content)));
+                    set_notice.set(None);
+                    set_version.update(|v| Version(v.0 + 1));
                 }
-                Err(why) => notice.set(Some(why.into())),
+                Err(why) => set_notice.set(Some(why.into())),
             }
         });
         post_open.send(Request::Open { file, reply });
@@ -2933,14 +3031,12 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // diff needs its minimum — R5.4.4 and R5.4.5, which is what
     // `render::layout::split`'s clamp did by hand.
     let explorer = Layout {
-        basis: if split { Basis::Length(left.cloned()) } else { Basis::Auto },
+        basis: if split { Basis::Length(left) } else { Basis::Auto },
         grow: if split { 0 } else { 1 },
         shrink: 1,
         min_width: 8,
         ..Default::default()
     };
-    let shown_status = status.cloned();
-
     rsx! {
         Column {
             layout: Layout { grow: 1, ..Default::default() },
@@ -2965,16 +3061,16 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                         layout: Layout { grow: 1, basis: Basis::Length(0),
                                          min_width: 20, ..Default::default() },
                         ..,
-                        DiffPane { key: name, buffer: opened, version: version.cloned() }
+                        DiffPane { key: name, buffer: opened, version }
                     }
                 }
             }
 
             StatusBar {
-                file: shown_status.file, view_line: shown_status.view_line,
-                view_lines: shown_status.view_lines, changes: shown_status.changes,
-                change: shown_status.change, timed_out: shown_status.timed_out,
-                exhausted: shown_status.exhausted, notice: notice.cloned(),
+                file: status.file, view_line: status.view_line,
+                view_lines: status.view_lines, changes: status.changes,
+                change: status.change, timed_out: status.timed_out,
+                exhausted: status.exhausted, notice: notice.clone(),
             }
         }
     }
@@ -2990,18 +3086,17 @@ failing the whole screen" becomes the `too_small` climb of R5.4.2.
 
 | today | tomorrow |
 |---|---|
-| `View::buffers` | `use_state` in the component that shows each one |
+| `View::buffers` | `use_ref` in the component that shows each one |
 | `View::tabs`, `Tab::panes`, `Tab::layout` | the node tree |
 | `Tab::focus`, `focus_next` | `use_focus`, `Focus::move_next`, paint order (R8.2.2) |
-| `Tab::resize` | `left: State<u16>` in `Screen` |
-| `Pane::viewport` | `use_state(scope, Viewport::new)` in each pane |
+| `Tab::resize` | `left` plus `set_left: SetState<u16>` in `Screen` |
+| `Pane::viewport` | `use_ref(scope, Viewport::new)` in each pane |
 | `BufferId`, `PaneId` | `ScopeId` |
 | `View::selection`, `PendingSelection` | `use_state` in `DiffPane`, plus pointer capture |
-| `View::version` | `version: State<Version>` in `Screen` |
+| `View::version` | a `Version` snapshot plus `SetState<Version>` in `Screen` |
 | `View::request` | the syntax effect in `DiffPane` (R9.4.5) |
 | `View::update_explorer` | the `files` effect in `ExplorerPane` |
-| `View::selected_file` | `chosen: State<Option<File>>` in `Screen`, set through the `Open` callback |
+| `View::selected_file` | a chosen-file snapshot plus setter in `Screen`, set through the `Open` callback |
 | `View::keymap_type` | each pane's own `KeymapType`, at the point it resolves a key |
 | `ScreenMap` | the paint walk's record (R7.1.5) |
-| `Look` | `Theme` and `State<Store>` in context |
-
+| `Look` | `Theme` and `Ref<Store>` in context |
