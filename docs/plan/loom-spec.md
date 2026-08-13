@@ -916,7 +916,7 @@ frame it mounts.
 *test: `a_component_that_asks_its_size_renders_twice_when_it_mounts`*
 
 **R5.6.2** Steps 2 and 3 repeat at most **4** times per frame. On the 4th round
-the areas from that round are painted and the frame completes; `Tree::rounds()`
+the areas from that round are painted and the frame completes; `Tree::layout_rounds()`
 reports 4, which is how a test sees it — `loom` depends on `ratatui`,
 `crossterm` and `crokey` and nothing else, so it cannot log. Four is slack, not
 a measurement: the longest chain of size-dependent decisions in this program is
@@ -1041,11 +1041,27 @@ the scope's children. On return the scope goes back into the slab, and if
 `hooks.index != hooks.slots.len()` the render panics (P4.2).
 *test: `a_render_that_skips_a_hook_is_refused`*
 
-**R6.2.3 — mount.** A slab entry is allocated, `render` runs, and its hooks are
+**R6.2.3 — update, host.** A matched host scope takes the new node's `layout`,
+`paint`, `listeners` and `focusable`, and its children are reconciled in place.
+A host has no hooks and no render of its own, so there is nothing to compare
+and nothing to skip: every visit replaces all four. This is what makes a
+listener the one the current frame built. The closures captured last frame's
+`State` handles, which are still valid — but they may also have captured props
+or local values that have since changed.
+*test: `a_listener_is_the_one_the_last_render_built`*
+
+**R6.2.4 — the skipped keep what they have.** A subtree left untouched by
+R6.2.1 is not visited, so its host scopes keep the `layout`, `paint`,
+`listeners` and `focusable` they already hold. They are still laid out,
+painted, hit-tested and bubbled through, because nothing about them changed.
+R6.3.3 says the same thing for a scope the redraw set never reached.
+*test: `a_memoised_subtree_keeps_the_listeners_it_had`*
+
+**R6.2.5 — mount.** A slab entry is allocated, `render` runs, and its hooks are
 created on the way through. Then its children are mounted, in order.
 *test: `mounting_runs_the_parent_before_the_child`*
 
-**R6.2.4 — unmount.** Depth-first, children before parent. For each scope, in
+**R6.2.6 — unmount.** Depth-first, children before parent. For each scope, in
 this order: its effect tasks are closed, so an outstanding reply is refused;
 its effect cleanups are dropped, deepest first; its context offers are dropped;
 its focus and hit registrations are removed; its hook slots are dropped; the
@@ -1054,7 +1070,7 @@ slab entry is freed and its generation bumped, so every `State<T>` and every
 *test: `unmounting_runs_the_deepest_cleanup_first`*
 *test: `a_reply_for_a_component_that_went_away_is_refused`*
 
-**R6.2.5** If the focused scope unmounts, focus moves to the next focusable in
+**R6.2.7** If the focused scope unmounts, focus moves to the next focusable in
 paint order, or to the previous one if there is no next, or to nothing.
 *test: `closing_the_focused_pane_moves_focus_rather_than_losing_it`*
 
@@ -1072,11 +1088,11 @@ its last child list, its rectangle and its listeners. It is still walked by
 paint.
 *test: `a_clean_component_is_painted_without_being_run`*
 
-**R6.3.4** `State::put` marks the owner only when the value is not equal to the
-one already there. `set` and `edit` always mark. This is what lets a child
-report something upward — a status line's contents — during its own render
-without the two of them marking each other for ever: the second write is equal,
-so nothing is marked, and the frame settles.
+**R6.3.4** `State::set_if_changed` marks the owner only when the value is not
+equal to the one already there. `set` and `edit` always mark. This is what lets
+a child report something upward — a status line's contents — during its own
+render without the two of them marking each other for ever: the second write is
+equal, so nothing is marked, and the frame settles.
 *test: `writing_the_same_value_marks_nothing`*
 *test: `the_status_line_settles_in_one_frame`*
 
@@ -1187,11 +1203,14 @@ an overlay takes the click.
 ### 8.2 Focus
 
 **R8.2.1** `use_focus` registers a scope as focusable. Focus is one `ScopeId`,
-or none.
+or none. A scope records only whether it *is* focusable; `Focus::has` and
+`Paint::has_focus` are comparisons against that single `ScopeId`, so two scopes
+cannot both believe they hold focus and no flag has to be cleared when it moves.
 *test: `only_one_node_holds_focus`*
 
-**R8.2.2** `Focus::next` moves to the next focusable in paint order, wrapping;
-`Focus::previous` moves back. Both are no-ops when nothing is focusable.
+**R8.2.2** `Focus::move_next` moves to the next focusable in paint order,
+wrapping; `Focus::move_previous` moves back. Both are no-ops when nothing is
+focusable.
 *test: `focus_wraps_rather_than_running_off_the_end`*
 
 **R8.2.3** A left mouse-down focuses the nearest focusable node at or above the
@@ -1218,7 +1237,7 @@ A wheel event is routed by position and climbs the same way.
 by the rest of the walk.
 *test: `a_listener_that_closes_its_own_pane_does_not_climb_into_a_ghost`*
 
-**R8.3.4** `Tree::key` and `Tree::mouse` return whether a listener stopped the
+**R8.3.4** `Tree::press` and `Tree::mouse` return whether a listener stopped the
 event.
 *test: `an_unbound_key_reports_that_nobody_took_it`*
 
@@ -1416,7 +1435,7 @@ by a margin, and reading ahead must not cost a frame.
 **R9.4.3** A piece covering a visible line marks exactly one scope. Every other
 pane keeps its last child tree and is painted without being run (R6.3.3).
 *test: `a_span_batch_runs_one_component`* — asserted with
-`Harness::renders() == 1`.
+`Harness::render_count() == 1`.
 
 **R9.4.4** The store is one `use_state(scope, Store::new)` at the root, provided
 as context by its `State<Store>` handle, which is `Copy`. Reading it costs no
@@ -1761,17 +1780,17 @@ row 9 is outside the 8-row screen
 |---|---|
 | `try_context::<T>` | `None` |
 | `Completion::complete`, `Subscription::send` | `false` when refused |
-| `Tree::key`, `Tree::mouse` | `false` when nobody stopped it |
+| `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
 | `use_size` before the first layout | `Rect::ZERO` |
-| `Focus::take`, `Focus::next`, `Focus::previous` with nothing focusable | no-op |
-| `State::put` with an equal value | writes, marks nothing |
+| `Focus::request`, `Focus::move_next`, `Focus::move_previous` with nothing focusable | no-op |
+| `State::set_if_changed` with an equal value | writes, marks nothing |
 | a container too small for its children | paints its `too_small` node (R5.4) |
 | a rectangle of zero width or height | painted as nothing (R5.3.5) |
 | `Harness::area_of` for an unknown name | `None` |
 | a canvas writing outside the cell grid | dropped by `Buffer::cell_mut`, which answers `Option` |
 | a `for` over an empty iterator | `Node::Fragment(vec![])`, which flattens to nothing |
 | a component returning `Node::Empty` | a scope with no children |
-| the 5th layout round in one frame | painted with round 4's rectangles; `Tree::rounds()` reports 4 (R5.6.2) |
+| the 5th layout round in one frame | painted with round 4's rectangles; `Tree::layout_rounds()` reports 4 (R5.6.2) |
 | a reply for a component that unmounted | refused, value dropped (R9.3.1) |
 | a span batch the store refuses | no redraw (R9.4.1) |
 
@@ -2798,7 +2817,7 @@ failing the whole screen" becomes the `too_small` climb of R5.4.2.
 |---|---|
 | `View::buffers` | `use_state` in the component that shows each one |
 | `View::tabs`, `Tab::panes`, `Tab::layout` | the node tree |
-| `Tab::focus`, `focus_next` | `use_focus`, `Focus::next`, paint order (R8.2.2) |
+| `Tab::focus`, `focus_next` | `use_focus`, `Focus::move_next`, paint order (R8.2.2) |
 | `Tab::resize` | `left: State<u16>` in `Screen` |
 | `Pane::viewport` | `use_state(scope, Viewport::new)` in each pane |
 | `BufferId`, `PaneId` | `ScopeId` |
