@@ -18,7 +18,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | element tree | a value describing one frame, built by `rsx!`, thrown away after reconciliation |
 | reconciliation | matching this frame's description against the live instance tree, so state has an owner |
 | function components | `#[component] fn Name(scope: &mut Scope, …) -> Node` |
-| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, context |
+| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context` |
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
@@ -37,6 +37,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | a capture phase | pointer capture covers the one drag this program has |
 | error boundaries | a panic in a painter belongs in a backtrace with the terminal restored, which `Screen`'s `Drop` already does |
 | `use_callback` | React documents it as `useMemo(() => fn, deps)`, and a closure is a value, so `use_memo` already is it |
+| `use(Context)` | React 19's conditional read; `use_context` is `useContext`, which cannot be conditional either, and no component here wants to be |
 | `useSyncExternalStore` | the one thing it buys — an outside mutable value telling the runtime it changed — is a `Ref<T>` write next to a state bump, and this program has four of them |
 | `useId`, `useReducer`, suspense, portals, hot reload, SSR | no user here |
 | struct components, borrowed props, GATs | locked out by decisions 7 and 8 |
@@ -56,8 +57,8 @@ sentence.
 | render parameter | `scope` | `cx` reads as "context", and context is a different thing here |
 | state setter | `SetState<T>`, called like a function, `Copy` | one way to write, so there is no second name to choose; the runtime keeps an 8-byte writer per state slot, which is what lets the handle stay `Copy` |
 | mutable value without redraw | `use_ref`, returning `Ref<T>` | state stays immutable and React-like; large models and imperative caches have an explicit home, and a `Ref<Option<NodeHandle>>` is React's other use for a ref |
-| context storage | parent walk keyed by `TypeId`, read recorded as `(TypeId, version)` | there is no provider node to reconcile, and the recorded version is the twenty lines that keep `memo` honest |
-| provider syntax | `provide_context(scope, value)` at the top of a render | it adds no node to the tree; a `Provider` component can be written on top of it in eight lines |
+| context storage | parent walk keyed by the context's marker `TypeId`, read recorded as `(TypeId, version)` | the marker type is the identity React gets from object identity, and the recorded version is the twenty lines that keep `memo` honest |
+| provider syntax | the context is the element: `ThemeContext { value: dark, … }` | React's `<ThemeContext value={dark}>`; one declaration is both the key a reader names and the element a provider writes |
 | listeners in `rsx!` | one `listeners:` prop built by a chain | one prop, one type, no macro magic, and an unknown handler is an unknown method |
 | keyed lists | `HashMap<Key, ScopeId>`, no longest-increasing-subsequence | LIS pays for moving DOM nodes; we reorder ids in a `Vec` and repaint |
 | hidden panes | `Layout::hidden`, mounted and out of layout | hiding the diff on a narrow screen must not throw its viewport away |
@@ -127,10 +128,14 @@ pub use event::{
     Bubble, Listeners, Mouse, capture_pointer, focus_next, focus_previous, release_pointer,
 };
 pub use hook::{
-    Always, Cleanup, Completion, Ref, SetState, Subscription, completion, context,
-    provide_context, subscription, try_context, use_effect, use_layout_effect, use_memo,
-    use_ref, use_state,
+    Always, Cleanup, Completion, Context, Ref, SetState, Subscription,
+    completion, subscription, use_context, use_effect, use_layout_effect,
+    use_memo, use_ref, use_state,
 };
+/// What `context!`'s `Component::render` calls. Not API: the way to offer a
+/// value is to write the provider element.
+#[doc(hidden)]
+pub use hook::offer;
 pub use layout::{Basis, Edges, Layout};
 pub use node::{Children, Element, Key, Node, NodeHandle};
 pub use paint::{Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps,
@@ -138,7 +143,7 @@ pub use paint::{Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps,
 pub use scope::{Scope, ScopeId};
 pub use tree::Tree;
 
-pub use loom_macros::{component, rsx};
+pub use loom_macros::{component, context, rsx};
 
 /// Re-exported so a consumer builds against the same versions we did.
 pub use crokey;
@@ -696,7 +701,7 @@ impl Harness {
     /// Mounts `C` at `width` × `height`. Does not draw.
     pub fn new<C: Component>(props: C::Props, width: u16, height: u16) -> Self;
     /// Provides a context value above the root, for a component that reads one.
-    pub fn provide<T: Clone + 'static>(self, value: T) -> Self;
+    pub fn provide<C: Context>(self, value: C::Value) -> Self;
     /// Replaces the root's props.
     pub fn set_props<C: Component>(&mut self, props: C::Props) -> &mut Self;
 
@@ -766,7 +771,6 @@ enum Slot {
     Memo(MemoSlot),
     Effect(EffectSlot),
     LayoutEffect(EffectSlot),
-    Context(ContextSlot),
 }
 
 struct StateSlot<T> {
@@ -913,23 +917,30 @@ impl PartialEq for Always {
 
 ```rust
 // hook/context.rs
-/// Offer `value` to everything below this component.
+/// One context: the key a reader names and the element a provider writes.
 ///
-/// Re-runs: every render. A later call in the same component replaces an
-/// earlier one of the same type.
-/// Panics: none.
-pub fn provide_context<T: Clone + 'static>(scope: &mut Scope, value: T);
+/// Declared with `context!`, never by hand.
+pub trait Context: 'static {
+    type Value: Clone + 'static;
+    /// What a reader gets when nothing above it provides one.
+    fn default_value() -> Self::Value;
+    /// Whether a new offer matches the last, so the version can stay put.
+    /// `context!` fills this in with `==`. A value with no `==` of its own
+    /// names the comparison in its declaration instead.
+    fn same(old: &Self::Value, new: &Self::Value) -> bool;
+}
 
-/// The nearest ancestor's `T`.
+// A provider's props are generated with the name `<Context>Props`, so `rsx!`
+// finds them like any other component's (§11.2):
+//
+//     pub struct ThemeContextProps { pub value: Theme, pub children: Children }
+
+/// The nearest ancestor's value for `C`, or `C::default_value()`.
 ///
 /// Re-runs: every render; the read is recorded so a memoised component cannot
 /// go stale.
-/// Panics: P10.1 when nothing above provided one.
-#[track_caller]
-pub fn context<T: Clone + 'static>(scope: &mut Scope) -> T;
-
-/// The same, answering `None` instead of panicking.
-pub fn try_context<T: Clone + 'static>(scope: &mut Scope) -> Option<T>;
+/// Panics: none.
+pub fn use_context<C: Context>(scope: &mut Scope) -> C::Value;
 ```
 
 ### 4.3 What the type system reaches, and what it does not
@@ -1892,76 +1903,136 @@ overlap test leaves `Tree::needs_draw()` false and the loop draws nothing.
 
 ## 10. Context
 
-Type-keyed, walked up the parent chain, stopping at the first ancestor that
-offers the type.
+A context is a type you declare. That one type is the key a reader names, the
+element a provider writes, and the home of the default value — React's
+`createContext`, spelled as a declaration.
 
-**R10.1.1** `provide_context(scope, value)` stores `(TypeId::of::<T>(), value)`
-on the providing scope, with a version. A second call for the same type in the
-same component replaces the first.
-*test: `the_later_offer_in_one_component_wins`*
+```rust
+context! {
+    /// The palette every painter reads.
+    pub ThemeContext: Theme = Theme::dark();
+}
+```
 
-**R10.1.2** `context::<T>(scope)` walks `parent` until it finds a scope offering
-`T`, and returns a clone. A nearer provider shadows a further one.
+```rust
+rsx! {
+    ThemeContext { value: dark,
+        ExplorerPane { files }
+    }
+}
+```
+
+```rust
+let theme = use_context::<ThemeContext>(scope);
+```
+
+Those three are `createContext(Theme.dark())`, `<ThemeContext value={dark}>`
+and `useContext(ThemeContext)`, in that order — one argument each, and the
+`Context` suffix included, because that is what React's own documentation
+calls it.
+
+**R10.1.1** `context!` declares a marker type and a props struct with the
+fields `value` and `children`, and implements `Context`, `Component` and
+`Element` for the marker. The expansion is `#[component]`'s (§11.4) plus the
+`Context` impl; rendering it offers `props.value` and returns `props.children`.
+*test: `a_declared_context_is_both_an_element_and_a_key`*
+
+**R10.1.2** `use_context::<C>(scope)` walks `parent` until it reaches a scope
+that offered `C`, and returns a clone of the value. A nearer provider shadows
+a further one.
 *test: `a_nearer_provider_shadows_a_further_one`*
 
-**R10.1.3** With no provider, `context` panics (P10.1) and `try_context`
-answers `None`.
-*test: `a_missing_context_names_the_type_and_the_component`*
+**R10.1.3** With no provider above it, `use_context` returns
+`C::default_value()`. Reading a context is never an error, so there is nothing
+to catch and no fallible form.
+*test: `a_read_with_no_provider_is_the_default`*
 
-**R10.1.4** A read is recorded on the reading scope as `(TypeId, version)`. A
-provider's version increases on every render of the providing component. A
-memoised scope whose recorded version is behind is re-rendered even though its
-props did not change. Without this, memoisation is a correctness bug rather
-than an optimisation.
-*test: `a_memo_component_whose_context_changed_runs_anyway`*
+**R10.1.4** A context is identified by its marker type, not by the type of its
+value. Two contexts carrying one value type stay apart, so `Title` and
+`Subtitle` can both be `Rc<str>` without a newtype between them.
+*test: `two_contexts_of_one_value_type_are_two_contexts`*
 
-**R10.1.5** The version is not compared by value. A context type is
-`Clone + 'static` and nothing more — requiring `PartialEq` would put a bound on
-`Theme`, `Rc<Outbox>` and every future context for the sake of a comparison
-that only matters below a memoised component, of which this program has none. A
-component that wants to skip work when a context value did not change memoises
-on the value with `use_memo`, where `PartialEq` is already required and is
-required of the value rather than of the type.
-*test: `a_provider_that_re_renders_re_runs_its_memoised_consumers`*
+**R10.1.5** A provider offers on its own scope. The value reaches its children
+and nothing else: a component that writes two providers gives two subtrees two
+values, and neither reaches a sibling. A component does not see the value it
+offers — it reads what its own ancestors offered.
+*tests: `a_provider_does_not_reach_its_sibling`,
+`one_component_gives_two_subtrees_two_values`,
+`a_component_does_not_see_its_own_offer`*
 
-**R10.1.6** Two contexts of the same underlying type are one context. An
-application that wants two wraps one in a newtype.
-*test: `two_offers_of_one_type_are_one_context`*
+**R10.1.6** Each offer carries a version. A provider whose `value` satisfies
+`C::same` against the value it offered last leaves the version where it is;
+otherwise the version moves. `context!` fills `same` in with `==`, so an
+ordinary declaration says no more than `createContext(default)` does.
+*tests: `an_equal_value_leaves_the_version_alone`,
+`a_changed_value_moves_the_version`*
+
+**R10.1.7** A read is recorded on the reading scope as `(TypeId, version)`,
+replacing the entry already there for that type if there is one. A memoised
+scope whose recorded version is behind is re-rendered even though its props did
+not change. Without this, memoisation is a correctness bug rather than an
+optimisation.
+*tests: `a_memo_component_whose_context_changed_runs_anyway`,
+`a_second_read_replaces_the_version_it_recorded`*
+
+**R10.1.8** `use_context` obeys §4.3 like every other hook: top level of a
+component, never inside an `if`, a `match`, a loop or a closure. It holds no
+hook slot, so the runtime check cannot see it and only `#[component]` catches a
+misplaced call; the rule stands because a reader who knows React expects it.
+*test: `use_context_in_a_branch_does_not_compile`*
+
+React compares context values with `Object.is`, which works on anything because
+every JavaScript value has one representation. Rust has two kinds of sameness —
+same bits and same allocation — and no one trait covers both for every type. So
+`context!` uses `==`, and a value that has no `==` names the comparison it does
+have:
+
+```rust
+context! {
+    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}), same = Rc::ptr_eq;
+}
+```
+
+`Rc::ptr_eq` is `Object.is` exactly, and it asks nothing of what the `Rc`
+holds. Four of this program's seven contexts need no `same`; the three that do
+are the two callbacks and the `Rc<Outbox>`, none of which can be compared any
+other way.
 
 Storage is a `Vec<(TypeId, Rc<dyn Any>, u64)>` on the scope, not a `HashMap`:
 no component in a terminal program offers more than a handful of values, and a
 linear scan of a handful beats hashing one.
 
-There is no `Provider` component. `provide_context(scope, theme)` at the top of
-a render does the same job without adding a node to the tree, and a `Provider`
-wrapper can be written on top of it in eight lines if anyone misses the shape.
-
 The contexts this application has, and where they are offered:
 
-| type | offered by | read by |
-|---|---|---|
-| `Theme` (`Copy`) | `Screen` | every component that paints |
-| `Ref<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
-| `Ref<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
-| `SetState<Status>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
-| `Rc<Outbox>` | `Screen` props | `Screen`, `DiffPane` |
-| `Open` | `Screen` | `ExplorerPane` |
-| `Run` | `Screen` | `ExplorerPane`, `DiffPane` |
+| context | value | offered by | read by |
+|---|---|---|---|
+| `ThemeContext` | `theme::Theme` (`Copy`) | `Screen` | every component that paints |
+| `SyntaxContext` | `Ref<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
+| `InputContext` | `Ref<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
+| `StatusContext` | `SetState<Status>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
+| `OutboxContext` | `Rc<worker::Outbox>` | `Screen` | `DiffPane` |
+| `OpenContext` | `Rc<dyn Fn(File)>` | `Screen` | `ExplorerPane` |
+| `RunContext` | `Rc<dyn Fn(Command)>` | `Screen` | `ExplorerPane`, `DiffPane` |
+
+`Screen` writes those seven as seven nested providers, which is what the same
+program looks like in React.
 
 ### Talking to an ancestor
 
 A child that has something to tell an ancestor calls a function the ancestor
 gave it. A parent passes it as a prop; anything deeper reads it from context.
-Both are ordinary values — a callback context is
-`#[derive(Clone)] pub struct Open(pub Rc<dyn Fn(File)>)`, and R10.1.6 is why it
-is a newtype rather than a bare `Rc<dyn Fn(File)>`.
+Both are ordinary values, and a callback context declares
+`same = |a, b| Rc::ptr_eq(a, b)` so that handing down the same closure twice
+does not move the version.
 
 There is no upward-routed payload. A framework one would let a child announce
 something into the air and let whichever ancestor happens to be listening take
 it, which reads well in a demo and fails silently when nobody is: no compiler
-error, no panic, nothing on screen. A callback that is not provided panics at
-`context` naming the type and the component (P10.1), and a callback that is not
-passed does not compile.
+error, no panic, nothing on screen. A callback read from a context with no
+provider is `C::default_value()`, which for `OpenContext` is a closure that does
+nothing — so declare that default as one that logs, and a missing provider says
+so at run time instead of vanishing. A callback that is not passed as a prop
+does not compile.
 
 What it costs is that every level between the two must carry the value. Context
 is the answer to that, and it is the same answer React gives.
@@ -2115,6 +2186,66 @@ loop, a closure or after an early `return`, at compile time, in the body it can
 see. Custom hooks — ordinary functions taking `&mut Scope` — are covered by the
 runtime check instead (§4.3).
 
+### 11.5 `context!`
+
+```rust
+context! {
+    /// The palette every painter reads.
+    pub ThemeContext: Theme = Theme::dark();
+}
+```
+
+expands to
+
+```rust
+/// The palette every painter reads.
+pub struct ThemeContext;
+
+pub struct ThemeContextProps {
+    pub value: Theme,
+    pub children: ::loom::Children,
+}
+
+impl ::loom::Context for ThemeContext {
+    type Value = Theme;
+    fn default_value() -> Theme { Theme::dark() }
+    fn same(old: &Theme, new: &Theme) -> bool { old == new }
+}
+
+impl ::loom::Component for ThemeContext {
+    type Props = ThemeContextProps;
+    const NAME: &'static str = "ThemeContext";
+    fn render(props: &Self::Props, scope: &mut ::loom::Scope) -> ::loom::Node {
+        ::loom::offer::<Self>(scope, &props.value);
+        ::loom::Node::Fragment(props.children.clone())
+    }
+}
+
+impl ::loom::Element for ThemeContext {
+    type Props = ThemeContextProps;
+    fn build(props: ThemeContextProps, key: Option<::loom::Key>) -> ::loom::Node {
+        ::loom::Node::part::<Self>(props, key)
+    }
+}
+```
+
+Everything after `#[component]`'s own expansion is the same, which is the
+point: a provider is a component, so `rsx!` needs no rule for it and §11.1's
+`path` needs no generics.
+
+`same = expr` after the default replaces that one line, for a value with no
+`==`:
+
+```rust
+context! {
+    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}), same = Rc::ptr_eq;
+}
+```
+
+It is a proc macro for one reason: `macro_rules!` cannot build the identifier
+`ThemeContextProps` from `ThemeContext`, and §11.2 finds a props type by that
+name.
+
 ---
 
 ## 12. Panics
@@ -2212,12 +2343,6 @@ DiffPane changed component data while painting — paint callbacks may only writ
 ExplorerPane painted at (39, 4), outside its clip 0,0 40x9
 ```
 
-**P10.1 — `context::<T>` with no provider. `try_context` answers `None` instead.**
-
-```text
-no ui::theme::Theme was provided above StatusBar
-```
-
 **P14.1 — `Harness::screen_row` out of range.** A test helper: a wrong index is a
 broken test, not a condition to handle.
 
@@ -2229,7 +2354,7 @@ row 9 is outside the 8-row screen
 
 | operation | answer instead |
 |---|---|
-| `try_context::<T>` | `None` |
+| `use_context::<C>` with no provider | `C::default_value()` |
 | `Completion::complete`, `Subscription::send` | `false` when refused |
 | `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
 | a `ref` read before its node has a rectangle | `None` |
@@ -2320,7 +2445,7 @@ fn a_narrow_status_bar_drops_the_summary_rather_than_overlapping_the_path() {
         },
         16, 1,
     )
-    .provide(Theme::DARK);
+    .provide::<ThemeContext>(Theme::DARK);
 
     assert_eq!(screen.draw().row(0).chars().count(), 16);
     assert!(!screen.row(0).contains("changes"));
@@ -2333,7 +2458,8 @@ questions about the tree:
 ```rust
 #[test]
 fn clicking_a_row_moves_the_cursor_and_opens_the_file() {
-    let mut screen = Harness::new::<ExplorerPane>(props(), 40, 10).provide(Theme::DARK);
+    let mut screen = Harness::new::<ExplorerPane>(props(), 40, 10)
+        .provide::<ThemeContext>(Theme::DARK);
     screen.draw().click(3, 4);
     assert_eq!(screen.row(4).trim_start().split(' ').next(), Some("app.rs"));
 }
@@ -2380,7 +2506,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/hook/reference.rs` | `Ref<T>` and the guard `current` hands back | 120 | |
 | `src/hook/memo.rs` | `use_memo` | 80 | |
 | `src/hook/effect.rs` | `use_effect`, `use_layout_effect`, `Cleanup`, `Always`, the effect queues | 200 | |
-| `src/hook/context.rs` | `provide_context`, `context`, `try_context`, versions | 110 | |
+| `src/hook/context.rs` | the `Context` trait, `use_context`, `offer`, versions | 110 | |
 | `src/hook/worker.rs` | `Completion`, `Subscription`, `completion`, `subscription`, the generation checks | 170 | |
 | `src/layout/mod.rs` | `Layout`, `Basis`, `Edges` | 110 | |
 | `src/layout/flex.rs` | measure, the §5.4 resolve, the cross axis, `too_small` | 250 | `crates/ui/src/render/layout.rs`, 437 with tests |
@@ -2397,12 +2523,13 @@ today — that is a measurement; the estimate beside it is not.
 
 | file | responsibility | est. |
 |---|---|---:|
-| `src/lib.rs` | the two entry points, `rsx!` and `#[component]` | 60 |
+| `src/lib.rs` | the three entry points, `rsx!`, `#[component]` and `context!` | 70 |
 | `src/component.rs` | the props struct, the two impls, the hook-position check | 180 |
+| `src/context.rs` | the marker, its props, the three impls | 90 |
 | `src/rsx/mod.rs` | the two halves, and the error type they share | 40 |
 | `src/rsx/parse.rs` | the grammar of §11.1 | 260 |
 | `src/rsx/expand.rs` | the table of §11.2 | 220 |
-| | **`loom-macros`** | **≈ 760** |
+| | **`loom-macros`** | **≈ 860** |
 
 Every planned file is under the 300-line soft cap `cargo xtask lint-size`
 enforces. `reconcile.rs` and `rsx/parse.rs` are the two to watch; both split by
@@ -2668,22 +2795,52 @@ Real types throughout: `Theme`, `Viewport`, `Explorer`, `Buffer`, `File`,
 Three small application types, all in `ui`:
 
 ```rust
-// crates/ui/src/app/callback.rs
+// crates/ui/src/app/context.rs
 use std::rc::Rc;
+use loom::{Ref, SetState, context};
 
-/// Open this file. Provided by the root, called by the explorer when the
-/// reader lands on a row.
-#[derive(Clone)]
-pub struct Open(pub Rc<dyn Fn(file_types::File)>);
+use crate::app::pending::Outbox;
+use crate::app::status::Status;
+use crate::input::{Command, Resolver};
+use crate::theme::Theme;
+use file_types::File;
 
-/// Carry out a command this pane does not own. Provided by the root, called by
-/// whichever pane resolved the key.
-#[derive(Clone)]
-pub struct Run(pub Rc<dyn Fn(crate::input::Command)>);
+context! {
+    /// The palette every painter reads.
+    pub ThemeContext: Theme = Theme::dark();
+    /// The parsed-file cache the diff reads.
+    pub SyntaxContext: Ref<syntax::Store> = Ref::dangling();
+    /// The keymap whichever pane holds focus asks.
+    pub InputContext: Ref<Resolver> = Ref::dangling();
+    /// Where a focused pane writes what the status line should say.
+    pub StatusContext: SetState<Status> = SetState::nowhere();
+
+    /// Where a request to a worker goes.
+    pub OutboxContext: Rc<Outbox> = Rc::new(Outbox::closed()), same = Rc::ptr_eq;
+    /// Open this file. Called by the explorer when the reader lands on a row.
+    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}), same = Rc::ptr_eq;
+    /// Carry out a command this pane does not own. Called by whichever pane
+    /// resolved the key.
+    pub RunContext: Rc<dyn Fn(Command)> = Rc::new(|_| {}), same = Rc::ptr_eq;
+}
 ```
 
-Newtypes rather than bare `Rc<dyn Fn(_)>` because context is keyed by type
-(R10.1.6), and because the name says which way the value goes.
+The `Context` suffix is React's own naming, and it leaves the value types their
+plain names: the context is `ThemeContext`, the palette it carries is `Theme`.
+
+The first four say what `createContext` says and no more. The last three carry
+something with no `==` of its own, so each names `Rc::ptr_eq`, which is what
+`Object.is` does for a JavaScript function.
+
+`SyntaxContext` and `InputContext` are both `Ref<_>`, and `OpenContext` and
+`RunContext` are both `Rc<dyn Fn(_)>`; each pair stays apart because the
+identity is the marker type, not the value's (R10.1.4). None of them needs a
+newtype.
+
+Every default does nothing rather than failing: an unprovided `OpenContext` is
+a closure that ignores the file, and an unprovided `OutboxContext` is one whose
+`send` returns `false`. A component reading a context is therefore never a
+place a panic can come from.
 
 ```rust
 // crates/ui/src/app/status.rs
@@ -2719,9 +2876,10 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Row, RowProps, Scope, Text, TextProps,
-           component, context, rsx, use_ref};
+           component, rsx, use_context, use_ref};
 use ratatui::buffer::Buffer as Cells;
 
+use crate::app::context::ThemeContext;
 use crate::hook::use_size;
 use crate::render::cells;
 use crate::theme::Theme;
@@ -2744,7 +2902,7 @@ pub fn StatusBar(
     exhausted: Option<Direction>,
     notice: Option<Rc<str>>,
 ) -> Node {
-    let theme = context::<Theme>(scope);
+    let theme = use_context::<ThemeContext>(scope);
     let bar = use_ref(scope, || None);
     let width = use_size(scope, bar).width;
 
@@ -2823,22 +2981,23 @@ use crokey::KeyCombination;
 use crossterm::event::{MouseButton, MouseEventKind};
 use file_types::File;
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Ref, Scope,
-           SetState, component, context, rsx, use_effect, use_ref, use_state};
+           component, rsx, use_context, use_effect, use_ref, use_state};
 
+use crate::app::context::{InputContext, OpenContext, RunContext, StatusContext,
+                          ThemeContext};
 use crate::hook::use_size;
 use crate::input::{Action, BufferAction, KeymapType, Resolution, Resolver, ViewAction};
 use crate::theme::Theme;
 use crate::view::{Buffer, BufferType, Viewport};
-use crate::app::callback::{Open, Run};
 use crate::app::status::Status;
 
 #[component]
 pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
-    let theme = context::<Theme>(scope);
-    let keys = context::<Ref<Resolver>>(scope);
-    let status = context::<SetState<Status>>(scope);
-    let Open(open) = context::<Open>(scope);
-    let Run(run) = context::<Run>(scope);
+    let theme = use_context::<ThemeContext>(scope);
+    let keys = use_context::<InputContext>(scope);
+    let status = use_context::<StatusContext>(scope);
+    let open = use_context::<OpenContext>(scope);
+    let run = use_context::<RunContext>(scope);
 
     let buffer = use_ref(scope, || Buffer::explorer(files.to_vec()));
     let view = use_ref(scope, Viewport::new);
@@ -2989,12 +3148,13 @@ repository and none of it is touched.
 use std::rc::Rc;
 
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Ref, Scope,
-           SetState, component, context, rsx, subscription, use_effect,
+           component, rsx, subscription, use_context, use_effect,
            use_ref, use_state};
 use syntax::{Store, SyntaxResponse, Version};
 
+use crate::app::context::{InputContext, OutboxContext, RunContext, StatusContext,
+                          SyntaxContext, ThemeContext};
 use crate::app::pending::{Outbox, Request};
-use crate::app::callback::Run;
 use crate::app::status::Status;
 use crate::draw::Look;
 use crate::hook::use_size;
@@ -3007,12 +3167,12 @@ const MARGIN: u32 = 2_000;
 
 #[component]
 pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version) -> Node {
-    let theme = context::<Theme>(scope);
-    let store = context::<Ref<Store>>(scope);
-    let keys = context::<Ref<Resolver>>(scope);
-    let post = context::<Rc<Outbox>>(scope);
-    let status = context::<SetState<Status>>(scope);
-    let Run(run) = context::<Run>(scope);
+    let theme = use_context::<ThemeContext>(scope);
+    let store = use_context::<SyntaxContext>(scope);
+    let keys = use_context::<InputContext>(scope);
+    let post = use_context::<OutboxContext>(scope);
+    let status = use_context::<StatusContext>(scope);
+    let run = use_context::<RunContext>(scope);
 
     let view = use_ref(scope, Viewport::new);
     let pane = use_ref(scope, || None);
@@ -3152,12 +3312,17 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
            Basis, Node, Row, RowProps, Scope, Text, TextProps, completion,
-           component, focus_next, focus_previous, provide_context, rsx,
-           use_effect, use_ref, use_state};
+           component, focus_next, focus_previous, rsx,
+           use_effect, use_memo, use_ref, use_state};
 use syntax::{Store, Version};
 
+use crate::app::context::{
+    InputContext, InputContextProps, OpenContext, OpenContextProps,
+    OutboxContext, OutboxContextProps, RunContext, RunContextProps,
+    StatusContext, StatusContextProps, SyntaxContext, SyntaxContextProps,
+    ThemeContext, ThemeContextProps,
+};
 use crate::app::pending::{Outbox, Request};
-use crate::app::callback::{Open, Run};
 use crate::app::status::Status;
 use crate::input::{Action, Command, Resolver, TabAction, ViewAction};
 use crate::theme::Theme;
@@ -3185,37 +3350,38 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
 
     // The two things a pane asks the root to do. Setters and refs are `Copy`
     // slot handles, so rebuilding these callbacks costs one allocation apiece.
+    // `use_memo` keeps the same `Rc` across renders, so `Rc::ptr_eq` in the
+    // context's `same` finds it unchanged and no consumer is disturbed
+    // (R10.1.6).
     let post_program = post.clone();
-    provide_context(scope, Open(Rc::new(move |file: File| set_chosen(&|_| Some(file.clone())))));
-    provide_context(scope, Run(Rc::new(move |command: Command| match command.action {
-        Action::Tab(TabAction::FocusNext) => {
-            // Focus order is paint order, so "the next pane" needs no table of
-            // its own. R8.2.2.
-            focus_next();
-        }
-        Action::Tab(TabAction::FocusPrev) => focus_previous(),
-        Action::Tab(TabAction::WidenLeft) => {
-            set_left(&|n| (n + 2).min(MAX_LEFT));
-        }
-        Action::Tab(TabAction::NarrowLeft) => {
-            set_left(&|n| n.saturating_sub(2).max(MIN_LEFT));
-        }
-        Action::View(ViewAction::ToggleLayout) => {
-            let mut opened = opened.current();
-            if let Some(buffer) = opened.take() {
-                *opened = Some(buffer.switch_diff_layout());
+    let open: Rc<dyn Fn(File)> = use_memo(scope, (), move |_| {
+        move |file: File| set_chosen(&|_| Some(file.clone()))
+    });
+    let run: Rc<dyn Fn(Command)> = use_memo(scope, (), move |_| {
+        move |command: Command| match command.action {
+            Action::Tab(TabAction::FocusNext) => {
+                // Focus order is paint order, so "the next pane" needs no table
+                // of its own. R8.2.2.
+                focus_next();
             }
-            set_version(&|v| Version(v.0 + 1));
+            Action::Tab(TabAction::FocusPrev) => focus_previous(),
+            Action::Tab(TabAction::WidenLeft) => {
+                set_left(&|n| (n + 2).min(MAX_LEFT));
+            }
+            Action::Tab(TabAction::NarrowLeft) => {
+                set_left(&|n| n.saturating_sub(2).max(MIN_LEFT));
+            }
+            Action::View(ViewAction::ToggleLayout) => {
+                let mut opened = opened.current();
+                if let Some(buffer) = opened.take() {
+                    *opened = Some(buffer.switch_diff_layout());
+                }
+                set_version(&|v| Version(v.0 + 1));
+            }
+            Action::Program(action) => post_program.send(Request::Program(action)),
+            _ => {}
         }
-        Action::Program(action) => post_program.send(Request::Program(action)),
-        _ => {}
-    })));
-
-    provide_context(scope, theme);
-    provide_context(scope, post.clone());
-    provide_context(scope, store);
-    provide_context(scope, keys);
-    provide_context(scope, set_status);
+    });
 
     // Ask for the file the reader chose. The reply address is created here,
     // so a reply for a file they have since left is refused rather than
@@ -3256,6 +3422,16 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
         ..Default::default()
     };
     rsx! {
+        // Seven providers, nested. React looks the same, and each one's value
+        // reaches only what is inside it (R10.1.5).
+        ThemeContext { value: theme,
+        SyntaxContext { value: store,
+        InputContext { value: keys,
+        StatusContext { value: set_status,
+        OutboxContext { value: post.clone(),
+        OpenContext { value: open,
+        RunContext { value: run,
+
         Column {
             layout: Layout { grow: 1, ..Default::default() },
             too_small: Some(rsx! {
@@ -3291,9 +3467,15 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                 exhausted: status.exhausted, notice: notice.clone(),
             }
         }
+
+        }}}}}}}
     }
 }
 ```
+
+`Screen` reads none of the seven itself: a component does not see the value it
+offers (R10.1.5), and it does not need to — it already holds each one as state,
+a prop or a ref. What it offers is what everything below it reads.
 
 `render::layout::split`'s clamp — *a wider screen never shows less than a
 narrower one* — becomes R5.4.4 with the same test name, and
