@@ -123,8 +123,9 @@ pub mod testing;
 pub use component::Component;
 pub use event::{Bubble, Focus, Listeners, Mouse, capture_pointer, release_pointer};
 pub use hook::{
-    Completion, Effect, Ref, SetState, Subscription, context, provide_context, redraw,
-    try_context, use_effect, use_focus, use_memo, use_ref, use_size, use_state,
+    Always, Cleanup, Completion, Ref, SetState, Subscription, completion, context,
+    provide_context, redraw, subscription, try_context, use_effect, use_focus, use_memo,
+    use_ref, use_size, use_state,
 };
 pub use layout::{Basis, Edges, Layout};
 pub use node::{Children, Element, Key, Node};
@@ -611,13 +612,14 @@ impl<T: 'static> Subscription<T> {
     pub fn close(self);
 }
 
-/// What an effect body is handed.
-pub struct Effect<'a> { /* private */ }
+/// Open a one-shot address. Legal inside an effect body, where the runtime
+/// knows which slot is asking.
+/// Panics: P4.6 outside one.
+pub fn completion<T: 'static>(take: impl FnOnce(T) + 'static) -> Completion<T>;
 
-impl Effect<'_> {
-    pub fn completion<T: 'static>(&mut self, take: impl FnOnce(T) + 'static) -> Completion<T>;
-    pub fn subscription<T: 'static>(&mut self, take: impl FnMut(T) + 'static) -> Subscription<T>;
-}
+/// Open a many-shot address. Same rule.
+/// Panics: P4.6 outside an effect body.
+pub fn subscription<T: 'static>(take: impl FnMut(T) + 'static) -> Subscription<T>;
 ```
 
 ### 3.9 The tree
@@ -800,9 +802,10 @@ pub fn use_ref<T: 'static>(scope: &mut Scope, first: impl FnOnce() -> T) -> Ref<
 /// A value recomputed only when `deps` changes.
 ///
 /// Re-runs: when `deps != previous deps`. Returns the same `Rc` otherwise.
+/// `compute` is not `'static`, so it may borrow what it needs.
 /// Panics: P4.1, P4.2.
 #[track_caller]
-pub fn use_memo<D, T>(scope: &mut Scope, deps: D, compute: impl FnOnce(&D) -> T) -> std::rc::Rc<T>
+pub fn use_memo<D, T>(scope: &mut Scope, deps: D, compute: impl FnOnce() -> T) -> std::rc::Rc<T>
 where
     D: PartialEq + 'static,
     T: 'static;
@@ -812,19 +815,38 @@ where
 // hook/effect.rs
 /// Work to do after the frame is painted.
 ///
-/// Re-runs: after the paint of the first frame in which `deps != previous
-/// deps`. The value the closure returns is dropped when the deps change again
-/// or the component goes away — that is the cleanup, and it composes: an
-/// effect that starts something returns it, and dropping it stops it.
+/// Re-runs after the paint of the first frame in which `deps != previous
+/// deps`. What `run` returns is the cleanup: it is called before the next run
+/// and again when the component goes away.
+///
+/// `()` as deps runs once. `Always` runs after every paint.
 /// Panics: P4.1, P4.2.
 #[track_caller]
 pub fn use_effect<D, C>(
     scope: &mut Scope,
     deps: D,
-    run: impl FnOnce(&D, &mut Effect<'_>) -> C + 'static,
+    run: impl FnOnce() -> C + 'static,
 ) where
     D: PartialEq + 'static,
-    C: 'static;
+    C: Cleanup;
+
+/// What `run` may return: a function that undoes the work, or `()` for
+/// nothing to undo. `()` is not a `FnOnce()`, so the two impls do not overlap.
+pub trait Cleanup: 'static {
+    fn into_cleanup(self) -> Option<Box<dyn FnOnce()>>;
+}
+
+impl Cleanup for () { /* nothing to undo */ }
+impl<F: FnOnce() + 'static> Cleanup for F { /* call it */ }
+
+/// Deps that never compare equal, so the effect runs after every paint. This
+/// is what React means by leaving the dependency array out.
+#[derive(Clone, Copy, Debug)]
+pub struct Always;
+
+impl PartialEq for Always {
+    fn eq(&self, _: &Self) -> bool { false }
+}
 ```
 
 ```rust
@@ -897,6 +919,12 @@ The construction that would — a heterogeneous list of hook types threaded
 through the component's signature — puts every component's private state in its
 public type, which is the disease function components cure. React ships a lint
 for this; we ship a panic that names both lines.
+
+`completion` and `subscription` are the second thing it cannot do. They read
+the effect the runtime is running, the way `redraw` reads the scope, so calling
+one outside an effect is P4.6 rather than a type error. Handing the effect body
+a `&mut Effect<'_>` would have made it one, at the price of a parameter React's
+setup does not have.
 
 ---
 
@@ -1317,7 +1345,7 @@ created on the way through. Then its children are mounted, in order.
 
 **R6.2.6 — unmount.** Depth-first, children before parent. For each scope, in
 this order: its effect tasks are closed, so an outstanding reply is refused;
-its effect cleanups are dropped, deepest first; its context offers are dropped;
+its effect cleanups are called, deepest first; its context offers are dropped;
 its focus and hit registrations are removed; its hook slots are dropped; the
 slab entry is freed and its generation bumped, so every `SetState<T>`,
 `Ref<T>` and `Completion<T>` naming it now fails its check (P4.3, R9.3.1).
@@ -1544,7 +1572,7 @@ Completion<T>   one reply, then the address is spent      the file worker
 Subscription<T> many replies, until closed                the syntax worker
 ```
 
-Both are created inside an effect body and both carry
+Both are opened inside an effect body and both carry
 `(ScopeId, slot: u16, generation: u64)` plus a `Weak` to the runtime. A `Weak`
 rather than the thread-local, because `Session` delivers a reply from outside a
 frame; `complete` and `send` enter the runtime for the duration of the handler
@@ -1658,7 +1686,7 @@ report; the value is dropped.
 *test: `a_refused_reply_is_dropped_quietly`*
 
 **R9.3.5** An effect's cleanup closes every address it created, before the
-cleanup value is dropped.
+cleanup function is called.
 *test: `changing_the_file_closes_the_previous_diff_address`*
 
 ### 9.4 Syntax spans, arriving in pieces
@@ -1993,6 +2021,13 @@ buffer, a viewport and a store at once.
 a Ref was borrowed from inside its own borrow
 ```
 
+**P4.6 — `completion` or `subscription` outside an effect body.** Both read
+the effect the runtime is running, so there is no slot to answer.
+
+```text
+completion may only be opened while loom is running an effect
+```
+
 **P5.1 — R5.8.3.**
 
 ```text
@@ -2193,9 +2228,9 @@ today — that is a measurement; the estimate beside it is not.
 | `src/hook/state.rs` | state snapshots, `SetState<T>`, the per-slot writer | 230 | |
 | `src/hook/reference.rs` | `Ref<T>` and the guard `current` hands back | 120 | |
 | `src/hook/memo.rs` | `use_memo` | 80 | |
-| `src/hook/effect.rs` | `use_effect`, the effect queue, cleanup by `Drop` | 170 | |
+| `src/hook/effect.rs` | `use_effect`, `Cleanup`, `Always`, the effect queue | 170 | |
 | `src/hook/context.rs` | `provide_context`, `context`, `try_context`, versions | 110 | |
-| `src/hook/worker.rs` | `Completion`, `Subscription`, `Effect`, the generation checks | 170 | |
+| `src/hook/worker.rs` | `Completion`, `Subscription`, `completion`, `subscription`, the generation checks | 170 | |
 | `src/hook/screen.rs` | `use_size`, `use_focus` | 110 | |
 | `src/layout/mod.rs` | `Layout`, `Basis`, `Edges` | 110 | |
 | `src/layout/flex.rs` | measure, the §5.4 resolve, the cross axis, `too_small` | 250 | `crates/ui/src/render/layout.rs`, 437 with tests |
@@ -2661,8 +2696,9 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     // A new list from the watcher. Rebuild the arrangement and keep the reader
     // on the file they were on — `reshape_around` already does that.
     // This is `View::update_explorer`, moved to the thing that owns the list.
-    use_effect(scope, files.clone(), move |files, _| {
-        let files = files.to_vec();
+    let listed = files.clone();
+    use_effect(scope, files.clone(), move || {
+        let files = listed.to_vec();
         let cursor = view.current().cursor();
         let mut buffer = buffer.current();
         let BufferType::Explorer(explorer) = buffer.buffer_type_mut() else { return };
@@ -2791,8 +2827,8 @@ repository and none of it is touched.
 use std::rc::Rc;
 
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Ref, Scope,
-           SetState, component, context, redraw, rsx, use_effect, use_focus,
-           use_ref, use_size};
+           SetState, component, context, redraw, rsx, subscription, use_effect,
+           use_focus, use_ref, use_size};
 use syntax::{Store, SyntaxResponse, Version};
 
 use crate::app::pending::{Outbox, Request};
@@ -2846,8 +2882,9 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let coloured = buffer.current().as_ref()
         .map_or((0, 0), |b| b.coloured_lines(&store.current()));
     let end = visible.end;
-    use_effect(scope, (*version, end, coloured), move |_, effect| {
-        let reply = effect.subscription(move |response: SyntaxResponse| {
+    let version = *version;
+    use_effect(scope, (version, end, coloured), move || {
+        let reply = subscription(move |response: SyntaxResponse| {
             let from = response.from;
             let taken = store.current().install(response);
             // Only a piece covering a line this pane is showing is worth a
@@ -2858,7 +2895,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
             }
         });
         let requests = buffer.current().as_ref()
-            .map(|b| b.colour_requests(&mut store.current(), *version, end + MARGIN))
+            .map(|b| b.colour_requests(&mut store.current(), version, end + MARGIN))
             .unwrap_or_default();
         if requests.is_empty() {
             reply.close();
@@ -2942,8 +2979,8 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
-           Basis, Node, Row, RowProps, Scope, Text, TextProps, component,
-           provide_context, rsx, use_effect, use_ref, use_state};
+           Basis, Node, Row, RowProps, Scope, Text, TextProps, completion,
+           component, provide_context, rsx, use_effect, use_ref, use_state};
 use syntax::{Store, Version};
 
 use crate::app::pending::{Outbox, Request};
@@ -3010,9 +3047,9 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // shown — R9.3.3, which is what `apply_file_response`'s `if
     // self.selected.as_ref() != Some(&response.file)` was for.
     let post_open = post.clone();
-    use_effect(scope, chosen.clone(), move |chosen, effect| {
+    use_effect(scope, chosen.clone(), move || {
         let Some(file) = chosen.clone() else { return };
-        let reply = effect.completion(move |response: pipeline::file::Response| {
+        let reply = completion(move |response: pipeline::file::Response| {
             match response.content {
                 Ok(content) => {
                     *opened.current() = Some(Buffer::diff(content));
