@@ -305,20 +305,26 @@ fixes one argument type, so every write here is the function, and a constant is
 is in scope; nothing is boxed and nothing needs `'static`.
 
 `use_state` gives a slot its writer when the component mounts, and the runtime
-holds that writer for the run of the program — 8 bytes naming the scope and
-slot. Paying it once per slot is what keeps `SetState<T>` `Copy`, so a listener
-takes a setter without cloning it.
+holds that writer for the run of the program — 12 bytes naming the scope and
+slot. Paying it once per slot is what keeps `SetState<T>` `Copy` at 32 bytes,
+so a listener takes a setter without cloning it.
 
 ```rust
 // hook/reference.rs
 /// A mutable value that survives renders without causing one.
 ///
-/// The Rust form of React's `useRef`: the value stays in the hook slot and
-/// this `Copy` handle keeps borrows short.
+/// The Rust form of React's `useRef`. `current()` is `ref.current`: read
+/// through it, call methods on it, or assign over it.
+///
+/// ```
+/// view.current().scroll(3);
+/// let top = view.current().top();
+/// *view.current() = Viewport::new();
+/// ```
 pub struct Ref<T: 'static> {
     scope: ScopeId,
     slot: u16,
-    value: PhantomData<fn() -> T>,
+    cell: &'static RefCell<T>,
 }
 
 impl<T> Clone for Ref<T> { fn clone(&self) -> Self { *self } }
@@ -327,17 +333,26 @@ impl<T> PartialEq for Ref<T> { /* scope and slot */ }
 impl<T> Eq for Ref<T> {}
 
 impl<T: 'static> Ref<T> {
-    /// Borrow briefly.
-    pub fn read<R>(self, look: impl FnOnce(&T) -> R) -> R;
-    /// Mutate in place. The write is silent.
-    pub fn edit<R>(self, change: impl FnOnce(&mut T) -> R) -> R;
-    /// Replace the value. The write is silent.
-    pub fn replace(self, value: T);
-    ///
+    /// The value in the slot. Writing through it is silent.
+    pub fn current(self) -> RefMut<'static, T>;
     /// Whether the owning component is still mounted.
     pub fn is_mounted(self) -> bool;
 }
 ```
+
+React's ref has one name, `current`, and reads and writes both go through it.
+The value here lives in the hook slot rather than in the handle, so `current`
+is a call and hands back a guard; `*` reaches the value and method calls reach
+it on their own.
+
+The guard lasts to the end of the statement. Two of them on the same ref at
+once panic (P4.5) — take the value out, or finish one statement before
+starting the next. Different refs in one expression are fine, and are how a
+canvas reads a buffer, a viewport and a store together.
+
+The cell, like a setter's writer, is made when the component mounts and kept
+for the run of the program. Paying that once per slot is what keeps `Ref<T>`
+`Copy`, so a listener takes a ref without cloning it — 24 bytes.
 
 Use state for a value that describes the frame. Use a ref for a large mutable
 model, an imperative cache, or a value updated independently of rendering.
@@ -774,7 +789,7 @@ mutated in place belongs in `use_ref`.
 // hook/reference.rs
 /// Mutable storage that survives a render without scheduling one.
 ///
-/// `first` runs once. Reads and writes go through the returned `Ref<T>`.
+/// `first` runs once. Reads and writes both go through `Ref::current`.
 /// Panics: P4.1, P4.2.
 #[track_caller]
 pub fn use_ref<T: 'static>(scope: &mut Scope, first: impl FnOnce() -> T) -> Ref<T>;
@@ -1177,7 +1192,7 @@ Why `use_size` exists at all, in this program's own terms: `draw/pane.rs`
 currently calls `viewport.set_height(rect.height, …)` *during* the draw, which
 is a state write in the paint pass and is forbidden by R7.1.4. The replacement
 is `use_size` in the render pass followed by
-`view.edit(|v| v.set_height(h, rows))`, where `view` came from `use_ref`.
+`view.current().set_height(h, rows)`, where `view` came from `use_ref`.
 The current frame reads the new height during paint.
 
 ---
@@ -1341,7 +1356,7 @@ same value settles the frame.
 *test: `writing_the_same_value_marks_nothing`*
 *test: `the_status_line_settles_in_one_frame`*
 
-**R6.3.6** `Ref::edit` and `Ref::replace` never mark a scope. A caller that
+**R6.3.6** Writing through `Ref::current` never marks a scope. A caller that
 changed something the frame describes calls `redraw()` or a state setter. This
 is the same line React draws between `useRef` and `useState`.
 *test: `editing_a_ref_does_not_redraw`*
@@ -1371,9 +1386,11 @@ before its children are painted.
 is not painted and its children are not visited.
 *test: `a_node_clipped_to_nothing_is_skipped`*
 
-**R7.1.4** Paint writes cells and nothing else. Every `SetState` method,
-`Ref::edit`, `Ref::replace` and `redraw()` called from inside a paint callback
-panic (P7.2). Captured state snapshots and `Ref::read` are legal.
+**R7.1.4** Paint writes cells and nothing else. A state write or `redraw()`
+called from inside a paint callback panics (P7.2). Captured state snapshots
+and `Ref::current` are legal. A write through a ref is not caught — one guard
+serves both — and every painter after it in the walk reads a value the layout
+never saw.
 *test: `setting_state_while_painting_is_refused`*
 
 **R7.1.5** The paint walk records, for every node that has a listener or is
@@ -1662,7 +1679,7 @@ redraws **only if the piece covers a line the pane is showing**:
 
 ```rust
 let from = response.from;
-let taken = store.edit(|store| store.install(response));
+let taken = store.current().install(response);
 if taken && from < visible.end {
     redraw();
 }
@@ -1968,9 +1985,9 @@ a SetState was used after ExplorerPane was removed
 state setters and refs may only be used while loom is running a component, listener, effect, worker reply or painter
 ```
 
-**P4.5 — `edit` or `replace` on one ref while that ref is borrowed.** Nested
-reads are legal. Borrowing *different* refs is legal and is how a canvas reads
-a buffer, a viewport and a store at once.
+**P4.5 — `current` on a ref that is already lent out.** One guard per ref at a
+time. Different refs in one expression are legal, and are how a canvas reads a
+buffer, a viewport and a store at once.
 
 ```text
 a Ref was borrowed from inside its own borrow
@@ -2000,9 +2017,8 @@ ExplorerPane: two children share the key "src/main.rs"
 draw was called from inside a paint callback
 ```
 
-**P7.2 — R7.1.4.** Every state write, `Ref::edit`, `Ref::replace` and
-`redraw()` are forbidden; captured snapshots and `Ref::read` are legal while
-painting.
+**P7.2 — R7.1.4.** A state write or `redraw()` while painting is forbidden;
+captured snapshots and `Ref::current` are legal.
 
 ```text
 DiffPane changed component data while painting — paint callbacks may only write cells
@@ -2079,7 +2095,7 @@ proves nothing.
 | **I14** | Every file in `loom` and `loom-macros` is under the 300-line soft cap. | `cargo xtask lint-size` | concatenate `reconcile.rs` and `scope.rs` |
 | **I15** | `Session::draw_into(&mut Cells, Rect)` keeps its signature through every migration phase, and `crates/ui/tests/explorer/*` (1,505 lines across six files) and `crates/codediff/tests/screens.rs` pass unchanged. | the existing suites, run at the end of every phase | change any phase's screen output by one cell |
 | **I16** | One render sees one state snapshot, and writes compose in call order against the pending value. | `two_writes_compose_in_call_order` | run a write against the render snapshot instead of the pending value |
-| **I17** | Mutating a ref never schedules a component by itself. | `editing_a_ref_does_not_redraw` | mark the owner in `Ref::edit` |
+| **I17** | Mutating a ref never schedules a component by itself. | `editing_a_ref_does_not_redraw` | mark the owner in `Ref::current` |
 
 ### 13.1 The test that is the net
 
@@ -2175,7 +2191,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/current.rs` | the thread-local, the guard that enters and leaves it | 100 | |
 | `src/hook/mod.rs` | `Slot`, `Hooks`, `use_hook`, order checking, `redraw` | 140 | |
 | `src/hook/state.rs` | state snapshots, `SetState<T>`, the per-slot writer | 230 | |
-| `src/hook/reference.rs` | `Ref<T>`, short borrows and silent mutation | 120 | |
+| `src/hook/reference.rs` | `Ref<T>` and the guard `current` hands back | 120 | |
 | `src/hook/memo.rs` | `use_memo` | 80 | |
 | `src/hook/effect.rs` | `use_effect`, the effect queue, cleanup by `Drop` | 170 | |
 | `src/hook/context.rs` | `provide_context`, `context`, `try_context`, versions | 110 | |
@@ -2647,55 +2663,50 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     // This is `View::update_explorer`, moved to the thing that owns the list.
     use_effect(scope, files.clone(), move |files, _| {
         let files = files.to_vec();
-        let landing = buffer.edit(|buffer| {
-            let cursor = view.read(Viewport::cursor);
-            let BufferType::Explorer(explorer) = buffer.buffer_type_mut() else {
-                return None;
-            };
-            let landing = explorer.reshape_around(cursor, |e| e.refresh(files));
-            buffer.update_line_count();
-            Some((landing, buffer.view_lines()))
-        });
-        if let Some((landing, rows)) = landing {
-            view.edit(|v| v.place(landing, rows));
-            redraw();
-        }
+        let cursor = view.current().cursor();
+        let mut buffer = buffer.current();
+        let BufferType::Explorer(explorer) = buffer.buffer_type_mut() else { return };
+        let landing = explorer.reshape_around(cursor, |e| e.refresh(files));
+        buffer.update_line_count();
+        view.current().place(landing, buffer.view_lines());
+        redraw();
     });
 
     // The height the frame is about to be painted at, recorded silently:
     // the frame that will read it is the one being prepared.
-    let rows = buffer.read(Buffer::view_lines);
-    view.edit(|v| v.set_height(u32::from(area.height), rows));
+    let rows = buffer.current().view_lines();
+    view.current().set_height(u32::from(area.height), rows);
 
     // What the status line says while this pane has focus. A list of changed
     // files is not a diff, so it has no changes to count.
     if focus.has {
         status(&|_| Status {
             file: None,
-            view_line: view.read(Viewport::cursor),
+            view_line: view.current().cursor(),
             view_lines: rows,
             ..Status::default()
         });
     }
 
     let chose = move || {
-        let cursor = view.read(Viewport::cursor);
-        buffer.read(|buffer| match buffer.buffer_type() {
+        let cursor = view.current().cursor();
+        match buffer.current().buffer_type() {
             BufferType::Explorer(explorer) => explorer.file(cursor).cloned(),
             _ => None,
-        })
+        }
     };
 
     let open_key = open.clone();
     let listeners = Listeners::new()
         .on_key(move |key: KeyCombination| {
-            let Resolution::Run(command) = keys.edit(|r| r.key(key, KeymapType::Explorer)) else {
+            let Resolution::Run(command) = keys.current().key(key, KeymapType::Explorer)
+            else {
                 return Bubble::Stop;   // a count, a prefix, or nothing bound
             };
             match command.action {
                 Action::Buffer(action) => {
                     let moved = matches!(action, BufferAction::Motion(_));
-                    buffer.edit(|b| view.edit(|v| b.apply(action, command.repeat(), v)));
+                    buffer.current().apply(action, command.repeat(), &mut view.current());
                     redraw();
                     if moved && let Some(file) = chose() {
                         open_key(file);
@@ -2703,11 +2714,11 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                     Bubble::Stop
                 }
                 Action::View(ViewAction::Open) => {
-                    let cursor = view.read(Viewport::cursor);
-                    let folded = buffer.edit(|b| b.activate(cursor));
+                    let cursor = view.current().cursor();
+                    let folded = buffer.current().activate(cursor);
                     if folded {
-                        let rows = buffer.read(Buffer::view_lines);
-                        view.edit(|v| v.place(cursor.min(rows.saturating_sub(1)), rows));
+                        let rows = buffer.current().view_lines();
+                        view.current().place(cursor.min(rows.saturating_sub(1)), rows);
                     } else if let Some(file) = chose() {
                         open_key(file);
                     }
@@ -2720,8 +2731,8 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
             }
         })
         .on_wheel(move |lines| {
-            let rows = buffer.read(Buffer::view_lines);
-            view.edit(|v| v.scroll(lines, rows));
+            let rows = buffer.current().view_lines();
+            view.current().scroll(lines, rows);
             redraw();
             Bubble::Stop
         })
@@ -2730,10 +2741,10 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                 return Bubble::Continue;
             }
             focus.request();
-            let rows = buffer.read(Buffer::view_lines);
-            let line = view.read(Viewport::top) + u32::from(mouse.local.y);
+            let rows = buffer.current().view_lines();
+            let line = view.current().top() + u32::from(mouse.local.y);
             if line < rows {
-                view.edit(|v| v.place(line, rows));
+                view.current().place(line, rows);
                 redraw();
                 if let Some(file) = chose() {
                     open(file);
@@ -2745,14 +2756,11 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     let has_focus = focus.has;
     let paint = Rc::new(move |paint: &mut loom::Paint<'_>| {
         let area = paint.area();
-        buffer.read(|buffer| {
-            let BufferType::Explorer(explorer) = buffer.buffer_type() else { return };
-            view.read(|view| {
-                crate::draw::buffer::explorer::draw(
-                    paint.cells(), area, explorer, view, &theme, has_focus,
-                );
-            });
-        });
+        let buffer = buffer.current();
+        let BufferType::Explorer(explorer) = buffer.buffer_type() else { return };
+        crate::draw::buffer::explorer::draw(
+            paint.cells(), area, explorer, &view.current(), &theme, has_focus,
+        );
     });
 
     rsx! {
@@ -2811,34 +2819,37 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let focus = use_focus(scope);
     let area = use_size(scope);
 
-    let rows = buffer.read(|b| b.as_ref().map_or(0, Buffer::view_lines));
-    view.edit(|v| v.set_height(u32::from(area.height), rows));
-    let visible = view.read(|v| v.visible(rows));
-    let keymap = buffer.read(|b| b.as_ref().map_or(KeymapType::default(), Buffer::keymap_type));
+    let rows = buffer.current().as_ref().map_or(0, Buffer::view_lines);
+    view.current().set_height(u32::from(area.height), rows);
+    let visible = view.current().visible(rows);
+    let keymap = buffer.current().as_ref()
+        .map_or(KeymapType::default(), Buffer::keymap_type);
 
     if focus.has {
         // `draw::screen::summary`, moved to the pane that knows the answers.
-        status(&|_| buffer.read(|b| b.as_ref().map_or_else(Status::default, |b| Status {
+        // One read of the cursor: a second while the first is still in hand
+        // is P4.5.
+        let cursor = view.current().cursor();
+        status(&|_| buffer.current().as_ref().map_or_else(Status::default, |b| Status {
             file: b.file().cloned().map(Rc::new),
-            view_line: view.read(Viewport::cursor),
+            view_line: cursor,
             view_lines: b.view_lines(),
             changes: b.blocks().len(),
-            change: b.block_at(view.read(Viewport::cursor)),
+            change: b.block_at(cursor),
             timed_out: b.hit_timeout(),
             exhausted: b.exhausted(),
-        })));
+        }));
     }
 
     // Colour. The deps say what has arrived as well as what is needed, so
     // installing a piece asks for the next one and nothing else does. R9.4.5.
-    let coloured = store.read(|store| buffer.read(|b| {
-        b.as_ref().map_or((0, 0), |b| b.coloured_lines(store))
-    }));
+    let coloured = buffer.current().as_ref()
+        .map_or((0, 0), |b| b.coloured_lines(&store.current()));
     let end = visible.end;
     use_effect(scope, (*version, end, coloured), move |_, effect| {
         let reply = effect.subscription(move |response: SyntaxResponse| {
             let from = response.from;
-            let taken = store.edit(|store| store.install(response));
+            let taken = store.current().install(response);
             // Only a piece covering a line this pane is showing is worth a
             // frame. `end` is a view line, which is never below the file line
             // at the same place, so this never skips a redraw that was needed.
@@ -2846,11 +2857,9 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
                 redraw();
             }
         });
-        let requests = store.edit(|store| {
-            buffer.read(|b| b.as_ref()
-                .map(|b| b.colour_requests(store, *version, end + MARGIN))
-                .unwrap_or_default())
-        });
+        let requests = buffer.current().as_ref()
+            .map(|b| b.colour_requests(&mut store.current(), *version, end + MARGIN))
+            .unwrap_or_default();
         if requests.is_empty() {
             reply.close();
         } else {
@@ -2860,14 +2869,14 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
 
     let listeners = Listeners::new()
         .on_key(move |key| {
-            let Resolution::Run(command) = keys.edit(|r| r.key(key, keymap)) else {
+            let Resolution::Run(command) = keys.current().key(key, keymap) else {
                 return Bubble::Stop;
             };
             match command.action {
                 Action::Buffer(action) => {
-                    buffer.edit(|b| {
-                        if let Some(b) = b { view.edit(|v| b.apply(action, command.repeat(), v)) }
-                    });
+                    if let Some(b) = buffer.current().as_mut() {
+                        b.apply(action, command.repeat(), &mut view.current());
+                    }
                     redraw();
                     Bubble::Stop
                 }
@@ -2875,8 +2884,8 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
             }
         })
         .on_wheel(move |lines| {
-            let rows = buffer.read(|b| b.as_ref().map_or(0, Buffer::view_lines));
-            view.edit(|v| v.scroll(lines, rows));
+            let rows = buffer.current().as_ref().map_or(0, Buffer::view_lines);
+            view.current().scroll(lines, rows);
             redraw();
             Bubble::Stop
         })
@@ -2892,18 +2901,14 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let has_focus = focus.has;
     let paint = Rc::new(move |paint: &mut loom::Paint<'_>| {
         let area = paint.area();
-        buffer.read(|buffer| {
-            let Some(buffer) = buffer else { return };
-            store.read(|store| {
-                view.read(|view| {
-                    // Byte for byte, today's `draw::buffer::draw` call.
-                    let look = Look { theme: &theme, syntax: true, store };
-                    crate::draw::buffer::draw(
-                        paint.cells(), area, buffer, view, look, has_focus,
-                    );
-                });
-            });
-        });
+        let buffer = buffer.current();
+        let Some(buffer) = buffer.as_ref() else { return };
+        let store = store.current();
+        // Byte for byte, today's `draw::buffer::draw` call.
+        let look = Look { theme: &theme, syntax: true, store: &store };
+        crate::draw::buffer::draw(
+            paint.cells(), area, buffer, &view.current(), look, has_focus,
+        );
     });
 
     rsx! {
@@ -2984,11 +2989,10 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
             set_left(&|n| n.saturating_sub(2).max(MIN_LEFT));
         }
         Action::View(ViewAction::ToggleLayout) => {
-            opened.edit(|b| {
-                if let Some(buffer) = b.take() {
-                    *b = Some(buffer.switch_diff_layout());
-                }
-            });
+            let mut opened = opened.current();
+            if let Some(buffer) = opened.take() {
+                *opened = Some(buffer.switch_diff_layout());
+            }
             set_version(&|v| Version(v.0 + 1));
         }
         Action::Program(action) => post_program.send(Request::Program(action)),
@@ -3011,7 +3015,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
         let reply = effect.completion(move |response: pipeline::file::Response| {
             match response.content {
                 Ok(content) => {
-                    opened.replace(Some(Buffer::diff(content)));
+                    *opened.current() = Some(Buffer::diff(content));
                     set_notice(&|_| None);
                     set_version(&|v| Version(v.0 + 1));
                 }
@@ -3024,9 +3028,9 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // The key is the file, so re-opening the same file keeps the same scope
     // and therefore the same viewport, while a different file gets a fresh
     // one. R6.1.4.
-    let shown = opened.read(|b| b.as_ref()
+    let shown = opened.current().as_ref()
         .and_then(Buffer::file)
-        .map(|f| f.path().as_str().to_owned()));
+        .map(|f| f.path().as_str().to_owned());
     let split = shown.is_some();
 
     // The list asks for the width the reader chose and gives it back when the
