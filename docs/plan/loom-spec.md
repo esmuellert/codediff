@@ -36,7 +36,8 @@ carries the name of the test that proves it. Every panic carries its message.
 | a scroll container | a diff viewer must never lay out 100,000 rows to show 40; `Viewport` holds `top` and the component renders the slice |
 | a capture phase | pointer capture covers the one drag this program has |
 | error boundaries | a panic in a painter belongs in a backtrace with the terminal restored, which `Screen`'s `Drop` already does |
-| `use_callback`, `useId`, `useReducer`, suspense, portals, hot reload, SSR | no user here |
+| `use_callback` | React documents it as `useMemo(() => fn, deps)`, and a closure is a value, so `use_memo` already is it |
+| `useId`, `useReducer`, suspense, portals, hot reload, SSR | no user here |
 | struct components, borrowed props, GATs | locked out by decisions 7 and 8 |
 | text wrapping | no pane in this program wraps |
 
@@ -749,6 +750,19 @@ struct StateSlot<T> {
     pending: Option<T>,
     write: &'static dyn Fn(&dyn Fn(T) -> T),
 }
+
+struct MemoSlot {
+    deps: Box<dyn std::any::Any>,
+    value: std::rc::Rc<dyn std::any::Any>,
+}
+
+struct EffectSlot {
+    deps: Box<dyn std::any::Any>,
+    cleanup: Option<Box<dyn FnOnce()>>,
+    /// Bumped each time the effect runs, so a reply from the previous run is
+    /// refused (R9.3.3).
+    generation: u64,
+}
 ```
 
 They stay on the runtime rather than on the `Scope` because a component's own
@@ -1394,6 +1408,49 @@ same value settles the frame.
 changed something the frame describes calls `redraw()` or a state setter. This
 is the same line React draws between `useRef` and `useState`.
 *test: `editing_a_ref_does_not_redraw`*
+
+### 6.4 Memo and effect slots
+
+Both hold deps and compare them the same way, so the rules that differ are
+about *when* the work happens, not about which work is skipped.
+
+**R6.4.1** Deps are compared with `PartialEq`, on the value. React compares
+references with `Object.is`, so a rebuilt array is always a new dependency;
+here a rebuilt list holding the same files is the same deps and the slot is
+skipped. What that costs is the walk, not a re-run.
+*test: `a_rebuilt_list_with_the_same_files_is_the_same_deps`*
+
+**R6.4.2** An `Rc<T>` compared with itself stops at the pointer when `T: Eq`,
+and reads the contents otherwise. This is the cheap way to carry a large value
+through deps, and the reason a memo hands one back.
+*test: `an_rc_compared_with_itself_reads_no_contents`*
+
+**R6.4.3** `Always` never equals itself, so its slot runs every render. `()`
+always equals itself, so its slot runs once. These are React's omitted
+dependency array and its empty one.
+*test: `always_deps_run_every_render`*
+*test: `unit_deps_run_once`*
+
+**R6.4.4** A memo computes on the render that mounts it and on the first
+render where its deps differ. Otherwise `compute` is not called and the same
+`Rc` is returned.
+*test: `a_memo_with_equal_deps_is_not_recomputed`*
+
+**R6.4.5** A memo's `Rc` is kept for as long as the component lives and its
+deps hold. Nothing else drops it. React reserves the right to throw its cache
+away and says to treat `useMemo` as a performance hint; this does not, so the
+identity may be relied on — including as another slot's deps.
+*test: `a_memo_survives_an_unrelated_state_write`*
+
+**R6.4.6** An effect's `run` is recorded during the render and called after
+the frame is painted, never during it. A state write from `run` marks its
+scope for the next frame, which is why an effect that writes on every run
+never settles.
+*test: `an_effect_runs_after_the_frame_that_queued_it`*
+
+**R6.4.7** When deps change, the old cleanup is called before the new `run`.
+An effect that returns `()` has nothing to call.
+*test: `changing_the_deps_cleans_up_before_it_runs_again`*
 
 ---
 
@@ -2137,6 +2194,7 @@ proves nothing.
 | **I15** | `Session::draw_into(&mut Cells, Rect)` keeps its signature through every migration phase, and `crates/ui/tests/explorer/*` (1,505 lines across six files) and `crates/codediff/tests/screens.rs` pass unchanged. | the existing suites, run at the end of every phase | change any phase's screen output by one cell |
 | **I16** | One render sees one state snapshot, and writes compose in call order against the pending value. | `two_writes_compose_in_call_order` | run a write against the render snapshot instead of the pending value |
 | **I17** | Mutating a ref never schedules a component by itself. | `editing_a_ref_does_not_redraw` | mark the owner in `Ref::current` |
+| **I18** | A memo hands back the same `Rc` until its deps differ, and nothing else drops it. | `a_memo_survives_an_unrelated_state_write` | clear memo slots when a scope is marked |
 
 ### 13.1 The test that is the net
 
