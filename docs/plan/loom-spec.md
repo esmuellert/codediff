@@ -49,10 +49,10 @@ sentence.
 |---|---|---|
 | crate name | `loom`, macros in `loom-macros` | one plain English word, like `align` and `syntax`; both crates are `publish = false` so the name on crates.io is a coincidence |
 | layout model | CSS flexbox, implemented here in whole cells | the model is proven and documented; the crate is not the model. `f32` rounded back to cells is where column drift comes from, and CSS cannot say "if this does not fit, do not draw it" — so we take the algorithm and replace overflow with refusal (§5.6) |
-| state access in listeners | a render snapshot plus a `SetState<T>` handle | `let (cursor, set_cursor) = use_state(…)` and `set_cursor.update(|n| n + 1)` are React's value-and-setter model in Rust |
+| state access in listeners | a render snapshot plus a `SetState<T>` handle | `let (cursor, set_cursor) = use_state(…)` and `set_cursor(&|n| n + 1)` are React's value-and-setter model in Rust |
 | worker replies | typed handles with a generation check | a `TaskId` token says where to deliver; a generation says whether it is still wanted |
 | render parameter | `scope` | `cx` reads as "context", and context is a different thing here |
-| state setter | `SetState<T> = { scope, slot }`, `Copy`, no arena | the value is a snapshot for this render; the small handle is what listeners keep |
+| state setter | `SetState<T>`, called like a function, `Copy` | one way to write, so there is no second name to choose; the runtime keeps an 8-byte writer per state slot, which is what lets the handle stay `Copy` |
 | mutable value without redraw | `use_ref`, returning `Ref<T>` | state stays immutable and React-like; large models and imperative caches have an explicit home |
 | context storage | parent walk keyed by `TypeId`, read recorded as `(TypeId, version)` | there is no provider node to reconcile, and the recorded version is the twenty lines that keep `memo` honest |
 | provider syntax | `provide_context(scope, value)` at the top of a render | it adds no node to the tree; a `Provider` component can be written on top of it in eight lines |
@@ -77,7 +77,7 @@ repository, that name is used.
 | **scope** | the live instance of a component: its identity, its hook slots, its rectangle | fiber, instance |
 | **slot** | one hook's storage inside a scope | |
 | **state** | a value that survives redraws; a component reads one snapshot of it per render | live mutable handle |
-| **setter** | the `Copy` handle that queues a state's next value | state |
+| **setter** | the `Copy` handle a component calls to write its state | state |
 | **ref** | a mutable hook value with silent writes | state |
 | **props** | a `'static` struct, one field per parameter | attributes |
 | **key** | what names a child across frames, so state follows it when a list is reordered | id |
@@ -266,16 +266,21 @@ impl Scope {
 
 ```rust
 // hook/state.rs
-use std::marker::PhantomData;
+use std::ops::Deref;
 
-/// Queues the next value of one state slot.
+/// Writes one state slot. Called like a function.
 ///
-/// Two integers naming a hook slot, so it is `Copy` and `'static` and can be
-/// moved into as many listeners as you like.
+/// The closure is given the value the slot will hold when the next render
+/// starts, and answers what to put there.
+///
+/// ```
+/// set_cursor(&|_| 5);
+/// set_cursor(&|cursor| cursor + 1);
+/// ```
 pub struct SetState<T: 'static> {
     scope: ScopeId,
     slot: u16,
-    value: PhantomData<fn(T)>,
+    write: &'static dyn Fn(&dyn Fn(T) -> T),
 }
 
 impl<T> Clone for SetState<T> { fn clone(&self) -> Self { *self } }
@@ -283,22 +288,26 @@ impl<T> Copy for SetState<T> {}
 impl<T> PartialEq for SetState<T> { /* scope and slot */ }
 impl<T> Eq for SetState<T> {}
 
+impl<T: 'static> Deref for SetState<T> {
+    type Target = dyn Fn(&dyn Fn(T) -> T);
+    fn deref(&self) -> &Self::Target { self.write }
+}
+
 impl<T: 'static> SetState<T> {
     /// Whether the owning component is still mounted.
     pub fn is_mounted(self) -> bool;
 }
-
-impl<T: PartialEq + 'static> SetState<T> {
-    /// Queue a value. If the committed value is equal, skip the render.
-    pub fn set(self, value: T);
-    /// Queue a function of the previous queued value. Updates run in call
-    /// order; if the committed value is equal, skip the render.
-    pub fn update(self, update: impl FnOnce(T) -> T + 'static);
-}
 ```
 
-React's setter accepts a value or a function. Rust gives those two argument
-shapes the methods `set` and `update`.
+React hands either a value or a function to one setter. Rust's call syntax
+fixes one argument type, so every write here is the function, and a constant is
+`&|_| 5`. Taking the closure by reference is what lets a write borrow whatever
+is in scope; nothing is boxed and nothing needs `'static`.
+
+`use_state` gives a slot its writer when the component mounts, and the runtime
+holds that writer for the run of the program — 8 bytes naming the scope and
+slot. Paying it once per slot is what keeps `SetState<T>` `Copy`, so a listener
+takes a setter without cloning it.
 
 ```rust
 // hook/reference.rs
@@ -556,8 +565,7 @@ already `Clone + 'static`, so it is a context value like any other. §10 shows
 both ends.
 
 State follows the same split. A render reads the snapshot returned by
-`use_state`; a listener keeps the accompanying `SetState<T>` and calls `set`
-or `update`.
+`use_state`; a listener keeps the accompanying `SetState<T>` and calls it.
 
 ### 3.8 Worker replies
 
@@ -708,7 +716,7 @@ struct Hooks {
 }
 
 enum Slot {
-    /// The committed value and its queued direct or functional updates.
+    /// The committed value, the pending one, and the slot's writer.
     State(Box<dyn PendingState>),
     /// Mutable storage that never marks its owner by itself.
     Ref(std::rc::Rc<std::cell::RefCell<dyn std::any::Any>>),
@@ -721,12 +729,8 @@ enum Slot {
 
 struct StateSlot<T> {
     value: T,
-    pending: Vec<StateUpdate<T>>,
-}
-
-enum StateUpdate<T> {
-    Set(T),
-    Update(Box<dyn FnOnce(T) -> T>),
+    pending: Option<T>,
+    write: &'static dyn Fn(&dyn Fn(T) -> T),
 }
 ```
 
@@ -752,9 +756,8 @@ panics with both call sites when they disagree (P4.1).
 // hook/state.rs
 /// One render's value and a stable setter for its next value.
 ///
-/// `first` runs once, when the component mounts. Pending updates are applied
-/// in call order before a later render, and the returned `T` is that render's
-/// snapshot.
+/// `first` runs once, when the component mounts. A write applies at once to
+/// the pending value, and the returned `T` is this render's snapshot.
 /// Panics: P4.1, P4.2.
 #[track_caller]
 pub fn use_state<T: Clone + PartialEq + 'static>(
@@ -1135,8 +1138,8 @@ The pass order inside one `Tree::draw`:
 ```
 1  enter the runtime
 2  render round:   reconcile from the root, then drain the redraw set,
-                   parents before children; apply each scope's queued state
-                   updates immediately before deciding whether it must run
+                   parents before children; commit each scope's pending state
+                   immediately before deciding whether it must run
 3  layout round:   measure bottom-up, assign top-down, write each scope's area
 4  if any scope that called use_size was assigned a rectangle other than the
    one use_size returned in step 2  →  mark it, go back to 2
@@ -1324,17 +1327,17 @@ its last child list, its rectangle and its listeners. It is still walked by
 paint.
 *test: `a_clean_component_is_painted_without_being_run`*
 
-**R6.3.4** Every `SetState` call appends to that slot's queue. Direct `set(v)`
-entries carry the value computed by the render or listener that called them.
-Functional `update(f)` entries receive the result of the entry before them.
-The call marks the owner pending, and the queue is applied in call order before
-the owning component next runs.
-*test: `two_direct_sets_use_one_render_snapshot`*
-*test: `functional_updates_compose_in_call_order`*
+**R6.3.4** A write runs its closure at once, against the value the slot will
+hold when the next render starts: the pending value if there is one, the
+committed value otherwise. The answer becomes pending and marks the owner.
+Writes therefore compose in call order, and a write sees the render snapshot
+only if the caller passes it in.
+*test: `two_writes_compose_in_call_order`*
+*test: `a_write_reads_the_pending_value`*
 
-**R6.3.5** `set` and `update` compare the fully applied value with the committed
-one. An equal result clears the pending mark. This lets a child report a status
-value during render; repeating the same value settles the frame.
+**R6.3.5** The pending value is compared with the committed one. Equal clears
+the mark. This lets a child report a status value during render; repeating the
+same value settles the frame.
 *test: `writing_the_same_value_marks_nothing`*
 *test: `the_status_line_settles_in_one_frame`*
 
@@ -1997,7 +2000,7 @@ ExplorerPane: two children share the key "src/main.rs"
 draw was called from inside a paint callback
 ```
 
-**P7.2 — R7.1.4.** Every `SetState` method, `Ref::edit`, `Ref::replace` and
+**P7.2 — R7.1.4.** Every state write, `Ref::edit`, `Ref::replace` and
 `redraw()` are forbidden; captured snapshots and `Ref::read` are legal while
 painting.
 
@@ -2033,7 +2036,7 @@ row 9 is outside the 8-row screen
 | `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
 | `use_size` before the first layout | `Rect::ZERO` |
 | `Focus::request`, `Focus::move_next`, `Focus::move_previous` with nothing focusable | no-op |
-| `SetState::set` or `update` ending at an equal value | commits the value, runs no component |
+| a state write ending at an equal value | commits the value, runs no component |
 | a container too small for its children | paints its `too_small` node (R5.4) |
 | a rectangle of zero width or height | painted as nothing (R5.3.5) |
 | `Harness::area_of` for an unknown name | `None` |
@@ -2075,7 +2078,7 @@ proves nothing.
 | **I13** | `loom` names no application crate. | `cargo xtask lint-arch` | add `use ui::Theme;` to `crates/loom/src/paint/text.rs` |
 | **I14** | Every file in `loom` and `loom-macros` is under the 300-line soft cap. | `cargo xtask lint-size` | concatenate `reconcile.rs` and `scope.rs` |
 | **I15** | `Session::draw_into(&mut Cells, Rect)` keeps its signature through every migration phase, and `crates/ui/tests/explorer/*` (1,505 lines across six files) and `crates/codediff/tests/screens.rs` pass unchanged. | the existing suites, run at the end of every phase | change any phase's screen output by one cell |
-| **I16** | One render sees one state snapshot; direct setters use that snapshot and functional setters compose in call order. | `functional_updates_compose_in_call_order` | make `SetState::update` capture the render snapshot instead of the queued value |
+| **I16** | One render sees one state snapshot, and writes compose in call order against the pending value. | `two_writes_compose_in_call_order` | run a write against the render snapshot instead of the pending value |
 | **I17** | Mutating a ref never schedules a component by itself. | `editing_a_ref_does_not_redraw` | mark the owner in `Ref::edit` |
 
 ### 13.1 The test that is the net
@@ -2171,7 +2174,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/reconcile.rs` | flattening, positional and keyed matching, mount, update, unmount | 260 | |
 | `src/current.rs` | the thread-local, the guard that enters and leaves it | 100 | |
 | `src/hook/mod.rs` | `Slot`, `Hooks`, `use_hook`, order checking, `redraw` | 140 | |
-| `src/hook/state.rs` | state snapshots, `SetState<T>`, the ordered update queue | 230 | |
+| `src/hook/state.rs` | state snapshots, `SetState<T>`, the per-slot writer | 230 | |
 | `src/hook/reference.rs` | `Ref<T>`, short borrows and silent mutation | 120 | |
 | `src/hook/memo.rs` | `use_memo` | 80 | |
 | `src/hook/effect.rs` | `use_effect`, the effect queue, cleanup by `Drop` | 170 | |
@@ -2222,7 +2225,6 @@ workspace = true
 No taffy, no `generational-box`, no async runtime, no new workspace
 dependency. `unsafe_code = "forbid"` holds. `SetState<T>` and `Ref<T>` are checked slot
 handles.
-
 ### 14.4 The `lint_arch` entries
 
 Added to `xtask/src/lint_arch/rules.rs`. They make "the framework must not learn
@@ -2488,7 +2490,7 @@ Newtypes rather than bare `Rc<dyn Fn(_)>` because context is keyed by type
 ///
 /// `draw::status::Status`, owned rather than borrowed, because props are
 /// `'static`. Whichever pane holds focus writes this during its own render;
-/// the root reads the next snapshot and hands it to `StatusBar`. `SetState::set`
+/// the root reads the next snapshot and hands it to `StatusBar`. A write
 /// compares values, so the second, identical write runs nothing and the frame
 /// settles (R6.3.5).
 #[derive(Clone, PartialEq, Default)]
@@ -2668,7 +2670,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
     // What the status line says while this pane has focus. A list of changed
     // files is not a diff, so it has no changes to count.
     if focus.has {
-        status.set(Status {
+        status(&|_| Status {
             file: None,
             view_line: view.read(Viewport::cursor),
             view_lines: rows,
@@ -2816,7 +2818,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
 
     if focus.has {
         // `draw::screen::summary`, moved to the pane that knows the answers.
-        status.set(buffer.read(|b| b.as_ref().map_or_else(Status::default, |b| Status {
+        status(&|_| buffer.read(|b| b.as_ref().map_or_else(Status::default, |b| Status {
             file: b.file().cloned().map(Rc::new),
             view_line: view.read(Viewport::cursor),
             view_lines: b.view_lines(),
@@ -2969,17 +2971,17 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // The two things a pane asks the root to do. Setters and refs are `Copy`
     // slot handles, so rebuilding these callbacks costs one allocation apiece.
     let post_program = post.clone();
-    provide_context(scope, Open(Rc::new(move |file: File| set_chosen.set(Some(file)))));
+    provide_context(scope, Open(Rc::new(move |file: File| set_chosen(&|_| Some(file.clone())))));
     provide_context(scope, Run(Rc::new(move |command: Command| match command.action {
         Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
             // Focus order is paint order, so "the next pane" needs no table of
             // its own. R8.2.2.
         }
         Action::Tab(TabAction::WidenLeft) => {
-            set_left.update(|n| (n + 2).min(MAX_LEFT));
+            set_left(&|n| (n + 2).min(MAX_LEFT));
         }
         Action::Tab(TabAction::NarrowLeft) => {
-            set_left.update(|n| n.saturating_sub(2).max(MIN_LEFT));
+            set_left(&|n| n.saturating_sub(2).max(MIN_LEFT));
         }
         Action::View(ViewAction::ToggleLayout) => {
             opened.edit(|b| {
@@ -2987,7 +2989,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                     *b = Some(buffer.switch_diff_layout());
                 }
             });
-            set_version.update(|v| Version(v.0 + 1));
+            set_version(&|v| Version(v.0 + 1));
         }
         Action::Program(action) => post_program.send(Request::Program(action)),
         _ => {}
@@ -3010,10 +3012,10 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
             match response.content {
                 Ok(content) => {
                     opened.replace(Some(Buffer::diff(content)));
-                    set_notice.set(None);
-                    set_version.update(|v| Version(v.0 + 1));
+                    set_notice(&|_| None);
+                    set_version(&|v| Version(v.0 + 1));
                 }
-                Err(why) => set_notice.set(Some(why.into())),
+                Err(why) => set_notice(&|_| Some(why.clone().into())),
             }
         });
         post_open.send(Request::Open { file, reply });
