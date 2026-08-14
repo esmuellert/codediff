@@ -801,8 +801,14 @@ pub fn use_ref<T: 'static>(scope: &mut Scope, first: impl FnOnce() -> T) -> Ref<
 // hook/memo.rs
 /// A value recomputed only when `deps` changes.
 ///
-/// Re-runs: when `deps != previous deps`. Returns the same `Rc` otherwise.
-/// `compute` is not `'static`, so it may borrow what it needs.
+/// Re-runs: when `deps != previous deps`. Returns the same `Rc` otherwise,
+/// for as long as the component lives — React reserves the right to drop its
+/// cache, this does not, so the identity is something you may rely on.
+///
+/// `compute` should be pure, and is not `'static`, so it may borrow what it
+/// needs. Returning `Rc<T>` rather than `T` is how the same value comes back
+/// each render: a borrow of the slot would hold `scope` for the rest of the
+/// render, and `T` would clone the thing you called this to avoid building.
 /// Panics: P4.1, P4.2.
 #[track_caller]
 pub fn use_memo<D, T>(scope: &mut Scope, deps: D, compute: impl FnOnce() -> T) -> std::rc::Rc<T>
