@@ -18,7 +18,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | element tree | a value describing one frame, built by `rsx!`, thrown away after reconciliation |
 | reconciliation | matching this frame's description against the live instance tree, so state has an owner |
 | function components | `#[component] fn Name(scope: &mut Scope, …) -> Node` |
-| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_size`, `use_focus`, context |
+| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, context |
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
@@ -37,6 +37,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | a capture phase | pointer capture covers the one drag this program has |
 | error boundaries | a panic in a painter belongs in a backtrace with the terminal restored, which `Screen`'s `Drop` already does |
 | `use_callback` | React documents it as `useMemo(() => fn, deps)`, and a closure is a value, so `use_memo` already is it |
+| `useSyncExternalStore` | the one thing it buys — an outside mutable value telling the runtime it changed — is a `Ref<T>` write next to a state bump, and this program has four of them |
 | `useId`, `useReducer`, suspense, portals, hot reload, SSR | no user here |
 | struct components, borrowed props, GATs | locked out by decisions 7 and 8 |
 | text wrapping | no pane in this program wraps |
@@ -54,7 +55,7 @@ sentence.
 | worker replies | typed handles with a generation check | a `TaskId` token says where to deliver; a generation says whether it is still wanted |
 | render parameter | `scope` | `cx` reads as "context", and context is a different thing here |
 | state setter | `SetState<T>`, called like a function, `Copy` | one way to write, so there is no second name to choose; the runtime keeps an 8-byte writer per state slot, which is what lets the handle stay `Copy` |
-| mutable value without redraw | `use_ref`, returning `Ref<T>` | state stays immutable and React-like; large models and imperative caches have an explicit home |
+| mutable value without redraw | `use_ref`, returning `Ref<T>` | state stays immutable and React-like; large models and imperative caches have an explicit home, and a `Ref<Option<NodeHandle>>` is React's other use for a ref |
 | context storage | parent walk keyed by `TypeId`, read recorded as `(TypeId, version)` | there is no provider node to reconcile, and the recorded version is the twenty lines that keep `memo` honest |
 | provider syntax | `provide_context(scope, value)` at the top of a render | it adds no node to the tree; a `Provider` component can be written on top of it in eight lines |
 | listeners in `rsx!` | one `listeners:` prop built by a chain | one prop, one type, no macro magic, and an unknown handler is an unknown method |
@@ -122,14 +123,16 @@ mod tree;
 pub mod testing;
 
 pub use component::Component;
-pub use event::{Bubble, Focus, Listeners, Mouse, capture_pointer, release_pointer};
+pub use event::{
+    Bubble, Listeners, Mouse, capture_pointer, focus_next, focus_previous, release_pointer,
+};
 pub use hook::{
     Always, Cleanup, Completion, Ref, SetState, Subscription, completion, context,
-    provide_context, redraw, subscription, try_context, use_effect, use_focus, use_memo,
-    use_ref, use_size, use_state,
+    provide_context, subscription, try_context, use_effect, use_layout_effect, use_memo,
+    use_ref, use_state,
 };
 pub use layout::{Basis, Edges, Layout};
-pub use node::{Children, Element, Key, Node};
+pub use node::{Children, Element, Key, Node, NodeHandle};
 pub use paint::{Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps,
     Paint, Row, RowProps, Stack, StackProps, Text, TextProps};
 pub use scope::{Scope, ScopeId};
@@ -149,6 +152,8 @@ pub use ratatui;
 // node.rs
 use std::any::TypeId;
 use std::rc::Rc;
+
+use ratatui::layout::Rect;
 
 /// One entry in the description of a frame.
 ///
@@ -175,9 +180,31 @@ pub struct Host {
     pub measure: Option<fn(&Host, u16) -> (u16, u16)>,
     pub listeners: Listeners,
     pub focusable: bool,
+    /// Where to write this node's handle once it has a rectangle. React's
+    /// `ref`, and `rsx!` spells it `ref` too.
+    pub node_ref: Option<Ref<Option<NodeHandle>>>,
     /// Painted instead of the children when they cannot meet their minimums.
     pub too_small: Option<Box<Node>>,
     pub children: Vec<Node>,
+}
+
+/// A node that has been laid out — what a `ref` holds once it points at
+/// something. `Copy`, and valid until the node unmounts.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NodeHandle { /* private: the scope, and which host within it */ }
+
+impl NodeHandle {
+    /// The rectangle the last layout gave it. The DOM's
+    /// `getBoundingClientRect`.
+    pub fn area(self) -> Rect;
+    /// Take focus. The DOM's `node.focus()`. A no-op if the node is not
+    /// `focusable`.
+    pub fn focus(self);
+    /// The DOM's `node === document.activeElement`.
+    pub fn has_focus(self) -> bool;
+    /// Whether the node is still mounted. A handle to an unmounted node
+    /// answers `Rect::ZERO` and `false` rather than panicking.
+    pub fn is_mounted(self) -> bool;
 }
 
 pub struct Part {
@@ -259,8 +286,6 @@ pub struct Scope {
 impl Scope {
     pub fn id(&self) -> ScopeId;
     pub fn name(&self) -> &'static str;
-    /// Run this component again on the next frame.
-    pub fn redraw(&mut self);
 }
 ```
 
@@ -358,7 +383,14 @@ for the run of the program. Paying that once per slot is what keeps `Ref<T>`
 
 Use state for a value that describes the frame. Use a ref for a large mutable
 model, an imperative cache, or a value updated independently of rendering.
-Call `redraw()` when a ref mutation changes the visible frame.
+A ref write is silent, so when one changes what the frame shows, bump a state
+value in the same breath — React's function components have no force-update
+either, and this is the idiom its documentation gives.
+
+A ref also does React's other job. `use_ref(scope, || None)` typed as
+`Ref<Option<NodeHandle>>` is `useRef(null)`: hand it to a node as `ref` and the
+runtime writes the handle in once the node has a rectangle. §5.8 is the whole
+of it.
 
 ### 3.5 Layout
 
@@ -485,7 +517,9 @@ impl<'a> Paint<'a> {
 }
 ```
 
-The built-in hosts, each with a props struct the macro fills in:
+The built-in hosts, each with a props struct the macro fills in. Every one of
+them also carries `pub node_ref: Option<Ref<Option<NodeHandle>>>`, which `rsx!`
+spells `ref`; it is left out of the listings below to keep them readable.
 
 ```rust
 // paint/host.rs
@@ -554,20 +588,11 @@ impl Listeners {
     pub fn on_focus(self, listen: impl Fn(bool) + 'static) -> Self;
 }
 
-/// Registered by `use_focus`.
-#[derive(Clone, Copy)]
-pub struct Focus {
-    scope: ScopeId,
-    pub has: bool,
-}
-
-impl Focus {
-    /// Ask for focus.
-    pub fn request(self);
-    /// Move focus to the next focusable in paint order, wrapping.
-    pub fn move_next(self);
-    pub fn move_previous(self);
-}
+/// Move focus to the next focusable node in paint order, wrapping. A browser
+/// does this itself on Tab; a terminal has no such convention, so a key
+/// listener calls it. No-ops when nothing is focusable.
+pub fn focus_next();
+pub fn focus_previous();
 
 /// Route every mouse event to this node until the button comes up or
 /// `release_pointer` is called. Called from inside a mouse listener.
@@ -647,8 +672,8 @@ impl Tree {
     pub fn mouse(&mut self, event: crossterm::event::MouseEvent) -> bool;
     /// Whether anything has been marked for redraw since the last `draw`.
     pub fn needs_draw(&self) -> bool;
-    /// How many render-and-layout rounds the last `draw` took. One, unless
-    /// `use_size` changed something. Capped at 4 (R5.8.2).
+    /// How many render-and-layout rounds the last `draw` took. One, unless a
+    /// layout effect wrote state. Capped at 4 (R5.8.2).
     pub fn layout_rounds(&self) -> usize;
     /// Mark everything. What a terminal resize does.
     pub fn redraw_all(&mut self);
@@ -702,8 +727,8 @@ impl Harness {
     pub fn render_count_of(&self, name: &str) -> usize;
     /// How many component functions ran during the last `draw`.
     pub fn render_count(&self) -> usize;
-    /// How many layout rounds the last `draw` took. One, unless `use_size`
-    /// changed something.
+    /// How many layout rounds the last `draw` took. One, unless a layout
+    /// effect wrote state.
     pub fn layout_rounds(&self) -> usize;
     pub fn focused_name(&self) -> Option<&'static str>;
     pub fn needs_draw(&self) -> bool;
@@ -740,9 +765,8 @@ enum Slot {
     Ref(std::rc::Rc<std::cell::RefCell<dyn std::any::Any>>),
     Memo(MemoSlot),
     Effect(EffectSlot),
+    LayoutEffect(EffectSlot),
     Context(ContextSlot),
-    Size,
-    Focus,
 }
 
 struct StateSlot<T> {
@@ -850,6 +874,24 @@ pub fn use_effect<D, C>(
     D: PartialEq + 'static,
     C: Cleanup;
 
+/// The same, run before the frame is painted rather than after.
+///
+/// Layout has finished, so every `ref` holds its node and `NodeHandle::area`
+/// answers this frame's rectangle. A state write here re-renders and re-lays
+/// out before anything reaches the screen, which is how a component that must
+/// know its own size avoids showing a wrong frame first. §5.8 is the cost.
+///
+/// Prefer `use_effect`. This one holds the frame up.
+/// Panics: P4.1, P4.2.
+#[track_caller]
+pub fn use_layout_effect<D, C>(
+    scope: &mut Scope,
+    deps: D,
+    run: impl FnOnce() -> C + 'static,
+) where
+    D: PartialEq + 'static,
+    C: Cleanup;
+
 /// What `run` may return: a function that undoes the work, or `()` for
 /// nothing to undo. `()` is not a `FnOnce()`, so the two impls do not overlap.
 pub trait Cleanup: 'static {
@@ -890,36 +932,6 @@ pub fn context<T: Clone + 'static>(scope: &mut Scope) -> T;
 pub fn try_context<T: Clone + 'static>(scope: &mut Scope) -> Option<T>;
 ```
 
-```rust
-// hook/screen.rs
-/// The rectangle this component's node occupied.
-///
-/// Re-runs: `Rect::ZERO` before the first layout; afterwards, the rectangle
-/// from the last layout of this frame. A change re-runs the component before
-/// the frame is painted, so a pane can size itself in the frame it is resized
-/// in rather than one frame later. See R5.6.
-/// Panics: P4.1, P4.2.
-#[track_caller]
-pub fn use_size(scope: &mut Scope) -> ratatui::layout::Rect;
-
-/// Registers this component as focusable and says whether it holds focus.
-///
-/// Re-runs: every render. The registration lasts until the component unmounts.
-/// Panics: P4.1, P4.2.
-#[track_caller]
-pub fn use_focus(scope: &mut Scope) -> Focus;
-```
-
-```rust
-// hook/mod.rs
-/// Run the component that is speaking again on the next frame.
-///
-/// Legal inside a listener, an effect and a delivered worker reply, where the
-/// runtime knows whose turn it is.
-/// Panics: P4.4 outside all three.
-pub fn redraw();
-```
-
 ### 4.3 What the type system reaches, and what it does not
 
 Three layers, earliest first.
@@ -941,10 +953,10 @@ public type, which is the disease function components cure. React ships a lint
 for this; we ship a panic that names both lines.
 
 `completion` and `subscription` are the second thing it cannot do. They read
-the effect the runtime is running, the way `redraw` reads the scope, so calling
-one outside an effect is P4.6 rather than a type error. Handing the effect body
-a `&mut Effect<'_>` would have made it one, at the price of a parameter React's
-setup does not have.
+the effect the runtime is running, the way a listener reads the scope it
+belongs to, so calling one outside an effect is P4.6 rather than a type error.
+Handing the effect body a `&mut Effect<'_>` would have made it one, at the
+price of a parameter React's setup does not have.
 
 ---
 
@@ -1194,7 +1206,7 @@ baseline, no `order`. Each is defined by CSS and can be added under its own
 name the day something needs it — which is the point of borrowing the model
 rather than inventing one. Until then each is a rule a reader would have to
 learn before they could predict a frame.
-### 5.8 `use_size`, and the round cap
+### 5.8 Layout effects, and the round cap
 
 The pass order inside one `Tree::draw`:
 
@@ -1203,21 +1215,23 @@ The pass order inside one `Tree::draw`:
 2  render round:   reconcile from the root, then drain the redraw set,
                    parents before children; commit each scope's pending state
                    immediately before deciding whether it must run
-3  layout round:   measure bottom-up, assign top-down, write each scope's area
-4  if any scope that called use_size was assigned a rectangle other than the
-   one use_size returned in step 2  →  mark it, go back to 2
+3  layout round:   measure bottom-up, assign top-down, write each scope's
+                   area, then fill in every `ref` a node was given
+4  layout effects: cleanups deepest first, then setups shallowest first.
+                   A state write here  →  go back to 2
 5  paint:          walk the tree, record where every listening node landed
 6  effects:        cleanups deepest first, then setups shallowest first
 7  leave the runtime
 ```
 
-**R5.8.1** `use_size` answers `Rect::ZERO` on the render in which its component
-mounts, and the rectangle from the previous layout round of the same frame
-afterwards. A component that calls it therefore renders at least twice on the
-frame it mounts.
-*test: `a_component_that_asks_its_size_renders_twice_when_it_mounts`*
+**R5.8.1** A `ref` holds `None` until the node it names has a rectangle. The
+render that first hands it to a node therefore reads `None`, and the layout
+effect after that render reads the handle. A component that measures itself
+renders at least twice on the frame it mounts. React's `ref.current` is null
+in the same place for the same reason.
+*test: `a_component_that_measures_itself_renders_twice_when_it_mounts`*
 
-**R5.8.2** Steps 2 and 3 repeat at most **4** times per frame. On the 4th round
+**R5.8.2** Steps 2 to 4 repeat at most **4** times per frame. On the 4th round
 the areas from that round are painted and the frame completes; `Tree::layout_rounds()`
 reports 4, which is how a test sees it — `loom` depends on `ratatui`,
 `crossterm` and `crokey` and nothing else, so it cannot log. Four is slack, not
@@ -1236,12 +1250,39 @@ terminal.
 callback panics (P7.1).
 *test: `drawing_from_inside_a_painter_is_refused`*
 
-Why `use_size` exists at all, in this program's own terms: `draw/pane.rs`
-currently calls `viewport.set_height(rect.height, …)` *during* the draw, which
-is a state write in the paint pass and is forbidden by R7.1.4. The replacement
-is `use_size` in the render pass followed by
-`view.current().set_height(h, rows)`, where `view` came from `use_ref`.
-The current frame reads the new height during paint.
+**R5.8.5** A layout effect that writes back the size it just measured settles
+in two rounds. The second round measures the same rectangle and writes the same
+value, and an equal write clears the mark (R6.3.5). Take that comparison away
+and every frame runs to the cap — measured, by taking it away.
+*test: `measuring_the_same_size_twice_settles_the_frame`*
+
+Measuring is not a hook here, because React does not make it one either. A
+component that needs its own rectangle holds a `ref`, hands it to a node, and
+reads it in a layout effect:
+
+```rust
+/// The rectangle flex gave this node. `Rect::ZERO` until it has one.
+pub fn use_size(scope: &mut Scope, node: Ref<Option<NodeHandle>>) -> Rect {
+    let (size, set_size) = use_state(scope, || Rect::ZERO);
+    use_layout_effect(scope, Always, move || {
+        if let Some(node) = *node.current() {
+            set_size(&|_| node.area());
+        }
+    });
+    size
+}
+```
+
+That is the whole of it, and it lives in `crates/ui/src/hook.rs` — this
+program's own, not the framework's. It is the same handful of lines React's
+documentation writes over `useLayoutEffect`. `loom` exports the three pieces
+and stops there.
+
+What it is for, in this program's own terms: `draw/pane.rs` currently calls
+`viewport.set_height(rect.height, …)` *during* the draw, which is a state write
+in the paint pass and is forbidden by R7.1.4. The replacement is `use_size` in
+the render pass followed by `view.current().set_height(h, rows)`, where `view`
+came from `use_ref`. The current frame reads the new height during paint.
 
 ---
 
@@ -1278,6 +1319,8 @@ struct Mounted {
     paint: Option<Rc<dyn Fn(&mut Paint<'_>)>>,
     listeners: Listeners,
     focusable: bool,
+    /// The `ref` this node was last given, so unmounting can clear it (R6.2.8).
+    node_ref: Option<Ref<Option<NodeHandle>>>,
     area: Rect,
     clip: Rect,
 }
@@ -1376,6 +1419,16 @@ slab entry is freed and its generation bumped, so every `SetState<T>`,
 paint order, or to the previous one if there is no next, or to nothing.
 *test: `closing_the_focused_pane_moves_focus_rather_than_losing_it`*
 
+**R6.2.8** A `ref` a node was given is set to `Some(handle)` when the node is
+laid out and back to `None` when it unmounts, before that scope's cleanups run.
+Detaching is the same: a node that stops being given the ref clears it. React
+nulls a ref at both of those moments too.
+*test: `a_ref_is_cleared_when_its_node_goes_away`*
+
+**R6.2.9** Two live nodes given the same `ref` panic (P6.3). React lets the
+second silently win; a terminal has no devtools to notice that with.
+*test: `handing_one_ref_to_two_nodes_is_refused`*
+
 ### 6.3 The redraw set
 
 **R6.3.1** Marks are drained in `(depth, index)` order, parents before
@@ -1405,11 +1458,11 @@ same value settles the frame.
 *test: `the_status_line_settles_in_one_frame`*
 
 **R6.3.6** Writing through `Ref::current` never marks a scope. A caller that
-changed something the frame describes calls `redraw()` or a state setter. This
+changed something the frame describes bumps a state value alongside it. This
 is the same line React draws between `useRef` and `useState`.
 *test: `editing_a_ref_does_not_redraw`*
 
-### 6.4 Memo and effect slots
+### 6.4 Memo, effect and layout-effect slots
 
 Both hold deps and compare them the same way, so the rules that differ are
 about *when* the work happens, not about which work is skipped.
@@ -1452,6 +1505,18 @@ never settles.
 An effect that returns `()` has nothing to call.
 *test: `changing_the_deps_cleans_up_before_it_runs_again`*
 
+**R6.4.8** A layout effect's slot follows every rule above, with one word
+changed: its `run` is called after layout and before paint rather than after
+it. A state write from `run` therefore sends the frame round again (R5.8.2)
+instead of waiting for the next one — which is what it is for, and what it
+costs.
+*test: `a_layout_effect_runs_before_the_frame_it_belongs_to`*
+
+**R6.4.9** Within one scope, every layout effect runs before any ordinary
+effect, whatever order the hooks were called in. Across scopes both queues are
+cleanups deepest first, then setups shallowest first.
+*test: `layout_effects_run_before_effects_in_the_same_component`*
+
 ---
 
 ## 7. Paint
@@ -1477,8 +1542,8 @@ before its children are painted.
 is not painted and its children are not visited.
 *test: `a_node_clipped_to_nothing_is_skipped`*
 
-**R7.1.4** Paint writes cells and nothing else. A state write or `redraw()`
-called from inside a paint callback panics (P7.2). Captured state snapshots
+**R7.1.4** Paint writes cells and nothing else. A state write called from
+inside a paint callback panics (P7.2). Captured state snapshots
 and `Ref::current` are legal. A write through a ref is not caught — one guard
 serves both — and every painter after it in the walk reads a value the layout
 never saw.
@@ -1561,15 +1626,17 @@ an overlay takes the click.
 
 ### 8.2 Focus
 
-**R8.2.1** `use_focus` registers a scope as focusable. Focus is one `ScopeId`,
-or none. A scope records only whether it *is* focusable; `Focus::has` and
+**R8.2.1** A node is focusable when its `focusable` flag is set, which is the
+DOM's `tabindex`. Focus is one `ScopeId`, or none. A scope records only whether
+it *is* focusable; `NodeHandle::has_focus` and
 `Paint::has_focus` are comparisons against that single `ScopeId`, so two scopes
 cannot both believe they hold focus and no flag has to be cleared when it moves.
 *test: `only_one_node_holds_focus`*
 
-**R8.2.2** `Focus::move_next` moves to the next focusable in paint order,
-wrapping; `Focus::move_previous` moves back. Both are no-ops when nothing is
-focusable.
+**R8.2.2** `focus_next` moves to the next focusable in paint order,
+wrapping; `focus_previous` moves back. Both are no-ops when nothing is
+focusable. A browser does this itself on Tab, off the same `tabindex` flag; a
+terminal has no such convention, so a key listener calls them.
 *test: `focus_wraps_rather_than_running_off_the_end`*
 
 **R8.2.3** A left mouse-down focuses the nearest focusable node at or above the
@@ -1650,8 +1717,8 @@ happen — `complete` takes `self`.
 and returns `true`. It may be called any number of times until `close`.
 *test: `a_subscription_delivers_every_piece`*
 
-**R9.1.3** A handler may set state, call `redraw()`, and send further requests.
-It may not call a hook — it holds no `Scope`.
+**R9.1.3** A handler may set state and send further requests. It may not call a
+hook — it holds no `Scope`.
 *test: `a_reply_handler_may_set_state`*
 
 **R9.1.4** `Subscription<T>` is `Clone`, so one worker request can be answered
@@ -1772,7 +1839,7 @@ redraws **only if the piece covers a line the pane is showing**:
 let from = response.from;
 let taken = store.current().install(response);
 if taken && from < visible.end {
-    redraw();
+    took_spans(&|n| n + 1);
 }
 ```
 
@@ -1939,6 +2006,12 @@ path       = ident , { "::" , ident } ;
 `key` is a reserved prop name. The macro consumes it; it never reaches the props
 struct.
 
+`ref` is the other reserved name, spelled the way React spells it. It is a Rust
+keyword, so `ident` here means `syn`'s `Ident::parse_any` rather than its
+strict `Ident` — measured, because the strict one answers ``expected
+identifier, found keyword `ref` ``. Unlike `key` it does reach the props
+struct, as the field `node_ref`.
+
 The comma between entries is optional, so children read as a list of elements
 rather than as a list of arguments. `..` may be written anywhere among the
 entries; the expansion always places it last, where Rust requires it.
@@ -1988,6 +2061,11 @@ the element, and at reconciliation otherwise (R6.1.2).
 
 **Lowercase is not special.** `Row` and `ExplorerPane` are both paths and both
 expand the same way. There is no separate grammar for built-in hosts.
+
+**`ref` only goes on a host.** Every built-in host's props carry `node_ref`;
+your components' do not, so `ref` on one is ``struct `ExplorerPaneProps` has no
+field named `node_ref` ``. React forwards a ref through a component; there is
+nothing here to forward it to, because a component owns no rectangle.
 
 ### 11.4 `#[component]`
 
@@ -2109,13 +2187,19 @@ Screen: child 2 has a key and child 3 does not — key every child of a list or 
 ExplorerPane: two children share the key "src/main.rs"
 ```
 
+**P6.3 — R6.2.9.**
+
+```text
+DiffPane: one ref was given to both a Canvas and a Row — a ref names one node
+```
+
 **P7.1 — R5.8.4.**
 
 ```text
 draw was called from inside a paint callback
 ```
 
-**P7.2 — R7.1.4.** A state write or `redraw()` while painting is forbidden;
+**P7.2 — R7.1.4.** A state write while painting is forbidden;
 captured snapshots and `Ref::current` are legal.
 
 ```text
@@ -2148,8 +2232,9 @@ row 9 is outside the 8-row screen
 | `try_context::<T>` | `None` |
 | `Completion::complete`, `Subscription::send` | `false` when refused |
 | `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
-| `use_size` before the first layout | `Rect::ZERO` |
-| `Focus::request`, `Focus::move_next`, `Focus::move_previous` with nothing focusable | no-op |
+| a `ref` read before its node has a rectangle | `None` |
+| `NodeHandle::area` on an unmounted node | `Rect::ZERO` |
+| `NodeHandle::focus`, `focus_next`, `focus_previous` with nothing focusable | no-op |
 | a state write ending at an equal value | commits the value, runs no component |
 | a container too small for its children | paints its `too_small` node (R5.4) |
 | a rectangle of zero width or height | painted as nothing (R5.3.5) |
@@ -2195,6 +2280,8 @@ proves nothing.
 | **I16** | One render sees one state snapshot, and writes compose in call order against the pending value. | `two_writes_compose_in_call_order` | run a write against the render snapshot instead of the pending value |
 | **I17** | Mutating a ref never schedules a component by itself. | `editing_a_ref_does_not_redraw` | mark the owner in `Ref::current` |
 | **I18** | A memo hands back the same `Rc` until its deps differ, and nothing else drops it. | `a_memo_survives_an_unrelated_state_write` | clear memo slots when a scope is marked |
+| **I19** | A `ref` names one node, and holds `None` whenever that node has no rectangle. | `a_ref_is_cleared_when_its_node_goes_away` | leave a stale handle behind after unmount |
+| **I20** | A layout effect runs before the frame it belongs to is painted. | `a_layout_effect_runs_before_the_frame_it_belongs_to` | queue it with the ordinary effects |
 
 ### 13.1 The test that is the net
 
@@ -2281,31 +2368,30 @@ today — that is a measurement; the estimate beside it is not.
 | file | responsibility | est. | comparable (measured) |
 |---|---|---:|---|
 | `src/lib.rs` | crate doc, the whole public surface in one screen | 60 | `crates/ui/src/lib.rs`, 27 |
-| `src/node.rs` | `Node`, `Host`, `Part`, `Key`, `Element`, the `From` impls | 150 | |
+| `src/node.rs` | `Node`, `Host`, `Part`, `Key`, `Element`, `NodeHandle`, the `From` impls | 180 | |
 | `src/component.rs` | `Component`, the erased render pointer, the props comparison pointer | 80 | |
 | `src/scope.rs` | `Scope`, `ScopeId`, `Mounted`, the slab and its free list, parent and child walking | 190 | |
 | `src/tree.rs` | `Tree` — the object the application owns | 200 | |
-| `src/frame.rs` | the seven steps of §5.6, the round caps | 180 | |
+| `src/frame.rs` | the seven steps of §5.8, the round caps | 180 | |
 | `src/reconcile.rs` | flattening, positional and keyed matching, mount, update, unmount | 260 | |
 | `src/current.rs` | the thread-local, the guard that enters and leaves it | 100 | |
-| `src/hook/mod.rs` | `Slot`, `Hooks`, `use_hook`, order checking, `redraw` | 140 | |
+| `src/hook/mod.rs` | `Slot`, `Hooks`, `use_hook`, order checking | 130 | |
 | `src/hook/state.rs` | state snapshots, `SetState<T>`, the per-slot writer | 230 | |
 | `src/hook/reference.rs` | `Ref<T>` and the guard `current` hands back | 120 | |
 | `src/hook/memo.rs` | `use_memo` | 80 | |
-| `src/hook/effect.rs` | `use_effect`, `Cleanup`, `Always`, the effect queue | 170 | |
+| `src/hook/effect.rs` | `use_effect`, `use_layout_effect`, `Cleanup`, `Always`, the effect queues | 200 | |
 | `src/hook/context.rs` | `provide_context`, `context`, `try_context`, versions | 110 | |
 | `src/hook/worker.rs` | `Completion`, `Subscription`, `completion`, `subscription`, the generation checks | 170 | |
-| `src/hook/screen.rs` | `use_size`, `use_focus` | 110 | |
 | `src/layout/mod.rs` | `Layout`, `Basis`, `Edges` | 110 | |
 | `src/layout/flex.rs` | measure, the §5.4 resolve, the cross axis, `too_small` | 250 | `crates/ui/src/render/layout.rs`, 437 with tests |
 | `src/paint/mod.rs` | the walk, clipping, `Paint`, the debug clip guard | 160 | `draw/screen.rs` 97 + `tab.rs` 73 + `pane.rs` 66 |
 | `src/paint/host.rs` | `Row`, `Column`, `Stack`, `Gap`, `Divider`, `Canvas` and their props | 220 | |
 | `src/paint/text.rs` | `Text`, and the one `measure` in the crate | 110 | |
-| `src/event/mod.rs` | `Bubble`, `Mouse`, `Listeners`, `Focus` | 140 | |
+| `src/event/mod.rs` | `Bubble`, `Mouse`, `Listeners`, focus traversal | 130 | |
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
 | `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,840** | |
+| | **`loom`** | **≈ 3,790** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -2633,9 +2719,10 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Row, RowProps, Scope, Text, TextProps,
-           component, context, rsx, use_size};
+           component, context, rsx, use_ref};
 use ratatui::buffer::Buffer as Cells;
 
+use crate::hook::use_size;
 use crate::render::cells;
 use crate::theme::Theme;
 use crate::view::Direction;
@@ -2658,7 +2745,8 @@ pub fn StatusBar(
     notice: Option<Rc<str>>,
 ) -> Node {
     let theme = context::<Theme>(scope);
-    let width = use_size(scope).width;
+    let bar = use_ref(scope, || None);
+    let width = use_size(scope, bar).width;
 
     // Today's `summary`, taking the fields it reads rather than a borrowed
     // `Status`, because props are `'static`. Its body is unchanged.
@@ -2682,7 +2770,7 @@ pub fn StatusBar(
     let path = theme.status_path;
 
     rsx! {
-        Row { layout: row, ..,
+        Row { layout: row, ref: bar, ..,
             if let Some(why) = notice.clone() {
                 Text { layout: Layout { grow: 1, ..Default::default() },
                        text: why, style: base.patch(theme.warning) }
@@ -2735,9 +2823,9 @@ use crokey::KeyCombination;
 use crossterm::event::{MouseButton, MouseEventKind};
 use file_types::File;
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Ref, Scope,
-           SetState, component, context, redraw, rsx, use_effect, use_focus,
-           use_ref, use_size};
+           SetState, component, context, rsx, use_effect, use_ref, use_state};
 
+use crate::hook::use_size;
 use crate::input::{Action, BufferAction, KeymapType, Resolution, Resolver, ViewAction};
 use crate::theme::Theme;
 use crate::view::{Buffer, BufferType, Viewport};
@@ -2754,8 +2842,14 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
 
     let buffer = use_ref(scope, || Buffer::explorer(files.to_vec()));
     let view = use_ref(scope, Viewport::new);
-    let focus = use_focus(scope);
-    let area = use_size(scope);
+    let pane = use_ref(scope, || None);
+    let area = use_size(scope, pane);
+    let (focused, set_focused) = use_state(scope, || false);
+
+    // Both models above are refs, so writing one is silent. Counting the
+    // writes is what asks for the next frame — React's function components
+    // force an update the same way, and §2 already calls this a redraw.
+    let (_, redraw) = use_state(scope, || 0u32);
 
     // A new list from the watcher. Rebuild the arrangement and keep the reader
     // on the file they were on — `reshape_around` already does that.
@@ -2769,7 +2863,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
         let landing = explorer.reshape_around(cursor, |e| e.refresh(files));
         buffer.update_line_count();
         view.current().place(landing, buffer.view_lines());
-        redraw();
+        redraw(&|n| n + 1);
     });
 
     // The height the frame is about to be painted at, recorded silently:
@@ -2779,7 +2873,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
 
     // What the status line says while this pane has focus. A list of changed
     // files is not a diff, so it has no changes to count.
-    if focus.has {
+    if focused {
         status(&|_| Status {
             file: None,
             view_line: view.current().cursor(),
@@ -2807,7 +2901,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                 Action::Buffer(action) => {
                     let moved = matches!(action, BufferAction::Motion(_));
                     buffer.current().apply(action, command.repeat(), &mut view.current());
-                    redraw();
+                    redraw(&|n| n + 1);
                     if moved && let Some(file) = chose() {
                         open_key(file);
                     }
@@ -2822,7 +2916,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
                     } else if let Some(file) = chose() {
                         open_key(file);
                     }
-                    redraw();
+                    redraw(&|n| n + 1);
                     Bubble::Stop
                 }
                 // Tab, view and program actions belong further out. The root
@@ -2833,19 +2927,22 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
         .on_wheel(move |lines| {
             let rows = buffer.current().view_lines();
             view.current().scroll(lines, rows);
-            redraw();
+            redraw(&|n| n + 1);
             Bubble::Stop
         })
+        .on_focus(move |has| set_focused(&move |_| has))
         .on_mouse(move |mouse: Mouse| {
             if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
                 return Bubble::Continue;
             }
-            focus.request();
+            if let Some(node) = *pane.current() {
+                node.focus();
+            }
             let rows = buffer.current().view_lines();
             let line = view.current().top() + u32::from(mouse.local.y);
             if line < rows {
                 view.current().place(line, rows);
-                redraw();
+                redraw(&|n| n + 1);
                 if let Some(file) = chose() {
                     open(file);
                 }
@@ -2853,7 +2950,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
             Bubble::Stop
         });
 
-    let has_focus = focus.has;
+    let has_focus = focused;
     let paint = Rc::new(move |paint: &mut loom::Paint<'_>| {
         let area = paint.area();
         let buffer = buffer.current();
@@ -2868,6 +2965,7 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
             layout: Layout {
                 grow: 1, min_width: 8, clip: true, ..Default::default()
             },
+            ref: pane,
             focusable: true,
             listeners,
             paint,
@@ -2891,14 +2989,15 @@ repository and none of it is touched.
 use std::rc::Rc;
 
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Ref, Scope,
-           SetState, component, context, redraw, rsx, subscription, use_effect,
-           use_focus, use_ref, use_size};
+           SetState, component, context, rsx, subscription, use_effect,
+           use_ref, use_state};
 use syntax::{Store, SyntaxResponse, Version};
 
 use crate::app::pending::{Outbox, Request};
 use crate::app::callback::Run;
 use crate::app::status::Status;
 use crate::draw::Look;
+use crate::hook::use_size;
 use crate::input::{Action, KeymapType, Resolution, Resolver};
 use crate::theme::Theme;
 use crate::view::{Buffer, Viewport};
@@ -2916,8 +3015,13 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let Run(run) = context::<Run>(scope);
 
     let view = use_ref(scope, Viewport::new);
-    let focus = use_focus(scope);
-    let area = use_size(scope);
+    let pane = use_ref(scope, || None);
+    let area = use_size(scope, pane);
+    let (focused, set_focused) = use_state(scope, || false);
+
+    // `view` and the shared `store` are both refs, so writing either is
+    // silent. This counts the writes worth a frame.
+    let (_, redraw) = use_state(scope, || 0u32);
 
     let rows = buffer.current().as_ref().map_or(0, Buffer::view_lines);
     view.current().set_height(u32::from(area.height), rows);
@@ -2925,7 +3029,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let keymap = buffer.current().as_ref()
         .map_or(KeymapType::default(), Buffer::keymap_type);
 
-    if focus.has {
+    if focused {
         // `draw::screen::summary`, moved to the pane that knows the answers.
         // One read of the cursor: a second while the first is still in hand
         // is P4.5.
@@ -2955,7 +3059,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
             // frame. `end` is a view line, which is never below the file line
             // at the same place, so this never skips a redraw that was needed.
             if taken && from < end {
-                redraw();
+                redraw(&|n| n + 1);
             }
         });
         let requests = buffer.current().as_ref()
@@ -2978,7 +3082,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
                     if let Some(b) = buffer.current().as_mut() {
                         b.apply(action, command.repeat(), &mut view.current());
                     }
-                    redraw();
+                    redraw(&|n| n + 1);
                     Bubble::Stop
                 }
                 _ => { run(command); Bubble::Stop }
@@ -2987,11 +3091,14 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
         .on_wheel(move |lines| {
             let rows = buffer.current().as_ref().map_or(0, Buffer::view_lines);
             view.current().scroll(lines, rows);
-            redraw();
+            redraw(&|n| n + 1);
             Bubble::Stop
         })
+        .on_focus(move |has| set_focused(&move |_| has))
         .on_mouse(move |mouse| {
-            focus.request();
+            if let Some(node) = *pane.current() {
+                node.focus();
+            }
             // A drag that leaves the column still belongs to it. R8.4.1.
             if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
                 loom::capture_pointer();
@@ -2999,7 +3106,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
             Bubble::Stop
         });
 
-    let has_focus = focus.has;
+    let has_focus = focused;
     let paint = Rc::new(move |paint: &mut loom::Paint<'_>| {
         let area = paint.area();
         let buffer = buffer.current();
@@ -3017,6 +3124,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
             layout: Layout {
                 grow: 1, min_width: 20, clip: true, ..Default::default()
             },
+            ref: pane,
             focusable: true,
             listeners,
             paint,
@@ -3044,7 +3152,8 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
            Basis, Node, Row, RowProps, Scope, Text, TextProps, completion,
-           component, provide_context, rsx, use_effect, use_ref, use_state};
+           component, focus_next, focus_previous, provide_context, rsx,
+           use_effect, use_ref, use_state};
 use syntax::{Store, Version};
 
 use crate::app::pending::{Outbox, Request};
@@ -3079,10 +3188,12 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     let post_program = post.clone();
     provide_context(scope, Open(Rc::new(move |file: File| set_chosen(&|_| Some(file.clone())))));
     provide_context(scope, Run(Rc::new(move |command: Command| match command.action {
-        Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
+        Action::Tab(TabAction::FocusNext) => {
             // Focus order is paint order, so "the next pane" needs no table of
             // its own. R8.2.2.
+            focus_next();
         }
+        Action::Tab(TabAction::FocusPrev) => focus_previous(),
         Action::Tab(TabAction::WidenLeft) => {
             set_left(&|n| (n + 2).min(MAX_LEFT));
         }
@@ -3195,7 +3306,7 @@ failing the whole screen" becomes the `too_small` climb of R5.4.2.
 |---|---|
 | `View::buffers` | `use_ref` in the component that shows each one |
 | `View::tabs`, `Tab::panes`, `Tab::layout` | the node tree |
-| `Tab::focus`, `focus_next` | `use_focus`, `Focus::move_next`, paint order (R8.2.2) |
+| `Tab::focus`, `focus_next` | `focusable` on a node, `focus_next`, paint order (R8.2.2) |
 | `Tab::resize` | `left` plus `set_left: SetState<u16>` in `Screen` |
 | `Pane::viewport` | `use_ref(scope, Viewport::new)` in each pane |
 | `BufferId`, `PaneId` | `ScopeId` |
