@@ -562,7 +562,7 @@ pub struct Canvas;   pub struct CanvasProps   { pub layout: Layout, pub listener
 ```rust
 // event/mod.rs
 use crokey::KeyCombination;
-use crossterm::event::{MouseButton, MouseEventKind};
+use crossterm::event::MouseButton;
 use ratatui::layout::Position;
 
 /// What a listener says about an event it was given.
@@ -575,7 +575,8 @@ pub enum Bubble {
 }
 
 pub struct Mouse {
-    pub kind: MouseEventKind,
+    /// Which button is down, `None` when none is. On a move this is React's
+    /// `buttons` — what separates a drag from a plain move.
     pub button: Option<MouseButton>,
     /// Where on the screen.
     pub at: Position,
@@ -597,9 +598,12 @@ pub struct Listeners { /* private */ }
 impl Listeners {
     pub fn new() -> Self;
     pub fn on_key(self, listen: impl Fn(KeyCombination) -> Bubble + 'static) -> Self;
-    pub fn on_mouse(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
-    /// Positive is down. Separate from `mouse` because it is the one mouse
-    /// event routed by position that is not a click.
+    pub fn on_mouse_down(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
+    /// Fires with a button held or without one. React's `onMouseMove`; there
+    /// is no separate drag event, `Mouse::button` is the difference.
+    pub fn on_mouse_move(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
+    pub fn on_mouse_up(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
+    /// Positive is down. React's `onWheel`.
     pub fn on_wheel(self, listen: impl Fn(i32) -> Bubble + 'static) -> Self;
     /// Focus arrived, at this scope or at one inside it. React's `onFocus`.
     pub fn on_focus(self, listen: impl Fn(Focus) -> Bubble + 'static) -> Self;
@@ -614,7 +618,8 @@ pub fn focus_next();
 pub fn focus_previous();
 
 /// Route every mouse event to this node until the button comes up or
-/// `release_pointer` is called. Called from inside a mouse listener.
+/// `release_pointer` is called. Called from `on_mouse_down`. The DOM's
+/// `setPointerCapture`, without the pointer id — a terminal has one pointer.
 pub fn capture_pointer();
 pub fn release_pointer();
 ```
@@ -1650,6 +1655,11 @@ an overlay takes the click.
 `area.y`. This is what `ScreenMap::TextArea::to_pos` computes by hand today.
 *test: `local_position_is_relative_to_the_node`*
 
+**R8.1.5** A move is delivered whether or not a button is held; `Mouse::button`
+is the difference, and is `None` when none is. There is no drag event of its
+own, which is how the DOM does it too.
+*test: `a_move_with_no_button_still_reaches_the_node`*
+
 ### 8.2 Focus
 
 **R8.2.1** A node is focusable when its `focusable` flag is set, which is the
@@ -1681,7 +1691,7 @@ parent, up to the root, stopping at the first listener that returns
 `Bubble::Stop`. With no focus it starts at the root.
 *test: `an_unhandled_key_reaches_the_root`*
 
-**R8.3.2** A mouse event goes to the hit node and then climbs the same way.
+**R8.3.2** A mouse down, move or up goes to the hit node and then climbs.
 A wheel event is routed by position and climbs the same way.
 *test: `a_wheel_over_an_unlistening_child_reaches_the_pane`*
 
@@ -2534,11 +2544,11 @@ today — that is a measurement; the estimate beside it is not.
 | `src/paint/mod.rs` | the walk, clipping, `Paint`, the debug clip guard | 160 | `draw/screen.rs` 97 + `tab.rs` 73 + `pane.rs` 66 |
 | `src/paint/host.rs` | `Row`, `Column`, `Stack`, `Gap`, `Divider`, `Canvas` and their props | 220 | |
 | `src/paint/text.rs` | `Text`, and the one `measure` in the crate | 110 | |
-| `src/event/mod.rs` | `Bubble`, `Mouse`, `Focus`, `Listeners`, focus traversal | 140 | |
+| `src/event/mod.rs` | `Bubble`, `Mouse`, `Focus`, `Listeners`, focus traversal | 150 | |
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
 | `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,800** | |
+| | **`loom`** | **≈ 3,810** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -2999,7 +3009,7 @@ every one of `draw/status.rs`'s nine tests, and the priority dropping inside
 use std::rc::Rc;
 
 use crokey::KeyCombination;
-use crossterm::event::{MouseButton, MouseEventKind};
+use crossterm::event::MouseButton;
 use file_types::File;
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Mouse, Node, Ref, Scope,
            component, rsx, use_context, use_effect, use_ref, use_state};
@@ -3112,8 +3122,8 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
         })
         .on_focus(move |_| { set_focused(&|_| true); Bubble::Continue })
         .on_blur(move |_| { set_focused(&|_| false); Bubble::Continue })
-        .on_mouse(move |mouse: Mouse| {
-            if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+        .on_mouse_down(move |mouse: Mouse| {
+            if mouse.button != Some(MouseButton::Left) {
                 return Bubble::Continue;
             }
             if let Some(node) = *pane.current() {
@@ -3278,14 +3288,12 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
         })
         .on_focus(move |_| { set_focused(&|_| true); Bubble::Continue })
         .on_blur(move |_| { set_focused(&|_| false); Bubble::Continue })
-        .on_mouse(move |mouse| {
+        .on_mouse_down(move |_| {
             if let Some(node) = *pane.current() {
                 node.focus();
             }
             // A drag that leaves the column still belongs to it. R8.4.1.
-            if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
-                loom::capture_pointer();
-            }
+            loom::capture_pointer();
             Bubble::Stop
         });
 
