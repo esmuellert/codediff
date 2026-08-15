@@ -125,7 +125,8 @@ pub mod testing;
 
 pub use component::Component;
 pub use event::{
-    Bubble, Listeners, Mouse, capture_pointer, focus_next, focus_previous, release_pointer,
+    Bubble, Focus, Listeners, Mouse, capture_pointer, focus_next, focus_previous,
+    release_pointer,
 };
 pub use hook::{
     Always, Cleanup, Completion, Context, Ref, SetState, Subscription,
@@ -207,6 +208,9 @@ impl NodeHandle {
     pub fn focus(self);
     /// The DOM's `node === document.activeElement`.
     pub fn has_focus(self) -> bool;
+    /// Whether `other` is this node or sits inside it. The DOM's
+    /// `node.contains()`.
+    pub fn contains(self, other: NodeHandle) -> bool;
     /// Whether the node is still mounted. A handle to an unmounted node
     /// answers `Rect::ZERO` and `false` rather than panicking.
     pub fn is_mounted(self) -> bool;
@@ -579,6 +583,13 @@ pub struct Mouse {
     pub local: Position,
 }
 
+pub struct Focus {
+    /// The node on the other side of the move: the one losing focus in an
+    /// `on_focus`, the one gaining it in an `on_blur`. `None` at either end
+    /// of the sequence. React's `relatedTarget`.
+    pub related: Option<NodeHandle>,
+}
+
 /// Every listener one host can carry.
 #[derive(Clone, Default)]
 pub struct Listeners { /* private */ }
@@ -590,7 +601,10 @@ impl Listeners {
     /// Positive is down. Separate from `mouse` because it is the one mouse
     /// event routed by position that is not a click.
     pub fn on_wheel(self, listen: impl Fn(i32) -> Bubble + 'static) -> Self;
-    pub fn on_focus(self, listen: impl Fn(bool) + 'static) -> Self;
+    /// Focus arrived, at this scope or at one inside it. React's `onFocus`.
+    pub fn on_focus(self, listen: impl Fn(Focus) -> Bubble + 'static) -> Self;
+    /// Focus left, from this scope or from one inside it. React's `onBlur`.
+    pub fn on_blur(self, listen: impl Fn(Focus) -> Bubble + 'static) -> Self;
 }
 
 /// Move focus to the next focusable node in paint order, wrapping. A browser
@@ -1615,8 +1629,9 @@ before the file name for the same reason.
 
 ## 8. Events
 
-Two payloads, one walk. A key starts at focus; a mouse event starts at the
-deepest node under the pointer; both then climb.
+Three payloads, one walk. A key starts at focus; a mouse event starts at the
+deepest node under the pointer; a focus change starts at the scope that gained
+or lost it. All three then climb.
 
 ### 8.1 Hit-testing
 
@@ -1654,9 +1669,9 @@ terminal has no such convention, so a key listener calls them.
 target, unless a listener between them returned `Bubble::Stop` first.
 *test: `clicking_a_pane_focuses_it`*
 
-**R8.2.4** A `focus` listener is called with `true` when the scope gains focus
-and `false` when it loses it, during the dispatch that moved focus — not on the
-next frame.
+**R8.2.4** `on_blur` is called on the scope losing focus and `on_focus` on the
+scope gaining it, during the dispatch that moved focus — not on the next frame.
+Blur runs first, as in a browser.
 *test: `losing_focus_is_reported_before_the_next_frame`*
 
 ### 8.3 Bubbling
@@ -1670,11 +1685,17 @@ parent, up to the root, stopping at the first listener that returns
 A wheel event is routed by position and climbs the same way.
 *test: `a_wheel_over_an_unlistening_child_reaches_the_pane`*
 
-**R8.3.3** A scope that has been unmounted during the same dispatch is skipped
+**R8.3.3** `on_focus` climbs from the scope that gained focus, `on_blur` from
+the scope that lost it, so a pane hears that something inside it took focus. A
+browser's own `focus` and `blur` do not climb; React's do, and this follows
+React.
+*test: `a_pane_hears_that_something_inside_it_took_focus`*
+
+**R8.3.4** A scope that has been unmounted during the same dispatch is skipped
 by the rest of the walk.
 *test: `a_listener_that_closes_its_own_pane_does_not_climb_into_a_ghost`*
 
-**R8.3.4** `Tree::press` and `Tree::mouse` return whether a listener stopped the
+**R8.3.5** `Tree::press` and `Tree::mouse` return whether a listener stopped the
 event.
 *test: `an_unbound_key_reports_that_nobody_took_it`*
 
@@ -2513,11 +2534,11 @@ today — that is a measurement; the estimate beside it is not.
 | `src/paint/mod.rs` | the walk, clipping, `Paint`, the debug clip guard | 160 | `draw/screen.rs` 97 + `tab.rs` 73 + `pane.rs` 66 |
 | `src/paint/host.rs` | `Row`, `Column`, `Stack`, `Gap`, `Divider`, `Canvas` and their props | 220 | |
 | `src/paint/text.rs` | `Text`, and the one `measure` in the crate | 110 | |
-| `src/event/mod.rs` | `Bubble`, `Mouse`, `Listeners`, focus traversal | 130 | |
+| `src/event/mod.rs` | `Bubble`, `Mouse`, `Focus`, `Listeners`, focus traversal | 140 | |
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
 | `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,790** | |
+| | **`loom`** | **≈ 3,800** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -3089,7 +3110,8 @@ pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
             redraw(&|n| n + 1);
             Bubble::Stop
         })
-        .on_focus(move |has| set_focused(&move |_| has))
+        .on_focus(move |_| { set_focused(&|_| true); Bubble::Continue })
+        .on_blur(move |_| { set_focused(&|_| false); Bubble::Continue })
         .on_mouse(move |mouse: Mouse| {
             if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
                 return Bubble::Continue;
@@ -3254,7 +3276,8 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
             redraw(&|n| n + 1);
             Bubble::Stop
         })
-        .on_focus(move |has| set_focused(&move |_| has))
+        .on_focus(move |_| { set_focused(&|_| true); Bubble::Continue })
+        .on_blur(move |_| { set_focused(&|_| false); Bubble::Continue })
         .on_mouse(move |mouse| {
             if let Some(node) = *pane.current() {
                 node.focus();
