@@ -18,7 +18,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | element tree | a value describing one frame, built by `rsx!`, thrown away after reconciliation |
 | reconciliation | matching this frame's description against the live instance tree, so state has an owner |
 | function components | `#[component] fn Name(scope: &mut Scope, …) -> Node` |
-| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context` |
+| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context`, `use_sync_external_store` |
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
@@ -38,7 +38,6 @@ carries the name of the test that proves it. Every panic carries its message.
 | error boundaries | a panic in a painter belongs in a backtrace with the terminal restored, which `Screen`'s `Drop` already does |
 | `use_callback` | React documents it as `useMemo(() => fn, deps)`, and a closure is a value, so `use_memo` already is it |
 | `use(Context)` | React 19's conditional read; `use_context` is `useContext`, which cannot be conditional either, and no component here wants to be |
-| `useSyncExternalStore` | the one thing it buys — an outside mutable value telling the runtime it changed — is a `Ref<T>` write next to a state bump, and this program has four of them |
 | `useId`, `useReducer`, suspense, portals, hot reload, SSR | no user here |
 | struct components, borrowed props, GATs | locked out by decisions 7 and 8 |
 | text wrapping | no pane in this program wraps |
@@ -95,6 +94,8 @@ repository, that name is used.
 | **bubble** | offering an event to each ancestor in turn until one stops it | |
 | **promise** | one answer, arriving later | completion, task |
 | **observable** | answers that keep coming | subscription, stream |
+| **external store** | something outside the tree that changes on its own, read through a snapshot | |
+| **snapshot** | one reading of an external store, compared by identity | |
 | **generation** | the counter that makes a stale address fail rather than land on a stranger | |
 | **redraw** | mark a scope for re-running, Neovim's `:redraw` | invalidate, dirty |
 
@@ -129,9 +130,9 @@ pub use event::{
     release_pointer,
 };
 pub use hook::{
-    Always, Cleanup, Context, Observable, Observer, Promise, Ref, Resolver,
-    SetState, observable, promise, use_context, use_effect, use_layout_effect,
-    use_memo, use_ref, use_state,
+    Always, Cleanup, Context, ExternalStore, Notify, Observable, Observer, Promise, Ref,
+    Resolver, SetState, Snapshot, Subscription, observable, promise, use_context, use_effect,
+    use_layout_effect, use_memo, use_ref, use_state, use_sync_external_store,
 };
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
 /// value is to write the provider element.
@@ -708,7 +709,11 @@ step onto. There is no next step. A handler that wants more work asks for it
 
 `subscribe` returns nothing, where RxJS returns a `Subscription` to
 `unsubscribe()` with. An effect's cleanup closes every address it opened
-(R9.3.5), so there is nothing to hold and nothing to remember to release.
+(R9.3.5), so there is nothing to hold and nothing to remember to release. The
+one place a `Subscription` does appear is `ExternalStore` (§4.2), because a
+store is outside the tree and has to be told when a reader has gone — which is
+also why React's `useSyncExternalStore` asks its `subscribe` for an
+unsubscribe.
 
 And there is no `.await`. That would need an executor, and it would have
 nowhere to suspend: a component returns a `Node` now, so it can never wait.
@@ -833,6 +838,7 @@ enum Slot {
     Memo(MemoSlot),
     Effect(EffectSlot),
     LayoutEffect(EffectSlot),
+    Store(StoreSlot),
 }
 
 struct StateSlot<T> {
@@ -852,6 +858,13 @@ struct EffectSlot {
     /// Bumped each time the effect runs, so a reply from the previous run is
     /// refused (R9.3.3).
     generation: u64,
+}
+
+struct StoreSlot {
+    /// Dropped on unmount, which is what ends the subscription.
+    subscription: Subscription,
+    /// The last `Snapshot<T>`, compared with the next by `Rc::ptr_eq`.
+    snapshot: Box<dyn std::any::Any>,
 }
 ```
 
@@ -1003,6 +1016,76 @@ pub trait Context: 'static {
 /// go stale.
 /// Panics: none.
 pub fn use_context<C: Context>(scope: &mut Scope) -> C::Value;
+```
+
+```rust
+// hook/store.rs
+/// Something outside the tree that changes on its own — a worker, a file
+/// watcher, a clock.
+///
+/// `snapshot` must hand back the same `Snapshot` until something changes, and
+/// a different one when it does. React asks the same of `getSnapshot`, and it
+/// is why `Snapshot` compares by identity rather than by value.
+pub trait ExternalStore {
+    type Value: ?Sized + 'static;
+
+    /// Starts telling `notify` about changes. Dropping the `Subscription`
+    /// stops it, the way React's `subscribe` returns its own unsubscribe.
+    fn subscribe(&self, notify: Notify) -> Subscription;
+
+    /// What the value is now.
+    fn snapshot(&self) -> Snapshot<Self::Value>;
+}
+
+/// A value read from a store, compared by identity.
+///
+/// React compares one snapshot with the next using `Object.is`: a store that
+/// hands back a new object has changed, one that hands back the same object
+/// has not. That is this, and it is what lets a snapshot sit in an effect's
+/// deps and mean "the thing behind it moved".
+pub struct Snapshot<T: ?Sized>(std::rc::Rc<T>);
+
+impl<T: ?Sized> Clone for Snapshot<T> { /* clones the `Rc` */ }
+impl<T: ?Sized> PartialEq for Snapshot<T> { /* `Rc::ptr_eq` */ }
+impl<T: ?Sized> std::ops::Deref for Snapshot<T> { type Target = T; }
+/// How a store makes one. A new `Rc` is a new reading; the same `Rc` is the
+/// same reading.
+impl<T: ?Sized> From<std::rc::Rc<T>> for Snapshot<T> {}
+
+/// What a store calls to say it changed. `Clone`, so a store keeps one per
+/// reader.
+#[derive(Clone)]
+pub struct Notify(/* private */);
+
+impl Notify {
+    /// Marks the component that subscribed for redraw. Does nothing once that
+    /// component has gone away.
+    pub fn changed(&self);
+}
+
+/// Ends a subscription when it is dropped. A store builds one out of the work
+/// it wants done then — the unsubscribe React's `subscribe` returns, with the
+/// dropping done for you.
+pub struct Subscription(/* private */);
+
+impl Subscription {
+    pub fn new(stop: impl FnOnce() + 'static) -> Self;
+}
+
+/// Subscribe to a store, and read it.
+///
+/// Subscribes on mount and unsubscribes on unmount, so `store` must be the
+/// same store for the component's life — which it is when it arrives as a
+/// prop or from context.
+///
+/// Re-runs: when the store says it changed and hands back a different
+/// `Snapshot`.
+/// Panics: P4.1, P4.2.
+#[track_caller]
+pub fn use_sync_external_store<S: ExternalStore>(
+    scope: &mut Scope,
+    store: &S,
+) -> Snapshot<S::Value>;
 ```
 
 ### 4.3 What the type system reaches, and what it does not
@@ -1908,24 +1991,57 @@ impl Spans {
     /// when the last of them goes (R9.1.4).
     pub fn next(&self, response: syntax::SyntaxResponse);
 }
+
+/// The worktree listing. Nothing asks this one a question — it changes on its
+/// own, when the watcher sees the disk move — so it is a store rather than a
+/// handle, and a component reads it with `use_sync_external_store`.
+pub struct Files {
+    worker: RefCell<pipeline::list::ListWorker>,
+    root: PathBuf,
+    current: RefCell<loom::Snapshot<[File]>>,
+    /// Keyed, so the `Subscription` `subscribe` hands back knows which entry
+    /// to take out again.
+    readers: RefCell<HashMap<u64, loom::Notify>>,
+    next_reader: Cell<u64>,
+}
+
+impl loom::ExternalStore for Files {
+    type Value = [File];
+    fn subscribe(&self, notify: loom::Notify) -> loom::Subscription;
+    fn snapshot(&self) -> loom::Snapshot<[File]>;
+}
+
+impl Files {
+    /// What the loop calls when the watcher fires. Asks the worker to rescan.
+    pub fn changed(&self);
+
+    /// What the loop calls when the worker answers. Always makes a new
+    /// `Snapshot`, even for a listing equal to the last: what moved is the
+    /// disk, and whether a diff really changed is the file worker's answer to
+    /// give (R9.5.3).
+    pub fn listed(&self, files: Rc<[File]>);
+}
 ```
 
 `RefCell` because context hands out `Rc<T>` and a component holds it by shared
 reference. No borrow is held across a call into `loom`: `resolve` takes the
-resolver out, drops the borrow, and only then resolves.
+resolver out, drops the borrow, and only then resolves, and `listed` swaps the
+snapshot in and drops that borrow before it notifies anybody.
 
-The loop's half is two lines, and neither knows what a diff is or which pane
-wanted one:
+The loop's half is four lines, and none of them knows what a diff is or which
+pane wanted one:
 
 ```
 Event::FileReady(response) => diffs.resolve(response)
 Event::Coloured(response)  => spans.next(response)
+Event::ListRefreshed(list) => files.listed(list)
+Event::FsChanged(_)        => files.changed()
 ```
 
-The two verbs are the two shapes. `resolve` is one value and the question is
-closed; `next` is one piece and more may follow. A reader who knows
+The verbs are the shapes. `resolve` is one value and the question is closed;
+`next` is one piece and more may follow. A reader who knows
 `Promise.withResolvers()` and RxJS's `Subject` already knows which is which,
-and that is worth more here than two lines that rhyme.
+and that is worth more here than lines that rhyme.
 
 Quit, suspend and rebuild never were worker requests. They shared this path
 only because it was the one way out of a component. They are a callback the
@@ -2038,20 +2154,27 @@ An effect keyed on the chosen file alone would lose that. The reader stays on
 `a.rs`, the file changes underneath them, `chosen` is the same `File`, the
 deps compare equal and nothing is read again.
 
-**R9.5.1** `Session` counts changes on disk and hands the count to `Screen` as
-a prop. The effect that reads the open file has deps `(chosen, revision)`, so
-a change on disk moves the deps on and the file is read again.
+The listing belongs outside the tree. It changes because the disk changed,
+which is the definition of an external store, and React has a hook for reading
+one: `useSyncExternalStore`. `Files` is the store, `Screen` subscribes, and
+the snapshot it gets back is a value that moves when the disk does.
+
+**R9.5.1** `Screen` reads the listing with `use_sync_external_store`. The
+effect that reads the open file has deps `(chosen, files)`, where `files` is
+the snapshot, so a change on disk moves the deps on and the file is read
+again.
 *test: `a_file_edited_on_disk_is_read_again`*
 
-**R9.5.2** A revision that moves while an earlier read is in flight refuses the
+**R9.5.2** A snapshot that moves while an earlier read is in flight refuses the
 earlier answer, by R9.3.3 — the deps changed, so the address is stale. The
 reader sees the newer content, never the older answer landing after it.
 *test: `a_second_disk_change_refuses_the_first_answer`*
 
 **R9.5.3** A change on disk that leaves the worktree listing identical still
-moves the revision. The count is of changes seen, not of differences found;
-deciding whether a diff really changed is the worker's answer, not a guess
-made before asking.
+produces a new snapshot. `Snapshot` compares by identity, the way React
+compares `getSnapshot`'s result with `Object.is`, so a fresh listing is a
+different value even when it holds the same paths. Deciding whether a diff
+really changed is the worker's answer, not a guess made before asking.
 *test: `a_touched_file_is_read_again`*
 
 This turns "ask every turn, and filter the answers" into "ask when something
@@ -2515,6 +2638,7 @@ row 9 is outside the 8-row screen
 |---|---|
 | `use_context::<C>` with no provider | `C::default_value()` |
 | `Resolver::resolve`, `Observer::next` | `false` when refused |
+| `Notify::changed` after the component has gone | no-op |
 | `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
 | a `ref` read before its node has a rectangle | `None` |
 | `NodeHandle::area` on an unmounted node | `Rect::ZERO` |
@@ -2567,6 +2691,7 @@ proves nothing.
 | **I18** | A memo hands back the same `Rc` until its deps differ, and nothing else drops it. | `a_memo_survives_an_unrelated_state_write` | clear memo slots when a scope is marked |
 | **I19** | A `ref` names one node, and holds `None` whenever that node has no rectangle. | `a_ref_is_cleared_when_its_node_goes_away` | leave a stale handle behind after unmount |
 | **I20** | A layout effect runs before the frame it belongs to is painted. | `a_layout_effect_runs_before_the_frame_it_belongs_to` | queue it with the ordinary effects |
+| **I21** | A component reading an external store re-renders when the store hands back a different snapshot, and stops hearing from it once it unmounts. | `a_store_that_changes_after_unmount_reaches_nobody` | keep the `Notify` alive past the subscription |
 
 ### 13.1 The test that is the net
 
@@ -2668,6 +2793,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/hook/effect.rs` | `use_effect`, `use_layout_effect`, `Cleanup`, `Always`, the effect queues | 200 | |
 | `src/hook/context.rs` | the `Context` trait, `use_context`, `offer`, versions | 110 | |
 | `src/hook/worker.rs` | `Promise`, `Resolver`, `Observable`, `Observer`, `promise`, `observable`, the generation checks | 180 | |
+| `src/hook/store.rs` | `ExternalStore`, `Snapshot`, `Notify`, `Subscription`, `use_sync_external_store` | 90 | |
 | `src/layout/mod.rs` | `Layout`, `Basis`, `Edges` | 110 | |
 | `src/layout/flex.rs` | measure, the §5.4 resolve, the cross axis, `too_small` | 250 | `crates/ui/src/render/layout.rs`, 437 with tests |
 | `src/paint/mod.rs` | the walk, clipping, `Paint`, the debug clip guard | 160 | `draw/screen.rs` 97 + `tab.rs` 73 + `pane.rs` 66 |
@@ -2677,7 +2803,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
 | `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,820** | |
+| | **`loom`** | **≈ 3,910** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -2853,15 +2979,17 @@ Measured: `view/mod.rs` 284, `view/tab.rs` 245, `view/pane.rs` 23.
 
 ### Phase 8 — workers
 
-`Diffs` and `Spans` as §9.2. `Session::send_file_request` and
+`Diffs`, `Spans` and `Files` as §9.2. `Session::send_file_request` and
 `send_colour_request` disappear: a component asks the handle it read from
-context, and the effect's deps decide when. `ui::view::buffer::colour`
-gains a function that returns the `SyntaxRequest`s instead of sending them, so
-the pane can build them in its effect (R9.4.5); everything else in that file is
-unchanged.
+context, and the effect's deps decide when. `Session::files` and
+`update_explorer`'s push from outside go the same way: the listing becomes a
+store, and `Screen` reads it with `use_sync_external_store` (§9.5).
+`ui::view::buffer::colour` gains a function that returns the `SyntaxRequest`s
+instead of sending them, so the pane can build them in its effect (R9.4.5);
+everything else in that file is unchanged.
 
 **Green when:** `crates/codediff/tests/syntax.rs` and `pipeline.rs` pass, and
-the new tests R9.4.1 through R9.4.6.
+the new tests R9.4.1 through R9.4.6, R9.5.1 through R9.5.3.
 
 ### Phase 9 — the leftovers
 
@@ -2877,20 +3005,15 @@ Delete `draw/mod.rs`'s `TextRects`, `Session::selected`,
 pub struct Session {
     tree: loom::Tree,
     workers: Workers,
-    /// What `Screen` is given when something outside the tree changes.
-    files: Rc<[File]>,
-    revision: Revision,
     /// Quit, suspend or rebuild, if a component asked for one this frame.
     program: Rc<RefCell<Option<ProgramAction>>>,
 }
 
-/// The threads, and the two handles a component reaches them by. The list has
-/// no handle: nothing asks it for anything, it just answers with a new list.
+/// The threads, and the three handles a component reaches them by.
 pub struct Workers {
     diffs: Rc<worker::Diffs>,
     spans: Rc<worker::Spans>,
-    list: pipeline::list::ListWorker,
-    root: PathBuf,
+    files: Rc<worker::Files>,
     _watcher: Option<watcher::Watcher>,
 }
 
@@ -2898,15 +3021,12 @@ impl Session {
     pub fn new(theme: Theme, root: PathBuf, tx: Sender<Event>) -> Self {
         let workers = Workers::spawn(&root, tx);
         let program = Rc::new(RefCell::new(None));
-        let files: Rc<[File]> = Rc::from([]);
-        let revision = Revision(0);
 
         // Both sides hold the same handle: the tree calls `open` on it, the
         // loop calls `resolve` on it. Cloning the `Rc` is the whole wiring.
         let tree = loom::Tree::new::<Screen>(ScreenProps {
-            files: files.clone(),
-            revision,
             theme,
+            files: workers.files.clone(),
             diffs: workers.diffs.clone(),
             spans: workers.spans.clone(),
             program: {
@@ -2915,7 +3035,7 @@ impl Session {
             },
         });
 
-        Self { tree, workers, files, revision, program }
+        Self { tree, workers, program }
     }
 
     pub fn draw_into(&mut self, cells: &mut Cells, area: Rect) {
@@ -2932,32 +3052,18 @@ impl Session {
         Ok(())
     }
 
-    /// A fresh list from the list worker.
-    pub fn set_files(&mut self, files: Rc<[File]>) {
-        self.files = files;
-        self.give_props();
-    }
-
-    /// Something changed on disk. Rescans the worktree, and moves the revision
-    /// on so the open file is read again (R9.5.1).
-    pub fn refreshed(&mut self) {
-        self.revision.0 += 1;
-        self.workers.list.send(list::Request::worktree(&self.workers.root));
-        self.give_props();
-    }
-
     /// Reports what the loop should do next. The requests have already gone
     /// out: a component sends its own through the handle it read from context,
     /// while `Tree::draw` is running its effects.
     pub fn drain(&mut self) -> Flow { /* the program action, if a pane set one */ }
-
-    fn give_props(&mut self) { /* `tree.set_props::<Screen>` with the fields above */ }
 }
 ```
 
-`Revision` is a `u64` newtype, and stays apart from the `Version` a pane bumps
-when its own buffer changes: one counts changes on disk, the other counts
-repaints a component asked for.
+Every field is something the tree cannot own: two threads, a terminal, and a
+slot for the one answer a component gives back. The worktree listing is a
+store, subscribed to by the component that shows it (§9.5), so `Session` never
+learns what a file is. React's root is the same shape — `render` and
+`unmount`, and nothing to read.
 
 `draw_into` keeps the signature `crates/ui/tests/explorer/*` calls (I15), and
 calling `drain` inside it keeps the existing test flow — draw, then the worker
@@ -2981,8 +3087,8 @@ loop {
         Event::Terminal(CrosstermEvent::Resize(..)) => session.tree.redraw_all(),
         Event::FileReady(response) => session.workers.diffs.resolve(response),
         Event::Coloured(response) => session.workers.spans.next(response),
-        Event::ListRefreshed(files) => session.set_files(files),
-        Event::FsChanged(_) => session.refreshed(),
+        Event::ListRefreshed(files) => session.workers.files.listed(files),
+        Event::FsChanged(_) => session.workers.files.changed(),
         #[cfg(unix)]
         Event::Signal(sig) => { terminal::restore(); std::process::exit(128 + sig) }
         _ => {}
@@ -3209,7 +3315,7 @@ use crate::view::{Buffer, BufferType, Viewport};
 use crate::app::status::Status;
 
 #[component]
-pub fn ExplorerPane(scope: &mut Scope, files: Rc<[File]>) -> Node {
+pub fn ExplorerPane(scope: &mut Scope, files: Snapshot<[File]>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let keys = use_context::<InputContext>(scope);
     let status = use_context::<StatusContext>(scope);
@@ -3553,13 +3659,16 @@ const MAX_LEFT: u16 = 100;
 #[component]
 pub fn Screen(
     scope: &mut Scope,
-    files: Rc<[File]>,
-    revision: Revision,
+    files: Rc<Files>,
     theme: Theme,
     diffs: Rc<Diffs>,
     spans: Rc<Spans>,
     program: Rc<dyn Fn(ProgramAction)>,
 ) -> Node {
+    // The worktree listing changes because the disk changed, so it is read
+    // from the store rather than pushed in as a prop. R9.5.1.
+    let listing = use_sync_external_store(scope, &*files);
+
     let store = use_ref(scope, Store::new);
     let keys = use_ref(scope, Resolver::new);
     let opened = use_ref(scope, || None::<Buffer>);
@@ -3608,9 +3717,9 @@ pub fn Screen(
     // Ask for the file the reader chose. The promise belongs to this effect,
     // so an answer for a file they have since left is refused rather than
     // shown — R9.3.3, which is what `apply_file_response`'s `if
-    // self.selected.as_ref() != Some(&response.file)` was for. `revision` is
+    // self.selected.as_ref() != Some(&response.file)` was for. The listing is
     // in the deps so a change on disk reads the file again (R9.5.1).
-    use_effect(scope, (chosen.clone(), revision), move || {
+    use_effect(scope, (chosen.clone(), listing.clone()), move || {
         let Some(file) = chosen.clone() else { return };
         diffs.open(file).then(move |response: pipeline::file::Response| {
             match response.content {
@@ -3662,7 +3771,7 @@ pub fn Screen(
 
             Row { layout: Layout { grow: 1, ..Default::default() }, ..,
                 Column { layout: explorer, ..,
-                    ExplorerPane { files: files.clone() }
+                    ExplorerPane { files: listing.clone() }
                 }
 
                 if let Some(name) = shown {
