@@ -1877,8 +1877,10 @@ impl Diffs {
         promise
     }
 
-    /// What the loop calls when the thread answers.
-    pub fn answered(&self, response: pipeline::file::Response) {
+    /// What the loop calls when the thread answers. One value, then done —
+    /// so this is `resolve`, the name JavaScript gives the kept end of a
+    /// promise.
+    pub fn resolve(&self, response: pipeline::file::Response) {
         self.worker.borrow_mut().received(&response);
         if let Some(resolver) = self.waiting.borrow_mut().take() {
             resolver.resolve(response);
@@ -1900,24 +1902,30 @@ impl Spans {
     pub fn colour(&self, requests: Vec<syntax::SyntaxRequest>)
         -> loom::Observable<syntax::SyntaxResponse>;
 
-    /// What the loop calls when a piece arrives. Drops that key's observer on
-    /// the piece saying `more == false`; the pane hears the end when the last
-    /// of them goes (R9.1.4).
-    pub fn answered(&self, response: syntax::SyntaxResponse);
+    /// What the loop calls when a piece arrives. More may follow, so this is
+    /// `next`, the name RxJS gives the kept end of a stream. Drops that key's
+    /// observer on the piece saying `more == false`; the pane hears the end
+    /// when the last of them goes (R9.1.4).
+    pub fn next(&self, response: syntax::SyntaxResponse);
 }
 ```
 
 `RefCell` because context hands out `Rc<T>` and a component holds it by shared
-reference. No borrow is held across a call into `loom`: `answered` takes the
+reference. No borrow is held across a call into `loom`: `resolve` takes the
 resolver out, drops the borrow, and only then resolves.
 
 The loop's half is two lines, and neither knows what a diff is or which pane
 wanted one:
 
 ```
-Event::FileReady(response) => diffs.answered(response)
-Event::Coloured(response)  => spans.answered(response)
+Event::FileReady(response) => diffs.resolve(response)
+Event::Coloured(response)  => spans.next(response)
 ```
+
+The two verbs are the two shapes. `resolve` is one value and the question is
+closed; `next` is one piece and more may follow. A reader who knows
+`Promise.withResolvers()` and RxJS's `Subject` already knows which is which,
+and that is worth more here than two lines that rhyme.
 
 Quit, suspend and rebuild never were worker requests. They shared this path
 only because it was the one way out of a component. They are a callback the
@@ -2017,6 +2025,38 @@ nothing when the store already holds enough" rule, unchanged.
 **R9.4.6** No frame is drawn when nothing was marked. A batch that fails the
 overlap test leaves `Tree::needs_draw()` false and the loop draws nothing.
 *test: `a_batch_off_screen_draws_no_frame`*
+
+### 9.5 Reading the open file again
+
+The loop asks the file worker on every turn — `send_file_request()` is called
+after every event in `app/mod.rs`, and it sends the selected file whether or
+not anything changed. Most of those answers are the same diff read again, and
+the one thing that arrangement buys is that a file edited on disk is picked up
+without anyone having to notice.
+
+An effect keyed on the chosen file alone would lose that. The reader stays on
+`a.rs`, the file changes underneath them, `chosen` is the same `File`, the
+deps compare equal and nothing is read again.
+
+**R9.5.1** `Session` counts changes on disk and hands the count to `Screen` as
+a prop. The effect that reads the open file has deps `(chosen, revision)`, so
+a change on disk moves the deps on and the file is read again.
+*test: `a_file_edited_on_disk_is_read_again`*
+
+**R9.5.2** A revision that moves while an earlier read is in flight refuses the
+earlier answer, by R9.3.3 — the deps changed, so the address is stale. The
+reader sees the newer content, never the older answer landing after it.
+*test: `a_second_disk_change_refuses_the_first_answer`*
+
+**R9.5.3** A change on disk that leaves the worktree listing identical still
+moves the revision. The count is of changes seen, not of differences found;
+deciding whether a diff really changed is the worker's answer, not a guess
+made before asking.
+*test: `a_touched_file_is_read_again`*
+
+This turns "ask every turn, and filter the answers" into "ask when something
+changed". The number of reads drops from one per event to one per change, and
+the request goes out from the component that shows the result.
 
 ---
 
@@ -2837,11 +2877,47 @@ Delete `draw/mod.rs`'s `TextRects`, `Session::selected`,
 pub struct Session {
     tree: loom::Tree,
     workers: Workers,
+    /// What `Screen` is given when something outside the tree changes.
+    files: Rc<[File]>,
+    revision: Revision,
     /// Quit, suspend or rebuild, if a component asked for one this frame.
     program: Rc<RefCell<Option<ProgramAction>>>,
 }
 
+/// The threads, and the two handles a component reaches them by. The list has
+/// no handle: nothing asks it for anything, it just answers with a new list.
+pub struct Workers {
+    diffs: Rc<worker::Diffs>,
+    spans: Rc<worker::Spans>,
+    list: pipeline::list::ListWorker,
+    root: PathBuf,
+    _watcher: Option<watcher::Watcher>,
+}
+
 impl Session {
+    pub fn new(theme: Theme, root: PathBuf, tx: Sender<Event>) -> Self {
+        let workers = Workers::spawn(&root, tx);
+        let program = Rc::new(RefCell::new(None));
+        let files: Rc<[File]> = Rc::from([]);
+        let revision = Revision(0);
+
+        // Both sides hold the same handle: the tree calls `open` on it, the
+        // loop calls `resolve` on it. Cloning the `Rc` is the whole wiring.
+        let tree = loom::Tree::new::<Screen>(ScreenProps {
+            files: files.clone(),
+            revision,
+            theme,
+            diffs: workers.diffs.clone(),
+            spans: workers.spans.clone(),
+            program: {
+                let slot = program.clone();
+                Rc::new(move |action| *slot.borrow_mut() = Some(action))
+            },
+        });
+
+        Self { tree, workers, files, revision, program }
+    }
+
     pub fn draw_into(&mut self, cells: &mut Cells, area: Rect) {
         self.tree.draw(cells, area);
         self.drain();
@@ -2856,12 +2932,32 @@ impl Session {
         Ok(())
     }
 
+    /// A fresh list from the list worker.
+    pub fn set_files(&mut self, files: Rc<[File]>) {
+        self.files = files;
+        self.give_props();
+    }
+
+    /// Something changed on disk. Rescans the worktree, and moves the revision
+    /// on so the open file is read again (R9.5.1).
+    pub fn refreshed(&mut self) {
+        self.revision.0 += 1;
+        self.workers.list.send(list::Request::worktree(&self.workers.root));
+        self.give_props();
+    }
+
     /// Reports what the loop should do next. The requests have already gone
     /// out: a component sends its own through the handle it read from context,
     /// while `Tree::draw` is running its effects.
     pub fn drain(&mut self) -> Flow { /* the program action, if a pane set one */ }
+
+    fn give_props(&mut self) { /* `tree.set_props::<Screen>` with the fields above */ }
 }
 ```
+
+`Revision` is a `u64` newtype, and stays apart from the `Version` a pane bumps
+when its own buffer changes: one counts changes on disk, the other counts
+repaints a component asked for.
 
 `draw_into` keeps the signature `crates/ui/tests/explorer/*` calls (I15), and
 calling `drain` inside it keeps the existing test flow — draw, then the worker
@@ -2883,10 +2979,10 @@ loop {
         }
         Event::Terminal(CrosstermEvent::Mouse(mouse)) => { session.tree.mouse(mouse); }
         Event::Terminal(CrosstermEvent::Resize(..)) => session.tree.redraw_all(),
-        Event::FileReady(response) => session.deliver_file(response),
-        Event::Coloured(response) => session.deliver_colour(response),
+        Event::FileReady(response) => session.workers.diffs.resolve(response),
+        Event::Coloured(response) => session.workers.spans.next(response),
         Event::ListRefreshed(files) => session.set_files(files),
-        Event::FsChanged(_) => session.workers.list_worker.send(list::Request::worktree(root)),
+        Event::FsChanged(_) => session.refreshed(),
         #[cfg(unix)]
         Event::Signal(sig) => { terminal::restore(); std::process::exit(128 + sig) }
         _ => {}
@@ -3458,6 +3554,7 @@ const MAX_LEFT: u16 = 100;
 pub fn Screen(
     scope: &mut Scope,
     files: Rc<[File]>,
+    revision: Revision,
     theme: Theme,
     diffs: Rc<Diffs>,
     spans: Rc<Spans>,
@@ -3511,8 +3608,9 @@ pub fn Screen(
     // Ask for the file the reader chose. The promise belongs to this effect,
     // so an answer for a file they have since left is refused rather than
     // shown — R9.3.3, which is what `apply_file_response`'s `if
-    // self.selected.as_ref() != Some(&response.file)` was for.
-    use_effect(scope, chosen.clone(), move || {
+    // self.selected.as_ref() != Some(&response.file)` was for. `revision` is
+    // in the deps so a change on disk reads the file again (R9.5.1).
+    use_effect(scope, (chosen.clone(), revision), move || {
         let Some(file) = chosen.clone() else { return };
         diffs.open(file).then(move |response: pipeline::file::Response| {
             match response.content {
