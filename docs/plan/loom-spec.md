@@ -22,7 +22,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
-| worker replies | `Completion<T>` and `Subscription<T>`, rejected when stale |
+| worker replies | `Promise<T>` and `Observable<T>`, refused when stale |
 | `rsx!` | a proc macro over Rust syntax, props as a struct literal |
 | testing | `loom::testing::Harness` — mount, draw, read the screen as text |
 
@@ -93,8 +93,8 @@ repository, that name is used.
 | **hidden** | mounted, out of layout, unpainted, unhittable — Neovim's word for a loaded buffer nobody is showing | |
 | **listener** | a closure a host registers for keys, mouse or focus | handler (banned by `lint-arch`) |
 | **bubble** | offering an event to each ancestor in turn until one stops it | |
-| **completion** | a one-shot reply address | task |
-| **subscription** | a many-shot reply address | stream |
+| **promise** | one answer, arriving later | completion, task |
+| **observable** | answers that keep coming | subscription, stream |
 | **generation** | the counter that makes a stale address fail rather than land on a stranger | |
 | **redraw** | mark a scope for re-running, Neovim's `:redraw` | invalidate, dirty |
 
@@ -129,8 +129,8 @@ pub use event::{
     release_pointer,
 };
 pub use hook::{
-    Always, Cleanup, Completion, Context, Ref, SetState, Subscription,
-    completion, subscription, use_context, use_effect, use_layout_effect,
+    Always, Cleanup, Context, Observable, Observer, Promise, Ref, Resolver,
+    SetState, observable, promise, use_context, use_effect, use_layout_effect,
     use_memo, use_ref, use_state,
 };
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
@@ -633,44 +633,87 @@ both ends.
 State follows the same split. A render reads the snapshot returned by
 `use_state`; a listener keeps the accompanying `SetState<T>` and calls it.
 
-### 3.8 Worker replies
+### 3.8 Worker answers
 
 ```rust
 // hook/worker.rs
-/// A one-shot reply address.
+/// The answer to one request, arriving later.
+#[must_use = "a promise with no `then` throws its answer away"]
+pub struct Promise<T: 'static> { /* private */ }
+
+impl<T: 'static> Promise<T> {
+    /// Runs `take` when the answer arrives, with the owning scope entered.
+    pub fn then(self, take: impl FnOnce(T) + 'static);
+}
+
+/// The answering end, kept by whoever sent the request.
 ///
-/// Created inside an effect. Carries the owning scope, the effect's slot and
-/// the effect's generation, so a reply that arrives after the deps changed or
-/// the component went away is refused rather than applied.
-pub struct Completion<T: 'static> { /* private; holds a Weak to the runtime */ }
+/// Carries the owning scope, the effect's slot and the effect's generation, so
+/// an answer that arrives after the deps changed or the component went away is
+/// refused rather than applied.
+pub struct Resolver<T: 'static> { /* private; holds a Weak to the runtime */ }
 
-impl<T: 'static> Completion<T> {
+impl<T: 'static> Resolver<T> {
     /// Delivers. Returns whether it was taken.
-    pub fn complete(self, value: T) -> bool;
+    pub fn resolve(self, value: T) -> bool;
     pub fn is_wanted(&self) -> bool;
 }
 
-/// A many-shot reply address, for a worker that answers in pieces.
-pub struct Subscription<T: 'static> { /* private */ }
+/// Answers that keep coming, for a worker that replies in pieces.
+#[must_use = "an observable with no `subscribe` throws its answers away"]
+pub struct Observable<T: 'static> { /* private */ }
 
-impl<T: 'static> Clone for Subscription<T> {}
+impl<T: 'static> Observable<T> {
+    /// Runs `take` on every piece.
+    pub fn subscribe(self, take: impl FnMut(T) + 'static);
+}
 
-impl<T: 'static> Subscription<T> {
+/// The delivering end of an `Observable`. RxJS's `Observer`, with the two of
+/// its three methods that mean something here.
+pub struct Observer<T: 'static> { /* private */ }
+
+impl<T: 'static> Clone for Observer<T> {}
+
+impl<T: 'static> Observer<T> {
     /// Delivers one piece. Returns whether it was taken.
-    pub fn deliver(&self, value: T) -> bool;
+    pub fn next(&self, value: T) -> bool;
     pub fn is_wanted(&self) -> bool;
-    pub fn close(self);
+    /// No more pieces, for every clone of this observer.
+    pub fn complete(self);
 }
 
-/// Open a one-shot address. Legal inside an effect body, where the runtime
-/// knows which slot is asking.
+/// Opens a one-shot address: the resolver the answerer keeps, and the promise
+/// the asker attaches a handler to. JavaScript spells the same pair
+/// `Promise.withResolvers()`.
+///
+/// Legal inside an effect body, where the runtime knows which slot is asking.
 /// Panics: P4.6 outside one.
-pub fn completion<T: 'static>(take: impl FnOnce(T) + 'static) -> Completion<T>;
+pub fn promise<T: 'static>() -> (Resolver<T>, Promise<T>);
 
-/// Open a many-shot address. Same rule.
+/// Opens a many-shot address. Same pair, same rule.
 /// Panics: P4.6 outside an effect body.
-pub fn subscription<T: 'static>(take: impl FnMut(T) + 'static) -> Subscription<T>;
+pub fn observable<T: 'static>() -> (Observer<T>, Observable<T>);
 ```
+
+Three differences from the JavaScript, each because the thing it stands for is
+not here.
+
+`Promise.withResolvers()` hands back a `reject` as well. There is nothing to
+reject into: `pipeline::file::Response` carries a `Result` already, so a failed
+read arrives as an answer and the handler matches on it.
+
+`then` returns nothing, where JavaScript returns a promise to chain the next
+step onto. There is no next step. A handler that wants more work asks for it
+(R9.1.3).
+
+`subscribe` returns nothing, where RxJS returns a `Subscription` to
+`unsubscribe()` with. An effect's cleanup closes every address it opened
+(R9.3.5), so there is nothing to hold and nothing to remember to release.
+
+And there is no `.await`. That would need an executor, and it would have
+nowhere to suspend: a component returns a `Node` now, so it can never wait.
+React's components are synchronous for the same reason. Every answer arrives
+as a handler that sets state and asks for a frame.
 
 ### 3.9 The tree
 
@@ -982,11 +1025,11 @@ through the component's signature — puts every component's private state in it
 public type, which is the disease function components cure. React ships a lint
 for this; we ship a panic that names both lines.
 
-`completion` and `subscription` are the second thing it cannot do. They read
-the effect the runtime is running, the way a listener reads the scope it
-belongs to, so calling one outside an effect is P4.6 rather than a type error.
-Handing the effect body a `&mut Effect<'_>` would have made it one, at the
-price of a parameter React's setup does not have.
+`promise` and `observable` are the second thing it cannot do. They read the
+effect the runtime is running, the way a listener reads the scope it belongs
+to, so calling one outside an effect is P4.6 rather than a type error. Handing
+the effect body a `&mut Effect<'_>` would have made it one, at the price of a
+parameter React's setup does not have.
 
 ---
 
@@ -1441,7 +1484,7 @@ this order: its effect tasks are closed, so an outstanding reply is refused;
 its effect cleanups are called, deepest first; its context offers are dropped;
 its focus and hit registrations are removed; its hook slots are dropped; the
 slab entry is freed and its generation bumped, so every `SetState<T>`,
-`Ref<T>` and `Completion<T>` naming it now fails its check (P4.3, R9.3.1).
+`Ref<T>` and `Resolver<T>` naming it now fails its check (P4.3, R9.3.1).
 *test: `unmounting_runs_the_deepest_cleanup_first`*
 *test: `a_reply_for_a_component_that_went_away_is_refused`*
 
@@ -1733,40 +1776,69 @@ target sees an event, and nothing in this program does that.
 
 ## 9. Workers
 
-`loom` never names a worker, a request or a response. It provides two reply
-addresses and the rules under which a reply is refused. The application builds
-the requests, owns the threads, and carries the addresses across.
+`loom` never names a worker, a request or a response. It provides two ways of
+being answered later, and the rules under which an answer is refused. The
+application builds the requests, owns the threads, and hands the answers back.
 
-### 9.1 The two addresses
+### 9.1 Asking, and being answered
+
+An asynchronous call in JavaScript is three parts, and this program already has
+all three:
+
+| a promise | here |
+|---|---|
+| the work runs somewhere else | a worker thread |
+| the answer lands on a queue | `Sender<Event>` |
+| one loop drains the queue and calls the handler | the `rx.recv()` loop of §15.2 |
+
+So there is no executor to add and nothing to poll. A component asks through a
+handle it reads from context, and attaches a handler to what comes back:
 
 ```rust
-Completion<T>   one reply, then the address is spent      the file worker
-Subscription<T> many replies, until closed                the syntax worker
+diffs.open(file).then(move |response| { … });
+spans.colour(requests).subscribe(move |response| { … });
 ```
 
-Both are opened inside an effect body and both carry
-`(ScopeId, slot: u16, generation: u64)` plus a `Weak` to the runtime. A `Weak`
-rather than the thread-local, because `Session` delivers a reply from outside a
-frame; `complete` and `send` enter the runtime for the duration of the handler
-and leave it afterwards.
+The handler does not run inside the render that asked, or inside the effect. It
+runs from the loop, between frames, with the owning scope entered — the same
+guarantee JavaScript gives by running a promise handler in a microtask rather
+than in the middle of the function that started the work.
 
-**R9.1.1** `Completion::complete` runs the handler with the owning scope
-entered, marks the address spent, and returns `true`. A second call cannot
-happen — `complete` takes `self`.
-*test: `a_completion_delivers_once`*
+```rust
+Promise<T>     one answer, then the address is spent     the file worker
+Observable<T>  answers in pieces, until complete         the syntax worker
+```
 
-**R9.1.2** `Subscription::send` runs the handler with the owning scope entered
-and returns `true`. It may be called any number of times until `close`.
-*test: `a_subscription_delivers_every_piece`*
+Each is opened as a pair inside an effect body: the asker keeps the `Promise`
+or `Observable`, and whoever sent the request keeps the `Resolver` or
+`Observer`. Both halves carry `(ScopeId, slot: u16, generation: u64)` plus a
+`Weak` to the runtime. A `Weak` rather than the thread-local, because `Session`
+delivers an answer from outside a frame; `resolve` and `next` enter the runtime
+for the duration of the handler and leave it afterwards.
 
-**R9.1.3** A handler may set state and send further requests. It may not call a
+**R9.1.1** `Resolver::resolve` runs the handler with the owning scope entered,
+marks the address spent, and returns `true`. A second call cannot happen —
+`resolve` takes `self`.
+*test: `a_promise_is_resolved_once`*
+
+**R9.1.2** `Observer::next` runs the handler with the owning scope entered and
+returns `true`. It may be called any number of times until `complete`.
+*test: `an_observable_delivers_every_piece`*
+
+**R9.1.3** A handler may set state and ask for more work. It may not call a
 hook — it holds no `Scope`.
-*test: `a_reply_handler_may_set_state`*
+*test: `an_answer_handler_may_set_state`*
 
-**R9.1.4** `Subscription<T>` is `Clone`, so one worker request can be answered
-by several pieces held in different places in the pending. `Completion<T>` is
-not.
-*test: `a_subscription_can_be_held_twice`*
+**R9.1.4** `Observer<T>` is `Clone`, so one request answered in pieces can be
+delivered from several places. `Resolver<T>` is not. `complete` takes `self`
+and closes the address for every clone; dropping one clone closes nothing
+until the last of them goes.
+*test: `an_observer_can_be_held_twice`*
+
+**R9.1.5** A `Promise` or `Observable` dropped without `then` or `subscribe`
+closes its address, and the answer is refused. Both are `#[must_use]`, so
+forgetting is a warning before it is a silence.
+*test: `a_promise_nobody_handled_refuses_its_answer`*
 
 ### 9.2 What the application carries
 
@@ -1778,87 +1850,103 @@ already carries the `File` it answers, so a token would be an address only `ui`
 could read, living in a crate that cannot read it. The syntax worker already
 carries `key` and `version` for the same purpose.
 
-The pending is in `ui`:
+The address cannot travel either — it names a scope in a thread-local runtime,
+so it is not `Send`. Something on this side has to hold it until the thread
+answers. That something is one handle per worker, offered as context: the shape
+a web application gets from a `QueryClient` or an `ApolloClient`, and an
+Angular one from an injected service. Each handle owns its channel and the
+addresses it has not answered yet.
 
 ```rust
-// crates/ui/src/app/pending.rs
-/// What a component asks the loop to do. Posted to the outbox during a render
-/// or an effect, drained by `Session` after the frame.
-pub enum Request {
-    Open {
-        file: file_types::File,
-        reply: loom::Completion<pipeline::file::Response>,
-    },
-    Colour {
-        requests: Vec<syntax::SyntaxRequest>,
-        reply: loom::Subscription<syntax::SyntaxResponse>,
-    },
-    /// Quit, suspend, rebuild — the three things only the loop can do.
-    Program(crate::input::ProgramAction),
+// crates/ui/src/app/worker.rs
+/// The file worker, as a component sees it.
+pub struct Diffs {
+    worker: RefCell<pipeline::file::FileWorker>,
+    waiting: RefCell<Option<loom::Resolver<pipeline::file::Response>>>,
 }
 
-/// Requests a component has raised and the loop has not yet sent.
-///
-/// An `Rc<RefCell<Vec<_>>>` rather than a channel: components and the loop are
-/// the same thread, and a channel here would mean a `Send` bound on a reply
-/// address that names a scope in a thread-local runtime.
-#[derive(Default)]
-pub struct Outbox(std::cell::RefCell<Vec<Request>>);
+impl Diffs {
+    /// Asks for a diff. An earlier ask is dropped, because the worker has one
+    /// replaceable slot; its promise is then refused (R9.1.5).
+    pub fn open(&self, file: file_types::File)
+        -> loom::Promise<pipeline::file::Response>
+    {
+        let (resolver, promise) = loom::promise();
+        *self.waiting.borrow_mut() = Some(resolver);
+        self.worker.borrow_mut().send(file);
+        promise
+    }
 
-impl Outbox {
-    pub fn send(&self, request: Request);
-    pub fn drain(&self) -> Vec<Request>;
+    /// What the loop calls when the thread answers.
+    pub fn answered(&self, response: pipeline::file::Response) {
+        self.worker.borrow_mut().received(&response);
+        if let Some(resolver) = self.waiting.borrow_mut().take() {
+            resolver.resolve(response);
+        }
+    }
 }
 
-/// Replies the loop is still holding an address for.
-#[derive(Default)]
-pub struct PendingReplies {
-    file: Option<loom::Completion<pipeline::file::Response>>,
-    colour: std::collections::HashMap<String, loom::Subscription<syntax::SyntaxResponse>>,
+/// The syntax worker. Several requests are in flight at once and each is
+/// answered in pieces, so the observers wait under the key the response
+/// carries — the key the request already had.
+pub struct Spans {
+    worker: RefCell<syntax::Syntax>,
+    waiting: RefCell<HashMap<String, loom::Observer<syntax::SyntaxResponse>>>,
+}
+
+impl Spans {
+    /// Asks for colour. Every request in the batch answers the one
+    /// observable, so the observer is cloned once per key.
+    pub fn colour(&self, requests: Vec<syntax::SyntaxRequest>)
+        -> loom::Observable<syntax::SyntaxResponse>;
+
+    /// What the loop calls when a piece arrives. Drops that key's observer on
+    /// the piece saying `more == false`; the pane hears the end when the last
+    /// of them goes (R9.1.4).
+    pub fn answered(&self, response: syntax::SyntaxResponse);
 }
 ```
 
-The loop's half:
+`RefCell` because context hands out `Rc<T>` and a component holds it by shared
+reference. No borrow is held across a call into `loom`: `answered` takes the
+resolver out, drops the borrow, and only then resolves.
+
+The loop's half is two lines, and neither knows what a diff is or which pane
+wanted one:
 
 ```
-Request::Open      →  pending.file = Some(reply);  workers.files.send(file)
-Event::FileReady   →  workers.files.received(&response);
-                      pending.file.take().is_some_and(|reply| reply.complete(response))
-
-Request::Colour    →  for request in &requests { pending.colour.insert(request.key.clone(), reply.clone()) }
-                      for request in requests  { workers.syntax.send(request) }
-Event::Coloured    →  workers.syntax.received(&response);
-                      let last = !response.more;
-                      let key = response.key.clone();
-                      pending.colour.get(&key).is_some_and(|reply| reply.send(response));
-                      if last { pending.colour.remove(&key); }
-
-Request::Program   →  the Flow the loop returns from `Session::drain`
+Event::FileReady(response) => diffs.answered(response)
+Event::Coloured(response)  => spans.answered(response)
 ```
+
+Quit, suspend and rebuild never were worker requests. They shared this path
+only because it was the one way out of a component. They are a callback the
+application hands `Screen` as a prop, which is the pattern §3.7 describes.
 
 ### 9.3 Generation rules
 
-**R9.3.1** A reply is refused when the scope's slab generation has moved on —
+**R9.3.1** An answer is refused when the scope's slab generation has moved on —
 the component unmounted.
 *test: `a_reply_for_a_component_that_went_away_is_refused`*
 
-**R9.3.2** A reply is refused when the slot no longer holds an effect, or holds
-a different hook — the component's hook order changed.
+**R9.3.2** An answer is refused when the slot no longer holds an effect, or
+holds a different hook — the component's hook order changed.
 *test: `a_reply_into_a_slot_that_changed_shape_is_refused`*
 
-**R9.3.3** A reply is refused when the effect's generation has moved on — the
+**R9.3.3** An answer is refused when the effect's generation has moved on — the
 effect's deps changed and it ran again, so this address belongs to a question
 nobody is asking any more. This is what makes
 `if self.selected.as_ref() != Some(&response.file) { return false }` in
 `app/workers.rs` disappear: the address is stale, not the value.
 *test: `a_diff_for_a_file_the_reader_left_is_refused`*
 
-**R9.3.4** A refused reply is not an error. Returning `false` is the whole
+**R9.3.4** A refused answer is not an error. Returning `false` is the whole
 report; the value is dropped.
 *test: `a_refused_reply_is_dropped_quietly`*
 
-**R9.3.5** An effect's cleanup closes every address it created, before the
-cleanup function is called.
+**R9.3.5** An effect's cleanup closes every address it opened, before the
+cleanup function is called. This is what RxJS asks for by handing back a
+`Subscription` to `unsubscribe()`, done by the runtime instead.
 *test: `changing_the_file_closes_the_previous_diff_address`*
 
 ### 9.4 Syntax spans, arriving in pieces
@@ -1868,11 +1956,11 @@ first, each carrying `from`, `spans` and `more`. The question is how a pane
 re-renders when spans arrive for lines it shows, without every pane re-rendering
 on every piece.
 
-**The mechanism is two parts: an addressed subscription, and an overlap test.**
+**The mechanism is two parts: an addressed observable, and an overlap test.**
 
-*Addressed:* the reply reaches one scope, because the `Subscription` names one
+*Addressed:* the answer reaches one scope, because the `Observer` names one
 scope's effect slot. No other component is told anything. A pane that is not
-showing that file has no address in the pending and hears nothing.
+showing that file has no address waiting and hears nothing.
 
 *Overlap test:* the handler installs the piece into the shared store and then
 redraws **only if the piece covers a line the pane is showing**:
@@ -2026,7 +2114,7 @@ context! {
 
 `Rc::ptr_eq` is `Object.is` exactly, and it asks nothing of what the `Rc`
 holds. Four of this program's seven contexts need no `same`; the three that do
-are the two callbacks and the `Rc<Outbox>`, none of which can be compared any
+are the two callbacks and the `Rc<Spans>`, none of which can be compared any
 other way.
 
 Storage is a `Vec<(TypeId, Rc<dyn Any>, u64)>` on the scope, not a `HashMap`:
@@ -2041,7 +2129,7 @@ The contexts this application has, and where they are offered:
 | `SyntaxContext` | `Ref<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
 | `InputContext` | `Ref<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
 | `StatusContext` | `SetState<Status>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
-| `OutboxContext` | `Rc<worker::Outbox>` | `Screen` | `DiffPane` |
+| `SpansContext` | `Rc<worker::Spans>` | `Screen` | `DiffPane` |
 | `OpenContext` | `Rc<dyn Fn(File)>` | `Screen` | `ExplorerPane` |
 | `RunContext` | `Rc<dyn Fn(Command)>` | `Screen` | `ExplorerPane`, `DiffPane` |
 
@@ -2324,11 +2412,11 @@ buffer, a viewport and a store at once.
 a Ref was borrowed from inside its own borrow
 ```
 
-**P4.6 — `completion` or `subscription` outside an effect body.** Both read
-the effect the runtime is running, so there is no slot to answer.
+**P4.6 — `promise` or `observable` outside an effect body.** Both read the
+effect the runtime is running, so there is no slot to answer.
 
 ```text
-completion may only be opened while loom is running an effect
+a promise may only be opened while loom is running an effect
 ```
 
 **P5.1 — R5.8.3.**
@@ -2386,7 +2474,7 @@ row 9 is outside the 8-row screen
 | operation | answer instead |
 |---|---|
 | `use_context::<C>` with no provider | `C::default_value()` |
-| `Completion::complete`, `Subscription::send` | `false` when refused |
+| `Resolver::resolve`, `Observer::next` | `false` when refused |
 | `Tree::press`, `Tree::mouse` | `false` when nobody stopped it |
 | a `ref` read before its node has a rectangle | `None` |
 | `NodeHandle::area` on an unmounted node | `Rect::ZERO` |
@@ -2400,6 +2488,7 @@ row 9 is outside the 8-row screen
 | a component returning `Node::Empty` | a scope with no children |
 | the 5th layout round in one frame | painted with round 4's rectangles; `Tree::layout_rounds()` reports 4 (R5.8.2) |
 | a reply for a component that unmounted | refused, value dropped (R9.3.1) |
+| a promise nobody attached a handler to | refused, value dropped (R9.1.5) |
 | a span batch the store refuses | no redraw (R9.4.1) |
 
 Note what is **not** a panic: the root component is never unmounted, so there is
@@ -2426,7 +2515,7 @@ proves nothing.
 | **I6** | Siblings on one axis do not overlap. | `siblings_do_not_overlap` | set `spacing` to a negative-equivalent by subtracting gap twice |
 | **I7** | Children tile the container in order, apart from space no child claimed. | `children_tile_the_container_in_order` | swap `Flex::Start` for `Flex::SpaceAround` |
 | **I8** | A wider screen never shows less than a narrower one. | `a_wider_screen_never_shows_less_than_a_narrower_one` | make `too_small` trigger on the *container's* size rather than the child's |
-| **I9** | No reply is ever applied to a component that did not ask for it. | `a_diff_for_a_file_the_reader_left_is_refused` | drop the generation from `Completion` |
+| **I9** | No reply is ever applied to a component that did not ask for it. | `a_diff_for_a_file_the_reader_left_is_refused` | drop the generation from `Resolver` |
 | **I10** | Hook slots are read in call order, and a divergence is caught on the render that diverges. | `a_render_that_skips_a_hook_is_refused` | remove the count check at the end of a render |
 | **I11** | An effect's cleanup runs before its next setup, and deepest first on unmount. | `unmounting_runs_the_deepest_cleanup_first` | run cleanups shallowest first |
 | **I12** | A frame runs a component only when its props changed, its own state changed, or its parent ran. | `a_clean_component_is_painted_without_being_run` | mark every scope on every frame |
@@ -2538,7 +2627,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/hook/memo.rs` | `use_memo` | 80 | |
 | `src/hook/effect.rs` | `use_effect`, `use_layout_effect`, `Cleanup`, `Always`, the effect queues | 200 | |
 | `src/hook/context.rs` | the `Context` trait, `use_context`, `offer`, versions | 110 | |
-| `src/hook/worker.rs` | `Completion`, `Subscription`, `completion`, `subscription`, the generation checks | 170 | |
+| `src/hook/worker.rs` | `Promise`, `Resolver`, `Observable`, `Observer`, `promise`, `observable`, the generation checks | 180 | |
 | `src/layout/mod.rs` | `Layout`, `Basis`, `Edges` | 110 | |
 | `src/layout/flex.rs` | measure, the §5.4 resolve, the cross axis, `too_small` | 250 | `crates/ui/src/render/layout.rs`, 437 with tests |
 | `src/paint/mod.rs` | the walk, clipping, `Paint`, the debug clip guard | 160 | `draw/screen.rs` 97 + `tab.rs` 73 + `pane.rs` 66 |
@@ -2548,7 +2637,7 @@ today — that is a measurement; the estimate beside it is not.
 | `src/event/hit.rs` | where each node landed, hit-testing, pointer capture | 140 | `draw/screen_map.rs`, 176 |
 | `src/event/route.rs` | key, mouse and wheel routing; focus order | 180 | `app/mouse.rs` 125 + `app/keys.rs` 61 |
 | `src/testing.rs` | `Harness`, `Probe` | 200 | `crates/ui/src/testing.rs`, 118 |
-| | **`loom`** | **≈ 3,810** | |
+| | **`loom`** | **≈ 3,820** | |
 
 ### 14.2 `crates/loom-macros`
 
@@ -2713,19 +2802,20 @@ rebuild.
 ### Phase 7 — state moves in
 
 `View`, `Tab` and `Pane` dissolve into state snapshots for small declarative
-values and refs for `Buffer`, `Viewport`, `Resolver` and `Store`. `Outbox`
-remains an `Rc` prop because the session drains the same object after a frame.
-Those model types stay exactly as they are — the framework has no opinion
-about them. `BufferId` and `PaneId` disappear, because the indirection they
-exist to provide — a pane cannot hold `&mut Buffer` without making `View`
+values and refs for `Buffer`, `Viewport`, `Resolver` and `Store`. The worker
+handles stay `Rc`s the session also holds, because the session is what answers
+into them. Those model types stay exactly as they are — the framework has no
+opinion about them. `BufferId` and `PaneId` disappear, because the indirection
+they exist to provide — a pane cannot hold `&mut Buffer` without making `View`
 self-referential — is what `ScopeId` plus a checked `Ref<T>` provides now.
 
 Measured: `view/mod.rs` 284, `view/tab.rs` 245, `view/pane.rs` 23.
 
 ### Phase 8 — workers
 
-`Outbox`, `Request` and `PendingReplies` as §9.2. `Session::send_file_request` and
-`send_colour_request` become one `Session::drain`. `ui::view::buffer::colour`
+`Diffs` and `Spans` as §9.2. `Session::send_file_request` and
+`send_colour_request` disappear: a component asks the handle it read from
+context, and the effect's deps decide when. `ui::view::buffer::colour`
 gains a function that returns the `SyntaxRequest`s instead of sending them, so
 the pane can build them in its effect (R9.4.5); everything else in that file is
 unchanged.
@@ -2747,10 +2837,8 @@ Delete `draw/mod.rs`'s `TextRects`, `Session::selected`,
 pub struct Session {
     tree: loom::Tree,
     workers: Workers,
-    /// Requests components raised and the loop has not yet sent.
-    outbox: Rc<Outbox>,
-    /// Reply addresses the loop is holding.
-    pending: PendingReplies,
+    /// Quit, suspend or rebuild, if a component asked for one this frame.
+    program: Rc<RefCell<Option<ProgramAction>>>,
 }
 
 impl Session {
@@ -2768,19 +2856,21 @@ impl Session {
         Ok(())
     }
 
-    /// Sends everything components asked for, remembers where each reply goes,
-    /// and reports what the loop should do next.
-    pub fn drain(&mut self) -> Flow { /* §9.2, plus Request::Program */ }
+    /// Reports what the loop should do next. The requests have already gone
+    /// out: a component sends its own through the handle it read from context,
+    /// while `Tree::draw` is running its effects.
+    pub fn drain(&mut self) -> Flow { /* the program action, if a pane set one */ }
 }
 ```
 
 `draw_into` keeps the signature `crates/ui/tests/explorer/*` calls (I15), and
-draining inside it keeps the existing test flow — draw, then the worker has
-been asked — working with no edit to `TestSession`.
+calling `drain` inside it keeps the existing test flow — draw, then the worker
+has been asked — working with no edit to `TestSession`.
 
 Its responsibilities are exactly: own the terminal, own the worker threads,
-normalise crossterm events, hand replies to their addresses, call `Tree::draw`,
-and answer quit, suspend and rebuild. That is what a `Session` should have been.
+normalise crossterm events, hand answers to the handles that are waiting for
+them, call `Tree::draw`, and answer quit, suspend and rebuild. That is what a
+`Session` should have been.
 
 ### 15.2 What the loop becomes
 
@@ -2830,7 +2920,7 @@ Three small application types, all in `ui`:
 use std::rc::Rc;
 use loom::{Ref, SetState, context};
 
-use crate::app::pending::Outbox;
+use crate::app::worker::Spans;
 use crate::app::status::Status;
 use crate::input::{Command, Resolver};
 use crate::theme::Theme;
@@ -2846,8 +2936,8 @@ context! {
     /// Where a focused pane writes what the status line should say.
     pub StatusContext: SetState<Status> = SetState::nowhere();
 
-    /// Where a request to a worker goes.
-    pub OutboxContext: Rc<Outbox> = Rc::new(Outbox::closed()), same = Rc::ptr_eq;
+    /// The syntax worker, for whichever pane wants its lines coloured.
+    pub SpansContext: Rc<Spans> = Rc::new(Spans::closed()), same = Rc::ptr_eq;
     /// Open this file. Called by the explorer when the reader lands on a row.
     pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}), same = Rc::ptr_eq;
     /// Carry out a command this pane does not own. Called by whichever pane
@@ -2869,9 +2959,9 @@ identity is the marker type, not the value's (R10.1.4). None of them needs a
 newtype.
 
 Every default does nothing rather than failing: an unprovided `OpenContext` is
-a closure that ignores the file, and an unprovided `OutboxContext` is one whose
-`send` returns `false`. A component reading a context is therefore never a
-place a panic can come from.
+a closure that ignores the file, and an unprovided `SpansContext` is a `Spans`
+with no thread behind it, whose observable is never answered. A component
+reading a context is therefore never a place a panic can come from.
 
 ```rust
 // crates/ui/src/app/status.rs
@@ -2894,7 +2984,7 @@ pub struct Status {
 }
 ```
 
-`Request`, `Outbox` and `PendingReplies` are §9.2.
+`Diffs` and `Spans` are §9.2.
 
 ## A.1 `StatusBar`
 
@@ -3180,13 +3270,12 @@ repository and none of it is touched.
 use std::rc::Rc;
 
 use loom::{Bubble, Canvas, CanvasProps, Layout, Listeners, Node, Ref, Scope,
-           component, rsx, subscription, use_context, use_effect,
+           component, rsx, use_context, use_effect,
            use_ref, use_state};
 use syntax::{Store, SyntaxResponse, Version};
 
-use crate::app::context::{InputContext, OutboxContext, RunContext, StatusContext,
+use crate::app::context::{InputContext, RunContext, SpansContext, StatusContext,
                           SyntaxContext, ThemeContext};
-use crate::app::pending::{Outbox, Request};
 use crate::app::status::Status;
 use crate::draw::Look;
 use crate::hook::use_size;
@@ -3202,7 +3291,7 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let theme = use_context::<ThemeContext>(scope);
     let store = use_context::<SyntaxContext>(scope);
     let keys = use_context::<InputContext>(scope);
-    let post = use_context::<OutboxContext>(scope);
+    let spans = use_context::<SpansContext>(scope);
     let status = use_context::<StatusContext>(scope);
     let run = use_context::<RunContext>(scope);
 
@@ -3244,7 +3333,13 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
     let end = visible.end;
     let version = *version;
     use_effect(scope, (version, end, coloured), move || {
-        let reply = subscription(move |response: SyntaxResponse| {
+        let requests = buffer.current().as_ref()
+            .map(|b| b.colour_requests(&mut store.current(), version, end + MARGIN))
+            .unwrap_or_default();
+        if requests.is_empty() {
+            return;
+        }
+        spans.colour(requests).subscribe(move |response: SyntaxResponse| {
             let from = response.from;
             let taken = store.current().install(response);
             // Only a piece covering a line this pane is showing is worth a
@@ -3254,14 +3349,6 @@ pub fn DiffPane(scope: &mut Scope, buffer: Ref<Option<Buffer>>, version: Version
                 redraw(&|n| n + 1);
             }
         });
-        let requests = buffer.current().as_ref()
-            .map(|b| b.colour_requests(&mut store.current(), version, end + MARGIN))
-            .unwrap_or_default();
-        if requests.is_empty() {
-            reply.close();
-        } else {
-            post.send(Request::Colour { requests, reply });
-        }
     });
 
     let listeners = Listeners::new()
@@ -3342,20 +3429,20 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{Column, ColumnProps, Divider, DividerProps, Layout,
-           Basis, Node, Row, RowProps, Scope, Text, TextProps, completion,
+           Basis, Node, Row, RowProps, Scope, Text, TextProps,
            component, focus_next, focus_previous, rsx,
            use_effect, use_memo, use_ref, use_state};
 use syntax::{Store, Version};
 
 use crate::app::context::{
     InputContext, InputContextProps, OpenContext, OpenContextProps,
-    OutboxContext, OutboxContextProps, RunContext, RunContextProps,
+    RunContext, RunContextProps, SpansContext, SpansContextProps,
     StatusContext, StatusContextProps, SyntaxContext, SyntaxContextProps,
     ThemeContext, ThemeContextProps,
 };
-use crate::app::pending::{Outbox, Request};
+use crate::app::worker::{Diffs, Spans};
 use crate::app::status::Status;
-use crate::input::{Action, Command, Resolver, TabAction, ViewAction};
+use crate::input::{Action, Command, ProgramAction, Resolver, TabAction, ViewAction};
 use crate::theme::Theme;
 use crate::view::Buffer;
 
@@ -3368,7 +3455,14 @@ const MIN_LEFT: u16 = 12;
 const MAX_LEFT: u16 = 100;
 
 #[component]
-pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbox>) -> Node {
+pub fn Screen(
+    scope: &mut Scope,
+    files: Rc<[File]>,
+    theme: Theme,
+    diffs: Rc<Diffs>,
+    spans: Rc<Spans>,
+    program: Rc<dyn Fn(ProgramAction)>,
+) -> Node {
     let store = use_ref(scope, Store::new);
     let keys = use_ref(scope, Resolver::new);
     let opened = use_ref(scope, || None::<Buffer>);
@@ -3384,7 +3478,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
     // `use_memo` keeps the same `Rc` across renders, so `Rc::ptr_eq` in the
     // context's `same` finds it unchanged and no consumer is disturbed
     // (R10.1.6).
-    let post_program = post.clone();
+    let ask_program = program;
     let open: Rc<dyn Fn(File)> = use_memo(scope, (), move |_| {
         move |file: File| set_chosen(&|_| Some(file.clone()))
     });
@@ -3409,19 +3503,18 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                 }
                 set_version(&|v| Version(v.0 + 1));
             }
-            Action::Program(action) => post_program.send(Request::Program(action)),
+            Action::Program(action) => ask_program(action),
             _ => {}
         }
     });
 
-    // Ask for the file the reader chose. The reply address is created here,
-    // so a reply for a file they have since left is refused rather than
+    // Ask for the file the reader chose. The promise belongs to this effect,
+    // so an answer for a file they have since left is refused rather than
     // shown — R9.3.3, which is what `apply_file_response`'s `if
     // self.selected.as_ref() != Some(&response.file)` was for.
-    let post_open = post.clone();
     use_effect(scope, chosen.clone(), move || {
         let Some(file) = chosen.clone() else { return };
-        let reply = completion(move |response: pipeline::file::Response| {
+        diffs.open(file).then(move |response: pipeline::file::Response| {
             match response.content {
                 Ok(content) => {
                     *opened.current() = Some(Buffer::diff(content));
@@ -3431,7 +3524,6 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
                 Err(why) => set_notice(&|_| Some(why.clone().into())),
             }
         });
-        post_open.send(Request::Open { file, reply });
     });
 
     // The key is the file, so re-opening the same file keeps the same scope
@@ -3459,7 +3551,7 @@ pub fn Screen(scope: &mut Scope, files: Rc<[File]>, theme: Theme, post: Rc<Outbo
         SyntaxContext { value: store,
         InputContext { value: keys,
         StatusContext { value: set_status,
-        OutboxContext { value: post.clone(),
+        SpansContext { value: spans,
         OpenContext { value: open,
         RunContext { value: run,
 
