@@ -1074,13 +1074,14 @@ impl Subscription {
 
 /// Subscribe to a store, and read it.
 ///
-/// Subscribes on mount and unsubscribes on unmount, so `store` must be the
-/// same store for the component's life — which it is when it arrives as a
+/// Asks the store for a snapshot on every render and compares it with the
+/// last. Subscribes on mount and unsubscribes on unmount, so `store` must be
+/// the same store for the component's life — which it is when it arrives as a
 /// prop or from context.
 ///
 /// Re-runs: when the store says it changed and hands back a different
 /// `Snapshot`.
-/// Panics: P4.1, P4.2.
+/// Panics: P4.1, P4.2, P4.7.
 #[track_caller]
 pub fn use_sync_external_store<S: ExternalStore>(
     scope: &mut Scope,
@@ -2000,8 +2001,9 @@ pub struct Files {
     root: PathBuf,
     current: RefCell<loom::Snapshot<[File]>>,
     /// Keyed, so the `Subscription` `subscribe` hands back knows which entry
-    /// to take out again.
-    readers: RefCell<HashMap<u64, loom::Notify>>,
+    /// to take out again. `Rc`, because that subscription outlives the borrow
+    /// it was made from: it holds the map, not the store.
+    readers: Rc<RefCell<HashMap<u64, loom::Notify>>>,
     next_reader: Cell<u64>,
 }
 
@@ -2580,6 +2582,14 @@ effect the runtime is running, so there is no slot to answer.
 
 ```text
 a promise may only be opened while loom is running an effect
+```
+
+**P4.7 — a store answered with a fresh snapshot when nothing had changed.**
+React reports the same mistake as *the result of `getSnapshot` should be
+cached*; both are the same infinite loop, caught before it spins.
+
+```text
+ExplorerPane: a store handed back a different snapshot without saying it changed. Hand back the same one until it does.
 ```
 
 **P5.1 — R5.8.3.**
