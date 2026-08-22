@@ -175,11 +175,11 @@ pub fn columns(
 
 /// Where the two gutters and the one text column of an inline pane go.
 ///
-/// Two gutters because every row belongs to one version, and **the missing
-/// number is what says which**: no modified number means the line was deleted,
-/// no original number means it was inserted. That is why there is no separate
-/// sign column — it would repeat what the gutters already say. GitHub and
-/// Azure DevOps both show the same two.
+/// Two gutters because each row shows one line, from one version, and **the
+/// empty gutter tells you which version**: no modified number means the line
+/// was deleted, no original number means it was inserted. That is why there is
+/// no separate sign column — it would repeat what the gutters already say.
+/// GitHub and Azure DevOps both show the same two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InlineFrame {
     pub original: Rect,

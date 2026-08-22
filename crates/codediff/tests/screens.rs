@@ -259,9 +259,9 @@ fn a_diff_the_engine_abandoned_says_so_on_screen() {
 #[test]
 fn the_same_diff_read_inline() {
     // The same six lines as `a_small_diff_side_by_side`, one version per row:
-    // what was there, then what replaced it. Two gutters, and the missing
-    // number is what says which version a row belongs to — no sign column,
-    // because it would only repeat them.
+    // what was there, then what replaced it. Two gutters, and the empty one
+    // tells you which version a row shows — no sign column, because it would
+    // only repeat them.
     let mut s = demo();
     type_keys(&mut s, "t");
     assert_eq!(
