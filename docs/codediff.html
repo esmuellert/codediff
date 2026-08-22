@@ -285,18 +285,18 @@ pub fn Explorer(
 
 rsx! {
     Column { layout, listeners, fill: Some(theme.normal), ..,
-        for (offset, view_line) in visible_lines.enumerate() {
+        for (offset, entry) in visible_lines.enumerate() {
             let selected = view_lines.start + offset as u32 == cursor;
             let indent = match tree.nested_at(index) {
                 Some((model, id)) => indent(model, id),
                 None => String::new(),
             };
-            let (body, status) = match &view_line {
-                ViewLine::Heading { name, files, stats } =>
+            let (body, status) = match &entry {
+                Entry::Heading { name, files, stats } =>
                     heading(name, files, stats),
-                ViewLine::Directory { name, open, .. } =>
+                Entry::Directory { name, open, .. } =>
                     directory(name, open),
-                ViewLine::File { name, file } =>
+                Entry::File { name, file } =>
                     file_entry(name, file),
             };
 
