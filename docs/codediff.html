@@ -277,13 +277,11 @@ Staged Changes (1 · +1 -1)
 └  README.md                        +1 -1 M`}),(0,h.jsx)(`p`,{children:`Three kinds of row: headings, directories, files. A guide at a given depth means an ancestor at that depth has more children after it.`}),(0,h.jsx)(D,{id:`explorer-signature`,children:`Signature`}),(0,h.jsx)(E,{children:`#[component]
 pub fn Explorer(
     scope: &mut Scope,
-    files: Rc<[File]>,
-    mode: ViewMode,
+    repo: PathBuf,
     view_lines: Range<u32>,
     cursor: u32,
-    on_press: Rc<dyn Fn(u32)>,
-    on_toggle: Rc<dyn Fn(u32)>,
-) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`files`})}),(0,h.jsx)(`td`,{children:`the changed files`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`mode`})}),(0,h.jsxs)(`td`,{children:[(0,h.jsx)(`code`,{children:`Tree`}),` or `,(0,h.jsx)(`code`,{children:`List`})]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`view_lines`})}),(0,h.jsx)(`td`,{children:`which rows to render`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`cursor`})}),(0,h.jsx)(`td`,{children:`which row is selected`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`on_press`})}),(0,h.jsx)(`td`,{children:`called with the row that was clicked`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`on_toggle`})}),(0,h.jsx)(`td`,{children:`called with the directory row to open or shut`})]})]}),(0,h.jsx)(D,{id:`explorer-row`,children:`A row`}),(0,h.jsx)(E,{children:`pub struct Piece {
+    on_open: Rc<dyn Fn(File)>,
+) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`repo`})}),(0,h.jsx)(`td`,{children:`the repository path`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`view_lines`})}),(0,h.jsx)(`td`,{children:`which rows to render`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`cursor`})}),(0,h.jsx)(`td`,{children:`which row is selected`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`on_open`})}),(0,h.jsx)(`td`,{children:`called with the file to open when a row is activated`})]})]}),(0,h.jsx)(D,{id:`explorer-row`,children:`A row`}),(0,h.jsx)(E,{children:`pub struct Piece {
     pub text: String,
     pub style: Style,
     /// Dropped first when the row is too wide, lowest first.
