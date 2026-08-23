@@ -1,0 +1,19 @@
+[package]
+name = "loom"
+description = "A React for the terminal: components, hooks, flexbox, and a paint pass."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+loom-macros.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+crokey.workspace = true
+
+[lints]
+workspace = true

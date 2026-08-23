@@ -1045,6 +1045,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
+name = "loom"
+version = "0.17.0"
+dependencies = [
+ "crokey",
+ "crossterm",
+ "loom-macros",
+ "ratatui",
+]
+
+[[package]]
+name = "loom-macros"
+version = "0.17.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "lru"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

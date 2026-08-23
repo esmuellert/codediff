@@ -1,0 +1,303 @@
+//! The seven steps of a frame: render, lay out, run layout effects, paint,
+//! run effects.
+//!
+//! The runtime is borrowed in short bursts. Nothing here holds it across a
+//! component's function, a listener, an effect body or a painter, because all
+//! four reach the runtime themselves.
+
+use ratatui::buffer::Buffer as Cells;
+use ratatui::layout::Rect;
+
+use crate::event::Listeners;
+use crate::layout::{Axis, Basis, Item, assign};
+use crate::node::NodeHandle;
+use crate::paint::Paint;
+use crate::reconcile::{Held, Rendered, Shape};
+use crate::runtime::Runtime;
+use crate::scope::ScopeId;
+
+/// One host that got a rectangle. Flat, deepest last, so painting is a walk
+/// forward and hit-testing is a walk back.
+#[derive(Clone)]
+pub(crate) struct Placed {
+    pub scope: ScopeId,
+    /// Which host within that scope, in paint order.
+    pub nth: u32,
+    pub parent: Option<usize>,
+    pub area: Rect,
+    pub clip: Rect,
+    pub shape: std::rc::Rc<Shape>,
+    pub listeners: Listeners,
+    pub focusable: bool,
+}
+
+/// R5.8.2 — a layout effect may write state, which re-renders and re-lays
+/// out. Four rounds is far above anything that settles.
+const ROUNDS: usize = 4;
+
+/// Reconcile, lay out, run layout effects, paint, run effects.
+pub(crate) fn draw(held: &Held, cells: &mut Cells, area: Rect) {
+    let Some(root) = held.borrow().root else { return };
+    held.borrow_mut().renders = 0;
+
+    let mut rounds = 0;
+    loop {
+        rounds += 1;
+        {
+            let mut rt = held.borrow_mut();
+            commit_state(&mut rt);
+            rt.dirty.clear();
+        }
+
+        let tree = crate::reconcile::frame(held, root);
+
+        let mut placed = Vec::new();
+        for node in &tree {
+            lay_out(node, area, area, None, &mut placed);
+        }
+        held.borrow_mut().placed = placed;
+
+        // R5.8 — every `ref` holds its node before a layout effect runs.
+        write_refs(held);
+        run_effects(held, true);
+
+        // A layout effect that wrote state gets another round before anything
+        // reaches the screen.
+        if !held.borrow().needs_draw() || rounds >= ROUNDS {
+            break;
+        }
+    }
+
+    held.borrow_mut().rounds = rounds;
+
+    let count = held.borrow().placed.len();
+    for at in 0..count {
+        paint_one(held, at, cells);
+    }
+
+    run_effects(held, false);
+    held.borrow_mut().dirty.clear();
+}
+
+/// Moves every pending state value into its slot, so the next render reads it.
+fn commit_state(rt: &mut Runtime) {
+    for hooks in rt.hooks.values_mut() {
+        for slot in &mut hooks.slots {
+            if let crate::hook::Slot::State(state) = slot {
+                state.commit();
+            }
+        }
+    }
+}
+
+/// Lays one host out, then its children, appending to `placed`.
+fn lay_out(node: &Rendered, area: Rect, clip: Rect, parent: Option<usize>, placed: &mut Vec<Placed>) {
+    let layout = node.shape.layout;
+    if layout.hidden {
+        return;
+    }
+
+    let nth = placed.iter().filter(|p| p.scope == node.scope).count() as u32;
+    let here = placed.len();
+    placed.push(Placed {
+        scope: node.scope,
+        nth,
+        parent,
+        area,
+        clip,
+        shape: std::rc::Rc::clone(&node.shape),
+        listeners: node.shape.listeners.clone(),
+        focusable: node.shape.focusable,
+    });
+
+    // R5.5.2 — padding comes off before the children.
+    let inner = inset(area, layout.pad);
+    // R5.5.3 — a clipping parent shrinks what its children may reach.
+    let inner_clip = if layout.clip { clip.intersection(inner) } else { clip };
+
+    let items: Vec<Item> = node
+        .children
+        .iter()
+        .map(|child| Item {
+            layout: child.shape.layout,
+            measured: measure(child, node.shape.axis, inner),
+        })
+        .collect();
+
+    let out = assign(node.shape.axis, inner, layout.gap, &items);
+
+    // R5.6.2 — a container that cannot fit its children paints its `too_small`
+    // node instead, and assigns nothing below it.
+    if out.too_small && let Some(message) = &node.too_small {
+        for child in message.iter() {
+            lay_out(child, inner, inner_clip, Some(here), placed);
+        }
+        return;
+    }
+
+    for (child, child_area) in node.children.iter().zip(out.areas) {
+        // I5 — every rectangle handed to a child lies inside its parent's.
+        let child_area = child_area.intersection(inner);
+        lay_out(child, child_area, inner_clip.intersection(child_area), Some(here), placed);
+    }
+}
+
+/// R5.3 — only `Basis::Auto` needs measuring, and only `Text` answers.
+fn measure(node: &Rendered, axis: Axis, room: Rect) -> u16 {
+    let layout = node.shape.layout;
+    match layout.basis {
+        // R5.3.3 — a fixed child measures as its size.
+        Basis::Length(n) => return n,
+        // What a percentage is a share of is not known until the flex pass.
+        Basis::Percent(_) => return 0,
+        Basis::Auto => {}
+    }
+
+    if let Some(ask) = node.shape.measure {
+        let (across, down) = ask(&node.shape, room.width);
+        return if axis == Axis::Down { down } else { across };
+    }
+
+    // R5.3.2 — a container measures as the sum of its children along its main
+    // axis, plus the gaps, plus padding.
+    if node.children.is_empty() {
+        return 0;
+    }
+
+    let pad = if axis == Axis::Down { layout.pad.down() } else { layout.pad.across() };
+    let gaps = layout.gap.saturating_mul(node.children.len().saturating_sub(1) as u16);
+
+    if node.shape.axis == axis {
+        let sum: u32 = node.children.iter().map(|c| u32::from(measure(c, axis, room))).sum();
+        (sum.min(u32::from(u16::MAX)) as u16).saturating_add(gaps).saturating_add(pad)
+    } else {
+        let largest = node.children.iter().map(|c| measure(c, axis, room)).max().unwrap_or(0);
+        largest.saturating_add(pad)
+    }
+}
+
+/// R5.8 — every `ref` holds its node before a layout effect runs.
+fn write_refs(held: &Held) {
+    let writes: Vec<(crate::hook::Ref<Option<NodeHandle>>, NodeHandle)> = held
+        .borrow()
+        .placed
+        .iter()
+        .filter_map(|p| {
+            p.shape.node_ref.map(|slot| (slot, NodeHandle { scope: p.scope, nth: p.nth }))
+        })
+        .collect();
+    for (slot, node) in writes {
+        *slot.current() = Some(node);
+    }
+}
+
+/// Runs one queue of effects: the old cleanup first, then the body, then the
+/// new cleanup into the slot.
+fn run_effects(held: &Held, before_paint: bool) {
+    let queued = {
+        let mut rt = held.borrow_mut();
+        if before_paint {
+            std::mem::take(&mut rt.layout_effects)
+        } else {
+            std::mem::take(&mut rt.effects)
+        }
+    };
+
+    for effect in queued {
+        // R9.3.3 — a reply from a previous run is refused, so the generation
+        // has to still match.
+        let undo = {
+            let mut rt = held.borrow_mut();
+            let current = generation_of(&rt, effect.scope, effect.slot);
+            if current != Some(effect.generation) {
+                continue;
+            }
+            // I11 — a cleanup runs before its next setup.
+            rt.hooks
+                .get_mut(&effect.scope)
+                .and_then(|h| h.slots.get_mut(effect.slot as usize))
+                .and_then(|s| match s {
+                    crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => {
+                        e.cleanup.take()
+                    }
+                    _ => None,
+                })
+        };
+        if let Some(undo) = undo {
+            undo();
+        }
+
+        held.borrow_mut().running_effect = Some((effect.scope, effect.slot, effect.generation));
+        let cleanup = (effect.run)();
+        held.borrow_mut().running_effect = None;
+
+        let mut rt = held.borrow_mut();
+        if let Some(slot) =
+            rt.hooks.get_mut(&effect.scope).and_then(|h| h.slots.get_mut(effect.slot as usize))
+        {
+            match slot {
+                crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => {
+                    e.cleanup = cleanup;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn generation_of(rt: &Runtime, scope: ScopeId, slot: u16) -> Option<u64> {
+    rt.hooks.get(&scope).and_then(|h| h.slots.get(slot as usize)).and_then(|s| match s {
+        crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => Some(e.generation),
+        _ => None,
+    })
+}
+
+/// R7.1 — the walk. Fill first, then the node's own ink.
+fn paint_one(held: &Held, at: usize, cells: &mut Cells) {
+    let (shape, area, clip, focused) = {
+        let rt = held.borrow();
+        let node = &rt.placed[at];
+        let clip = node.area.intersection(node.clip);
+        (
+            std::rc::Rc::clone(&node.shape),
+            node.area,
+            clip,
+            rt.focused == Some(NodeHandle { scope: node.scope, nth: node.nth }),
+        )
+    };
+
+    if clip.width == 0 || clip.height == 0 {
+        return;
+    }
+
+    if let Some(fill) = shape.layout.fill {
+        for y in clip.top()..clip.bottom() {
+            for x in clip.left()..clip.right() {
+                if let Some(cell) = cells.cell_mut((x, y)) {
+                    cell.set_style(fill);
+                }
+            }
+        }
+    }
+
+    if let Some(text) = &shape.text {
+        let line = ratatui::text::Line::from(ratatui::text::Span::styled(text.as_ref(), shape.style));
+        ratatui::widgets::Widget::render(line, clip, cells);
+    }
+
+    // The runtime is not borrowed here, so a painter may read a ref or a
+    // store while it writes cells.
+    if let Some(paint) = &shape.paint {
+        let mut brush = Paint::new(cells, area, clip, focused);
+        paint(&mut brush);
+    }
+}
+
+fn inset(area: Rect, pad: crate::layout::Edges) -> Rect {
+    Rect {
+        x: area.x.saturating_add(pad.left),
+        y: area.y.saturating_add(pad.top),
+        width: area.width.saturating_sub(pad.across()),
+        height: area.height.saturating_sub(pad.down()),
+    }
+}
