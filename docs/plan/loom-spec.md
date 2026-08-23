@@ -2255,14 +2255,8 @@ entries; the expansion always places it last, where Rust requires it.
 **Props are a plain struct literal.** That single decision buys every error
 message the macro would otherwise have to invent:
 
-| mistake | message |
-|---|---|
-| `focusd: true` | ``struct `MyComponentProps` has no field named `focusd` `` |
-| omitted `files` | ``missing field `files` in initializer of `MyComponentProps` `` |
-| `focused: 1` | ``expected `bool`, found integer`` |
-
-No typestate builder beats that, and `typed-builder` does not try — it produces
-"the method `build` exists but its trait bounds were not satisfied".
+A misspelled prop, a missing one, or a wrong type are all compile errors with
+messages pointing at the token. No typestate builder beats that.
 
 **`..` means the defaults, and writing no props implies it.** One sentence:
 *write no props and you get the defaults; write `..` and you get the rest of
@@ -2276,123 +2270,25 @@ requires them and is given none gets ``missing field `children` ``. Both free.
 **A `for` body must carry a key.** Checked at expansion when the macro can see
 the element, and at reconciliation otherwise (R6.1.2).
 
-**Lowercase is not special.** `Row` and `MyComponent` are both paths and both
+**Lowercase is not special.** `Row` and a user component are both paths and both
 expand the same way. There is no separate grammar for built-in hosts.
 
 **`ref` only goes on a host.** Every built-in host's props carry `node_ref`;
-your components' do not, so `ref` on one is ``struct `MyComponentProps` has no
-field named `node_ref` ``. React forwards a ref through a component; there is
+your components' do not, so `ref` on one is a "no field" error.
+React forwards a ref through a component; there is
 nothing here to forward it to, because a component owns no rectangle.
 
 ### 11.4 `#[component]`
 
-```rust
-#[component]
-pub fn Counter(scope: &mut Scope, file: Option<Rc<File>>, view_line: u32) -> Node { … }
-```
+The attribute macro generates a props struct, a `Component` impl, and an
+`Element` impl. The component function's parameters (after `scope`) become the
+props struct's fields. The struct name is the function name with `Props`
+appended.
 
-expands to
-
-```rust
-pub struct Counter;
-
-pub struct CounterProps {
-    pub file: Option<Rc<File>>,
-    pub view_line: u32,
-}
-
-impl ::loom::Component for Counter {
-    type Props = CounterProps;
-    const NAME: &'static str = "Counter";
-    fn render(props: &CounterProps, scope: &mut ::loom::Scope) -> ::loom::Node {
-        let CounterProps { file, view_line } = props;   // by reference
-        { /* your body */ }
-    }
-}
-
-impl ::loom::Element for Counter {
-    type Props = CounterProps;
-    fn build(props: CounterProps, key: Option<::loom::Key>) -> ::loom::Node {
-        ::loom::Node::part::<Self>(props, key)
-    }
-}
-```
-
-The first parameter must be `scope: &mut Scope`; every other parameter becomes a
-props field, in order, with its own type. A parameter named `children:
-Children` receives the element's children. That is the whole contract.
-
-`#[component(memo)]` additionally requires `Props: PartialEq` and fills in
-`Part::same`. `PartialEq` is not a bound on props in general, because
-`Rc<Alignment>` has no meaningful equality and should not be made to invent one.
-Memoisation is opt-in, as in React.
-
-`#[component]` also refuses a direct `use_*` call inside an `if`, a `match`, a
-loop, a closure or after an early `return`, at compile time, in the body it can
-see. Custom hooks — ordinary functions taking `&mut Scope` — are covered by the
-runtime check instead (§4.3).
 
 ### 11.5 `context!`
 
-```rust
-context! {
-    /// The palette every painter reads.
-    pub ThemeContext: Theme = Theme::dark();
-}
-```
-
-expands to
-
-```rust
-/// The palette every painter reads.
-pub struct ThemeContext;
-
-pub struct ThemeContextProps {
-    pub value: Theme,
-    pub children: ::loom::Children,
-}
-
-impl ::loom::Context for ThemeContext {
-    type Value = Theme;
-    fn default_value() -> Theme { Theme::dark() }
-    fn same(old: &Theme, new: &Theme) -> bool { old == new }
-}
-
-impl ::loom::Component for ThemeContext {
-    type Props = ThemeContextProps;
-    const NAME: &'static str = "ThemeContext";
-    fn render(props: &Self::Props, scope: &mut ::loom::Scope) -> ::loom::Node {
-        ::loom::offer::<Self>(scope, &props.value);
-        ::loom::Node::Fragment(props.children.clone())
-    }
-}
-
-impl ::loom::Element for ThemeContext {
-    type Props = ThemeContextProps;
-    fn build(props: ThemeContextProps, key: Option<::loom::Key>) -> ::loom::Node {
-        ::loom::Node::part::<Self>(props, key)
-    }
-}
-```
-
-Everything after `#[component]`'s own expansion is the same, which is the
-point: a provider is a component, so `rsx!` needs no rule for it and §11.1's
-`path` needs no generics.
-
-`same = expr` after the default replaces that one line, for a value with no
-`==`:
-
-```rust
-context! {
-    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}), same = Rc::ptr_eq;
-}
-```
-
-It is a proc macro for one reason: `macro_rules!` cannot build the identifier
-`ThemeContextProps` from `ThemeContext`, and §11.2 finds a props type by that
-name.
-
----
+See the loom guide's Context page.
 
 ## 12. Panics
 
@@ -2404,9 +2300,9 @@ Exhaustive. Everything else in `loom` answers with `Option`, `Result` or `bool`.
 **P4.1 — a hook slot changed shape between renders.**
 
 ```text
-Counter: hook 2 was a State at crates/ui/src/status.rs:14, and is an Effect
-here at crates/ui/src/status.rs:19. Hooks must run in the same order every
-render — none inside an if, a loop, or after an early return.
+{component}: hook {n} was a {kind} at {location}, and is a {kind} here at
+{location}. Hooks must run in the same order every render — none inside an if,
+a loop, or after an early return.
 ```
 
 Call sites are named in a debug build; in a release build the two `at …`
@@ -2415,14 +2311,14 @@ clauses are omitted.
 **P4.2 — a render returned early, or a hook sits behind a condition.**
 
 ```text
-Counter: this render called 3 hooks and the last one called 5. Hooks must run
-in the same order every render.
+{component}: this render called {n} hooks and the last one called {m}. Hooks
+must run in the same order every render.
 ```
 
 **P4.3 — a setter or ref was captured into something that outlived its component.**
 
 ```text
-a SetState was used after MyComponent was removed
+a SetState was used after {component} was removed
 ```
 
 **P4.4 — a setter or ref was used with no runtime entered.**
@@ -2451,31 +2347,33 @@ React reports the same mistake as *the result of `getSnapshot` should be
 cached*; both are the same infinite loop, caught before it spins.
 
 ```text
-MyComponent: a store handed back a different snapshot without saying it changed. Hand back the same one until it does.
+{component}: a store handed back a different snapshot without saying it changed.
 ```
 
 **P5.1 — R5.8.3.**
 
 ```text
-MyComponent ran 17 times in one frame — a component that sets state on every render never settles
+{component} ran {n} times in one frame — a component that sets state on every
+render never settles
 ```
 
 **P6.1 — R6.1.2.**
 
 ```text
-Root: child 2 has a key and child 3 does not — key every child of a list or none of them
+{component}: child {n} has a key and child {m} does not — key every child of a
+list or none of them
 ```
 
 **P6.2 — R6.1.5.**
 
 ```text
-MyComponent: two children share the key "src/main.rs"
+{component}: two children share the key {key}
 ```
 
 **P6.3 — R6.2.9.**
 
 ```text
-MyComponent: one ref was given to both a Canvas and a Row — a ref names one node
+{component}: one ref was given to both a {host} and a {host} — a ref names one node
 ```
 
 **P7.1 — R5.8.4.**
@@ -2488,13 +2386,14 @@ draw was called from inside a paint callback
 captured snapshots and `Ref::current` are legal.
 
 ```text
-MyComponent changed component data while painting — paint callbacks may only write cells
+{component} changed component data while painting — paint callbacks may only
+write cells
 ```
 
 **P7.3 — R7.2.1. Debug builds only.**
 
 ```text
-MyComponent painted at (39, 4), outside its clip 0,0 40x9
+{component} painted at ({x}, {y}), outside its clip {clip}
 ```
 
 **P14.1 — `Harness::screen_row` out of range.** A test helper: a wrong index is a
@@ -2584,60 +2483,9 @@ is what makes each phase independently revertable.
 
 ### 13.2 How a component is unit-tested
 
-Two levels, and the framework provides both.
+Two levels: mount one component in isolation with `Harness::new`, or send
+events and read the screen back. See the loom guide's Testing page.
 
-**One component, in isolation.** `Harness` mounts it with its props and any
-context it reads, draws into a grid of a stated size, and reads the screen back
-as text — the same shape of assertion the explorer tests already make, one
-component down:
-
-```rust
-#[test]
-fn a_narrow_status_bar_drops_the_summary_rather_than_overlapping_the_path() {
-    let mut screen = Harness::new::<Counter>(
-        CounterProps {
-            file: Some(Rc::new(File::unchanged_path(at("src/main.rs"), revs()))),
-            view_line: 0, view_lines: 100, changes: 3, change: None,
-            timed_out: false, exhausted: None, notice: None,
-        },
-        16, 1,
-    )
-    .provide::<ThemeContext>(Theme::DARK);
-
-    assert_eq!(screen.draw().row(0).chars().count(), 16);
-    assert!(!screen.row(0).contains("changes"));
-}
-```
-
-**A behaviour, through events.** The harness sends keys and clicks, and answers
-questions about the tree:
-
-```rust
-#[test]
-fn clicking_a_row_moves_the_cursor_and_opens_the_file() {
-    let mut screen = Harness::new::<MyComponent>(props(), 40, 10)
-        .provide::<ThemeContext>(Theme::DARK);
-    screen.draw().click(3, 4);
-    assert_eq!(screen.row(4).trim_start().split(' ').next(), Some("app.rs"));
-}
-
-#[test]
-fn a_span_batch_runs_one_component() {
-    let mut screen = Harness::new::<Root>(props(), 80, 24);
-    screen.draw();
-    // … deliver a batch through the pending …
-    assert_eq!(screen.render_count(), 1, "only the pane showing the file");
-}
-```
-
-The three questions a framework test needs that a screen cannot answer —
-"did this component run?", "which scope holds focus?", "where did this node
-land?" — are `renders_of(name)`, `focused_name()` and `area_of(name)`. Those
-three plus `rows()` are enough for every rule in this document. `tree()` prints
-the scope tree as indented text for when an assertion fails and the reader wants
-to see why.
-
----
 
 ## 14. Module map
 
