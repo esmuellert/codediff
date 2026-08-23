@@ -15,9 +15,6 @@ An edit that silently does nothing is worse than one that fails, because everyth
 **Match the comment style around you. Keep inline comments short.**
 A comment three times longer than its neighbours draws the eye to the wrong place.
 
-**Use the name Neovim, VSCode or `codediff.nvim` already uses. Look it up before you invent one.**
-These are the references this project follows. Most things already have a name — `:help group-name` had ours.
-
 ## Explaining
 
 **Explain in plain words. Reach for a term of art only when it is both shorter and exact.**

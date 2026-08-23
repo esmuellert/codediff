@@ -1,9 +1,9 @@
 //! Drawing a diff one version per line, into one pane.
 //!
-//! Two gutters and one text column. Every line belongs to one version, and the
-//! missing number is what says which: no modified number means the line
-//! was deleted, no original number means it was inserted. An unchanged line
-//! carries both, since both versions have it there.
+//! Two gutters and one text column. Each row shows one line, from one
+//! version, and the empty gutter tells you which version: no modified number
+//! means the line was deleted, no original number means it was inserted. An
+//! unchanged line has both, since both versions have it.
 //!
 //! No fillers and no divider: nothing is drawn opposite anything, so there is
 //! no gap to fill. That is the whole visual difference from
@@ -126,9 +126,9 @@ fn view_line(
             // Present in this version: its own number, which for an unchanged
             // line differs between the two.
             Slot::Line(n) => gutter::draw(buf, area, n, numbers),
-            // Absent from this version, which is what says whether the line
-            // was deleted or inserted. Blank, in the line's own colour, so the
-            // change background runs edge to edge.
+            // This version does not have the line. Which gutter is empty is
+            // what marks it deleted or inserted. Blank, in the line's own
+            // colour, so the change background runs edge to edge.
             Slot::Filler => cells::fill(buf, area, base),
         }
     }
