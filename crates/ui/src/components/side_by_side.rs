@@ -11,8 +11,7 @@ use loom::{
 };
 
 use super::context::{
-    CursorContext, FileContext, FirstCellContext, SyntaxContext, SyntaxOnContext, ThemeContext,
-    ViewLinesContext,
+    CursorContext, DiffsContext, FirstCellContext, ThemeContext, ViewLinesContext,
 };
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
@@ -104,14 +103,16 @@ impl Rows<'_> {
 #[component]
 pub fn SideBySide(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
-    let alignment = use_context::<FileContext>(scope);
+    let diffs = use_context::<DiffsContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let first_cell = use_context::<FirstCellContext>(scope);
-    let store = use_context::<SyntaxContext>(scope);
-    let syntax_on = use_context::<SyntaxOnContext>(scope);
 
     // Percent of the pane the left column takes.
+    // The workers fill this; a component subscribes rather than being handed
+    // what they produced.
+    let reading = loom::use_sync_external_store(scope, &diffs);
+
     let (divider, _set_divider) = use_state(scope, || 50u16);
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
 
@@ -120,13 +121,12 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     // component's own width, which layout knows and the render body does not.
     let node = use_ref(scope, || None::<loom::NodeHandle>);
     let (width, set_width) = use_state(scope, || 0u16);
-    use_layout_effect(scope, (), move || {
+    use_layout_effect(scope, loom::Always, move || {
         let now = node.current().map_or(0, |node| node.area().width);
         set_width(&move |_| now);
     });
 
-    let Some(diff) = alignment else { return Node::Empty };
-    let alignment = diff;
+    let Some(alignment) = reading.diff.clone() else { return Node::Empty };
 
     // Collected once and read by both columns, so the two cannot disagree
     // about what line they are on.
@@ -179,8 +179,8 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         let rows = Rows {
             alignment: &alignment.alignment,
             theme: &theme,
-            spans: if syntax_on {
-                crate::view::buffer::colour::spans_diff(&alignment, &store)
+            spans: if reading.syntax_on {
+                crate::view::buffer::colour::spans_diff(&alignment, &reading.colours)
             } else {
                 syntax::Spans::Off
             },

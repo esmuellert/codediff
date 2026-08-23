@@ -21,6 +21,7 @@ clap.workspace = true
 line-index.workspace = true
 align.workspace = true
 loom.workspace = true
+syntax.workspace = true
 file-types.workspace = true
 pipeline.workspace = true
 ui.workspace = true

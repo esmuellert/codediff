@@ -9,7 +9,7 @@
 use crate::input::{Motion, SCROLL_STEP};
 
 /// Where one pane is looking: scroll position and cursor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Viewport {
     /// First visible view line, 0-based.
     top: u32,

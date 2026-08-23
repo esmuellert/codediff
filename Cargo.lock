@@ -311,6 +311,7 @@ dependencies = [
  "loom",
  "pipeline",
  "portable-pty",
+ "syntax",
  "tracing-subscriber",
  "ui",
  "vcs",
