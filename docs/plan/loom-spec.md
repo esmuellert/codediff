@@ -35,7 +35,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | taffy | we lay out about a dozen boxes over integer cells; `f32` geometry rounded back to cells is where column drift comes from |
 | a scroll container | a diff viewer must never lay out 100,000 rows to show 40; `Viewport` holds `top` and the component renders the slice |
 | a capture phase | pointer capture covers the one drag this program has |
-| error boundaries | a panic in a painter belongs in a backtrace with the terminal restored, which `Screen`'s `Drop` already does |
+| error boundaries | a panic in a painter belongs in a backtrace with the terminal restored, which the root component's `Drop` already does |
 | `use_callback` | React documents it as `useMemo(() => fn, deps)`, and a closure is a value, so `use_memo` already is it |
 | `use(Context)` | React 19's conditional read; `use_context` is `useContext`, which cannot be conditional either, and no component here wants to be |
 | `useId`, `useReducer`, suspense, portals, hot reload, SSR | no user here |
@@ -1524,7 +1524,7 @@ part, or a host of another name, is unmount-and-mount.
 *test: `a_row_that_becomes_a_column_is_a_new_node`*
 
 Type-based matching is what preserves state, and it is the rule that makes
-`if split { DiffPane } else { Blank }` behave the way a reader of React expects:
+`if cond { Child } else { Blank }` behave the way a reader of React expects:
 the same type at the same place keeps its scope, a different type destroys it.
 
 ### 6.2 Update, mount, unmount
@@ -2047,7 +2047,7 @@ and that is worth more here than lines that rhyme.
 
 Quit, suspend and rebuild never were worker requests. They shared this path
 only because it was the one way out of a component. They are a callback the
-application hands `Screen` as a prop, which is the pattern §3.7 describes.
+application hands the root as a prop, which is the pattern §3.7 describes.
 
 ### 9.3 Generation rules
 
@@ -2158,10 +2158,10 @@ deps compare equal and nothing is read again.
 
 The listing belongs outside the tree. It changes because the disk changed,
 which is the definition of an external store, and React has a hook for reading
-one: `useSyncExternalStore`. `Files` is the store, `Screen` subscribes, and
+one: `useSyncExternalStore`. `Files` is the store, the root subscribes, and
 the snapshot it gets back is a value that moves when the disk does.
 
-**R9.5.1** `Screen` reads the listing with `use_sync_external_store`. The
+**R9.5.1** The root reads the listing with `use_sync_external_store`. The
 effect that reads the open file has deps `(chosen, files)`, where `files` is
 the snapshot, so a change on disk moves the deps on and the file is read
 again.
@@ -2182,144 +2182,6 @@ really changed is the worker's answer, not a guess made before asking.
 This turns "ask every turn, and filter the answers" into "ask when something
 changed". The number of reads drops from one per event to one per change, and
 the request goes out from the component that shows the result.
-
----
-
-## 10. Context
-
-A context is a type you declare. That one type is the key a reader names, the
-element a provider writes, and the home of the default value — React's
-`createContext`, spelled as a declaration.
-
-```rust
-context! {
-    /// The palette every painter reads.
-    pub ThemeContext: Theme = Theme::dark();
-}
-```
-
-```rust
-rsx! {
-    ThemeContext { value: dark,
-        ExplorerPane { files }
-    }
-}
-```
-
-```rust
-let theme = use_context::<ThemeContext>(scope);
-```
-
-Those three are `createContext(Theme.dark())`, `<ThemeContext value={dark}>`
-and `useContext(ThemeContext)`, in that order — one argument each, and the
-`Context` suffix included, because that is what React's own documentation
-calls it.
-
-**R10.1.1** `context!` declares a marker type and a props struct with the
-fields `value` and `children`, and implements `Context`, `Component` and
-`Element` for the marker. The expansion is `#[component]`'s (§11.4) plus the
-`Context` impl; rendering it offers `props.value` and returns `props.children`.
-*test: `a_declared_context_is_both_an_element_and_a_key`*
-
-**R10.1.2** `use_context::<C>(scope)` walks `parent` until it reaches a scope
-that offered `C`, and returns a clone of the value. A nearer provider shadows
-a further one.
-*test: `a_nearer_provider_shadows_a_further_one`*
-
-**R10.1.3** With no provider above it, `use_context` returns
-`C::default_value()`. Reading a context is never an error, so there is nothing
-to catch and no fallible form.
-*test: `a_read_with_no_provider_is_the_default`*
-
-**R10.1.4** A context is identified by its marker type, not by the type of its
-value. Two contexts carrying one value type stay apart, so `Title` and
-`Subtitle` can both be `Rc<str>` without a newtype between them.
-*test: `two_contexts_of_one_value_type_are_two_contexts`*
-
-**R10.1.5** A provider offers on its own scope. The value reaches its children
-and nothing else: a component that writes two providers gives two subtrees two
-values, and neither reaches a sibling. A component does not see the value it
-offers — it reads what its own ancestors offered.
-*tests: `a_provider_does_not_reach_its_sibling`,
-`one_component_gives_two_subtrees_two_values`,
-`a_component_does_not_see_its_own_offer`*
-
-**R10.1.6** Each offer carries a version. A provider whose `value` satisfies
-`C::same` against the value it offered last leaves the version where it is;
-otherwise the version moves. `context!` fills `same` in with `==`, so an
-ordinary declaration says no more than `createContext(default)` does.
-*tests: `an_equal_value_leaves_the_version_alone`,
-`a_changed_value_moves_the_version`*
-
-**R10.1.7** A read is recorded on the reading scope as `(TypeId, version)`,
-replacing the entry already there for that type if there is one. A memoised
-scope whose recorded version is behind is re-rendered even though its props did
-not change. Without this, memoisation is a correctness bug rather than an
-optimisation.
-*tests: `a_memo_component_whose_context_changed_runs_anyway`,
-`a_second_read_replaces_the_version_it_recorded`*
-
-**R10.1.8** `use_context` obeys §4.3 like every other hook: top level of a
-component, never inside an `if`, a `match`, a loop or a closure. It holds no
-hook slot, so the runtime check cannot see it and only `#[component]` catches a
-misplaced call; the rule stands because a reader who knows React expects it.
-*test: `use_context_in_a_branch_does_not_compile`*
-
-React compares context values with `Object.is`, which works on anything because
-every JavaScript value has one representation. Rust has two kinds of sameness —
-same bits and same allocation — and no one trait covers both for every type. So
-`context!` uses `==`, and a value that has no `==` names the comparison it does
-have:
-
-```rust
-context! {
-    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}), same = Rc::ptr_eq;
-}
-```
-
-`Rc::ptr_eq` is `Object.is` exactly, and it asks nothing of what the `Rc`
-holds. Four of this program's seven contexts need no `same`; the three that do
-are the two callbacks and the `Rc<Spans>`, none of which can be compared any
-other way.
-
-Storage is a `Vec<(TypeId, Rc<dyn Any>, u64)>` on the scope, not a `HashMap`:
-no component in a terminal program offers more than a handful of values, and a
-linear scan of a handful beats hashing one.
-
-The contexts this application has, and where they are offered:
-
-| context | value | offered by | read by |
-|---|---|---|---|
-| `ThemeContext` | `theme::Theme` (`Copy`) | `Screen` | every component that paints |
-| `SyntaxContext` | `Ref<syntax::Store>` (`Copy`) | `Screen` | `DiffPane` |
-| `InputContext` | `Ref<input::Resolver>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
-| `StatusContext` | `SetState<Status>` (`Copy`) | `Screen` | `ExplorerPane`, `DiffPane` |
-| `SpansContext` | `Rc<worker::Spans>` | `Screen` | `DiffPane` |
-| `OpenContext` | `Rc<dyn Fn(File)>` | `Screen` | `ExplorerPane` |
-| `RunContext` | `Rc<dyn Fn(Command)>` | `Screen` | `ExplorerPane`, `DiffPane` |
-
-`Screen` writes those seven as seven nested providers, which is what the same
-program looks like in React.
-
-### Talking to an ancestor
-
-A child that has something to tell an ancestor calls a function the ancestor
-gave it. A parent passes it as a prop; anything deeper reads it from context.
-Both are ordinary values, and a callback context declares
-`same = |a, b| Rc::ptr_eq(a, b)` so that handing down the same closure twice
-does not move the version.
-
-There is no upward-routed payload. A framework one would let a child announce
-something into the air and let whichever ancestor happens to be listening take
-it, which reads well in a demo and fails silently when nobody is: no compiler
-error, no panic, nothing on screen. A callback read from a context with no
-provider is `C::default_value()`, which for `OpenContext` is a closure that does
-nothing — so declare that default as one that logs, and a missing provider says
-so at run time instead of vanishing. A callback that is not passed as a prop
-does not compile.
-
-What it costs is that every level between the two must carry the value. Context
-is the answer to that, and it is the same answer React gives.
 
 ---
 
@@ -2395,8 +2257,8 @@ message the macro would otherwise have to invent:
 
 | mistake | message |
 |---|---|
-| `focusd: true` | ``struct `ExplorerPaneProps` has no field named `focusd` `` |
-| omitted `files` | ``missing field `files` in initializer of `ExplorerPaneProps` `` |
+| `focusd: true` | ``struct `MyComponentProps` has no field named `focusd` `` |
+| omitted `files` | ``missing field `files` in initializer of `MyComponentProps` `` |
 | `focused: 1` | ``expected `bool`, found integer`` |
 
 No typestate builder beats that, and `typed-builder` does not try — it produces
@@ -2414,11 +2276,11 @@ requires them and is given none gets ``missing field `children` ``. Both free.
 **A `for` body must carry a key.** Checked at expansion when the macro can see
 the element, and at reconciliation otherwise (R6.1.2).
 
-**Lowercase is not special.** `Row` and `ExplorerPane` are both paths and both
+**Lowercase is not special.** `Row` and `MyComponent` are both paths and both
 expand the same way. There is no separate grammar for built-in hosts.
 
 **`ref` only goes on a host.** Every built-in host's props carry `node_ref`;
-your components' do not, so `ref` on one is ``struct `ExplorerPaneProps` has no
+your components' do not, so `ref` on one is ``struct `MyComponentProps` has no
 field named `node_ref` ``. React forwards a ref through a component; there is
 nothing here to forward it to, because a component owns no rectangle.
 
@@ -2426,31 +2288,31 @@ nothing here to forward it to, because a component owns no rectangle.
 
 ```rust
 #[component]
-pub fn StatusBar(scope: &mut Scope, file: Option<Rc<File>>, view_line: u32) -> Node { … }
+pub fn Counter(scope: &mut Scope, file: Option<Rc<File>>, view_line: u32) -> Node { … }
 ```
 
 expands to
 
 ```rust
-pub struct StatusBar;
+pub struct Counter;
 
-pub struct StatusBarProps {
+pub struct CounterProps {
     pub file: Option<Rc<File>>,
     pub view_line: u32,
 }
 
-impl ::loom::Component for StatusBar {
-    type Props = StatusBarProps;
-    const NAME: &'static str = "StatusBar";
-    fn render(props: &StatusBarProps, scope: &mut ::loom::Scope) -> ::loom::Node {
-        let StatusBarProps { file, view_line } = props;   // by reference
+impl ::loom::Component for Counter {
+    type Props = CounterProps;
+    const NAME: &'static str = "Counter";
+    fn render(props: &CounterProps, scope: &mut ::loom::Scope) -> ::loom::Node {
+        let CounterProps { file, view_line } = props;   // by reference
         { /* your body */ }
     }
 }
 
-impl ::loom::Element for StatusBar {
-    type Props = StatusBarProps;
-    fn build(props: StatusBarProps, key: Option<::loom::Key>) -> ::loom::Node {
+impl ::loom::Element for Counter {
+    type Props = CounterProps;
+    fn build(props: CounterProps, key: Option<::loom::Key>) -> ::loom::Node {
         ::loom::Node::part::<Self>(props, key)
     }
 }
@@ -2542,7 +2404,7 @@ Exhaustive. Everything else in `loom` answers with `Option`, `Result` or `bool`.
 **P4.1 — a hook slot changed shape between renders.**
 
 ```text
-StatusBar: hook 2 was a State at crates/ui/src/status.rs:14, and is an Effect
+Counter: hook 2 was a State at crates/ui/src/status.rs:14, and is an Effect
 here at crates/ui/src/status.rs:19. Hooks must run in the same order every
 render — none inside an if, a loop, or after an early return.
 ```
@@ -2553,14 +2415,14 @@ clauses are omitted.
 **P4.2 — a render returned early, or a hook sits behind a condition.**
 
 ```text
-StatusBar: this render called 3 hooks and the last one called 5. Hooks must run
+Counter: this render called 3 hooks and the last one called 5. Hooks must run
 in the same order every render.
 ```
 
 **P4.3 — a setter or ref was captured into something that outlived its component.**
 
 ```text
-a SetState was used after ExplorerPane was removed
+a SetState was used after MyComponent was removed
 ```
 
 **P4.4 — a setter or ref was used with no runtime entered.**
@@ -2589,31 +2451,31 @@ React reports the same mistake as *the result of `getSnapshot` should be
 cached*; both are the same infinite loop, caught before it spins.
 
 ```text
-ExplorerPane: a store handed back a different snapshot without saying it changed. Hand back the same one until it does.
+MyComponent: a store handed back a different snapshot without saying it changed. Hand back the same one until it does.
 ```
 
 **P5.1 — R5.8.3.**
 
 ```text
-DiffPane ran 17 times in one frame — a component that sets state on every render never settles
+MyComponent ran 17 times in one frame — a component that sets state on every render never settles
 ```
 
 **P6.1 — R6.1.2.**
 
 ```text
-Screen: child 2 has a key and child 3 does not — key every child of a list or none of them
+Root: child 2 has a key and child 3 does not — key every child of a list or none of them
 ```
 
 **P6.2 — R6.1.5.**
 
 ```text
-ExplorerPane: two children share the key "src/main.rs"
+MyComponent: two children share the key "src/main.rs"
 ```
 
 **P6.3 — R6.2.9.**
 
 ```text
-DiffPane: one ref was given to both a Canvas and a Row — a ref names one node
+MyComponent: one ref was given to both a Canvas and a Row — a ref names one node
 ```
 
 **P7.1 — R5.8.4.**
@@ -2626,13 +2488,13 @@ draw was called from inside a paint callback
 captured snapshots and `Ref::current` are legal.
 
 ```text
-DiffPane changed component data while painting — paint callbacks may only write cells
+MyComponent changed component data while painting — paint callbacks may only write cells
 ```
 
 **P7.3 — R7.2.1. Debug builds only.**
 
 ```text
-ExplorerPane painted at (39, 4), outside its clip 0,0 40x9
+MyComponent painted at (39, 4), outside its clip 0,0 40x9
 ```
 
 **P14.1 — `Harness::screen_row` out of range.** A test helper: a wrong index is a
@@ -2668,7 +2530,7 @@ row 9 is outside the 8-row screen
 Note what is **not** a panic: the root component is never unmounted, so there is
 no "the root went away". `Tree::set_props` on a type other than the root's is a
 type error, not a panic. And a component that panics is not caught: a panic in a
-painter belongs in a backtrace with the terminal restored, which `Screen`'s
+painter belongs in a backtrace with the terminal restored, which the root's
 `Drop` already arranges.
 
 ---
@@ -2732,8 +2594,8 @@ component down:
 ```rust
 #[test]
 fn a_narrow_status_bar_drops_the_summary_rather_than_overlapping_the_path() {
-    let mut screen = Harness::new::<StatusBar>(
-        StatusBarProps {
+    let mut screen = Harness::new::<Counter>(
+        CounterProps {
             file: Some(Rc::new(File::unchanged_path(at("src/main.rs"), revs()))),
             view_line: 0, view_lines: 100, changes: 3, change: None,
             timed_out: false, exhausted: None, notice: None,
@@ -2753,7 +2615,7 @@ questions about the tree:
 ```rust
 #[test]
 fn clicking_a_row_moves_the_cursor_and_opens_the_file() {
-    let mut screen = Harness::new::<ExplorerPane>(props(), 40, 10)
+    let mut screen = Harness::new::<MyComponent>(props(), 40, 10)
         .provide::<ThemeContext>(Theme::DARK);
     screen.draw().click(3, 4);
     assert_eq!(screen.row(4).trim_start().split(' ').next(), Some("app.rs"));
@@ -2761,7 +2623,7 @@ fn clicking_a_row_moves_the_cursor_and_opens_the_file() {
 
 #[test]
 fn a_span_batch_runs_one_component() {
-    let mut screen = Harness::new::<Screen>(props(), 80, 24);
+    let mut screen = Harness::new::<Root>(props(), 80, 24);
     screen.draw();
     // … deliver a batch through the pending …
     assert_eq!(screen.render_count(), 1, "only the pane showing the file");
