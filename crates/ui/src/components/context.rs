@@ -9,28 +9,42 @@ use file_types::File;
 use loom::context;
 
 use crate::theme::Theme;
-use crate::view::selection::Selection;
 
-/// Colours and styles for every component.
-context!(pub ThemeContext: Rc<Theme> = Rc::new(Theme::DARK), |a: &Rc<Theme>, b: &Rc<Theme>| Rc::ptr_eq(a, b));
+context!(
+    /// Colours and styles for every component.
+    pub ThemeContext: Rc<Theme> = Rc::new(Theme::DARK),
+    |a: &Rc<Theme>, b: &Rc<Theme>| Rc::ptr_eq(a, b)
+);
 
-/// The repository path.
-context!(pub RepoContext: Option<Rc<std::path::Path>> = None);
+context!(
+    /// The repository path.
+    pub RepoContext: Option<Rc<std::path::Path>> = None
+);
 
-/// The focused file, or `None` in the explorer.
-context!(pub FileContext: Option<Rc<File>> = None);
+context!(
+    /// The focused file, or `None` in the explorer.
+    pub FileContext: Option<Rc<File>> = None
+);
 
-/// Which rows to render.
-context!(pub ViewLinesContext: std::ops::Range<u32> = 0..0);
+context!(
+    /// Which rows to render.
+    pub ViewLinesContext: std::ops::Range<u32> = 0..0
+);
 
-/// Which row the cursor is on.
-context!(pub CursorContext: u32 = 0);
+context!(
+    /// Which row the cursor is on.
+    pub CursorContext: u32 = 0
+);
 
-/// Horizontal scroll offset in cells.
-context!(pub FirstCellContext: u32 = 0);
+context!(
+    /// Horizontal scroll offset in cells.
+    pub FirstCellContext: u32 = 0
+);
 
-/// An error or warning to display.
-context!(pub NoticeContext: Option<Rc<str>> = None);
+context!(
+    /// An error or warning to display.
+    pub NoticeContext: Option<Rc<str>> = None
+);
 
 /// What the diff and syntax workers have filled in for the open file.
 ///
@@ -41,8 +55,6 @@ pub struct Diffs {
 }
 
 struct DiffsInner {
-    /// Bumped whenever a worker fills something in, so a reader that compares
-    /// snapshots sees a new one.
     reading: Rc<Reading>,
     listeners: Vec<loom::Notify>,
 }
@@ -75,6 +87,8 @@ impl Diffs {
     }
 
     /// Replaces what the workers have produced, and tells every reader.
+    ///
+    /// A new `Rc` is a new reading, which is what a subscriber compares.
     pub fn fill(&self, reading: Reading) {
         let listeners = {
             let mut inner = self.inner.borrow_mut();
@@ -103,10 +117,7 @@ impl loom::ExternalStore for Diffs {
     fn subscribe(&self, notify: loom::Notify) -> loom::Subscription {
         self.inner.borrow_mut().listeners.push(notify);
         let inner = Rc::clone(&self.inner);
-        loom::Subscription::new(move || {
-            // The runtime drops this when the reader unmounts.
-            inner.borrow_mut().listeners.clear();
-        })
+        loom::Subscription::new(move || inner.borrow_mut().listeners.clear())
     }
 
     fn snapshot(&self) -> loom::Snapshot<Self::Value> {
@@ -114,11 +125,8 @@ impl loom::ExternalStore for Diffs {
     }
 }
 
-/// The store itself reaches components through context, because it is one
-/// object for the life of the session.
-context!(pub DiffsContext: Diffs = Diffs::new(), |_a: &Diffs, _b: &Diffs| true);
-
-/// Where the mouse has selected text, when it has.
-///
-/// Held by whichever screen owns the pointer, so nothing here offers it.
-pub type MaybeSelection = Option<Selection>;
+context!(
+    /// The store itself, because it is one object for the life of the session.
+    pub DiffsContext: Diffs = Diffs::new(),
+    |_a: &Diffs, _b: &Diffs| true
+);

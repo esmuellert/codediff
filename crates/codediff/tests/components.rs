@@ -80,7 +80,7 @@ fn the_two_sides_never_show_different_rows() {
 /// The whole interface: a diff and the status line under it.
 #[test]
 fn the_root_draws_a_diff_and_a_status_line() {
-    use ui::components::{App, AppProps, Session};
+    use ui::components::{App, AppProps};
 
     let diffs = Diffs::new();
     diffs.fill(Reading {
@@ -89,17 +89,11 @@ fn the_root_draws_a_diff_and_a_status_line() {
         syntax_on: false,
     });
 
-    let mut harness = Harness::new::<App>(
-        AppProps {
-            session: Session {
-                theme: Rc::new(Theme::DARK),
-                repo: None,
-                diffs: diffs.clone(),
-            },
-        },
-        44,
-        8,
-    );
+    // Theme and the stores are provided above the root, because they last as
+    // long as the session does.
+    let mut harness = Harness::new::<App>(AppProps {}, 44, 8)
+        .provide::<ThemeContext>(Rc::new(Theme::DARK))
+        .provide::<DiffsContext>(diffs);
 
     let rows = harness.screen();
     assert_eq!(rows[0], "  1 one              │  1 one");

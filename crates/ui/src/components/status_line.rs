@@ -9,11 +9,8 @@ use loom::{
 };
 use ratatui::style::Style;
 
-use super::context::{
-    CursorContext, DiffsContext, FileContext, NoticeContext, ThemeContext, ViewLinesContext,
-};
+use super::context::{CursorContext, DiffsContext, FileContext, NoticeContext, ThemeContext};
 use crate::cells;
-use crate::theme::Theme;
 
 /// The left section: what is being shown. Truncates when narrow.
 pub struct Body {
@@ -32,7 +29,6 @@ pub struct Sidecar {
 pub fn StatusLine(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let file = use_context::<FileContext>(scope);
-    let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let notice = use_context::<NoticeContext>(scope);
     let diffs = use_context::<DiffsContext>(scope);
@@ -175,6 +171,3 @@ fn run_at(alignment: &align::Alignment, cursor: u32) -> Option<usize> {
     None
 }
 
-/// Kept so a theme change is one place.
-#[allow(dead_code)]
-fn unused(_: &Theme) {}

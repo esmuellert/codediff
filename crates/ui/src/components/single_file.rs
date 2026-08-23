@@ -3,7 +3,6 @@
 use std::rc::Rc;
 
 use align::DiffVersion;
-use line_index::DEFAULT_TAB_WIDTH;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Mouse, Node, Row, RowProps, Scope,
     capture_pointer, component, release_pointer, rsx, use_context, use_state,
@@ -101,24 +100,24 @@ pub fn SingleFile(scope: &mut Scope) -> Node {
                     key: line,
                     layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                     ..,
-                    Gutter { number: number, width: width, style: numbers }
+                    Gutter {
+                        number: Some(number),
+                        style: numbers,
+                        blank: base,
+                        width: width,
+                    }
                     CodeText {
                         text: text,
                         diff: Rc::from(&[][..]),
                         syntax: syntax,
-                        code: Rc::new(theme.code.clone()),
                         unchanged_style: base,
                         changed_style: base,
                         selection: clip_to_line(selection.as_ref(), line),
-                        first_cell: first_cell,
-                        selected_style: theme.selection,
                     }
                 }
             }
         })
         .collect();
-
-    let _ = DEFAULT_TAB_WIDTH;
 
     rsx! {
         Column {

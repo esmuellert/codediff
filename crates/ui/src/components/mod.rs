@@ -13,10 +13,10 @@ mod side_by_side;
 mod single_file;
 mod status_line;
 
-pub use app::{App, AppProps, Session};
+pub use app::{App, AppProps};
 pub use code_text::{CodeText, CodeTextProps};
 pub use context::*;
-pub use entry::{Body as EntryBody, Content, Entry, EntryProps, Indent, Status};
+pub use entry::{Body as EntryBody, Content, Entry, EntryProps, Indent, Stats, Status};
 pub use explorer::{Explorer, ExplorerProps, Listing, ListingContext, ListingContextProps};
 pub use filler::{Filler, FillerProps};
 pub use gutter::{Gutter, GutterProps};

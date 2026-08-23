@@ -10,17 +10,19 @@ use ratatui::style::Style;
 
 use super::context::ThemeContext;
 use crate::cells;
+use crate::theme::icon::Icon;
 
 /// The tree lines to the left of the name. Fixed by depth.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Indent {
+    /// `"│ └ "` or `""`.
     pub lines: Rc<str>,
 }
 
 /// The icon and the name. Absorbs whatever room is left, and truncates.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Body {
-    pub icon: &'static str,
+    pub icon: Icon,
     pub text: Rc<str>,
 }
 
@@ -32,16 +34,41 @@ pub struct Status {
     pub letter: &'static str,
 }
 
+impl Status {
+    /// `+4 -3 M` when both sides changed, `+4 M` when only one. The zero is
+    /// omitted so it does not repeat down a column the eye is scanning.
+    fn text(&self) -> String {
+        let mut out = String::new();
+        if self.added > 0 {
+            out.push_str(&format!("+{} ", self.added));
+        }
+        if self.removed > 0 {
+            out.push_str(&format!("-{} ", self.removed));
+        }
+        out.push_str(self.letter);
+        out
+    }
+}
+
 /// What a row of the explorer is.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Content {
-    Heading { name: Rc<str>, files: usize },
-    Directory { name: Rc<str>, open: bool },
-    File { name: Rc<str> },
+    Heading { name: Rc<str>, files: usize, stats: Stats },
+    Directory { name: Rc<str>, open: bool, depth: u16 },
+    File { name: Rc<str>, file: Rc<file_types::File> },
 }
 
-/// One row: the indent takes its width, the status takes its width, and the
-/// body gets the rest.
+/// What a heading counts up across the files under it.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub struct Stats {
+    pub added: u32,
+    pub removed: u32,
+}
+
+/// One row.
+///
+/// Indent is fixed by depth. Status is fixed by content. Body absorbs
+/// whatever is left and is the only section that truncates.
 #[component]
 pub fn Entry(
     scope: &mut Scope,
@@ -57,44 +84,70 @@ pub fn Entry(
         theme.normal
     };
 
-    let indent_width = indent.lines.chars().count() as u16;
-    let counts = status.as_ref().map(|status| {
-        let mut text = String::new();
-        if status.added > 0 {
-            text.push_str(&format!("+{} ", status.added));
-        }
-        if status.removed > 0 {
-            text.push_str(&format!("-{} ", status.removed));
-        }
-        text.push_str(status.letter);
-        text
-    });
-    let status_width = counts.as_ref().map_or(0, |text| text.chars().count() as u16 + 1);
-
     let lines = Rc::clone(&indent.lines);
-    let label: Rc<str> = Rc::from(format!("{} {}", body.icon, body.text).as_str());
-    let counts: Rc<str> = Rc::from(counts.unwrap_or_default().as_str());
+    let indent_width = lines.chars().count() as u16;
+
+    let full = status.as_ref().map(Status::text).unwrap_or_default();
+    let letter = status.as_ref().map_or("", |status| status.letter);
+    let status_width = full.chars().count() as u16;
+    let letter_width = letter.chars().count() as u16;
+
+    let icon = body.icon;
+    let text = Rc::clone(&body.text);
+    let icon_style = base.patch(Style::new().fg(icon.color));
 
     rsx! {
         Row {
-            layout: Layout { basis: Basis::Length(1), shrink: 0, fill: Some(base), ..Default::default() },
+            layout: Layout {
+                basis: Basis::Length(1),
+                shrink: 0,
+                fill: Some(base),
+                ..Default::default()
+            },
             ..,
-            { painted(lines, base, 0, Layout { basis: Basis::Length(indent_width), shrink: 0, ..Default::default() }) }
-            { truncating(label, base, Layout { grow: 1, ..Default::default() }) }
-            { painted(counts, base, 0, Layout { basis: Basis::Length(status_width), shrink: 0, ..Default::default() }) }
+            {
+                written(
+                    lines,
+                    base,
+                    Layout { basis: Basis::Length(indent_width), shrink: 0, ..Default::default() },
+                )
+            }
+            {
+                named(
+                    icon.glyph,
+                    icon_style,
+                    text,
+                    base,
+                    Layout { grow: 1, ..Default::default() },
+                )
+            }
+            {
+                counted(
+                    full,
+                    letter.to_string(),
+                    base,
+                    Layout {
+                        basis: Basis::Length(status_width),
+                        // When the counts do not fit, the letter still does.
+                        min_width: letter_width,
+                        shrink: 1,
+                        ..Default::default()
+                    },
+                )
+            }
         }
     }
 }
 
 /// A section that writes what it is given and stops at its own edge.
-fn painted(text: Rc<str>, style: Style, offset: u16, layout: Layout) -> Node {
+fn written(text: Rc<str>, style: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
-            paint: Rc::new(move |brush: &mut loom::Paint<'_>| {
-                let area = brush.area();
-                cells::fill(brush.cells(), area, style);
-                cells::write(brush.cells(), area, offset, &text, style);
+            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                let area = paint.area();
+                cells::fill(paint.cells(), area, style);
+                cells::write(paint.cells(), area, 0, &text, style);
             }),
             ..Default::default()
         },
@@ -102,22 +155,45 @@ fn painted(text: Rc<str>, style: Style, offset: u16, layout: Layout) -> Node {
     )
 }
 
-/// The body, cut with an ellipsis when it does not fit.
-fn truncating(text: Rc<str>, style: Style, layout: Layout) -> Node {
+/// The icon in its own colour, then the name, cut with `…` when it does not
+/// fit.
+fn named(glyph: char, icon_style: Style, text: Rc<str>, base: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
-            paint: Rc::new(move |brush: &mut loom::Paint<'_>| {
-                let area = brush.area();
-                cells::fill(brush.cells(), area, style);
-                let room = area.width as usize;
+            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                let area = paint.area();
+                cells::fill(paint.cells(), area, base);
+                let mut at = cells::write(paint.cells(), area, 0, &glyph.to_string(), icon_style);
+                at += 1;
+
+                let room = area.width.saturating_sub(at) as usize;
                 let length = text.chars().count();
                 if length <= room {
-                    cells::write(brush.cells(), area, 0, &text, style);
+                    cells::write(paint.cells(), area, at, &text, base);
                 } else if room > 1 {
                     let kept: String = text.chars().take(room - 1).collect();
-                    cells::write(brush.cells(), area, 0, &format!("{kept}…"), style);
+                    cells::write(paint.cells(), area, at, &format!("{kept}…"), base);
                 }
+            }),
+            ..Default::default()
+        },
+        None,
+    )
+}
+
+/// The counts and the letter, right-aligned. When the counts do not fit, the
+/// letter is what is left.
+fn counted(full: String, letter: String, style: Style, layout: Layout) -> Node {
+    Canvas::build(
+        CanvasProps {
+            layout,
+            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                let area = paint.area();
+                cells::fill(paint.cells(), area, style);
+                let shown = if full.chars().count() as u16 <= area.width { &full } else { &letter };
+                let at = area.width.saturating_sub(shown.chars().count() as u16);
+                cells::write(paint.cells(), area, at, shown, style);
             }),
             ..Default::default()
         },

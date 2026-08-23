@@ -21,7 +21,7 @@ use crate::theme::Theme;
 use crate::view::selection::{Pos, Selection, SelectionColumn};
 
 /// How narrow a text column may get before the pane refuses to draw.
-const MIN_TEXT: u16 = 8;
+const MIN_TEXT: u16 = 4;
 
 /// What one column needs to draw one row.
 struct Rows<'a> {
@@ -29,7 +29,6 @@ struct Rows<'a> {
     theme: &'a Theme,
     spans: syntax::Spans<'a>,
     cursor: u32,
-    first_cell: u32,
     top: u32,
     width: u16,
     selection: Option<Selection>,
@@ -47,19 +46,15 @@ impl Rows<'_> {
         let Slot::Line(number) = slot else {
             // No line on this side at all, so the whole width is hatched and
             // no line number is implied.
-            return Filler::build(
-                FillerProps { style: self.theme.normal.patch(self.theme.filler) },
-                Some(Key::from(offset)),
-            );
+            return Filler::build(FillerProps {}, Some(Key::from(offset)));
         };
 
         let is_cursor = index == self.cursor;
-        let (base, numbers, emphasis) = row_styles(
+        let (unchanged, changed, numbers) = row_styles(
             self.theme,
-            self.alignment,
             line.kind,
             diff_version,
-            number,
+            self.alignment.moved(diff_version, number).is_some(),
             is_cursor,
         );
 
@@ -79,17 +74,19 @@ impl Rows<'_> {
                 key: offset,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 ..,
-                Gutter { number: number, width: self.width, style: numbers }
+                Gutter {
+                    number: Some(number),
+                    style: numbers,
+                    blank: unchanged,
+                    width: self.width,
+                }
                 CodeText {
                     text: text,
                     diff: diff,
                     syntax: syntax,
-                    code: Rc::new(self.theme.code.clone()),
-                    unchanged_style: base,
-                    changed_style: emphasis,
+                    unchanged_style: unchanged,
+                    changed_style: changed,
                     selection: clip_to_line(self.selection.as_ref(), index),
-                    first_cell: self.first_cell,
-                    selected_style: self.theme.selection,
                 }
             }
         }
@@ -185,7 +182,6 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
                 syntax::Spans::Off
             },
             cursor,
-            first_cell,
             top: view_lines.start,
             width,
             selection: selection.filter(|held| held.column == which),
@@ -213,7 +209,9 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let left = column(
         DiffVersion::Original,
         Layout {
-            basis: Basis::Length(width.saturating_sub(1) * divider / 100),
+            basis: Basis::Length(
+                (u32::from(width.saturating_sub(1)) * u32::from(divider) / 100) as u16,
+            ),
             min_width: original_width + MIN_TEXT,
             ..Default::default()
         },

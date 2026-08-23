@@ -18,7 +18,7 @@ use super::{
 use crate::view::selection::{Pos, Selection, SelectionColumn};
 
 /// How narrow the text column may get before the pane refuses to draw.
-const MIN_TEXT: u16 = 8;
+const MIN_TEXT: u16 = 4;
 
 /// One diff, one version per row.
 ///
@@ -98,27 +98,25 @@ pub fn Inline(scope: &mut Scope) -> Node {
             };
 
             let is_cursor = index == cursor;
-            let (base, numbers, emphasis) =
-                row_styles(&theme, alignment, line.kind, diff_version, number, is_cursor);
+            let (unchanged, changed, numbers) = row_styles(
+                &theme,
+                line.kind,
+                diff_version,
+                alignment.moved(diff_version, number).is_some(),
+                is_cursor,
+            );
 
             // Which gutter is empty is what marks the row deleted or
-            // inserted. Blank, in the row's own colour, so the change
-            // background runs edge to edge.
+            // inserted, and the blank is filled in the row's own colour so
+            // the change background runs edge to edge.
             let gutter = |slot: Slot, width: u16| -> Node {
-                match slot {
-                    Slot::Line(n) => {
-                        rsx! { Gutter { number: n, width: width, style: numbers } }
+                rsx! {
+                    Gutter {
+                        number: match slot { Slot::Line(n) => Some(n), Slot::Filler => None },
+                        style: numbers,
+                        blank: unchanged,
+                        width: width,
                     }
-                    Slot::Filler => rsx! {
-                        Canvas {
-                            layout: Layout { basis: Basis::Length(width), shrink: 0, ..Default::default() },
-                            paint: Rc::new(move |brush: &mut loom::Paint<'_>| {
-                                let area = brush.area();
-                                crate::cells::fill(brush.cells(), area, base);
-                            }),
-                            ..
-                        }
-                    },
                 }
             };
 
@@ -141,12 +139,9 @@ pub fn Inline(scope: &mut Scope) -> Node {
                         text: text,
                         diff: diff,
                         syntax: syntax,
-                        code: Rc::new(theme.code.clone()),
-                        unchanged_style: base,
-                        changed_style: emphasis,
+                        unchanged_style: unchanged,
+                        changed_style: changed,
                         selection: clip_to_line(selection.as_ref(), index),
-                        first_cell: first_cell,
-                        selected_style: theme.selection,
                     }
                 }
             }

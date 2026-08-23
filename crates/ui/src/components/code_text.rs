@@ -3,11 +3,12 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use loom::{Canvas, CanvasProps, Layout, Node, Scope, component, rsx};
+use line_index::DEFAULT_TAB_WIDTH;
+use loom::{Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
 use ratatui::style::Style;
 
+use super::context::{FirstCellContext, ThemeContext};
 use crate::cells::{self, Ink};
-use crate::theme::Code;
 
 /// One line of a file, with the bytes that differ picked out and the
 /// selection drawn over the top.
@@ -17,53 +18,47 @@ pub fn CodeText(
     text: Rc<str>,
     diff: Rc<[Range<u32>]>,
     syntax: Rc<[syntax::Span]>,
-    code: Rc<Code>,
     unchanged_style: Style,
     changed_style: Style,
     selection: Option<Range<u32>>,
-    first_cell: u32,
-    selected_style: Style,
 ) -> Node {
-    let _ = scope;
+    let theme = use_context::<ThemeContext>(scope);
+    let first_cell = use_context::<FirstCellContext>(scope);
+
     let text = Rc::clone(text);
     let diff = Rc::clone(diff);
     let syntax = Rc::clone(syntax);
-    let code = Rc::clone(code);
     let (unchanged_style, changed_style) = (*unchanged_style, *changed_style);
-    let (selection, first_cell, selected_style) = (selection.clone(), *first_cell, *selected_style);
+    let selection = selection.clone();
 
     rsx! {
         Canvas {
             layout: Layout { grow: 1, ..Default::default() },
-            paint: Rc::new(move |brush: &mut loom::Paint<'_>| {
-                let area = brush.area();
+            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                let area = paint.area();
                 cells::paint(
-                    brush.cells(),
+                    paint.cells(),
                     area,
                     &text,
-                    line_index::DEFAULT_TAB_WIDTH,
+                    DEFAULT_TAB_WIDTH,
                     first_cell,
                     Ink {
                         base: unchanged_style,
                         emphasis: changed_style,
                         spans: &diff,
                         syntax: &syntax,
-                        code: &code,
+                        code: &theme.code,
                     },
                 );
 
-                // The selection is painted over what the line already says,
-                // so a selected change keeps its own colours underneath.
-                if let Some(range) = &selection {
-                    let from = area.x.saturating_add(range.start.min(u32::from(u16::MAX)) as u16);
-                    let to = area
-                        .x
-                        .saturating_add(range.end.min(u32::from(u16::MAX)) as u16)
-                        .min(area.right());
-                    for x in from..to {
-                        if let Some(cell) = brush.cells().cell_mut((x, area.y)) {
-                            cell.set_style(cell.style().patch(selected_style));
-                        }
+                // Selection: replace the style of each selected cell.
+                let Some(ref selected) = selection else { return };
+                for x in area.x..area.right() {
+                    let col = first_cell + u32::from(x - area.x);
+                    if selected.contains(&col)
+                        && let Some(cell) = paint.cells().cell_mut((x, area.y))
+                    {
+                        cell.set_style(theme.selection);
                     }
                 }
             }),

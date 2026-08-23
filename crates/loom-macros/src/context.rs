@@ -7,6 +7,7 @@ use syn::{Expr, Ident, Token, Type, Visibility, parse2};
 
 /// `context!(pub Theme: theme::Theme = theme::Theme::DARK);`
 struct Declaration {
+    docs: Vec<syn::Attribute>,
     visibility: Visibility,
     name: Ident,
     value: Type,
@@ -16,6 +17,7 @@ struct Declaration {
 
 impl Parse for Declaration {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let docs = input.call(syn::Attribute::parse_outer)?;
         let visibility = input.parse()?;
         let name = input.parse()?;
         input.parse::<Token![:]>()?;
@@ -29,7 +31,7 @@ impl Parse for Declaration {
         } else {
             None
         };
-        Ok(Self { visibility, name, value, default, same })
+        Ok(Self { docs, visibility, name, value, default, same })
     }
 }
 
@@ -39,7 +41,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         Err(error) => return error.to_compile_error(),
     };
 
-    let Declaration { visibility, name, value, default, same } = declaration;
+    let Declaration { docs, visibility, name, value, default, same } = declaration;
     let props_name = format_ident!("{}Props", name);
     let text = name.to_string();
 
@@ -49,6 +51,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     };
 
     quote! {
+        #(#docs)*
         #visibility struct #name;
 
         #visibility struct #props_name {

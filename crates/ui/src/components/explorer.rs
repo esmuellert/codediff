@@ -9,7 +9,7 @@ use loom::{
 };
 
 use super::context::{CursorContext, ThemeContext, ViewLinesContext};
-use super::entry::{Body, Content, Entry, EntryProps, Indent, Status};
+use super::entry::{Body, Content, Entry, EntryProps, Indent, Stats, Status};
 
 /// The list worker's answer, as the explorer reads it.
 #[derive(Clone, Default)]
@@ -59,7 +59,11 @@ impl loom::ExternalStore for Listing {
     }
 }
 
-loom::context!(pub ListingContext: Listing = Listing::new(), |_a: &Listing, _b: &Listing| true);
+loom::context!(
+    /// The list worker's answer, as one object for the life of the session.
+    pub ListingContext: Listing = Listing::new(),
+    |_a: &Listing, _b: &Listing| true
+);
 
 /// The file list.
 ///
@@ -77,26 +81,36 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let (tree, set_tree) = use_state(scope, || true);
 
     let on_open = Rc::clone(on_open);
+    let rows_of = files.clone();
     let listeners = Listeners::new().on_key(move |key| {
         if key == crokey::key!(t) {
             set_tree(&|shown| !shown);
             return Bubble::Stop;
         }
+        if key == crokey::key!(enter) {
+            // The heading is row 0, so the files start at 1.
+            if let Some(file) = cursor.checked_sub(1).and_then(|n| rows_of.get(n as usize)) {
+                on_open(file.clone());
+            }
+            return Bubble::Stop;
+        }
         Bubble::Continue
     });
-    let _ = on_open;
 
     let rows: Vec<Node> = std::iter::once(Content::Heading {
         name: Rc::from("Changes"),
         files: files.len(),
+        stats: Stats::default(),
     })
     .chain(files.iter().map(|file| Content::File {
         name: Rc::from(if tree { file.path().file_name() } else { file.path().as_str() }),
+        file: Rc::new(file.clone()),
     }))
-    .enumerate()
     .skip(view_lines.start as usize)
     .take(view_lines.len())
+    .enumerate()
     .map(|(offset, content)| {
+        let selected = view_lines.start + offset as u32 == cursor;
         let indent = Indent {
             lines: Rc::from(match (&content, tree) {
                 (Content::File { .. }, true) => "  ",
@@ -104,16 +118,19 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
             }),
         };
         let (body, status) = match &content {
-            Content::Heading { name, files } => (
-                Body { icon: " ", text: Rc::from(format!("{name} ({files})").as_str()) },
+            Content::Heading { name, files, .. } => (
+                Body {
+                    icon: crate::theme::icon::folder(true),
+                    text: Rc::from(format!("{name} ({files})").as_str()),
+                },
                 None,
             ),
-            Content::Directory { name, open } => (
-                Body { icon: if *open { "▾" } else { "▸" }, text: Rc::clone(name) },
+            Content::Directory { name, open, .. } => (
+                Body { icon: crate::theme::icon::folder(*open), text: Rc::clone(name) },
                 None,
             ),
-            Content::File { name } => (
-                Body { icon: " ", text: Rc::clone(name) },
+            Content::File { name, .. } => (
+                Body { icon: crate::theme::icon::file(name), text: Rc::clone(name) },
                 Some(Status { added: 0, removed: 0, letter: "M" }),
             ),
         };
@@ -124,7 +141,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
                 indent: indent,
                 body: body,
                 status: status,
-                selected: offset as u32 == cursor,
+                selected: selected,
             }
         }
     })

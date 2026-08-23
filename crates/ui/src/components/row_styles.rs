@@ -1,23 +1,21 @@
 //! What every row of a diff has in common: the styles it wears, the width its
 //! numbers need, and the part of a selection that falls on it.
 
-use align::{Alignment, DiffVersion, ViewLineType};
+use align::{DiffVersion, ViewLineType};
 use ratatui::style::Style;
 
 use crate::theme::Theme;
 
-/// The three styles one row wears: the row itself, its line number, and the
-/// characters that changed.
+/// The three styles one row wears.
 ///
-/// A change outranks the cursor line: losing sight of which lines differ is
-/// worse than losing sight of where the cursor is, and the line number still
-/// says where the cursor is.
+/// Priority: change > moved > cursor > plain. A change outranks the cursor
+/// line because losing sight of which lines differ is worse than losing sight
+/// of where the cursor is, and the line number still says where it is.
 pub fn row_styles(
     theme: &Theme,
-    alignment: &Alignment,
     kind: ViewLineType,
     diff_version: DiffVersion,
-    number: u32,
+    moved: bool,
     is_cursor: bool,
 ) -> (Style, Style, Style) {
     let role = if kind != ViewLineType::Unchanged {
@@ -25,7 +23,7 @@ pub fn row_styles(
             DiffVersion::Original => theme.deleted,
             DiffVersion::Modified => theme.inserted,
         }
-    } else if alignment.moved(diff_version, number).is_some() {
+    } else if moved {
         theme.moved
     } else if is_cursor {
         theme.cursor_line
@@ -33,19 +31,19 @@ pub fn row_styles(
         Style::new()
     };
 
-    let base = theme.normal.patch(role);
-    let numbers = base.patch(if is_cursor {
-        theme.line_number_current
-    } else {
-        theme.line_number
-    });
-    let emphasis = base.patch(match (kind, diff_version) {
+    let unchanged = theme.normal.patch(role);
+    let changed = unchanged.patch(match (kind, diff_version) {
         (ViewLineType::Unchanged, _) => Style::new(),
         (_, DiffVersion::Original) => theme.deleted_text,
         (_, DiffVersion::Modified) => theme.inserted_text,
     });
+    let numbers = unchanged.patch(if is_cursor {
+        theme.line_number_current
+    } else {
+        theme.line_number
+    });
 
-    (base, numbers, emphasis)
+    (unchanged, changed, numbers)
 }
 
 /// The part of a selection that falls on one line, in cells.

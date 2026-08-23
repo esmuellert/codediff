@@ -1,7 +1,10 @@
 //! The hatching drawn where a side has no line.
 
-use loom::{Layout, Node, Scope, component, rsx};
+use std::rc::Rc;
 
+use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
+
+use super::context::ThemeContext;
 use crate::cells;
 
 /// The symbol repeated where a side has no line.
@@ -10,18 +13,18 @@ use crate::cells;
 /// gap.
 const HATCH: &str = "╱";
 
-/// A whole row of hatching, gutter included, so no line number is implied.
+/// One cell tall, full width, `╱` repeated.
 #[component]
-pub fn Filler(scope: &mut Scope, style: ratatui::style::Style) -> Node {
-    let _ = scope;
-    let style = *style;
+pub fn Filler(scope: &mut Scope) -> Node {
+    let theme = use_context::<ThemeContext>(scope);
+    let style = theme.normal.patch(theme.filler);
 
     rsx! {
-        loom::Canvas {
-            layout: Layout { basis: loom::Basis::Length(1), shrink: 0, ..Default::default() },
-            paint: std::rc::Rc::new(move |brush: &mut loom::Paint<'_>| {
-                let area = brush.area();
-                cells::fill_repeat_pattern(brush.cells(), area, HATCH, style);
+        Canvas {
+            layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                let area = paint.area();
+                cells::fill_repeat_pattern(paint.cells(), area, HATCH, style);
             }),
             ..
         }
