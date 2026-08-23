@@ -55,7 +55,7 @@ use_context::<Option<Rc<str>>>(scope)    // notice`}),(0,h.jsxs)(`table`,{childr
 pub fn App(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Provides `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),` for everything below.`]}),(0,h.jsx)(E,{id:`app-body`,children:`Body`}),(0,h.jsx)(T,{children:`rsx! {
     Column { ..,
         Row { grow: 1, ..,
-            if split {
+            if show_explorer {
                 Explorer { on_open }
                 Divider { symbol: "│" }
             }
@@ -67,7 +67,7 @@ pub fn App(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Pr
         }
         StatusLine {}
     }
-}`}),(0,h.jsx)(E,{id:`app-split`,children:`Split`}),(0,h.jsxs)(`p`,{children:[`The explorer beside a diff, or the diff filling the whole width. Each side carries a `,(0,h.jsx)(`code`,{children:`min_width`}),`. When both don't fit, it falls back to showing just the focused one.`]}),(0,h.jsx)(E,{id:`app-context`,children:`Context`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`App`}),` is where `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),` is provided. It owns the pane state and passes it down through context so every child reads it directly.`]}),(0,h.jsxs)(O,{children:[`The "terminal too small" message is a `,(0,h.jsx)(`code`,{children:`too_small`}),` node on the outermost `,(0,h.jsx)(`code`,{children:`Column`}),`. When the minimum doesn't fit, loom shows it instead of the tree.`]})]})}function ye(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`sbs-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌─────────────────────┬─────────────────────┐
+}`}),(0,h.jsx)(E,{id:`app-explorer`,children:`Showing the explorer`}),(0,h.jsxs)(`p`,{children:[`The explorer is toggled by a key. When visible, it sits beside the diff with a divider between them. When hidden, the diff fills the width. Each side carries a `,(0,h.jsx)(`code`,{children:`min_width`}),`. When both don't fit, it shows just the focused one.`]}),(0,h.jsx)(E,{id:`app-context`,children:`Context`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`App`}),` is where `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),` is provided. It owns the pane state and passes it down through context so every child reads it directly.`]}),(0,h.jsxs)(O,{children:[`The "terminal too small" message is a `,(0,h.jsx)(`code`,{children:`too_small`}),` node on the outermost `,(0,h.jsx)(`code`,{children:`Column`}),`. When the minimum doesn't fit, loom shows it instead of the tree.`]})]})}function ye(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`sbs-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌─────────────────────┬─────────────────────┐
 │  1 one              │  1 one              │
 │  2 two              │  2 TWO              │
 │  3 three            │  3 three            │
