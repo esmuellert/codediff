@@ -53,10 +53,9 @@ use_context::<Option<Rc<str>>>(scope)    // notice`}),(0,h.jsxs)(`table`,{childr
   21 cells         1         22 cells`}),(0,h.jsx)(E,{id:`sbs-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
 pub fn SideBySide(
     scope: &mut Scope,
-    divider: u16,
     on_press: Rc<dyn Fn(DiffVersion, u32, u32)>,
     on_drag: Rc<dyn Fn(DiffVersion, u32, u32)>,
-) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`divider`})}),(0,h.jsx)(`td`,{children:`original column's share of the width, in percent`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsxs)(`td`,{children:[(0,h.jsx)(`code`,{children:`on_press`}),` / `,(0,h.jsx)(`code`,{children:`on_drag`})]}),(0,h.jsx)(`td`,{children:`called with the version and position the pointer landed at`})]})]}),(0,h.jsxs)(`p`,{children:[`Everything else — `,(0,h.jsx)(`code`,{children:`file`}),`, `,(0,h.jsx)(`code`,{children:`view_lines`}),`,`,` `,(0,h.jsx)(`code`,{children:`cursor`}),`, `,(0,h.jsx)(`code`,{children:`first_cell`}),`, `,(0,h.jsx)(`code`,{children:`selection`}),` `,`— comes from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`.`]}),(0,h.jsx)(E,{id:`sbs-body`,children:`Body`}),(0,h.jsx)(T,{children:`let column = |diff_version, layout: Layout| {
+) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsxs)(`td`,{children:[(0,h.jsx)(`code`,{children:`on_press`}),` / `,(0,h.jsx)(`code`,{children:`on_drag`})]}),(0,h.jsx)(`td`,{children:`called with the version and position the pointer landed at`})]})]}),(0,h.jsx)(`p`,{children:`The divider position is internal state, starting at 50%. The user drags it inside this component.`}),(0,h.jsx)(E,{id:`sbs-body`,children:`Body`}),(0,h.jsx)(T,{children:`let column = |diff_version, layout: Layout| {
     let gutter =
         gutter_width(alignment.lines(diff_version).len() as u32);
 
