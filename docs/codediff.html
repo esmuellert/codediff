@@ -36,8 +36,8 @@ Explorer              the file list
 StatusLine            the bottom row: body, sidecar`}),(0,h.jsx)(E,{id:`shared`,children:`Shared`}),(0,h.jsx)(T,{children:`fn row_styles(theme, kind, diff_version, moved, is_cursor)
     -> (Style, Style, Style)
 
-fn on_line(range: Option<Range>, line: u32)
-    -> Option<Range<u32>>`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`row_styles`}),` is used by `,(0,h.jsx)(`code`,{children:`SideBySide`}),` and`,` `,(0,h.jsx)(`code`,{children:`Inline`}),`. `,(0,h.jsx)(`code`,{children:`on_line`}),` is used by all three diff screens. `,(0,h.jsx)(`code`,{children:`SingleFile`}),` computes its styles inline because it has two branches (cursor or plain).`]}),(0,h.jsx)(E,{id:`data-flow`,children:`Data flow`}),(0,h.jsxs)(`p`,{children:[`Screens read shared state from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`:`,` `,`the focused file, cursor, scroll position, selection. Workers fill stores that components subscribe to. Callbacks (`,(0,h.jsx)(`code`,{children:`on_press`}),`,`,` `,(0,h.jsx)(`code`,{children:`on_open`}),`) flow up as props. Bricks take per-row values as props — they read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context.`]})]})}function _e(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsxs)(`p`,{children:[`Shared state, provided at the root. Screens and the status line read these with `,(0,h.jsx)(`code`,{children:`use_context`}),`. Bricks take props.`]}),(0,h.jsx)(E,{id:`ctx-values`,children:`Values`}),(0,h.jsx)(T,{children:`use_context::<Theme>(scope)
+fn clip_to_line(range: Option<Range>, line: u32)
+    -> Option<Range<u32>>`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`row_styles`}),` is used by `,(0,h.jsx)(`code`,{children:`SideBySide`}),` and`,` `,(0,h.jsx)(`code`,{children:`Inline`}),`. `,(0,h.jsx)(`code`,{children:`clip_to_line`}),` is used by all three diff screens. `,(0,h.jsx)(`code`,{children:`SingleFile`}),` computes its styles inline because it has two branches (cursor or plain).`]}),(0,h.jsx)(E,{id:`data-flow`,children:`Data flow`}),(0,h.jsxs)(`p`,{children:[`Screens read shared state from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`:`,` `,`the focused file, cursor, scroll position, selection. Workers fill stores that components subscribe to. Callbacks (`,(0,h.jsx)(`code`,{children:`on_press`}),`,`,` `,(0,h.jsx)(`code`,{children:`on_open`}),`) flow up as props. Bricks take per-row values as props — they read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context.`]})]})}function _e(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsxs)(`p`,{children:[`Shared state, provided at the root. Screens and the status line read these with `,(0,h.jsx)(`code`,{children:`use_context`}),`. Bricks take props.`]}),(0,h.jsx)(E,{id:`ctx-values`,children:`Values`}),(0,h.jsx)(T,{children:`use_context::<Theme>(scope)
 use_context::<Option<Rc<File>>>(scope)
 use_context::<Range<u32>>(scope)         // view_lines
 use_context::<u32>(scope)                // cursor
@@ -136,7 +136,7 @@ let original_width = (usable * u32::from(divider) / 100) as u16;`}),(0,h.jsxs)(`
     diff_version: DiffVersion,
     moved: bool,
     is_cursor: bool,
-) -> (Style, Style, Style)`}),(0,h.jsxs)(`p`,{children:[`Returns `,(0,h.jsx)(`code`,{children:`(unchanged, changed, numbers)`}),`. Priority: change `,`>`,` moved `,`>`,` cursor `,`>`,` plain.`]}),(0,h.jsx)(E,{id:`sbs-selection`,children:`on_line`}),(0,h.jsx)(T,{children:`fn on_line(range: Option<Range>, line: u32)
+) -> (Style, Style, Style)`}),(0,h.jsxs)(`p`,{children:[`Returns `,(0,h.jsx)(`code`,{children:`(unchanged, changed, numbers)`}),`. Priority: change `,`>`,` moved `,`>`,` cursor `,`>`,` plain.`]}),(0,h.jsx)(E,{id:`sbs-selection`,children:`clip_to_line`}),(0,h.jsx)(T,{children:`fn clip_to_line(range: Option<Range>, line: u32)
     -> Option<Range<u32>>`}),(0,h.jsx)(`p`,{children:`Clips a selection to one row's columns.`}),(0,h.jsxs)(O,{children:[`The listener uses `,(0,h.jsx)(`code`,{children:`capture_pointer()`}),`, so a drag that leaves the column keeps arriving until the button comes up.`]})]})}function be(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(`p`,{children:`The same diff as one column. The empty gutter tells you which version each row shows.`}),(0,h.jsx)(E,{id:`inline-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1   1 one
   2     two          ← deleted (no modified number)
       2 TWO          ← inserted (no original number)
@@ -197,7 +197,7 @@ pub fn SingleFile(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No pr
                 unchanged_style: base,
                 changed_style: base,
                 first_cell,
-                selection: on_line(selection, line),
+                selection: clip_to_line(selection, line),
             }
         }
     }
