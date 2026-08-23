@@ -9,7 +9,8 @@ use ratatui::layout::Rect;
 
 use crate::draw::screen_map::ScreenMap;
 use crate::draw::{Look, pane};
-use crate::render::{cells, layout};
+use crate::cells;
+use crate::render::layout;
 use crate::view::{Layout, PaneId, View};
 
 /// Draws every pane the tab has, in its own rectangle.

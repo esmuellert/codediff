@@ -15,7 +15,6 @@
 //! `render` turns values into marks; `draw` composes them into what a buffer
 //! type looks like.
 
-pub mod cells;
 pub mod column;
 pub mod gutter;
 pub mod layout;

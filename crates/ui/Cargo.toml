@@ -19,6 +19,7 @@ channel.workspace = true
 tracing.workspace = true
 watcher.workspace = true
 syntax.workspace = true
+loom.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 crokey.workspace = true

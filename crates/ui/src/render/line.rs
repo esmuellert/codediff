@@ -15,7 +15,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 
-use crate::render::cells::{self, Ink};
+use crate::cells::{self, Ink};
 use crate::theme::Theme;
 use syntax::Spans;
 

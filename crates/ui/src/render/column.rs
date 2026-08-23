@@ -8,7 +8,7 @@ use align::{DiffVersion, Slot, ViewLine};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
-use crate::render::cells;
+use crate::cells;
 use crate::render::gutter;
 use crate::render::layout::Column;
 use crate::render::line::{self, Painter};

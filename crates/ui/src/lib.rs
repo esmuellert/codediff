@@ -7,6 +7,8 @@ pub use crossterm;
 pub use ratatui;
 
 mod app;
+mod cells;
+pub mod components;
 mod draw;
 
 pub use draw::screen_map::ScreenMap;

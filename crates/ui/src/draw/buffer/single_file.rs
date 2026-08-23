@@ -11,7 +11,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 use crate::draw::{Look, TextRects};
-use crate::render::cells::{self, Ink};
+use crate::cells::{self, Ink};
 use crate::render::gutter;
 use crate::render::layout::gutter_width;
 use crate::view::Viewport;

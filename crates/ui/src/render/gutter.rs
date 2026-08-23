@@ -5,7 +5,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 
-use crate::render::cells;
+use crate::cells;
 
 /// Draws one line number, right-aligned with one space before the text.
 ///

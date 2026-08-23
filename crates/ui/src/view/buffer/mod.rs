@@ -8,7 +8,7 @@
 
 #[allow(clippy::module_inception)]
 mod buffer;
-mod colour;
+pub mod colour;
 pub mod explorer;
 mod inline;
 mod side_by_side;

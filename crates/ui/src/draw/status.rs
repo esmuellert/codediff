@@ -8,7 +8,7 @@ use file_types::File;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
-use crate::render::cells;
+use crate::cells;
 use crate::theme::Theme;
 use crate::view::Direction;
 

@@ -9,7 +9,7 @@ use ratatui::style::{Modifier, Style};
 
 use file_types::{ChangeType, File, Stats};
 
-use crate::render::cells;
+use crate::cells;
 use crate::theme::Theme;
 use crate::theme::icon;
 use crate::view::buffer::explorer::ViewLine;

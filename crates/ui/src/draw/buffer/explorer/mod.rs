@@ -12,7 +12,7 @@ mod view_line;
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
-use crate::render::cells;
+use crate::cells;
 use crate::theme::Theme;
 use crate::view::Viewport;
 use crate::view::buffer::Explorer;

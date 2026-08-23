@@ -8,7 +8,8 @@ use ratatui::layout::Rect;
 
 use crate::draw::screen_map::ScreenMap;
 use crate::draw::{Look, status, tab};
-use crate::render::{cells, layout};
+use crate::cells;
+use crate::render::layout;
 use crate::theme::Theme;
 use crate::view::{Buffer, View, Viewport};
 use syntax::Store;
