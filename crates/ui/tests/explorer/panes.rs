@@ -141,7 +141,7 @@ fn opening_the_file_already_shown_re_reads_it_and_keeps_the_readers_place() {
     session.draw_into(&mut cells, area);
     session.press(crokey::key!(right));
     session.press(crokey::key!(shift - g));
-    let far = session.view().focused().viewport.cursor();
+    let far = session.cursor();
     assert!(far > 400, "the cursor did not reach the end: {far}");
 
     // Back to the list, and enter on the row that is already open.
@@ -149,7 +149,7 @@ fn opening_the_file_already_shown_re_reads_it_and_keeps_the_readers_place() {
     open_selected(&mut session);
     session.press(crokey::key!(right));
     assert_eq!(
-        session.view().focused().viewport.cursor(),
+        session.cursor(),
         far,
         "the reader's place was thrown away"
     );
@@ -182,14 +182,10 @@ fn re_opening_a_file_that_has_grown_shorter_lands_inside_it() {
     session.press(crokey::key!(right));
 
     open_selected(&mut session);
-    let id = session
-        .view()
-        .tab()
-        .right_pane_buffer()
-        .expect("a pane beside the list");
-    let rows = session.view().buffer(id).view_lines();
+
+    let rows = session.view_lines();
     assert!(
-        session.view().pane_for(id).viewport.cursor() < rows,
+        session.cursor() < rows,
         "the cursor is past the end of the file"
     );
 }
@@ -246,7 +242,7 @@ fn enter_on_a_file_row_asks_for_it() {
     // Past the first row, so what is asked for is not what is already shown.
     session.press(crokey::key!(j));
     session.press(crokey::key!(enter));
-    session.send_file_request();
+    
     assert!(session.is_loading_file(), "enter asked for nothing");
 
     assert!(session.has_file_arrived(), "the answer was not installed");
@@ -259,15 +255,10 @@ fn enter_on_a_file_row_asks_for_it() {
 
 /// The file in the pane beside the list.
 fn shown_file(session: &Session) -> File {
-    let id = session
-        .view()
-        .tab()
-        .right_pane_buffer()
-        .expect("a pane beside the list");
-    session
-        .view()
-        .buffer(id)
-        .file()
-        .expect("it shows a file")
+
+    {
+        use loom::ExternalStore;
+        session.diff_store.snapshot().content.as_ref().expect("content loaded").file().clone()
+    }
         .clone()
 }

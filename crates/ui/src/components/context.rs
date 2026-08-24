@@ -71,12 +71,12 @@ pub struct DiffStore {
 
 /// One reading of a [`DiffStore`].
 pub struct DiffStoreSnapshot {
-    pub diff: Option<Rc<pipeline::file::Diff>>,
+    pub content: Option<Rc<pipeline::file::DiffContent>>,
     pub colours: Rc<syntax::Store>,
 }
 
 struct DiffStoreInner {
-    content: Option<Rc<pipeline::file::Diff>>,
+    content: Option<Rc<pipeline::file::DiffContent>>,
     colours: Rc<syntax::Store>,
     /// What `snapshot` hands out, rebuilt only by a write. Readers compare
     /// readings by pointer, so a fresh one per render would read as a change
@@ -88,7 +88,7 @@ struct DiffStoreInner {
 impl DiffStore {
     pub fn new() -> Self {
         let colours = Rc::new(syntax::Store::new());
-        let reading = Rc::new(DiffStoreSnapshot { diff: None, colours: Rc::clone(&colours) });
+        let reading = Rc::new(DiffStoreSnapshot { content: None, colours: Rc::clone(&colours) });
         Self {
             inner: Rc::new(RefCell::new(DiffStoreInner {
                 content: None,
@@ -100,10 +100,10 @@ impl DiffStore {
     }
 
     /// The diff to draw, or `None` while there is none.
-    pub fn set_diff(&self, diff: Option<Rc<pipeline::file::Diff>>) {
+    pub fn set_content(&self, content: Option<Rc<pipeline::file::DiffContent>>) {
         let listeners = {
             let mut inner = self.inner.borrow_mut();
-            inner.content = diff;
+            inner.content = content;
             inner.refresh();
             inner.listeners.clone()
         };
@@ -121,7 +121,7 @@ impl DiffStore {
         announce(listeners);
     }
 
-    pub fn diff(&self) -> Option<Rc<pipeline::file::Diff>> {
+    pub fn content(&self) -> Option<Rc<pipeline::file::DiffContent>> {
         self.inner.borrow().content.clone()
     }
 
@@ -151,7 +151,7 @@ impl DiffStoreInner {
     /// Builds the reading readers compare by pointer. Every write ends here.
     fn refresh(&mut self) {
         self.reading = Rc::new(DiffStoreSnapshot {
-            diff: self.content.clone(),
+            content: self.content.clone(),
             colours: Rc::clone(&self.colours),
         });
     }
@@ -256,4 +256,22 @@ context!(
 context!(
     pub ViewLinesCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
     |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
+);
+
+/// The active text selection, written by whichever diff screen owns the
+/// pointer. Tests read it through Session.
+context!(
+    pub SelectionCellContext: Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>> =
+        Rc::new(std::cell::RefCell::new(None)),
+    |a: &Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>,
+     b: &Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>| Rc::ptr_eq(a, b)
+);
+
+/// Where things landed on screen. Filled by layout effects, read by
+/// Session for mouse hit-testing.
+context!(
+    pub ScreenMapCellContext: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>> =
+        Rc::new(std::cell::RefCell::new(crate::screen_map::ScreenMap::default())),
+    |a: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
+     b: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>| Rc::ptr_eq(a, b)
 );

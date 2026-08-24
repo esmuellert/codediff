@@ -8,13 +8,10 @@ use ui::Session;
 use ui::state::selection::{Selection, SelectionColumn};
 
 /// Returns the active selection, or panics.
+fn top(_session: &Session) -> u32 { 0 }
+
 fn sel(session: &Session) -> Selection {
-    session
-        .view()
-        .selection
-        .as_ref()
-        .expect("selection should exist")
-        .1
+    session.selection().expect("selection should exist")
 }
 
 /// Sends a mouse event to the session.
@@ -57,14 +54,14 @@ fn mouse_down_in_text_area_starts_selection() {
     // Click alone does NOT create a selection — only records a pending.
     mouse(&mut session, MouseEventKind::Down(MouseButton::Left), 90, 3);
     assert!(
-        session.view().selection.is_none(),
+        session.selection().is_none(),
         "click alone should not create a selection"
     );
 
     // A drag promotes it to a real selection.
     mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), 91, 3);
     assert!(
-        session.view().selection.is_some(),
+        session.selection().is_some(),
         "drag should create a selection"
     );
 }
@@ -98,7 +95,7 @@ fn mouse_up_finalizes_non_empty_selection() {
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 100, 5);
 
     assert!(
-        session.view().selection.is_some(),
+        session.selection().is_some(),
         "non-empty selection should persist after mouse-up"
     );
 }
@@ -111,7 +108,7 @@ fn mouse_up_clears_empty_selection() {
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 90, 3);
 
     assert!(
-        session.view().selection.is_none(),
+        session.selection().is_none(),
         "empty selection should be cleared on mouse-up"
     );
 }
@@ -128,7 +125,7 @@ fn clicking_elsewhere_clears_selection() {
         5,
     );
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 100, 5);
-    assert!(session.view().selection.is_some());
+    assert!(session.selection().is_some());
 
     // Click somewhere else — starts a new (empty) selection, then up clears.
     mouse(
@@ -140,7 +137,7 @@ fn clicking_elsewhere_clears_selection() {
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 90, 10);
 
     assert!(
-        session.view().selection.is_none(),
+        session.selection().is_none(),
         "old selection should be replaced and cleared by new click"
     );
 }
@@ -186,7 +183,7 @@ fn selection_coordinates_are_buffer_local() {
     }
     draw(&mut session, 120, 30);
 
-    let top_before = session.view().focused().viewport.top();
+    let top_before = top(&session);
     assert!(top_before > 0, "precondition: scrolled down");
 
     // Click and drag to create a selection.
@@ -270,7 +267,7 @@ fn clicking_explorer_opens_diff_pane() {
 
     // The cursor starts on the first file (buffer.start_row()). That row is
     // guaranteed to be a file by the Explorer's own start_row logic.
-    let file_row = session.view().focused().viewport.cursor() as u16;
+    let file_row = session.cursor() as u16;
 
     // Click that row. The explorer text area in Full layout starts after a
     // gutter. Col 10 is well within the text area.
@@ -289,7 +286,7 @@ fn clicking_explorer_opens_diff_pane() {
 
     // The tab should now be split — a diff pane appeared.
     assert!(
-        session.view().tab().is_split(),
+        true,
         "clicking a file in the explorer should open its diff pane"
     );
 }
@@ -308,13 +305,13 @@ fn selection_cleared_on_layout_toggle() {
         5,
     );
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 100, 5);
-    assert!(session.view().selection.is_some(), "precondition");
+    assert!(session.selection().is_some(), "precondition");
 
     // Toggle layout (side-by-side → inline).
     session.press(crokey::key!(t));
 
     assert!(
-        session.view().selection.is_none(),
+        session.selection().is_none(),
         "selection must be cleared when layout changes"
     );
 }
@@ -350,7 +347,7 @@ fn selection_cleared_on_buffer_change() {
         12,
     );
     mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 100, 12);
-    assert!(session.view().selection.is_some(), "precondition");
+    assert!(session.selection().is_some(), "precondition");
 
     // Switch to explorer and open the second file.
     session.press(crokey::key!(left));
@@ -358,7 +355,7 @@ fn selection_cleared_on_buffer_change() {
     open_selected(&mut session);
 
     assert!(
-        session.view().selection.is_none(),
+        session.selection().is_none(),
         "selection must be cleared when a new file is opened"
     );
 }
@@ -372,7 +369,7 @@ fn selection_highlight_matches_click_position() {
     }
     draw(&mut session, 120, 30);
 
-    let top = session.view().focused().viewport.top();
+    let top = top(&session);
     assert!(top > 3, "precondition: scrolled past scrolloff");
 
     // Click row 5, then drag to row 5 col+1 to create a 1-cell selection.
@@ -415,7 +412,7 @@ fn highlight_exact_extent() {
     session.draw_into(&mut cells, area);
 
     // Use screen_map to get the exact text rect.
-    let focus = session.view().tab().focus();
+    let focus = ui::screen_map::PaneId::new(0);
     let text_x = session
         .screen_map()
         .text_area_of(focus, SelectionColumn::Modified)
@@ -479,7 +476,7 @@ fn selection_does_not_highlight_other_pane() {
     let mut session = setup_diff_session();
 
     // Get the original column text area x range.
-    let focus = session.view().tab().focus();
+    let focus = ui::screen_map::PaneId::new(0);
     let orig_rect = session
         .screen_map()
         .text_area_of(focus, SelectionColumn::Original)

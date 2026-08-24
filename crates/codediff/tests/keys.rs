@@ -25,14 +25,14 @@ macro_rules! open {
     };
 }
 
-fn cursor(session: &ui::Session) -> u32 {
+fn cursor(session: &mut ui::Session) -> u32 {
     session.cursor()
 }
 
 fn cursor_after(keys: &str) -> u32 {
     open!(s);
     type_keys(&mut s, keys);
-    cursor(&s)
+    cursor(&mut s)
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn escape_takes_back_a_pending_sequence_instead_of_quitting() {
         "must not quit"
     );
     assert_eq!(type_keys(&mut s, "jj"), Flow::Continue);
-    assert_eq!(cursor(&s), 2, "the g did not survive");
+    assert_eq!(cursor(&mut s), 2, "the g did not survive");
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn escape_takes_back_a_count_too() {
         "must not quit"
     );
     assert_eq!(type_keys(&mut s, "jj"), Flow::Continue);
-    assert_eq!(cursor(&s), 2, "two downs, not ten");
+    assert_eq!(cursor(&mut s), 2, "two downs, not ten");
 }
 
 #[test]
@@ -107,12 +107,12 @@ fn an_abandoned_sequence_does_not_leak_into_the_next_key() {
 fn gg_and_g_are_different_things() {
     open!(s);
     type_keys(&mut s, "G");
-    assert_eq!(cursor(&s), 9);
+    assert_eq!(cursor(&mut s), 9);
 
     type_keys(&mut s, "g");
-    assert_eq!(cursor(&s), 9, "one g is not a motion");
+    assert_eq!(cursor(&mut s), 9, "one g is not a motion");
     type_keys(&mut s, "g");
-    assert_eq!(cursor(&s), 0);
+    assert_eq!(cursor(&mut s), 0);
 }
 
 #[test]
@@ -127,10 +127,10 @@ fn the_three_kinds_of_command_are_answered_by_three_different_things() {
     open!(s);
     // A buffer command moves the viewport and the loop carries on.
     assert_eq!(type_keys(&mut s, "j"), Flow::Continue);
-    assert_eq!(cursor(&s), 1);
+    assert_eq!(cursor(&mut s), 1);
     // A program command does not touch the view, and the loop acts on it.
     assert_eq!(type_keys(&mut s, "q"), Flow::Quit);
-    assert_eq!(cursor(&s), 1, "quitting is not a motion");
+    assert_eq!(cursor(&mut s), 1, "quitting is not a motion");
     // A task command cannot be produced yet — `TaskAction` is uninhabited, which is
     // checked by the compiler rather than here.
 }
@@ -141,7 +141,7 @@ fn an_unbound_key_does_nothing_at_all() {
     for keys in ["z", "Z", "!", "\u{1}"] {
         assert_eq!(type_keys(&mut s, keys), Flow::Continue, "{keys:?} quit");
     }
-    assert_eq!(cursor(&s), 0);
+    assert_eq!(cursor(&mut s), 0);
 }
 
 #[test]
@@ -152,16 +152,16 @@ fn toggling_the_layout_keeps_the_reader_on_the_same_line() {
     let mut s = session("f.rs", BEFORE, AFTER);
     measure(&mut s);
     type_keys(&mut s, "]c]c");
-    let side_by_side = cursor(&s);
-    let line = line_under_cursor(&s);
+    let side_by_side = cursor(&mut s);
+    let line = line_under_cursor(&mut s);
 
     type_keys(&mut s, "t");
-    assert_ne!(cursor(&s), side_by_side, "the line must have moved");
-    assert_eq!(line_under_cursor(&s), line, "but not to a different line");
+    assert_ne!(cursor(&mut s), side_by_side, "the line must have moved");
+    assert_eq!(line_under_cursor(&mut s), line, "but not to a different line");
 
     type_keys(&mut s, "t");
-    assert_eq!(cursor(&s), side_by_side, "and back again");
-    assert_eq!(line_under_cursor(&s), line);
+    assert_eq!(cursor(&mut s), side_by_side, "and back again");
+    assert_eq!(line_under_cursor(&mut s), line);
 }
 
 #[test]
@@ -195,23 +195,23 @@ fn change_navigation_works_the_same_in_both_layouts() {
     let mut s = session("f.rs", BEFORE, AFTER);
     measure(&mut s);
     type_keys(&mut s, "t]c");
-    let first = line_under_cursor(&s);
+    let first = line_under_cursor(&mut s);
     type_keys(&mut s, "]c");
-    let second = line_under_cursor(&s);
+    let second = line_under_cursor(&mut s);
     assert_ne!(first, second, "the second `]c` went nowhere");
     type_keys(&mut s, "]c");
-    assert_eq!(line_under_cursor(&s), second, "there is no third change");
+    assert_eq!(line_under_cursor(&mut s), second, "there is no third change");
 }
 
 /// The file line the cursor is on, as text, whichever layout is in use.
-fn line_under_cursor(session: &ui::Session) -> String {
+fn line_under_cursor(session: &mut ui::Session) -> String {
     use loom::ExternalStore;
     let reading = session.diff_store.snapshot();
-    let diff = reading.diff.as_ref().expect("these tests build a diff");
-    let alignment = &diff.alignment;
+    let content = reading.content.as_ref().expect("a diff");
+    let alignment = content.alignment().expect("a diff");
     let layout = file_types::DiffType::SideBySide;
     let (version, line) = alignment
-        .line_at(layout, cursor(session))
+        .line_at(layout, cursor(&mut *session))
         .expect("the cursor is on a line");
     alignment.line(version, line).expect("it exists").to_owned()
 }

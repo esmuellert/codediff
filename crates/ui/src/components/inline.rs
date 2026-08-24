@@ -43,7 +43,10 @@ pub fn Inline(scope: &mut Scope) -> Node {
     // one file, so nothing above this component has any use for it.
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
 
-    let Some(diff) = reading.diff.as_ref() else { return Node::Empty };
+        let Some(content) = reading.content.as_ref() else { return Node::Empty };
+    let pipeline::file::DiffContent::Diff(diff) = content.as_ref() else {
+        return Node::Empty;
+    };
     let alignment = &diff.alignment;
 
     // How the syntax worker has coloured the file so far, or nothing at all

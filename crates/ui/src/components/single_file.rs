@@ -27,6 +27,11 @@ const MIN_TEXT: u16 = 4;
 /// is the side a lone file is read as.
 ///
 /// The text selection is this component's own state; no parent needs it.
+enum LinesSource<'a> {
+    Alignment(&'a align::Alignment, u32),
+    Plain(&'a [String]),
+}
+
 #[component]
 pub fn SingleFile(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
@@ -43,18 +48,33 @@ pub fn SingleFile(scope: &mut Scope) -> Node {
     // one file, so nothing above this component has any use for it.
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
 
-    let Some(diff) = reading.diff.as_ref() else { return Node::Empty };
-    let alignment = &diff.alignment;
+        let Some(content) = reading.content.as_ref() else { return Node::Empty };
+    let (lines_data, file) = match content.as_ref() {
+        pipeline::file::DiffContent::Diff(diff) => {
+            let n = diff.alignment.lines(DiffVersion::Modified).len() as u32;
+            (LinesSource::Alignment(&diff.alignment, n), &diff.file)
+        }
+        pipeline::file::DiffContent::SingleFile(single) => {
+            (LinesSource::Plain(&single.lines), &single.file)
+        }
+    };
+    let line_count = match &lines_data {
+        LinesSource::Alignment(_, n) => *n,
+        LinesSource::Plain(lines) => lines.len() as u32,
+    };
 
     // How the syntax worker has coloured the file so far, or nothing at all
     // when the reader has turned colour off.
     let spans = if syntax_on {
-        crate::state::buffer::colour::spans_for(&diff.file, &reading.colours)
+        match &lines_data {
+        LinesSource::Alignment(_, _) => crate::state::buffer::colour::spans_for(file, &reading.colours),
+        LinesSource::Plain(_) => syntax::Spans::Off,
+    }
     } else {
         syntax::Spans::Off
     };
 
-    let lines = alignment.lines(DiffVersion::Modified).len() as u32;
+    let lines = line_count;
     let width = gutter_width(lines);
 
     // Where in the file a pointer landed, or `None` over the gutter.
@@ -110,8 +130,10 @@ pub fn SingleFile(scope: &mut Scope) -> Node {
             // The gutter shows `line + 1`, and so does the syntax lookup.
             let number = line + 1;
             let syntax: Rc<[syntax::Span]> = Rc::from(spans.line(DiffVersion::Modified, number));
-            let text: Rc<str> =
-                Rc::from(alignment.line(DiffVersion::Modified, number).unwrap_or(""));
+            let text: Rc<str> = Rc::from(match &lines_data {
+                LinesSource::Alignment(a, _) => a.line(DiffVersion::Modified, number).unwrap_or(""),
+                LinesSource::Plain(v) => v.get(line as usize).map(|s| s.as_str()).unwrap_or(""),
+            });
 
             rsx! {
                 Row {

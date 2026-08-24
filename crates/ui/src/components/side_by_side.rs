@@ -55,7 +55,10 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         set_width(&move |_| now);
     });
 
-    let Some(diff) = reading.diff.as_ref() else { return Node::Empty };
+        let Some(content) = reading.content.as_ref() else { return Node::Empty };
+    let pipeline::file::DiffContent::Diff(diff) = content.as_ref() else {
+        return Node::Empty;
+    };
     let alignment = &diff.alignment;
 
     // How the syntax worker has coloured the file so far, or nothing at all

@@ -61,10 +61,12 @@ impl TestSession {
                 // If the buffer is a diff, fill the diff store.
                 if let Some(alignment) = buffer.alignment() {
                     if let Some(file) = buffer.file() {
-                        session.diff_store.set_diff(Some(Rc::new(pipeline::file::Diff {
-                            file: file.clone(),
-                            alignment: alignment.clone(),
-                        })));
+                        session.diff_store.set_content(Some(Rc::new(
+                            pipeline::file::DiffContent::Diff(pipeline::file::Diff {
+                                file: file.clone(),
+                                alignment: alignment.clone(),
+                            }),
+                        )));
                     }
                 }
                 // If the buffer is an explorer, fill the file list store.
@@ -73,6 +75,12 @@ impl TestSession {
                 }
             }
         }
+
+        // The tree must have drawn at a real size before a key that depends
+        // on the viewport height (G, PageDown) can have its intended effect.
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        session.draw_into(&mut cells, area);
 
         Self { session, rx }
     }
@@ -94,15 +102,21 @@ impl TestSession {
         // Same as above.
         if let Some(alignment) = buffer.alignment() {
             if let Some(file) = buffer.file() {
-                session.diff_store.set_diff(Some(Rc::new(pipeline::file::Diff {
-                    file: file.clone(),
-                    alignment: alignment.clone(),
-                })));
+                session.diff_store.set_content(Some(Rc::new(
+                    pipeline::file::DiffContent::Diff(pipeline::file::Diff {
+                        file: file.clone(),
+                        alignment: alignment.clone(),
+                    }),
+                )));
             }
         }
         if let Some(explorer) = buffer.as_explorer() {
             session.file_list_store.fill(vec![]);
         }
+
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        session.draw_into(&mut cells, area);
 
         Self { session, rx }
     }

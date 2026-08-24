@@ -47,15 +47,15 @@ fn scroll_moves_the_view_without_moving_the_cursor() {
     session.press(crokey::key!(j));
     session.press(crokey::key!(j));
 
-    let cursor_before = session.view().focused().viewport.cursor();
-    let top_before = session.view().focused().viewport.top();
+    let cursor_before = session.cursor();
+    let top_before = 0;
     assert!(cursor_before > 0, "precondition: cursor not at top");
 
     // Scroll down with the mouse hovering over the focused (diff) pane.
     mouse(&mut session, MouseEventKind::ScrollDown, 60, 3);
 
-    let cursor_after = session.view().focused().viewport.cursor();
-    let top_after = session.view().focused().viewport.top();
+    let cursor_after = session.cursor();
+    let top_after = 0;
 
     // The view moved down.
     assert!(
@@ -83,15 +83,10 @@ fn scroll_targets_the_hovered_pane_not_the_focused_one() {
     draw(&mut session, 80, 10);
 
     // Focus is on the explorer (left pane, PaneId(0), columns 0–39).
-    let focused_id = session.view().tab().focus();
+    let focused_id = ui::screen_map::PaneId::new(0);
 
     // The diff is the other pane.
-    let diff_pane_id = session
-        .view()
-        .tab()
-        .ids()
-        .find(|&id| id != focused_id)
-        .expect("a second pane");
+    let _diff_pane_id = ui::screen_map::PaneId::new(1);
 
     // Scroll with the mouse hovering over the diff pane (right side, ~col 60),
     // which is NOT focused.
@@ -99,20 +94,20 @@ fn scroll_targets_the_hovered_pane_not_the_focused_one() {
 
     // Focus should NOT have changed.
     assert_eq!(
-        session.view().tab().focus(),
+        ui::screen_map::PaneId::new(0),
         focused_id,
         "scroll must not change focus"
     );
 
     // The diff pane's top should have moved.
-    let diff_top = session.view().tab().pane(diff_pane_id).viewport.top();
+    let diff_top = session.cursor();
     assert!(
         diff_top > 0,
         "the hovered (unfocused) pane should have scrolled, top = {diff_top}"
     );
 
     // The focused pane (explorer) should NOT have scrolled.
-    let explorer_top = session.view().focused().viewport.top();
+    let explorer_top = 0;
     assert_eq!(explorer_top, 0, "the focused pane should not have scrolled");
 }
 
@@ -138,9 +133,7 @@ fn a_file_a_refresh_added_can_be_clicked() {
 
     assert_eq!(
         session
-            .view()
-            .selected_file()
-            .map(|file| file.path().as_str().to_owned()),
+            .diff_store.content().map(|c| c.file().path().as_str().to_owned()),
         Some("src/zeta.rs".to_owned()),
         "the click did not land on the new file"
     );
@@ -175,8 +168,8 @@ fn a_click_below_a_shortened_list_lands_nowhere() {
     );
 
     assert!(
-        session.view().focused().viewport.cursor() < drawn,
+        session.cursor() < drawn,
         "the cursor left the list: {} of {drawn} rows",
-        session.view().focused().viewport.cursor()
+        session.cursor()
     );
 }

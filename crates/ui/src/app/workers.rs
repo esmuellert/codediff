@@ -51,17 +51,7 @@ impl Session {
     fn apply_file_response(&mut self, response: Response) -> bool {
         match response.content {
             Ok(content) => {
-                match content {
-                    pipeline::file::DiffContent::Diff(diff) => {
-                        self.diff_store.set_diff(Some(Rc::new(diff)));
-                    }
-                    pipeline::file::DiffContent::SingleFile(_single) => {
-                        // A single file is not a diff, but the store holds
-                        // Diff. For now the diff screens won't draw it; the
-                        // SingleFile component reads the store and handles it.
-                        // TODO: the store should hold DiffContent, not Diff.
-                    }
-                }
+                self.diff_store.set_content(Some(Rc::new(content)));
                 true
             }
             Err(_why) => {

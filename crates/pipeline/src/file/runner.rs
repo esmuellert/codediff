@@ -37,6 +37,13 @@ impl DiffContent {
             Self::Diff(diff) => &diff.file,
         }
     }
+
+    pub fn alignment(&self) -> Option<&align::Alignment> {
+        match self {
+            Self::Diff(diff) => Some(&diff.alignment),
+            Self::SingleFile(_) => None,
+        }
+    }
 }
 
 impl SingleFile {

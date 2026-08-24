@@ -57,6 +57,10 @@ pub fn App(scope: &mut Scope) -> Node {
     let (show_explorer, set_show_explorer) = use_state(scope, || false);
     let (notice, set_notice) = use_state(scope, || None::<Rc<str>>);
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
+
+    // When the store has a diff, the focused file comes from it.
+    let store_file = reading.content.as_ref().map(|c| Rc::new(c.file().clone()));
+    let shown_file = file.or(store_file);
     let (syntax_on, set_syntax_on) = use_state(scope, || true);
     // Which way `]c` or `[c` went with nowhere to go, cleared by the next key.
     let (exhausted, set_exhausted) = use_state(scope, || None::<Direction>);
@@ -66,7 +70,7 @@ pub fn App(scope: &mut Scope) -> Node {
     let body = use_ref(scope, || None::<loom::NodeHandle>);
     let resolver = use_ref(scope, Resolver::new);
 
-    let alignment = reading.diff.as_ref().map(|diff| &diff.alignment);
+    let alignment = reading.content.as_ref().and_then(|c| c.alignment());
     let view_lines_count = alignment.map_or(0, |alignment| alignment.view_line_count(layout));
     let timed_out = alignment.is_some_and(|alignment| alignment.hit_timeout());
     // A walk of every view line, so it is done once per diff rather than once
@@ -212,7 +216,7 @@ pub fn App(scope: &mut Scope) -> Node {
             layout: Layout { grow: 1, min_height: 2, ..Default::default() },
             ..,
             FileContext {
-                value: file,
+                value: shown_file.clone(),
                 CursorContext {
                     value: cursor,
                     FirstCellContext {

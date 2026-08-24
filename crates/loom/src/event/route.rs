@@ -54,8 +54,15 @@ pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
         let rt = held.borrow();
         match rt.focused {
             Some(node) => rt.placed.iter().position(|p| p.scope == node.scope && p.nth == node.nth),
-            // With nothing focused, a key is offered to the root.
-            None => (!rt.placed.is_empty()).then_some(0),
+            // With nothing focused, a key is offered to every node from
+            // the deepest up, the way a browser sends Tab to the first
+            // focusable element.
+            None => {
+                rt.placed.iter().enumerate().rev()
+                    .find(|(_, p)| p.listeners.key.is_some())
+                    .map(|(i, _)| i)
+                    .or((!rt.placed.is_empty()).then_some(0))
+            }
         }
     };
     let Some(start) = start else { return false };

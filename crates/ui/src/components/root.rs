@@ -8,7 +8,9 @@ use super::app::{App, AppProps, FlowContext, FlowContextProps};
 use super::context::{
     CursorCellContext, CursorCellContextProps, DiffStore, DiffStoreContext,
     DiffStoreContextProps, FileListStore, FileListStoreContext, FileListStoreContextProps,
-    ThemeContext, ThemeContextProps, ViewLinesCellContext, ViewLinesCellContextProps,
+    ScreenMapCellContext, ScreenMapCellContextProps, SelectionCellContext,
+    SelectionCellContextProps, ThemeContext, ThemeContextProps, ViewLinesCellContext,
+    ViewLinesCellContextProps,
 };
 use crate::app::Flow;
 use crate::theme::Theme;
@@ -24,23 +26,31 @@ pub fn Root(
     on_flow: Rc<dyn Fn(Flow)>,
     cursor_cell: Rc<std::cell::Cell<u32>>,
     view_lines_cell: Rc<std::cell::Cell<u32>>,
+    selection_cell: Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>,
+    screen_map_cell: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
 ) -> Node {
     let _ = scope;
 
     rsx! {
-        CursorCellContext {
-            value: Rc::clone(cursor_cell),
-            ViewLinesCellContext {
-                value: Rc::clone(view_lines_cell),
-                ThemeContext {
-                    value: Rc::clone(theme),
-                    DiffStoreContext {
-                        value: diff_store.clone(),
-                        FileListStoreContext {
-                            value: file_list_store.clone(),
-                            FlowContext {
-                                value: Rc::clone(on_flow),
-                                App {}
+        SelectionCellContext {
+            value: Rc::clone(selection_cell),
+            ScreenMapCellContext {
+                value: Rc::clone(screen_map_cell),
+                CursorCellContext {
+                    value: Rc::clone(cursor_cell),
+                    ViewLinesCellContext {
+                        value: Rc::clone(view_lines_cell),
+                        ThemeContext {
+                            value: Rc::clone(theme),
+                            DiffStoreContext {
+                                value: diff_store.clone(),
+                                FileListStoreContext {
+                                    value: file_list_store.clone(),
+                                    FlowContext {
+                                        value: Rc::clone(on_flow),
+                                        App {}
+                                    }
+                                }
                             }
                         }
                     }
