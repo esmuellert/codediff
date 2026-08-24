@@ -84,6 +84,20 @@ context!(
 );
 
 context!(
+    /// Which layout the diff is drawn in.
+    ///
+    /// A view line is a different row side by side than it is inline, so
+    /// whoever counts rows has to know which numbering the cursor is in.
+    pub LayoutContext: file_types::DiffType = file_types::DiffType::SideBySide
+);
+
+context!(
+    /// Which way a change key went with nowhere to go, cleared by the next
+    /// key. Only the status line has anything to say about it.
+    pub ExhaustedContext: Option<crate::state::Direction> = None
+);
+
+context!(
     /// The diff on screen and the colours for it.
     pub DiffStoreContext: DiffStore = DiffStore::new(),
     |a: &DiffStore, b: &DiffStore| Rc::ptr_eq(&a.inner, &b.inner)

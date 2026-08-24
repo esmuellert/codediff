@@ -16,8 +16,9 @@ use loom::{
 
 use super::context::{
     ArrangementContext, ArrangementContextProps, CursorCellContext, CursorContext,
-    CursorContextProps, DiffStoreContext, FileContext, FileContextProps, FileListStoreContext,
-    FirstCellContext, FirstCellContextProps, LayoutCellContext, NoticeContext, NoticeContextProps,
+    CursorContextProps, DiffStoreContext, ExhaustedContext, ExhaustedContextProps, FileContext,
+    FileContextProps, FileListStoreContext, FirstCellContext, FirstCellContextProps,
+    LayoutCellContext, LayoutContext, LayoutContextProps, NoticeContext, NoticeContextProps,
     OnSelectContext, OnSelectContextProps, OpenContext, PaneContext, PaneContextProps,
     ScreenMapCellContext, SelectionCellContext, SelectionContext, SelectionContextProps,
     SyntaxOnContext, SyntaxOnContextProps, ThemeContext, ViewLinesCellContext, ViewLinesContext,
@@ -139,9 +140,8 @@ pub fn App(scope: &mut Scope) -> Node {
         }
         None => (layout, 0),
     };
-    let timed_out = alignment.is_some_and(|alignment| alignment.hit_timeout());
     // A walk of every view line, so it is done once per diff rather than once
-    // per frame. The status line reads it, and so does change navigation.
+    // per frame. Change navigation reads it; the status line counts its own.
     let blocks = use_memo(scope, (reading.clone(), layout), || {
         alignment.map(|alignment| alignment.blocks(layout)).unwrap_or_default()
     });
@@ -548,13 +548,13 @@ pub fn App(scope: &mut Scope) -> Node {
                             value: 0..rows,
                             CursorContext {
                                 value: cursor,
-                                StatusLine {
-                                    changes: if focus_diff { blocks.len() } else { 0 },
-                                    change: focus_diff
-                                        .then(|| blocks.iter().position(|b| b.contains(&cursor)))
-                                        .flatten(),
-                                    timed_out: focus_diff && timed_out,
-                                    exhausted: exhausted,
+                                // Two things the store cannot answer.
+                                LayoutContext {
+                                    value: effective_layout,
+                                    ExhaustedContext {
+                                        value: exhausted,
+                                        StatusLine {}
+                                    }
                                 }
                             }
                         }

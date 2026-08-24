@@ -195,6 +195,19 @@ fn navigation_and_the_status_line_count_the_same_changes() {
 }
 
 #[test]
+fn the_change_the_cursor_is_in_is_counted_in_the_rows_on_screen() {
+    // Inline gives what was there and what replaced it a row each, so the
+    // inserted line is row 4 there and row 3 side by side. Counted in the
+    // layout that is not on screen, the cursor sits in a change while the row
+    // says it is in none.
+    let mut s = demo();
+    type_keys(&mut s, "t]c]c");
+    assert_eq!(s.cursor(), 4, "the inserted row, inline");
+    let inline = screen(&mut s, 44, 10);
+    assert!(inline.contains("change 2/2"), "{inline:?}");
+}
+
+#[test]
 fn a_change_key_at_the_last_change_says_so_rather_than_doing_nothing() {
     // Silence here reads as a broken key. Cycling round instead would be
     // worse: it destroys the one signal that matters when checking an agent's
@@ -254,6 +267,36 @@ fn a_diff_the_engine_abandoned_says_so_on_screen() {
         screen(&mut s, 60, 8).contains("PARTIAL"),
         "an abandoned diff was not announced"
     );
+}
+
+#[test]
+fn the_list_says_nothing_about_the_diff_beside_it() {
+    // The row belongs to whichever pane the reader is in. A count of changes
+    // and a warning about the diff engine are both about the other pane, and
+    // the list has neither to report.
+    let before = vscode_diff::lines(BEFORE);
+    let after = vscode_diff::lines(AFTER);
+    let real = vscode_diff::compute(&before, &after, &vscode_diff::Options::default())
+        .expect("the engine runs");
+    let abandoned = vscode_diff::LinesDiff {
+        hit_timeout: true,
+        ..real
+    };
+
+    let buffer = harness::with_diff("src/demo.rs", BEFORE, AFTER, abandoned);
+    let mut s = TestSession::new(buffer, Theme::DARK);
+    // A list beside the open file, which is where the reader starts.
+    s.refresh_list(vec![harness::file("src/demo.rs")]);
+
+    let listing = screen(&mut s, 60, 8);
+    assert!(listing.contains("changed files"), "{listing:?}");
+    assert!(!listing.contains("PARTIAL"), "{listing:?}");
+    assert!(!listing.contains("2 changes"), "{listing:?}");
+
+    // The diff takes the focus, and with it both.
+    s.handle_event(&key(KeyCode::Right));
+    let reading = screen(&mut s, 60, 8);
+    assert!(reading.contains("PARTIAL"), "{reading:?}");
 }
 
 #[test]

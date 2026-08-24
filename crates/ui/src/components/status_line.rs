@@ -6,10 +6,14 @@ use std::rc::Rc;
 
 use loom::{
     Basis, Canvas, CanvasProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
+    use_memo, use_sync_external_store,
 };
 use ratatui::style::Style;
 
-use super::context::{CursorContext, FileContext, NoticeContext, ThemeContext, ViewLinesContext};
+use super::context::{
+    CursorContext, DiffStoreContext, ExhaustedContext, FileContext, LayoutContext, NoticeContext,
+    ThemeContext, ViewLinesContext,
+};
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
@@ -38,26 +42,42 @@ pub struct Sidecar {
 
 /// The bottom row.
 #[component]
-pub fn StatusLine(
-    scope: &mut Scope,
-    changes: usize,
-    change: Option<usize>,
-    timed_out: bool,
-    exhausted: Option<crate::state::Direction>,
-) -> Node {
+pub fn StatusLine(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let file = use_context::<FileContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let notice = use_context::<NoticeContext>(scope);
+    let layout = use_context::<LayoutContext>(scope);
+    let exhausted = use_context::<ExhaustedContext>(scope);
+    let store = use_context::<DiffStoreContext>(scope);
+    // The diff worker fills the store; the row subscribes rather than being
+    // handed what it produced.
+    let reading = use_sync_external_store(scope, &store);
 
     let base = theme.status;
     let total = view_lines.end;
-    let (changes, change) = (*changes, *change);
+
+    let alignment = reading.content.as_ref().and_then(|c| c.alignment());
+    // A walk of every view line, so it is done once per diff rather than once
+    // per frame.
+    let blocks = use_memo(scope, (reading.clone(), layout), || {
+        alignment.map(|alignment| alignment.blocks(layout)).unwrap_or_default()
+    });
+
+    // `file` is the focused pane's, so it is `None` exactly when the reader is
+    // in the list — which has no changes to count and no engine that could
+    // have given up on it.
+    let has_file = file.is_some();
+    let changes = if has_file { blocks.len() } else { 0 };
+    let change = has_file
+        .then(|| blocks.iter().position(|block| block.contains(&cursor)))
+        .flatten();
+    let timed_out = has_file && alignment.is_some_and(|alignment| alignment.hit_timeout());
 
     let sidecar = Sidecar {
         text: Rc::from(
-            summary(file.is_some(), cursor, total.max(1), changes, change, *exhausted).as_str(),
+            summary(has_file, cursor, total.max(1), changes, change, exhausted).as_str(),
         ),
         style: base,
     };
@@ -70,7 +90,7 @@ pub fn StatusLine(
     // Loud. A diff the engine abandoned is not a diff, and a reviewer who
     // mistakes one for a complete one will approve code they have not seen.
     let mut title = title;
-    if *timed_out {
+    if timed_out {
         title.runs.push((
             Rc::from("  PARTIAL — diff timed out"),
             base.patch(theme.warning),
