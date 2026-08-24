@@ -54,8 +54,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
             let indent = Indent {
                 lines: Rc::from(match model.nested_at(line) {
                     Some((tree, id)) => indent_of(tree, id),
-                    // A heading is what the arrangement hangs from, not a line
-                    // in it.
+                    // A heading has no tree node to describe.
                     None => String::new(),
                 }),
                 style: base.fg(theme.tree.marker),
@@ -160,12 +159,11 @@ fn file_row(name: &str, file: &File, theme: &Theme, background: Style) -> (Body,
     }
 
     let mut status = Vec::new();
-    // A file that gained and lost nothing says nothing, rather than `+0 -0` in
-    // a column the eye is scanning.
+    // A file that gained and lost nothing says nothing.
     if let Some(stats) = file.get_stats().filter(|s| !s.is_empty()) {
         push_stats(&mut status, stats, theme, background, priority::COUNTS);
         // The space between the counts and the letter, which goes with them
-        // rather than staying behind as a lone column.
+        // The space goes with the counts.
         status.push(Run::droppable(" ", background.fg(theme.tree.name), priority::COUNTS));
     }
 

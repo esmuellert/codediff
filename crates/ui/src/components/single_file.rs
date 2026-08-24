@@ -26,9 +26,7 @@ const MIN_TEXT: u16 = 4;
 /// cursor line, or a plain one. The lines come from the modified side, which
 /// is the side a lone file is read as.
 ///
-/// The selection is held above this component: a new file ends one, and that
-/// is not this component's to know, so it is read from context and changed
-/// through `on_select`.
+/// Selection is read from context and changed through `on_select`.
 enum LinesSource<'a> {
     Alignment(&'a align::Alignment, u32),
     Plain(&'a [String]),

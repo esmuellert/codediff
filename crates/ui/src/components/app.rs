@@ -38,8 +38,7 @@ use crate::screen_map::PaneId;
 
 /// Columns the list gets once something is open beside it.
 ///
-/// Wide enough for a name, an indent and a status letter without wrapping,
-/// which is what the plugin also settled on.
+/// Wide enough for a name, an indent and a status letter.
 const LIST_WIDTH: u16 = 40;
 /// What each pane needs before the screen gives up on showing both: a list
 /// asks for less than a diff.
@@ -51,9 +50,7 @@ const WHEEL: i32 = 3;
 context!(
     /// What the interface asks the session to do next.
     ///
-    /// A component cannot leave the program or hand the terminal back, so it
-    /// says which and the session does it. `Root` provides it; the default
-    /// does nothing, which is what a tree mounted without a session wants.
+    /// How a component asks the session to quit or suspend.
     pub FlowContext: Rc<dyn Fn(Flow)> = Rc::new(|_| {}),
     |a: &Rc<dyn Fn(Flow)>, b: &Rc<dyn Fn(Flow)>| Rc::ptr_eq(a, b)
 );

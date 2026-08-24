@@ -26,9 +26,7 @@ const MIN_TEXT: u16 = 4;
 /// The empty gutter says which version a row shows: no modified number means
 /// the line was deleted, no original number means it was inserted.
 ///
-/// The selection is held above this component: a new file and a new layout
-/// both end one, and neither is this component's to know, so it is read from
-/// context and changed through `on_select`.
+/// Selection is read from context and changed through `on_select`.
 #[component]
 pub fn Inline(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);

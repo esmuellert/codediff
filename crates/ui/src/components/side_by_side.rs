@@ -25,10 +25,8 @@ const MIN_TEXT: u16 = 4;
 
 /// Two columns of one file, side by side, with a divider between them.
 ///
-/// The divider's position is this component's own state. The selection is
-/// not: a new file and a new layout both end one, and neither is this
-/// component's to know, so it is read from context and changed through
-/// `on_select`.
+/// The divider's position is this component's own state. Selection is read
+/// from context and changed through `on_select`.
 #[component]
 pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);

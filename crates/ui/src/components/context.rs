@@ -53,10 +53,8 @@ context!(
 );
 
 context!(
-    /// The live text selection. Held above the diff screens because a new
-    /// file and a new layout both end it, and neither is theirs to know.
-    /// A screen reads it from here and changes it through its `on_select`
-    /// prop, the way a controlled component is written.
+    /// The live text selection. App owns it and provides it as context.
+    /// Each screen reads it here and writes it through `on_select`.
     pub SelectionContext: Option<crate::components::selection::Selection> = None
 );
 
@@ -121,13 +119,10 @@ pub struct DiffStore {
 /// One reading of a [`DiffStore`].
 pub struct DiffStoreSnapshot {
     pub content: Option<Rc<pipeline::file::DiffContent>>,
-    /// Which content this is a reading of. Bumped by every new comparison and
-    /// not by new colours, so a re-read of the same file — which has the same
-    /// name and the same revisions — is still a different thing to show.
+    /// Identifies which comparison produced these colours. Bumped by every
+    /// new comparison, so a re-read of the same file is a fresh reading.
     pub version: syntax::Version,
-    /// Shared and mutable, because the worker fills it while the screen reads
-    /// it. A reading cannot own a copy: the spans of a large file are the
-    /// biggest thing the program holds, and a frame would copy them all.
+    /// Shared: the worker fills it while the screen reads it.
     pub colours: Rc<RefCell<syntax::Store>>,
 }
 

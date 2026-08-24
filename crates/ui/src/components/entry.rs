@@ -14,9 +14,8 @@ const GAP: u16 = 1;
 
 /// What is dropped first when a row will not fit, lowest first.
 ///
-/// Named rather than written as numbers at each use, so that "counts go
-/// before the guides" is a statement in one place instead of a comparison a
-/// reader has to make between two distant literals.
+/// The order: moved-from, then counts, then the file count, then the
+/// guides.
 pub mod priority {
     /// Where a moved file came from: useful, never essential.
     pub const MOVED: u8 = 0;

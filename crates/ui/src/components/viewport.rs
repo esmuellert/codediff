@@ -106,8 +106,7 @@ impl Viewport {
     /// Scrolls the view without moving the cursor, like a browser.
     ///
     /// The view moves first. Then if the cursor has gone off screen, it is
-    /// brought to the nearest visible edge — rather than the view snapping
-    /// back to the cursor, which is what `clamp` alone would do.
+    /// brought to the nearest visible edge.
     pub fn scroll(&mut self, delta: i32, view_lines: u32) {
         let last_top = view_lines.saturating_sub(self.height);
         if delta > 0 {
