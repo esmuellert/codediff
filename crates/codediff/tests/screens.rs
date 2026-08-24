@@ -149,7 +149,7 @@ fn resizing_smaller_keeps_the_cursor_on_screen() {
     screen(&mut s, 44, 20);
     let rendered = screen(&mut s, 44, 4);
     assert!(rendered.contains("five"), "{rendered:?}");
-    assert_eq!(s.view().focused().viewport.cursor(), 5);
+    assert_eq!(s.cursor(), 5);
 }
 
 #[test]
@@ -186,11 +186,11 @@ fn navigation_and_the_status_line_count_the_same_changes() {
     assert!(screen(&mut s, 44, 8).contains("2 changes"));
 
     type_keys(&mut s, "]c");
-    assert_eq!(s.view().focused().viewport.cursor(), 1, "the two/TWO row");
+    assert_eq!(s.cursor(), 1, "the two/TWO row");
     assert!(screen(&mut s, 44, 8).contains("change 1/2"));
 
     type_keys(&mut s, "]c");
-    assert_eq!(s.view().focused().viewport.cursor(), 3, "the inserted row");
+    assert_eq!(s.cursor(), 3, "the inserted row");
     assert!(screen(&mut s, 44, 8).contains("change 2/2"));
 }
 
@@ -207,7 +207,7 @@ fn a_change_key_at_the_last_change_says_so_rather_than_doing_nothing() {
     let stuck = screen(&mut s, 44, 8);
     assert!(stuck.contains("no next change"), "{stuck:?}");
     assert_eq!(
-        s.view().focused().viewport.cursor(),
+        s.cursor(),
         3,
         "it must not have moved"
     );

@@ -26,7 +26,7 @@ macro_rules! open {
 }
 
 fn cursor(session: &ui::Session) -> u32 {
-    session.view().focused().viewport.cursor()
+    session.cursor()
 }
 
 fn cursor_after(keys: &str) -> u32 {
@@ -205,10 +205,10 @@ fn change_navigation_works_the_same_in_both_layouts() {
 
 /// The file line the cursor is on, as text, whichever layout is in use.
 fn line_under_cursor(session: &ui::Session) -> String {
-    let view = session.view();
-    let buffer = view.focused_buffer();
-    let alignment = buffer.alignment().expect("these tests build a diff");
-    let layout = buffer.diff_type().expect("these tests build a diff");
+    let reading = session.diff_store.snapshot();
+    let diff = reading.diff.as_ref().expect("these tests build a diff");
+    let alignment = &diff.alignment;
+    let layout = file_types::DiffType::SideBySide;
     let (version, line) = alignment
         .line_at(layout, cursor(session))
         .expect("the cursor is on a line");
@@ -216,7 +216,7 @@ fn line_under_cursor(session: &ui::Session) -> String {
 }
 
 fn lines(session: &ui::Session) -> u32 {
-    session.view().focused_buffer().view_lines()
+    session.view_lines()
 }
 
 fn screen_line(session: &mut ui::Session) -> String {

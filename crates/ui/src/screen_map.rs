@@ -7,6 +7,13 @@ use ratatui::layout::Rect;
 /// Identifies a pane on one frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PaneId(pub u16);
+
+impl PaneId {
+    pub fn new(n: u16) -> Self {
+        Self(n)
+    }
+}
+
 use crate::state::Viewport;
 use crate::state::selection::{Pos, SelectionColumn};
 
@@ -76,9 +83,6 @@ impl ScreenMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// Identifies a pane on one frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PaneId(pub u16);
 
     fn map_with_two_panes() -> ScreenMap {
         let mut m = ScreenMap {

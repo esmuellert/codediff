@@ -60,7 +60,7 @@ fn a_one_sided_file_still_scrolls() {
     let mut s = TestSession::new(single("big.rs", &long), Theme::DARK);
     measure(&mut s);
     s.handle_event(&key(KeyCode::Char('G')));
-    assert_eq!(s.view().focused().viewport.cursor(), 49);
+    assert_eq!(s.cursor(), 49);
     assert!(screen(&mut s, 40, 6).contains("line 50"));
 }
 

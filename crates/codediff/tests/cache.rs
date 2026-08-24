@@ -40,8 +40,7 @@ fn session(lines: usize) -> TestSession {
 /// Presses a key and lets the loop react, as [`ui::run`] does.
 fn press(session: &mut TestSession, code: KeyCode) {
     session.handle_event(&key(code));
-    session.send_colour_request();
-    let _ = cells(session, WIDTH, HEIGHT);
+        let _ = cells(session, WIDTH, HEIGHT);
 }
 
 /// How many different colours a row uses.
@@ -84,8 +83,7 @@ fn nothing_is_asked_for_twice() {
     session.wait_until_idle();
     assert!(!session.is_colouring(), "settled");
 
-    session.send_colour_request();
-    assert!(
+        assert!(
         !session.is_colouring(),
         "asking again for a screen already coloured sends nothing"
     );
@@ -115,8 +113,7 @@ fn a_file_longer_than_the_read_ahead_is_not_read_to_its_end() {
     assert!(!session.is_colouring(), "the screen is done");
 
     session.handle_event(&key(KeyCode::Char('G')));
-    session.send_colour_request();
-    assert!(
+        assert!(
         session.is_colouring(),
         "the end of the file had not been read, so reaching it asks"
     );

@@ -15,6 +15,7 @@ use loom::{
 };
 
 use super::context::{
+    CursorCellContext, ViewLinesCellContext,
     CursorContext, CursorContextProps, DiffStoreContext, FileContext, FileContextProps,
     FirstCellContext, FirstCellContextProps, NoticeContext, NoticeContextProps, SyntaxOnContext,
     SyntaxOnContextProps, ThemeContext, ViewLinesContext, ViewLinesContextProps,
@@ -49,6 +50,8 @@ pub fn App(scope: &mut Scope) -> Node {
     // what they produced.
     let reading = use_sync_external_store(scope, &store);
 
+    let cursor_cell = use_context::<CursorCellContext>(scope);
+    let vl_cell = use_context::<ViewLinesCellContext>(scope);
     let (viewport, set_viewport) = use_state(scope, Viewport::new);
     let (layout, set_layout) = use_state(scope, || DiffType::SideBySide);
     let (show_explorer, set_show_explorer) = use_state(scope, || false);
@@ -73,6 +76,7 @@ pub fn App(scope: &mut Scope) -> Node {
     });
 
     let cursor = viewport.cursor();
+    cursor_cell.set(cursor);
 
     // Layout knows how many rows the panes have; the render body does not.
     // The viewport is told as soon as layout has decided, so a page motion

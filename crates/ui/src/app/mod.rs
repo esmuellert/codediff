@@ -9,7 +9,7 @@ pub(crate) mod threads;
 mod workers;
 pub use workers::Workers;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use ratatui::backend::Backend;
@@ -41,11 +41,12 @@ pub enum Exit {
 pub struct Session {
     tree: loom::Tree,
     theme: Theme,
-    pub(crate) diff_store: DiffStore,
-    pub(crate) file_list_store: FileListStore,
-    pub(crate) workers: Workers,
-    /// What App told the session to do, read back after each event.
+    pub diff_store: DiffStore,
+    pub file_list_store: FileListStore,
+    pub workers: Workers,
     flow: Rc<Cell<Option<Flow>>>,
+    cursor_cell: Rc<Cell<u32>>,
+    view_lines_cell: Rc<Cell<u32>>,
 }
 
 impl Session {
@@ -59,14 +60,19 @@ impl Session {
             Rc::new(move |f: Flow| cell.set(Some(f))) as Rc<dyn Fn(Flow)>
         };
 
+        let cursor_cell = Rc::new(Cell::new(0u32));
+        let view_lines_cell = Rc::new(Cell::new(0u32));
+
         let tree = loom::Tree::new::<Root>(RootProps {
             theme: Rc::new(theme),
             diff_store: diff_store.clone(),
             file_list_store: file_list_store.clone(),
             on_flow: flow_cb,
+            cursor_cell: Rc::clone(&cursor_cell),
+            view_lines_cell: Rc::clone(&view_lines_cell),
         });
 
-        Self { tree, theme, diff_store, file_list_store, workers, flow }
+        Self { tree, theme, diff_store, file_list_store, workers, flow, cursor_cell, view_lines_cell }
     }
 
     /// Draws one frame into a cell grid (for tests, without a terminal).
@@ -84,6 +90,16 @@ impl Session {
             tree.draw(frame.buffer_mut(), area);
         })?;
         Ok(())
+    }
+
+    /// The cursor position, as last rendered.
+    pub fn cursor(&self) -> u32 {
+        self.cursor_cell.get()
+    }
+
+    /// The document height in view lines, as last rendered.
+    pub fn view_lines(&self) -> u32 {
+        self.view_lines_cell.get()
     }
 
     /// Whether anything needs drawing.

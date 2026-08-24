@@ -244,3 +244,16 @@ fn announce(listeners: Vec<Option<Notify>>) {
         notify.changed();
     }
 }
+
+/// A shared cell the root writes the cursor into each render, so the
+/// session can read it from outside the tree for tests.
+context!(
+    pub CursorCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
+    |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
+);
+
+/// A shared cell the root writes the view_lines count into.
+context!(
+    pub ViewLinesCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
+    |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
+);
