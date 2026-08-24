@@ -8,23 +8,21 @@ pub use ratatui;
 
 mod app;
 mod cells;
+pub mod screen_map;
 pub mod components;
-mod draw;
 
-pub use draw::screen_map::ScreenMap;
+pub use screen_map::ScreenMap;
 pub mod input;
-mod render;
 pub mod state;
 mod start;
 mod terminal;
 pub mod theme;
-pub mod view;
 
 pub use app::event::Event;
 pub use app::{Exit, Flow, Session, Workers, run};
 pub use start::start;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
-pub use view::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};
-pub use view::{View, Viewport};
+pub use state::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};
+pub use state::{View, Viewport};
 pub mod testing;

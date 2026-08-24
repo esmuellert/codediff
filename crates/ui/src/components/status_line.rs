@@ -9,7 +9,7 @@ use loom::{
 };
 use ratatui::style::Style;
 
-use super::context::{CursorContext, DiffDataContext, FileContext, NoticeContext, ThemeContext};
+use super::context::{CursorContext, FileContext, NoticeContext, ThemeContext, ViewLinesContext};
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
@@ -26,28 +26,27 @@ pub struct Sidecar {
 
 /// The bottom row.
 #[component]
-pub fn StatusLine(scope: &mut Scope) -> Node {
+pub fn StatusLine(
+    scope: &mut Scope,
+    changes: usize,
+    change: Option<usize>,
+    timed_out: bool,
+    exhausted: Option<crate::state::Direction>,
+) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let file = use_context::<FileContext>(scope);
+    let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let notice = use_context::<NoticeContext>(scope);
-    let diff_data = use_context::<DiffDataContext>(scope);
 
-    let loaded = loom::use_sync_external_store(scope, &diff_data);
     let base = theme.status;
-
-    let total = loaded
-        .diff
-        .as_ref()
-        .map_or(0, |diff| diff.alignment.view_lines(file_types::DiffType::SideBySide).count() as u32);
-    let changes = loaded.diff.as_ref().map_or(0, |diff| runs(&diff.alignment));
-    let change = loaded
-        .diff
-        .as_ref()
-        .and_then(|diff| run_at(&diff.alignment, cursor));
+    let total = view_lines.end;
+    let (changes, change) = (*changes, *change);
 
     let sidecar = Sidecar {
-        text: Rc::from(summary(file.is_some(), cursor, total.max(1), changes, change).as_str()),
+        text: Rc::from(
+            summary(file.is_some(), cursor, total.max(1), changes, change, *exhausted).as_str(),
+        ),
         style: base,
     };
     let title = match (notice, file) {
@@ -60,6 +59,17 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
             text: Rc::from("changed files"),
             style: base.patch(theme.status_path),
         },
+    };
+
+    // Loud. A diff the engine abandoned is not a diff, and a reviewer who
+    // mistakes one for a complete one will approve code they have not seen.
+    let title = if *timed_out {
+        Title {
+            text: Rc::from(format!("{}  PARTIAL — diff timed out", title.text).as_str()),
+            style: base.patch(theme.warning),
+        }
+    } else {
+        title
     };
 
     let sidecar_width = sidecar.text.chars().count() as u16 + 1;
@@ -124,10 +134,27 @@ fn path_of(file: &file_types::File) -> String {
 }
 
 /// A list of changed files is not a diff, so it has no changes to count.
-fn summary(has_file: bool, cursor: u32, total: u32, changes: usize, change: Option<usize>) -> String {
+fn summary(
+    has_file: bool,
+    cursor: u32,
+    total: u32,
+    changes: usize,
+    change: Option<usize>,
+    exhausted: Option<crate::state::Direction>,
+) -> String {
     let position = format!("{}/{}", cursor + 1, total);
+    // A list of changed files is not a diff, so it has no changes to count.
     if !has_file {
         return position;
+    }
+    // A key that had nowhere to go answers the key that was just pressed; the
+    // counter would only repeat what it already said.
+    if let Some(direction) = exhausted {
+        let which = match direction {
+            crate::state::Direction::Next => "next",
+            crate::state::Direction::Previous => "previous",
+        };
+        return format!("no {which} change   {position}");
     }
     match (change, changes) {
         (_, 0) => format!("no changes   {position}"),
@@ -137,37 +164,5 @@ fn summary(has_file: bool, cursor: u32, total: u32, changes: usize, change: Opti
     }
 }
 
-/// How many runs of changed view lines the file has.
-fn runs(alignment: &align::Alignment) -> usize {
-    let mut count = 0;
-    let mut inside = false;
-    for line in alignment.view_lines_from(file_types::DiffType::SideBySide, 0) {
-        let changed = line.kind != align::ViewLineType::Unchanged;
-        if changed && !inside {
-            count += 1;
-        }
-        inside = changed;
-    }
-    count
-}
 
-/// Which run the cursor is in, if any.
-fn run_at(alignment: &align::Alignment, cursor: u32) -> Option<usize> {
-    let mut count = 0;
-    let mut inside = false;
-    for (index, line) in alignment
-        .view_lines_from(file_types::DiffType::SideBySide, 0)
-        .enumerate()
-    {
-        let changed = line.kind != align::ViewLineType::Unchanged;
-        if changed && !inside {
-            count += 1;
-        }
-        inside = changed;
-        if index as u32 == cursor {
-            return changed.then(|| count - 1);
-        }
-    }
-    None
-}
 

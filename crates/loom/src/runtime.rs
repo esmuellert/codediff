@@ -146,12 +146,25 @@ impl Runtime {
         self.scopes.is_alive(id)
     }
 
+    /// Marks a scope, and every ancestor, so the next frame reaches it.
+    ///
+    /// A parent that is not marked hands back last frame's subtree without
+    /// looking inside it, so a child that changed would never be reached. A
+    /// memoised child whose props still match is left clean and keeps its own
+    /// subtree, which is what stops this walking the whole tree.
     pub fn mark(&mut self, id: ScopeId) {
         if !self.scopes.is_alive(id) {
             return;
         }
-        if let Some(mounted) = self.scopes.get_mut(id) {
+        let mut at = Some(id);
+        while let Some(scope) = at {
+            let Some(mounted) = self.scopes.get_mut(scope) else { break };
+            if mounted.dirty && scope != id {
+                // Everything above is marked already.
+                break;
+            }
             mounted.dirty = true;
+            at = mounted.parent;
         }
         if !self.dirty.contains(&id) {
             self.dirty.push(id);

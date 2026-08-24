@@ -75,8 +75,9 @@ pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
         paint_one(held, at, cells);
     }
 
+    // Effects run after the frame is on screen. What they mark belongs to
+    // the next one, so nothing is cleared after this.
     run_effects(held, false);
-    held.borrow_mut().dirty.clear();
 }
 
 /// Moves every pending state value into its slot, so the next render reads it.

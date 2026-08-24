@@ -11,7 +11,8 @@ use loom::{
 };
 
 use super::context::{
-    CursorContext, DiffDataContext, FirstCellContext, ThemeContext, ViewLinesContext,
+    ColoursContext, CursorContext, FirstCellContext, PaneContext, ScreenMapContext, SyntaxOnContext,
+    ThemeContext, ViewLinesContext,
 };
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
@@ -98,9 +99,16 @@ impl Rows<'_> {
 /// The divider's position and the text selection are this component's own
 /// state; no parent needs either.
 #[component]
-pub fn SideBySide(scope: &mut Scope) -> Node {
+pub fn SideBySide(
+    scope: &mut Scope,
+    view: Rc<std::cell::RefCell<crate::state::View>>,
+    buffer: crate::state::BufferId,
+) -> Node {
     let theme = use_context::<ThemeContext>(scope);
-    let diff_data = use_context::<DiffDataContext>(scope);
+    let colours = use_context::<ColoursContext>(scope);
+    let syntax_on = use_context::<SyntaxOnContext>(scope);
+    let map = use_context::<ScreenMapContext>(scope);
+    let pane = use_context::<PaneContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let first_cell = use_context::<FirstCellContext>(scope);
@@ -108,33 +116,39 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     // Percent of the pane the left column takes.
     // The workers fill this; a component subscribes rather than being handed
     // what they produced.
-    let loaded = loom::use_sync_external_store(scope, &diff_data);
 
     let (divider, _set_divider) = use_state(scope, || 50u16);
-    let (selection, set_selection) = use_state(scope, || None::<Selection>);
 
     // The divider is taken off the top before dividing, so widening the pane
     // by one column widens a column rather than the divider. That needs this
     // component's own width, which layout knows and the render body does not.
     let node = use_ref(scope, || None::<loom::NodeHandle>);
+    let left_column = use_ref(scope, || None::<loom::NodeHandle>);
+    let right_column = use_ref(scope, || None::<loom::NodeHandle>);
     let (width, set_width) = use_state(scope, || 0u16);
-    use_layout_effect(scope, loom::Always, move || {
-        let now = node.current().map_or(0, |node| node.area().width);
-        set_width(&move |_| now);
-    });
 
-    let Some(alignment) = loaded.diff.clone() else { return Node::Empty };
+    let store = colours.borrow();
+    let read = view.borrow();
+    let selection = read
+        .selection
+        .filter(|(owner, _)| Some(*owner) == pane)
+        .map(|(_, held)| held);
+    let held = read.buffer(*buffer);
+    let Some(alignment) = held.alignment() else { return Node::Empty };
+    let Some(file) = held.file() else { return Node::Empty };
 
     // Collected once and read by both columns, so the two cannot disagree
     // about what line they are on.
     let lines: Vec<align::ViewLine> = alignment
-        .alignment
         .view_lines_from(DiffType::SideBySide, view_lines.start)
         .take(view_lines.len())
         .collect();
 
-    let column = |diff_version: DiffVersion, layout: Layout| -> Node {
-        let width = gutter_width(alignment.alignment.lines(diff_version).len() as u32);
+    let column = |diff_version: DiffVersion,
+                  layout: Layout,
+                  slot: loom::Ref<Option<loom::NodeHandle>>|
+     -> Node {
+        let width = gutter_width(alignment.lines(diff_version).len() as u32);
         let which = match diff_version {
             DiffVersion::Original => SelectionColumn::Original,
             DiffVersion::Modified => SelectionColumn::Modified,
@@ -147,37 +161,13 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
             Some(Pos::new(top + u32::from(mouse.local.y), first_cell + u32::from(x)))
         };
 
-        let listeners = Listeners::new()
-            .on_mouse_down(move |mouse| {
-                if let Some(pos) = at(mouse) {
-                    capture_pointer();
-                    set_selection(&move |_| Some(Selection::start(which, pos)));
-                }
-                Bubble::Stop
-            })
-            .on_mouse_move(move |mouse| {
-                if mouse.button.is_some()
-                    && let Some(pos) = at(mouse)
-                {
-                    set_selection(&move |held: Option<Selection>| {
-                        held.map(|mut held| {
-                            held.update(pos);
-                            held
-                        })
-                    });
-                }
-                Bubble::Stop
-            })
-            .on_mouse_up(move |_| {
-                release_pointer();
-                Bubble::Stop
-            });
+        let listeners = Listeners::new();
 
         let rows = Rows {
-            alignment: &alignment.alignment,
+            alignment,
             theme: &theme,
-            spans: if loaded.syntax_on {
-                crate::state::buffer::colour::spans_diff(&alignment, &loaded.colours)
+            spans: if syntax_on {
+                crate::state::buffer::colour::spans_for(file, &store)
             } else {
                 syntax::Spans::Off
             },
@@ -195,6 +185,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
 
         rsx! {
             Column {
+                ref: Some(slot),
                 layout: layout,
                 listeners: listeners,
                 ..,
@@ -203,8 +194,35 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         }
     };
 
-    let original_width = gutter_width(alignment.alignment.lines(DiffVersion::Original).len() as u32);
-    let modified_width = gutter_width(alignment.alignment.lines(DiffVersion::Modified).len() as u32);
+    let original_width = gutter_width(alignment.lines(DiffVersion::Original).len() as u32);
+    let modified_width = gutter_width(alignment.lines(DiffVersion::Modified).len() as u32);
+
+    // A text area is a column with its gutter taken off the left. Recorded
+    // once layout has decided, for whoever has to say what is under the mouse.
+    let filling = Rc::clone(&map);
+    use_layout_effect(scope, loom::Always, move || {
+        let now = node.current().map_or(0, |node| node.area().width);
+        set_width(&move |_| now);
+
+        let Some(pane) = pane else { return };
+        let mut map = filling.borrow_mut();
+        for (slot, column, gutter) in [
+            (left_column, SelectionColumn::Original, original_width),
+            (right_column, SelectionColumn::Modified, modified_width),
+        ] {
+            let Some(node) = *slot.current() else { continue };
+            let area = node.area();
+            map.text_areas.push(crate::screen_map::TextArea {
+                pane,
+                column,
+                rect: ratatui::layout::Rect {
+                    x: area.x.saturating_add(gutter),
+                    width: area.width.saturating_sub(gutter),
+                    ..area
+                },
+            });
+        }
+    });
 
     let left = column(
         DiffVersion::Original,
@@ -215,10 +233,12 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
             min_width: original_width + MIN_TEXT,
             ..Default::default()
         },
+        left_column,
     );
     let right = column(
         DiffVersion::Modified,
         Layout { grow: 1, min_width: modified_width + MIN_TEXT, ..Default::default() },
+        right_column,
     );
 
     rsx! {

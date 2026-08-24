@@ -127,6 +127,14 @@ impl Buffer {
     }
 
     /// The list of changed files, when that is what this is.
+    /// The file list, when this buffer is one.
+    pub fn as_explorer(&self) -> Option<&Explorer> {
+        match &self.buffer_type {
+            BufferType::Explorer(explorer) => Some(explorer),
+            _ => None,
+        }
+    }
+
     pub fn as_explorer_mut(&mut self) -> Option<&mut Explorer> {
         match &mut self.buffer_type {
             BufferType::Explorer(explorer) => Some(explorer),

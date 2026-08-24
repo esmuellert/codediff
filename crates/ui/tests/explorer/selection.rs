@@ -5,11 +5,11 @@ use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 use ui::Session;
-use ui::view::selection::{Selection, SelectionColumn};
+use ui::state::selection::{Selection, SelectionColumn};
 
 /// Returns the active selection, or panics.
-fn sel(session: &Session) -> &Selection {
-    &session
+fn sel(session: &Session) -> Selection {
+    session
         .view()
         .selection
         .as_ref()
@@ -415,11 +415,13 @@ fn highlight_exact_extent() {
     session.draw_into(&mut cells, area);
 
     // Use screen_map to get the exact text rect.
-    let ta = session
+    let focus = session.view().tab().focus();
+    let text_x = session
         .screen_map()
-        .text_area_of(session.view().tab().focus(), SelectionColumn::Modified)
-        .expect("modified text area should exist");
-    let text_x = ta.rect.x;
+        .text_area_of(focus, SelectionColumn::Modified)
+        .expect("modified text area should exist")
+        .rect
+        .x;
 
     // Select from col 3 to col 8 on row 3 (relative to text area).
     let click_x_start = text_x + 3;
@@ -477,11 +479,12 @@ fn selection_does_not_highlight_other_pane() {
     let mut session = setup_diff_session();
 
     // Get the original column text area x range.
-    let orig_ta = session
+    let focus = session.view().tab().focus();
+    let orig_rect = session
         .screen_map()
-        .text_area_of(session.view().tab().focus(), SelectionColumn::Original)
-        .expect("original text area");
-    let orig_rect = orig_ta.rect;
+        .text_area_of(focus, SelectionColumn::Original)
+        .expect("original text area")
+        .rect;
 
     // Select in the modified column.
     mouse(&mut session, MouseEventKind::Down(MouseButton::Left), 90, 3);

@@ -12,57 +12,50 @@ use super::context::ThemeContext;
 use crate::cells;
 use crate::theme::icon::Icon;
 
+/// One stretch of a row in one colour.
+///
+/// A row is not one colour: a heading's name and its count differ, and so do
+/// the two halves of `+4 -3`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Run {
+    pub text: Rc<str>,
+    pub style: Style,
+}
+
+impl Run {
+    pub fn new(text: impl AsRef<str>, style: Style) -> Self {
+        Self { text: Rc::from(text.as_ref()), style }
+    }
+
+    fn width(&self) -> u16 {
+        line_index::LineIndex::new(&self.text, 1).width().0 as u16
+    }
+}
+
 /// The tree lines to the left of the name. Fixed by depth.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Indent {
     /// `"│ └ "` or `""`.
     pub lines: Rc<str>,
+    pub style: Style,
 }
 
 /// The icon and the name. Absorbs whatever room is left, and truncates.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Body {
-    pub icon: Icon,
-    pub text: Rc<str>,
+    /// A heading has none: it names a comparison, not a file.
+    pub icon: Option<Icon>,
+    pub runs: Rc<[Run]>,
 }
 
 /// The counts and the change letter, right-aligned.
+///
+/// The letter is separate because it is what survives when the counts will
+/// not fit.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Status {
-    pub added: u32,
-    pub removed: u32,
-    pub letter: &'static str,
-}
-
-impl Status {
-    /// `+4 -3 M` when both sides changed, `+4 M` when only one. The zero is
-    /// omitted so it does not repeat down a column the eye is scanning.
-    fn text(&self) -> String {
-        let mut out = String::new();
-        if self.added > 0 {
-            out.push_str(&format!("+{} ", self.added));
-        }
-        if self.removed > 0 {
-            out.push_str(&format!("-{} ", self.removed));
-        }
-        out.push_str(self.letter);
-        out
-    }
-}
-
-/// What a row of the explorer is.
-#[derive(Clone, PartialEq, Eq)]
-pub enum Content {
-    Heading { name: Rc<str>, files: usize, stats: GroupCounts },
-    Directory { name: Rc<str>, open: bool, depth: u16 },
-    File { name: Rc<str>, file: Rc<file_types::File> },
-}
-
-/// What a heading counts up across the files under it.
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct GroupCounts {
-    pub added: u32,
-    pub removed: u32,
+    pub counts: Rc<[Run]>,
+    pub letter: Run,
 }
 
 /// One row.
@@ -84,17 +77,19 @@ pub fn Entry(
         theme.normal
     };
 
-    let lines = Rc::clone(&indent.lines);
-    let indent_width = lines.chars().count() as u16;
+    let indent_width = Run::new(&indent.lines, base).width();
+    let icon_width = if body.icon.is_some() { 2 } else { 0 };
 
-    let full = status.as_ref().map(Status::text).unwrap_or_default();
-    let letter = status.as_ref().map_or("", |status| status.letter);
-    let status_width = full.chars().count() as u16;
-    let letter_width = letter.chars().count() as u16;
+    let counts_width = status
+        .as_ref()
+        .map_or(0, |status| status.counts.iter().map(Run::width).sum::<u16>());
+    let letter_width = status.as_ref().map_or(0, |status| status.letter.width());
+    let status_width = counts_width + letter_width;
 
+    let lines = Run::new(&indent.lines, indent.style);
     let icon = body.icon;
-    let text = Rc::clone(&body.text);
-    let icon_style = base.patch(Style::new().fg(icon.color));
+    let runs = Rc::clone(&body.runs);
+    let status = status.clone();
 
     rsx! {
         Row {
@@ -106,7 +101,7 @@ pub fn Entry(
             },
             ..,
             {
-                text_canvas(
+                one_run(
                     lines,
                     base,
                     Layout { basis: Basis::Length(indent_width), shrink: 0, ..Default::default() },
@@ -114,21 +109,25 @@ pub fn Entry(
             }
             {
                 icon_and_name(
-                    icon.glyph,
-                    icon_style,
-                    text,
+                    icon,
+                    runs,
                     base,
-                    Layout { grow: 1, ..Default::default() },
+                    Layout {
+                        grow: 1,
+                        // The icon and one column of the name, so a row never
+                        // shrinks to nothing.
+                        min_width: icon_width + 1,
+                        ..Default::default()
+                    },
                 )
             }
             {
                 counts_and_letter(
-                    full,
-                    letter.to_string(),
+                    status,
                     base,
                     Layout {
                         basis: Basis::Length(status_width),
-                        // When the counts do not fit, the letter still does.
+                        // When the counts will not fit, the letter still does.
                         min_width: letter_width,
                         shrink: 1,
                         ..Default::default()
@@ -139,15 +138,15 @@ pub fn Entry(
     }
 }
 
-/// A section that writes what it is given and stops at its own edge.
-fn text_canvas(text: Rc<str>, style: Style, layout: Layout) -> Node {
+/// One run, written from the left edge and cut at its own.
+fn one_run(run: Run, base: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
-                cells::fill(paint.cells(), area, style);
-                cells::write(paint.cells(), area, 0, &text, style);
+                cells::fill(paint.cells(), area, base);
+                cells::write(paint.cells(), area, 0, &run.text, run.style);
             }),
             ..Default::default()
         },
@@ -155,25 +154,33 @@ fn text_canvas(text: Rc<str>, style: Style, layout: Layout) -> Node {
     )
 }
 
-/// The icon in its own colour, then the name, cut with `…` when it does not
-/// fit.
-fn icon_and_name(glyph: char, icon_style: Style, text: Rc<str>, base: Style, layout: Layout) -> Node {
+/// The icon in its own colour, then the runs, cut when they do not fit.
+///
+/// Cut rather than dropped: a row with no name says nothing at all.
+fn icon_and_name(icon: Option<Icon>, runs: Rc<[Run]>, base: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
                 cells::fill(paint.cells(), area, base);
-                let mut at = cells::write(paint.cells(), area, 0, &glyph.to_string(), icon_style);
-                at += 1;
 
-                let room = area.width.saturating_sub(at) as usize;
-                let length = text.chars().count();
-                if length <= room {
-                    cells::write(paint.cells(), area, at, &text, base);
-                } else if room > 1 {
-                    let kept: String = text.chars().take(room - 1).collect();
-                    cells::write(paint.cells(), area, at, &format!("{kept}…"), base);
+                let mut at = 0u16;
+                if let Some(icon) = icon {
+                    let style = base.fg(icon.color);
+                    at = cells::write(paint.cells(), area, at, &format!("{} ", icon.glyph), style);
+                }
+
+                for run in runs.iter() {
+                    if at >= area.width {
+                        break;
+                    }
+                    let room = area.width - at;
+                    // Never through the middle of a character: a wide one that
+                    // will not fit is left out, a column short rather than a
+                    // broken glyph.
+                    let text = cut(&run.text, room);
+                    at = cells::write(paint.cells(), area, at, &text, run.style);
                 }
             }),
             ..Default::default()
@@ -182,21 +189,41 @@ fn icon_and_name(glyph: char, icon_style: Style, text: Rc<str>, base: Style, lay
     )
 }
 
-/// The counts and the letter, right-aligned. When the counts do not fit, the
-/// letter is what is left.
-fn counts_and_letter(full: String, letter: String, style: Style, layout: Layout) -> Node {
+/// The counts and the letter, right-aligned. When the counts will not fit,
+/// the letter is what is left.
+fn counts_and_letter(status: Option<Status>, base: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
-                cells::fill(paint.cells(), area, style);
-                let shown = if full.chars().count() as u16 <= area.width { &full } else { &letter };
-                let at = area.width.saturating_sub(shown.chars().count() as u16);
-                cells::write(paint.cells(), area, at, shown, style);
+                cells::fill(paint.cells(), area, base);
+                let Some(status) = &status else { return };
+
+                let counts: u16 = status.counts.iter().map(Run::width).sum();
+                let letter = status.letter.width();
+                let shown: &[Run] =
+                    if counts + letter <= area.width { &status.counts } else { &[] };
+
+                let width = shown.iter().map(Run::width).sum::<u16>() + letter;
+                let mut at = area.width.saturating_sub(width);
+                for run in shown {
+                    at = cells::write(paint.cells(), area, at, &run.text, run.style);
+                }
+                cells::write(paint.cells(), area, at, &status.letter.text, status.letter.style);
             }),
             ..Default::default()
         },
         None,
     )
+}
+
+/// Cuts `text` to `room` columns, never through a character.
+fn cut(text: &str, room: u16) -> String {
+    let line = line_index::LineIndex::new(text, 1);
+    if line.width().0 as u16 <= room {
+        return text.to_string();
+    }
+    let end = line.cell_to_byte(line_index::CellCol(u32::from(room)));
+    text[..end.0 as usize].to_string()
 }

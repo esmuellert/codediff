@@ -1,27 +1,9 @@
-//! The view model: View → Tab → Pane → Buffer.
+//! What one session is showing: View → Tab → Pane → Buffer.
 //!
-//! ```text
-//! view/            View     tabs, and every buffer
-//! ├ tab.rs         Tab      pane layout and focus
-//! ├ pane.rs        Pane     one buffer + one Viewport
-//! ├ viewport.rs    Viewport top, cursor, left
-//! └ buffer/        Buffer   what a pane can show
-//! ```
-//!
-//! Buffers live in [`View`], referenced by [`BufferId`] (not by `&mut`).
+//! Buffers live in [`View`], referenced by [`BufferId`] rather than by
+//! `&mut`, so two panes can name the same one.
 
-mod pane;
-mod tab;
-
-pub use crate::state::buffer;
-pub use crate::state::selection;
-
-pub use crate::state::{Buffer, BufferType, Direction};
-pub use pane::Pane;
-pub use selection::{Selection, SelectionColumn};
-pub use tab::{Layout, PaneId, Tab};
-pub use crate::state::Viewport;
-
+use super::{Buffer, BufferType, Pane, PaneId, Selection, Tab, Viewport};
 use file_types::DiffType;
 
 use crate::input::KeymapType;

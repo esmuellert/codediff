@@ -4,7 +4,7 @@
 
 use ratatui::layout::Rect;
 
-use crate::view::PaneId;
+use crate::state::PaneId;
 use crate::state::Viewport;
 use crate::state::selection::{Pos, SelectionColumn};
 
@@ -74,7 +74,7 @@ impl ScreenMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::PaneId;
+    use crate::state::PaneId;
 
     fn map_with_two_panes() -> ScreenMap {
         let mut m = ScreenMap {

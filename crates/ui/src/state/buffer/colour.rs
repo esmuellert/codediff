@@ -112,6 +112,14 @@ fn request(
 /// The name is asked of the file each time rather than held, because it is
 /// derived — storing it beside the file is how a copy comes to disagree
 /// with what it was copied from.
+/// How both versions of a file are coloured, for a frame.
+pub fn spans_for<'a>(file: &File, store: &'a Store) -> Spans<'a> {
+    Spans::Both {
+        original: colours(store, file, DiffVersion::Original),
+        modified: colours(store, file, DiffVersion::Modified),
+    }
+}
+
 fn colours<'a>(store: &'a Store, file: &File, side: DiffVersion) -> Option<&'a Colours> {
     file.name(side).and_then(|key| store.get_colours(&key))
 }

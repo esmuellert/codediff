@@ -10,8 +10,15 @@
 //! how it looks belongs to `components`.
 
 pub mod buffer;
+mod pane;
 pub mod selection;
+mod tab;
+mod view;
 mod viewport;
 
 pub use buffer::{Buffer, BufferType, Direction};
+pub use pane::Pane;
+pub use selection::{Selection, SelectionColumn};
+pub use tab::{Layout, PaneId, Tab};
+pub use view::{BufferId, Overlay, View};
 pub use viewport::Viewport;

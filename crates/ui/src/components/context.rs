@@ -46,87 +46,30 @@ context!(
     pub NoticeContext: Option<Rc<str>> = None
 );
 
-/// What the diff and syntax workers have filled in for the open file.
-///
-/// A store rather than a context value: a worker finishing redraws the
-/// component that subscribed, and nothing else.
-pub struct DiffData {
-    inner: Rc<std::cell::RefCell<DiffDataInner>>,
-}
-
-struct DiffDataInner {
-    reading: Rc<Loaded>,
-    listeners: Vec<loom::Notify>,
-}
-
-/// One reading of what the workers have produced.
-pub struct Loaded {
-    pub diff: Option<Rc<pipeline::file::Diff>>,
-    pub colours: Rc<syntax::Store>,
-    pub syntax_on: bool,
-}
-
-impl Default for DiffData {
-    fn default() -> Self {
-        Self::new()
+context!(
+    /// What the syntax worker has coloured so far.
+    pub ColoursContext: Rc<std::cell::RefCell<syntax::Store>> =
+        Rc::new(std::cell::RefCell::new(syntax::Store::new())),
+    |a: &Rc<std::cell::RefCell<syntax::Store>>, b: &Rc<std::cell::RefCell<syntax::Store>>| {
+        Rc::ptr_eq(a, b)
     }
-}
-
-impl DiffData {
-    pub fn new() -> Self {
-        Self {
-            inner: Rc::new(std::cell::RefCell::new(DiffDataInner {
-                reading: Rc::new(Loaded {
-                    diff: None,
-                    colours: Rc::new(syntax::Store::new()),
-                    syntax_on: true,
-                }),
-                listeners: Vec::new(),
-            })),
-        }
-    }
-
-    /// Replaces what the workers have produced, and tells every reader.
-    ///
-    /// A new `Rc` is a new reading, which is what a subscriber compares.
-    pub fn fill(&self, reading: Loaded) {
-        let listeners = {
-            let mut inner = self.inner.borrow_mut();
-            inner.reading = Rc::new(reading);
-            inner.listeners.clone()
-        };
-        for listener in listeners {
-            listener.changed();
-        }
-    }
-
-    pub fn reading(&self) -> Rc<Loaded> {
-        Rc::clone(&self.inner.borrow().reading)
-    }
-}
-
-impl Clone for DiffData {
-    fn clone(&self) -> Self {
-        Self { inner: Rc::clone(&self.inner) }
-    }
-}
-
-impl loom::ExternalStore for DiffData {
-    type Value = Loaded;
-
-    fn subscribe(&self, notify: loom::Notify) -> loom::Subscription {
-        self.inner.borrow_mut().listeners.push(notify);
-        let inner = Rc::clone(&self.inner);
-        loom::Subscription::new(move || inner.borrow_mut().listeners.clear())
-    }
-
-    fn snapshot(&self) -> loom::Snapshot<Self::Value> {
-        loom::Snapshot::from(self.reading())
-    }
-}
+);
 
 context!(
-    /// The store itself, because it is one object for the life of the session.
-    pub DiffDataContext: DiffData = DiffData::new(),
-    |_a: &DiffData, _b: &DiffData| true
+    /// Whether code is coloured by its language.
+    pub SyntaxOnContext: bool = true
+);
+
+context!(
+    /// Where each pane and text column landed, for whoever has to say what is
+    /// under the mouse. Filled by the screens as layout decides.
+    pub ScreenMapContext: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>> =
+        Rc::new(std::cell::RefCell::new(crate::screen_map::ScreenMap::default())),
+    |a: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
+     b: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>| Rc::ptr_eq(a, b)
+);
+
+context!(
+    /// Which pane the component belongs to.
+    pub PaneContext: Option<crate::state::PaneId> = None
 );

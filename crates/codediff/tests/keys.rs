@@ -205,7 +205,8 @@ fn change_navigation_works_the_same_in_both_layouts() {
 
 /// The file line the cursor is on, as text, whichever layout is in use.
 fn line_under_cursor(session: &ui::Session) -> String {
-    let buffer = session.view().focused_buffer();
+    let view = session.view();
+    let buffer = view.focused_buffer();
     let alignment = buffer.alignment().expect("these tests build a diff");
     let layout = buffer.diff_type().expect("these tests build a diff");
     let (version, line) = alignment

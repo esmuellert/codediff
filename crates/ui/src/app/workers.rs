@@ -20,7 +20,9 @@ pub struct Workers {
 impl Session {
     /// Asks the syntax worker for anything newly visible.
     pub fn send_colour_request(&mut self) {
-        self.view.request(&mut self.workers.syntax, &mut self.store);
+        self.view
+            .borrow_mut()
+            .request(&mut self.workers.syntax, &mut self.store.borrow_mut());
     }
 
     /// Sends the selected file to the worker if one is pending and the worker
@@ -38,7 +40,7 @@ impl Session {
         match event {
             Event::Coloured(response) => {
                 self.workers.syntax.received(&response);
-                self.store.install(response)
+                self.store.borrow_mut().install(response)
             }
             Event::FileReady(response) => {
                 self.workers.files.received(&response);
@@ -46,7 +48,7 @@ impl Session {
             }
             Event::ListRefreshed(files) => {
                 self.workers.list_worker.received(&files);
-                self.view.update_explorer(files);
+                self.view.borrow_mut().update_explorer(files);
                 true
             }
             _ => false,
@@ -62,7 +64,7 @@ impl Session {
         self.selected = None;
         match response.content {
             Ok(content) => {
-                self.view.show(Buffer::diff(content));
+                self.view.borrow_mut().show(Buffer::diff(content));
                 self.notice = None;
                 self.send_colour_request();
             }

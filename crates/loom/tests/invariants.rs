@@ -344,3 +344,34 @@ fn a_keyed_child_keeps_its_state_when_the_list_reorders() {
     // Each row kept the state it mounted with, so the pairs still match.
     assert_eq!(screen.screen(), vec!["3:3", "1:1", "2:2"]);
 }
+
+/// A child that writes state is reached even when everything above it is
+/// clean. Without marking the path to the root, the root hands back last
+/// frame's subtree and the write never reaches the screen.
+#[component]
+fn Quiet(scope: &mut Scope) -> Node {
+    let _ = scope;
+    rsx! {
+        Column {
+            Deep {}
+        }
+    }
+}
+
+#[component]
+fn Deep(scope: &mut Scope) -> Node {
+    let (n, set) = use_state(scope, || 0u32);
+    // The first frame's effect writes state; the second must show it.
+    use_effect(scope, (), move || set(&|_| 42));
+    let text: Rc<str> = format!("n={n}").into();
+    rsx! { Text { text: text, .. } }
+}
+
+#[test]
+fn a_write_below_a_clean_parent_still_reaches_the_screen() {
+    let mut screen = Harness::new::<Quiet>(QuietProps {}, 10, 1);
+    assert_eq!(screen.screen_row(0), "n=0");
+    // The effect ran after that paint; the next draw shows what it wrote.
+    screen.draw();
+    assert_eq!(screen.screen_row(0), "n=42");
+}

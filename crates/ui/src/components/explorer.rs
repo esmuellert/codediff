@@ -2,162 +2,208 @@
 
 use std::rc::Rc;
 
-use file_types::File;
+use file_types::{ChangeType, File, Stats};
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_context,
-    use_state,
+    Basis, Column, ColumnProps, Element, Key, Layout, Listeners, Node, Scope, component, rsx,
+    use_context,
 };
+use ratatui::style::{Modifier, Style};
 
 use super::context::{CursorContext, ThemeContext, ViewLinesContext};
-use super::entry::{Body, Content, Entry, EntryProps, Indent, GroupCounts, Status};
-
-/// The list worker's answer, as the explorer reads it.
-#[derive(Clone, Default)]
-pub struct FileList {
-    inner: Rc<std::cell::RefCell<FileListInner>>,
-}
-
-#[derive(Default)]
-struct FileListInner {
-    files: Rc<Vec<File>>,
-    listeners: Vec<loom::Notify>,
-}
-
-impl FileList {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Replaces the list, and tells every reader.
-    pub fn fill(&self, files: Vec<File>) {
-        let listeners = {
-            let mut inner = self.inner.borrow_mut();
-            inner.files = Rc::new(files);
-            inner.listeners.clone()
-        };
-        for listener in listeners {
-            listener.changed();
-        }
-    }
-
-    pub fn files(&self) -> Rc<Vec<File>> {
-        Rc::clone(&self.inner.borrow().files)
-    }
-}
-
-impl loom::ExternalStore for FileList {
-    type Value = Vec<File>;
-
-    fn subscribe(&self, notify: loom::Notify) -> loom::Subscription {
-        self.inner.borrow_mut().listeners.push(notify);
-        let inner = Rc::clone(&self.inner);
-        loom::Subscription::new(move || inner.borrow_mut().listeners.clear())
-    }
-
-    fn snapshot(&self) -> loom::Snapshot<Self::Value> {
-        loom::Snapshot::from(self.files())
-    }
-}
-
-loom::context!(
-    /// The list worker's answer, as one object for the life of the session.
-    pub FileListContext: FileList = FileList::new(),
-    |_a: &FileList, _b: &FileList| true
-);
+use super::entry::{Body, Entry, EntryProps, Indent, Run, Status};
+use crate::state::buffer::explorer::{NodeId, Tree, ViewLine};
+use crate::state::{BufferId, View};
+use crate::theme::{Theme, icon};
 
 /// The file list.
 ///
-/// Subscribes to the list worker rather than being handed the files.
+/// The model decides what the rows are; this decides what they look like. It
+/// is borrowed rather than owned because the tree is a large mutable model
+/// that the session keeps between frames.
 #[component]
-pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
+pub fn Explorer(
+    scope: &mut Scope,
+    view: Rc<std::cell::RefCell<View>>,
+    buffer: BufferId,
+    on_open: Rc<dyn Fn(File)>,
+) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
-    let file_list = use_context::<FileListContext>(scope);
+    let _ = on_open;
 
-    let files = loom::use_sync_external_store(scope, &file_list);
-    // Tree mode shows short names and indent lines; list mode shows full
-    // paths and none. The mode is toggled by a key and lives here.
-    let (tree, set_tree) = use_state(scope, || true);
+    let read = view.borrow();
+    let Some(model) = read.buffer(*buffer).as_explorer() else {
+        return Node::Empty;
+    };
 
-    let on_open = Rc::clone(on_open);
-    let file_snapshot = files.clone();
-    let listeners = Listeners::new().on_key(move |key| {
-        if key == crokey::key!(t) {
-            set_tree(&|shown| !shown);
-            return Bubble::Stop;
-        }
-        if key == crokey::key!(enter) {
-            // The heading is row 0, so the files start at 1.
-            if let Some(file) = cursor.checked_sub(1).and_then(|n| file_snapshot.get(n as usize)) {
-                on_open(file.clone());
-            }
-            return Bubble::Stop;
-        }
-        Bubble::Continue
-    });
+    let base = theme.normal;
+    let rows: Vec<Node> = view_lines
+        .clone()
+        .filter_map(|line| model.view_line(line).map(|content| (line, content)))
+        .map(|(line, content)| {
+            let selected = line == cursor;
+            let background = if selected { base.patch(theme.cursor_line) } else { base };
 
-    let rows: Vec<Node> = std::iter::once(Content::Heading {
-        name: Rc::from("Changes"),
-        files: files.len(),
-        stats: GroupCounts::default(),
-    })
-    .chain(files.iter().map(|file| Content::File {
-        name: Rc::from(if tree { file.path().file_name() } else { file.path().as_str() }),
-        file: Rc::new(file.clone()),
-    }))
-    .skip(view_lines.start as usize)
-    .take(view_lines.len())
-    .enumerate()
-    .map(|(offset, content)| {
-        let selected = view_lines.start + offset as u32 == cursor;
-        let indent = Indent {
-            lines: Rc::from(match (&content, tree) {
-                (Content::File { .. }, true) => "  ",
-                _ => "",
-            }),
-        };
-        let (body, status) = match &content {
-            Content::Heading { name, files, .. } => (
-                Body {
-                    icon: crate::theme::icon::folder(true),
-                    text: Rc::from(format!("{name} ({files})").as_str()),
-                },
-                None,
-            ),
-            Content::Directory { name, open, .. } => (
-                Body { icon: crate::theme::icon::folder(*open), text: Rc::clone(name) },
-                None,
-            ),
-            Content::File { name, .. } => (
-                Body { icon: crate::theme::icon::file(name), text: Rc::clone(name) },
-                Some(Status { added: 0, removed: 0, letter: "M" }),
-            ),
-        };
+            let indent = Indent {
+                lines: Rc::from(match model.nested_at(line) {
+                    Some((tree, id)) => indent_of(tree, id),
+                    // A heading is what the arrangement hangs from, not a line
+                    // in it.
+                    None => String::new(),
+                }),
+                style: background.fg(theme.tree.marker),
+            };
 
-        rsx! {
-            Entry {
-                key: offset,
-                indent: indent,
-                body: body,
-                status: status,
-                selected: selected,
-            }
-        }
-    })
-    .collect();
+            let (body, status) = match &content {
+                ViewLine::Heading { name, files, stats } => {
+                    heading(name, *files, *stats, &theme, background)
+                }
+                ViewLine::Directory { name, open } => directory(name, *open, &theme, background),
+                ViewLine::File { name, file } => file_row(name, file, &theme, background),
+            };
+
+            Entry::build(
+                EntryProps { indent, body, status, selected },
+                Some(Key::from(line)),
+            )
+        })
+        .collect();
 
     rsx! {
         Column {
             layout: Layout {
-                basis: loom::Basis::Length(28),
+                basis: Basis::Length(40),
                 min_width: 8,
-                fill: Some(theme.normal),
+                fill: Some(base),
                 ..Default::default()
             },
-            listeners: listeners,
+            listeners: Listeners::new(),
             ..,
             { rows }
         }
+    }
+}
+
+/// The columns before a line's name.
+///
+/// A guide at a given depth means an ancestor at that depth has more children
+/// after it; blank space where that ancestor was the last, so nothing runs
+/// down beside nothing.
+fn indent_of(tree: &Tree, id: NodeId) -> String {
+    let node = tree.node(id);
+    let mut levels = vec![if node.is_last { "└ " } else { "├ " }];
+    let mut above = node.parent;
+    while let Some(parent) = above {
+        let parent = tree.node(parent);
+        levels.push(if parent.is_last { "  " } else { "│ " });
+        above = parent.parent;
+    }
+    levels.into_iter().rev().collect()
+}
+
+/// A heading: its name, how many files it holds, and their total.
+///
+/// Bold is applied here rather than stored in the theme: a heading is bold in
+/// every theme, so it is structural.
+fn heading(
+    name: &str,
+    files: usize,
+    stats: Stats,
+    theme: &Theme,
+    background: Style,
+) -> (Body, Option<Status>) {
+    let count = background.fg(theme.tree.count);
+    let mut runs = vec![Run::new(
+        name,
+        background.fg(theme.tree.heading).add_modifier(Modifier::BOLD),
+    )];
+
+    if stats.is_empty() {
+        runs.push(Run::new(format!(" ({files})"), count));
+    } else {
+        runs.push(Run::new(format!(" ({files} · "), count));
+        push_stats(&mut runs, stats, theme, background);
+        runs.push(Run::new(")", count));
+    }
+
+    (Body { icon: None, runs: runs.into() }, None)
+}
+
+/// A directory: its icon and name, and nothing at the right-hand edge.
+fn directory(name: &str, open: bool, theme: &Theme, background: Style) -> (Body, Option<Status>) {
+    (
+        Body {
+            icon: Some(icon::folder(open)),
+            runs: vec![Run::new(name, background.fg(theme.tree.directory))].into(),
+        },
+        None,
+    )
+}
+
+/// A file: its icon, name, where it came from, what it gained, and what
+/// happened.
+fn file_row(name: &str, file: &File, theme: &Theme, background: Style) -> (Body, Option<Status>) {
+    let mut runs = vec![Run::new(name, background.fg(theme.tree.name))];
+    if let Some(previous) = file.previous_path() {
+        runs.push(Run::new(
+            format!(" ← {previous}"),
+            background.fg(theme.tree.previous),
+        ));
+    }
+
+    let mut counts = Vec::new();
+    // A file that gained and lost nothing says nothing, rather than `+0 -0` in
+    // a column the eye is scanning.
+    if let Some(stats) = file.get_stats().filter(|s| !s.is_empty()) {
+        push_stats(&mut counts, stats, theme, background);
+        // The space between the counts and the letter, which goes with them
+        // rather than staying behind as a lone column.
+        counts.push(Run::new(" ", background.fg(theme.tree.name)));
+    }
+
+    let change = file.get_change_type();
+    (
+        Body { icon: Some(icon::file(file.path().file_name())), runs: runs.into() },
+        Some(Status {
+            counts: counts.into(),
+            letter: Run::new(
+                letter(change),
+                background.fg(theme.change.of(change)).add_modifier(Modifier::BOLD),
+            ),
+        }),
+    )
+}
+
+/// The `+4 -3` pair, with a side left out when it is zero.
+fn push_stats(runs: &mut Vec<Run>, stats: Stats, theme: &Theme, background: Style) {
+    if stats.added > 0 {
+        runs.push(Run::new(
+            format!("+{}", stats.added),
+            background.fg(theme.change.gained),
+        ));
+    }
+    if stats.removed > 0 {
+        let separator = if stats.added > 0 { " " } else { "" };
+        runs.push(Run::new(
+            format!("{separator}-{}", stats.removed),
+            background.fg(theme.change.lost),
+        ));
+    }
+}
+
+/// Git's letter for what happened.
+///
+/// A copy arrives as `Moved` and shows `R`, and a type change as `Modified`
+/// and shows `M`. What a reviewer does about either is read the new content,
+/// which is what those letters already promise.
+pub fn letter(change: ChangeType) -> &'static str {
+    match change {
+        ChangeType::Added => "A",
+        ChangeType::Deleted => "D",
+        ChangeType::Modified => "M",
+        ChangeType::Moved => "R",
+        ChangeType::Untracked => "??",
+        ChangeType::Conflicted => "!",
     }
 }

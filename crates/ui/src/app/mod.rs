@@ -21,12 +21,12 @@ use channel::Worker;
 use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
-use crate::draw;
-use crate::draw::screen_map::ScreenMap;
+use crate::components::{Root, RootProps};
+use crate::screen_map::ScreenMap;
 use crate::input::Resolver;
 use crate::terminal::Screen;
 use crate::theme::Theme;
-use crate::view::{Buffer, PaneId, View};
+use crate::state::{Buffer, PaneId, View};
 use syntax::Store;
 
 /// What the loop should do next.
@@ -50,18 +50,23 @@ pub enum Exit {
 
 /// One review session — the entire running program state.
 pub struct Session {
-    pub(crate) view: View,
+    pub(crate) view: std::rc::Rc<std::cell::RefCell<View>>,
     theme: Theme,
+    /// The mounted interface. One per session, kept between frames because
+    /// that is where every component's state lives.
+    tree: loom::Tree,
     pub(crate) resolver: Resolver,
     pub(crate) workers: Workers,
     /// The file the reader last selected, waiting to be sent to the worker.
     pub(crate) selected: Option<file_types::File>,
-    /// Syntax spans for all open files.
-    pub(crate) store: Store,
+    /// Syntax spans for all open files. Shared, because the interface reads
+    /// it while the workers fill it.
+    pub(crate) store: std::rc::Rc<std::cell::RefCell<Store>>,
     /// Error from the last file open, cleared on the next key.
     pub(crate) notice: Option<String>,
-    /// Where each pane landed on the last frame.
-    screen_map: ScreenMap,
+    /// Where each pane landed on the last frame. Filled by the interface,
+    /// read by whoever has to say what is under the mouse.
+    screen_map: std::rc::Rc<std::cell::RefCell<ScreenMap>>,
     /// A mouse-down that might become a selection if the user drags.
     pending_selection: Option<PendingSelection>,
 }
@@ -77,24 +82,43 @@ pub(crate) struct PendingSelection {
 /// Pre-built workers, ready to be handed to Session.
 impl Session {
     pub fn new(buffer: Buffer, theme: Theme, mut workers: Workers) -> Self {
-        let mut store = Store::new();
+        let store = std::rc::Rc::new(std::cell::RefCell::new(Store::new()));
         let mut view = View::single(buffer);
-        view.request(&mut workers.syntax, &mut store);
+        view.request(&mut workers.syntax, &mut store.borrow_mut());
+        let colours = std::rc::Rc::clone(&store);
+
+        let view = std::rc::Rc::new(std::cell::RefCell::new(view));
+        let screen_map = std::rc::Rc::new(std::cell::RefCell::new(ScreenMap::default()));
+        let mut tree = loom::Tree::new::<Root>(RootProps {
+            view: std::rc::Rc::clone(&view),
+            notice: None,
+            map: std::rc::Rc::clone(&screen_map),
+            theme: std::rc::Rc::new(theme),
+            colours: std::rc::Rc::clone(&colours),
+            syntax_on: true,
+        });
+        tree.redraw_all();
+
         Self {
             view,
             theme,
+            tree,
             resolver: Resolver::new(),
             workers,
             selected: None,
             store,
             notice: None,
-            screen_map: ScreenMap::default(),
+            screen_map,
             pending_selection: None,
         }
     }
 
-    pub fn view(&self) -> &View {
-        &self.view
+    pub fn view(&self) -> std::cell::Ref<'_, View> {
+        self.view.borrow()
+    }
+
+    pub fn view_mut(&mut self) -> std::cell::RefMut<'_, View> {
+        self.view.borrow_mut()
     }
 
     /// Keys typed but not yet resolved, for a `showcmd` display.
@@ -103,47 +127,51 @@ impl Session {
     }
 
     /// The screen geometry from the last frame.
-    pub fn screen_map(&self) -> &crate::draw::screen_map::ScreenMap {
-        &self.screen_map
+    pub fn screen_map(&self) -> std::cell::Ref<'_, crate::screen_map::ScreenMap> {
+        self.screen_map.borrow()
+    }
+
+    /// Hands the interface everything a frame is a function of.
+    fn refresh(&mut self) {
+        let syntax_on = self.view.borrow().syntax();
+        self.tree.set_props::<Root>(RootProps {
+            view: std::rc::Rc::clone(&self.view),
+            notice: self.notice.as_deref().map(std::rc::Rc::from),
+            map: std::rc::Rc::clone(&self.screen_map),
+            theme: std::rc::Rc::new(self.theme),
+            colours: std::rc::Rc::clone(&self.store),
+            syntax_on,
+        });
+        self.tree.redraw_all();
     }
 
     /// Draws one frame into a cell grid (for tests, without a terminal).
     pub fn draw_into(&mut self, cells: &mut ratatui::buffer::Buffer, area: Rect) {
-        draw::render(
-            cells,
-            area,
-            &mut self.view,
-            &self.theme,
-            &self.store,
-            self.notice.as_deref(),
-            &mut self.screen_map,
-        );
+        self.refresh();
+        self.tree.draw(cells, area);
     }
 
     pub fn draw<B: Backend>(
         &mut self,
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
-        let mut screen_map = std::mem::take(&mut self.screen_map);
+        self.refresh();
+        let tree = &mut self.tree;
         terminal.draw(|frame| {
             let area = frame.area();
-            draw::render(
-                frame.buffer_mut(),
-                area,
-                &mut self.view,
-                &self.theme,
-                &self.store,
-                self.notice.as_deref(),
-                &mut screen_map,
-            );
+            tree.draw(frame.buffer_mut(), area);
         })?;
-        self.screen_map = screen_map;
         Ok(())
+    }
+
+    /// How many render-and-layout rounds the last frame took.
+    pub fn layout_rounds(&self) -> usize {
+        self.tree.layout_rounds()
     }
 
     /// Records the list selection for the file worker to pick up.
     pub fn open(&mut self) {
-        self.selected = self.view.selected_file().cloned();
+        self.selected = self.view.borrow().selected_file().cloned();
     }
 
     /// Applies one terminal event — key or mouse.
