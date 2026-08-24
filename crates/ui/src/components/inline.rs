@@ -5,12 +5,12 @@ use std::rc::Rc;
 use align::{DiffVersion, Slot};
 use file_types::DiffType;
 use loom::{
-    Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Layout, Listeners, Mouse, Node, Row,
+    Basis, Bubble, Column, ColumnProps, Element, Layout, Listeners, Mouse, Node, Row,
     RowProps, Scope, capture_pointer, component, release_pointer, rsx, use_context, use_state,
 };
 
 use super::context::{
-    CursorContext, DiffsContext, FirstCellContext, ThemeContext, ViewLinesContext,
+    CursorContext, DiffDataContext, FirstCellContext, ThemeContext, ViewLinesContext,
 };
 use super::{
     CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width, row_styles,
@@ -27,23 +27,23 @@ const MIN_TEXT: u16 = 4;
 #[component]
 pub fn Inline(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
-    let diffs = use_context::<DiffsContext>(scope);
+    let diff_data = use_context::<DiffDataContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let first_cell = use_context::<FirstCellContext>(scope);
 
-    let reading = loom::use_sync_external_store(scope, &diffs);
+    let loaded = loom::use_sync_external_store(scope, &diff_data);
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
 
-    let Some(file) = reading.diff.clone() else { return Node::Empty };
+    let Some(file) = loaded.diff.clone() else { return Node::Empty };
     let alignment = &file.alignment;
 
     let original_width = gutter_width(alignment.lines(DiffVersion::Original).len() as u32);
     let modified_width = gutter_width(alignment.lines(DiffVersion::Modified).len() as u32);
     let gutters = original_width + modified_width;
 
-    let spans = if reading.syntax_on {
-        crate::view::buffer::colour::spans_diff(&file, &reading.colours)
+    let spans = if loaded.syntax_on {
+        crate::view::buffer::colour::spans_diff(&file, &loaded.colours)
     } else {
         syntax::Spans::Off
     };
@@ -93,7 +93,20 @@ pub fn Inline(scope: &mut Scope) -> Node {
                 (Slot::Line(n), _) => (DiffVersion::Modified, n),
                 (_, Slot::Line(n)) => (DiffVersion::Original, n),
                 (Slot::Filler, Slot::Filler) => {
-                    return blank(offset, theme.normal);
+                    // Cannot occur in an inline diff, but the match must be
+                    // exhaustive.
+                    let style = theme.normal;
+                    return <loom::Canvas as Element>::build(
+                        loom::CanvasProps {
+                            layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                                let area = paint.area();
+                                crate::cells::fill(paint.cells(), area, style);
+                            }),
+                            ..Default::default()
+                        },
+                        Some(loom::Key::from(offset)),
+                    );
                 }
             };
 
@@ -158,19 +171,3 @@ pub fn Inline(scope: &mut Scope) -> Node {
     }
 }
 
-/// A row showing neither version cannot occur inline, but a blank row is a
-/// better answer than a panic.
-fn blank(offset: usize, style: ratatui::style::Style) -> Node {
-    use loom::Element;
-    Canvas::build(
-        CanvasProps {
-            layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
-            paint: Rc::new(move |brush: &mut loom::Paint<'_>| {
-                let area = brush.area();
-                crate::cells::fill(brush.cells(), area, style);
-            }),
-            ..Default::default()
-        },
-        Some(loom::Key::from(offset)),
-    )
-}

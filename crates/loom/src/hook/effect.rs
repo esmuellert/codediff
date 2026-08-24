@@ -90,14 +90,14 @@ where
 {
     let id = scope.id;
     let index = crate::current::with(|rt| rt.hooks[&id].index).unwrap_or(0) as u16;
-    let shape = if before_paint { "LayoutEffect" } else { "Effect" };
-    let held = std::cell::Cell::new(Some(deps));
+    let kind = if before_paint { "LayoutEffect" } else { "Effect" };
+    let deps_cell = std::cell::Cell::new(Some(deps));
 
     let generation = use_hook(
         scope,
-        shape,
+        kind,
         || {
-            let deps = held.take().expect("the first render stores its deps");
+            let deps = deps_cell.take().expect("the first render stores its deps");
             let slot = EffectSlot { deps: Box::new(deps), cleanup: None, generation: 0 };
             if before_paint { Slot::LayoutEffect(slot) } else { Slot::Effect(slot) }
         },
@@ -106,7 +106,7 @@ where
                 Slot::Effect(e) | Slot::LayoutEffect(e) => e,
                 _ => unreachable!("checked by shape"),
             };
-            match held.take() {
+            match deps_cell.take() {
                 // The slot was made just above, so this is the first render
                 // and the effect runs.
                 None => {

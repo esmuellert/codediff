@@ -9,7 +9,7 @@ use loom::{
 };
 
 use super::context::{
-    CursorContext, CursorContextProps, DiffsContext, FileContext, FileContextProps,
+    CursorContext, CursorContextProps, DiffDataContext, FileContext, FileContextProps,
     FirstCellContext, FirstCellContextProps, NoticeContext, NoticeContextProps, ThemeContext,
     ViewLinesContext, ViewLinesContextProps,
 };
@@ -26,7 +26,7 @@ use crate::view::Viewport;
 #[component]
 pub fn App(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
-    let diffs = use_context::<DiffsContext>(scope);
+    let diff_data = use_context::<DiffDataContext>(scope);
 
     let (viewport, set_viewport) = use_state(scope, Viewport::new);
     let (layout, _set_layout) = use_state(scope, || DiffType::SideBySide);
@@ -34,14 +34,14 @@ pub fn App(scope: &mut Scope) -> Node {
     let (notice, _set_notice) = use_state(scope, || None::<Rc<str>>);
     let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
 
-    let reading = diffs.reading();
-    let total = reading
+    let loaded = diff_data.reading();
+    let total = loaded
         .diff
         .as_ref()
         .map_or(0, |diff| diff.alignment.view_lines(layout).count() as u32);
 
     // How many rows the diff gets is layout's answer, not the render body's.
-    // Reading it back is what lets `view_lines` name a real range on the
+    // Loaded it back is what lets `view_lines` name a real range on the
     // frame that reaches the screen.
     let pane = use_ref(scope, || None::<loom::NodeHandle>);
     use_layout_effect(scope, loom::Always, move || {

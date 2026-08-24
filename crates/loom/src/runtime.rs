@@ -8,7 +8,7 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::event::Listeners;
-use crate::frame::Placed;
+use crate::frame::FrameNode;
 use crate::hook::{EffectRun, Hooks};
 use crate::node::{Key, NodeHandle};
 use crate::scope::{Mounted, ScopeId, Scopes};
@@ -21,7 +21,7 @@ pub(crate) struct Runtime {
     /// Which context values each scope offers, and the version of each.
     pub offers: HashMap<ScopeId, Vec<Offer>>,
     /// Every host that got a rectangle last frame, deepest last.
-    pub placed: Vec<Placed>,
+    pub placed: Vec<FrameNode>,
     pub focused: Option<NodeHandle>,
     pub captured: Option<NodeHandle>,
     /// The node whose listener is running, so `capture_pointer` knows what to

@@ -21,18 +21,18 @@ where
     D: PartialEq + 'static,
     T: 'static,
 {
-    let held = std::cell::Cell::new(Some((deps, compute)));
+    let input = std::cell::Cell::new(Some((deps, compute)));
 
     let value = use_hook(
         scope,
         "Memo",
         || {
-            let (deps, compute) = held.take().expect("the first render computes once");
+            let (deps, compute) = input.take().expect("the first render computes once");
             Slot::Memo(MemoSlot { deps: Box::new(deps), value: Rc::new(compute()) })
         },
         |slot| {
             let Slot::Memo(memo) = slot else { unreachable!("checked by shape") };
-            if let Some((deps, compute)) = held.take() {
+            if let Some((deps, compute)) = input.take() {
                 let same = memo
                     .deps
                     .downcast_ref::<D>()

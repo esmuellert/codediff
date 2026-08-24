@@ -50,33 +50,33 @@ context!(
 ///
 /// A store rather than a context value: a worker finishing redraws the
 /// component that subscribed, and nothing else.
-pub struct Diffs {
-    inner: Rc<std::cell::RefCell<DiffsInner>>,
+pub struct DiffData {
+    inner: Rc<std::cell::RefCell<DiffDataInner>>,
 }
 
-struct DiffsInner {
-    reading: Rc<Reading>,
+struct DiffDataInner {
+    reading: Rc<Loaded>,
     listeners: Vec<loom::Notify>,
 }
 
 /// One reading of what the workers have produced.
-pub struct Reading {
+pub struct Loaded {
     pub diff: Option<Rc<pipeline::file::Diff>>,
     pub colours: Rc<syntax::Store>,
     pub syntax_on: bool,
 }
 
-impl Default for Diffs {
+impl Default for DiffData {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Diffs {
+impl DiffData {
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(std::cell::RefCell::new(DiffsInner {
-                reading: Rc::new(Reading {
+            inner: Rc::new(std::cell::RefCell::new(DiffDataInner {
+                reading: Rc::new(Loaded {
                     diff: None,
                     colours: Rc::new(syntax::Store::new()),
                     syntax_on: true,
@@ -89,7 +89,7 @@ impl Diffs {
     /// Replaces what the workers have produced, and tells every reader.
     ///
     /// A new `Rc` is a new reading, which is what a subscriber compares.
-    pub fn fill(&self, reading: Reading) {
+    pub fn fill(&self, reading: Loaded) {
         let listeners = {
             let mut inner = self.inner.borrow_mut();
             inner.reading = Rc::new(reading);
@@ -100,19 +100,19 @@ impl Diffs {
         }
     }
 
-    pub fn reading(&self) -> Rc<Reading> {
+    pub fn reading(&self) -> Rc<Loaded> {
         Rc::clone(&self.inner.borrow().reading)
     }
 }
 
-impl Clone for Diffs {
+impl Clone for DiffData {
     fn clone(&self) -> Self {
         Self { inner: Rc::clone(&self.inner) }
     }
 }
 
-impl loom::ExternalStore for Diffs {
-    type Value = Reading;
+impl loom::ExternalStore for DiffData {
+    type Value = Loaded;
 
     fn subscribe(&self, notify: loom::Notify) -> loom::Subscription {
         self.inner.borrow_mut().listeners.push(notify);
@@ -127,6 +127,6 @@ impl loom::ExternalStore for Diffs {
 
 context!(
     /// The store itself, because it is one object for the life of the session.
-    pub DiffsContext: Diffs = Diffs::new(),
-    |_a: &Diffs, _b: &Diffs| true
+    pub DiffDataContext: DiffData = DiffData::new(),
+    |_a: &DiffData, _b: &DiffData| true
 );

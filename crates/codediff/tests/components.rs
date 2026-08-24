@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use ui::components::{
-    CursorContext, Diffs, DiffsContext, FirstCellContext, Reading, SideBySide, SideBySideProps,
+    CursorContext, DiffData, DiffDataContext, FirstCellContext, Loaded, SideBySide, SideBySideProps,
     ThemeContext, ViewLinesContext,
 };
 use ui::Theme;
@@ -31,8 +31,8 @@ fn diff(path: &str, before: &str, after: &str) -> Rc<pipeline::file::Diff> {
 }
 
 fn screen(width: u16, height: u16, view_lines: std::ops::Range<u32>) -> Vec<String> {
-    let diffs = Diffs::new();
-    diffs.fill(Reading {
+    let diff_data = DiffData::new();
+    diff_data.fill(Loaded {
         diff: Some(diff("src/demo.rs", BEFORE, AFTER)),
         colours: Rc::new(syntax::Store::new()),
         syntax_on: false,
@@ -40,7 +40,7 @@ fn screen(width: u16, height: u16, view_lines: std::ops::Range<u32>) -> Vec<Stri
 
     let mut harness = Harness::new::<SideBySide>(SideBySideProps {}, width, height)
         .provide::<ThemeContext>(Rc::new(Theme::DARK))
-        .provide::<DiffsContext>(diffs)
+        .provide::<DiffDataContext>(diff_data)
         .provide::<ViewLinesContext>(view_lines)
         .provide::<CursorContext>(0)
         .provide::<FirstCellContext>(0);
@@ -82,8 +82,8 @@ fn the_two_sides_never_show_different_rows() {
 fn the_root_draws_a_diff_and_a_status_line() {
     use ui::components::{App, AppProps};
 
-    let diffs = Diffs::new();
-    diffs.fill(Reading {
+    let diff_data = DiffData::new();
+    diff_data.fill(Loaded {
         diff: Some(diff("src/demo.rs", BEFORE, AFTER)),
         colours: Rc::new(syntax::Store::new()),
         syntax_on: false,
@@ -93,7 +93,7 @@ fn the_root_draws_a_diff_and_a_status_line() {
     // long as the session does.
     let mut harness = Harness::new::<App>(AppProps {}, 44, 8)
         .provide::<ThemeContext>(Rc::new(Theme::DARK))
-        .provide::<DiffsContext>(diffs);
+        .provide::<DiffDataContext>(diff_data);
 
     let rows = harness.screen();
     assert_eq!(rows[0], "  1 one              │  1 one");

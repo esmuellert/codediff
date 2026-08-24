@@ -53,14 +53,14 @@ impl Status {
 /// What a row of the explorer is.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Content {
-    Heading { name: Rc<str>, files: usize, stats: Stats },
+    Heading { name: Rc<str>, files: usize, stats: GroupCounts },
     Directory { name: Rc<str>, open: bool, depth: u16 },
     File { name: Rc<str>, file: Rc<file_types::File> },
 }
 
 /// What a heading counts up across the files under it.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct Stats {
+pub struct GroupCounts {
     pub added: u32,
     pub removed: u32,
 }
@@ -106,14 +106,14 @@ pub fn Entry(
             },
             ..,
             {
-                written(
+                text_canvas(
                     lines,
                     base,
                     Layout { basis: Basis::Length(indent_width), shrink: 0, ..Default::default() },
                 )
             }
             {
-                named(
+                icon_and_name(
                     icon.glyph,
                     icon_style,
                     text,
@@ -122,7 +122,7 @@ pub fn Entry(
                 )
             }
             {
-                counted(
+                counts_and_letter(
                     full,
                     letter.to_string(),
                     base,
@@ -140,7 +140,7 @@ pub fn Entry(
 }
 
 /// A section that writes what it is given and stops at its own edge.
-fn written(text: Rc<str>, style: Style, layout: Layout) -> Node {
+fn text_canvas(text: Rc<str>, style: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
@@ -157,7 +157,7 @@ fn written(text: Rc<str>, style: Style, layout: Layout) -> Node {
 
 /// The icon in its own colour, then the name, cut with `…` when it does not
 /// fit.
-fn named(glyph: char, icon_style: Style, text: Rc<str>, base: Style, layout: Layout) -> Node {
+fn icon_and_name(glyph: char, icon_style: Style, text: Rc<str>, base: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,
@@ -184,7 +184,7 @@ fn named(glyph: char, icon_style: Style, text: Rc<str>, base: Style, layout: Lay
 
 /// The counts and the letter, right-aligned. When the counts do not fit, the
 /// letter is what is left.
-fn counted(full: String, letter: String, style: Style, layout: Layout) -> Node {
+fn counts_and_letter(full: String, letter: String, style: Style, layout: Layout) -> Node {
     Canvas::build(
         CanvasProps {
             layout,

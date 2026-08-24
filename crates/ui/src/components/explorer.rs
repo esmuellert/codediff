@@ -9,21 +9,21 @@ use loom::{
 };
 
 use super::context::{CursorContext, ThemeContext, ViewLinesContext};
-use super::entry::{Body, Content, Entry, EntryProps, Indent, Stats, Status};
+use super::entry::{Body, Content, Entry, EntryProps, Indent, GroupCounts, Status};
 
 /// The list worker's answer, as the explorer reads it.
 #[derive(Clone, Default)]
-pub struct Listing {
-    inner: Rc<std::cell::RefCell<ListingInner>>,
+pub struct FileList {
+    inner: Rc<std::cell::RefCell<FileListInner>>,
 }
 
 #[derive(Default)]
-struct ListingInner {
+struct FileListInner {
     files: Rc<Vec<File>>,
     listeners: Vec<loom::Notify>,
 }
 
-impl Listing {
+impl FileList {
     pub fn new() -> Self {
         Self::default()
     }
@@ -45,7 +45,7 @@ impl Listing {
     }
 }
 
-impl loom::ExternalStore for Listing {
+impl loom::ExternalStore for FileList {
     type Value = Vec<File>;
 
     fn subscribe(&self, notify: loom::Notify) -> loom::Subscription {
@@ -61,8 +61,8 @@ impl loom::ExternalStore for Listing {
 
 loom::context!(
     /// The list worker's answer, as one object for the life of the session.
-    pub ListingContext: Listing = Listing::new(),
-    |_a: &Listing, _b: &Listing| true
+    pub FileListContext: FileList = FileList::new(),
+    |_a: &FileList, _b: &FileList| true
 );
 
 /// The file list.
@@ -73,15 +73,15 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
-    let listing = use_context::<ListingContext>(scope);
+    let file_list = use_context::<FileListContext>(scope);
 
-    let files = loom::use_sync_external_store(scope, &listing);
+    let files = loom::use_sync_external_store(scope, &file_list);
     // Tree mode shows short names and indent lines; list mode shows full
     // paths and none. The mode is toggled by a key and lives here.
     let (tree, set_tree) = use_state(scope, || true);
 
     let on_open = Rc::clone(on_open);
-    let rows_of = files.clone();
+    let file_snapshot = files.clone();
     let listeners = Listeners::new().on_key(move |key| {
         if key == crokey::key!(t) {
             set_tree(&|shown| !shown);
@@ -89,7 +89,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
         }
         if key == crokey::key!(enter) {
             // The heading is row 0, so the files start at 1.
-            if let Some(file) = cursor.checked_sub(1).and_then(|n| rows_of.get(n as usize)) {
+            if let Some(file) = cursor.checked_sub(1).and_then(|n| file_snapshot.get(n as usize)) {
                 on_open(file.clone());
             }
             return Bubble::Stop;
@@ -100,7 +100,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let rows: Vec<Node> = std::iter::once(Content::Heading {
         name: Rc::from("Changes"),
         files: files.len(),
-        stats: Stats::default(),
+        stats: GroupCounts::default(),
     })
     .chain(files.iter().map(|file| Content::File {
         name: Rc::from(if tree { file.path().file_name() } else { file.path().as_str() }),

@@ -11,27 +11,27 @@ use crate::runtime::Runtime;
 use crate::scope::{Scope, ScopeId};
 
 /// The runtime, as everything here holds it.
-pub(crate) type Held = Rc<RefCell<Runtime>>;
+pub(crate) type RuntimeRef = Rc<RefCell<Runtime>>;
 
 /// A host that survived reconciliation, with the scope that produced it.
 ///
 /// `Rc` throughout, so a clean component's subtree is handed back by cloning
 /// rather than by running the component again.
 #[derive(Clone)]
-pub(crate) struct Rendered {
+pub(crate) struct Fiber {
     pub scope: ScopeId,
-    pub shape: Rc<Shape>,
-    pub children: Vec<Rendered>,
+    pub host_desc: Rc<HostDesc>,
+    pub children: Vec<Fiber>,
     /// Painted instead of the children when they cannot meet their minimums.
-    pub too_small: Option<Rc<Vec<Rendered>>>,
+    pub too_small: Option<Rc<Vec<Fiber>>>,
 }
 
 /// One host's own properties, with its children lifted out.
-pub struct Shape {
+pub struct HostDesc {
     pub name: &'static str,
     pub layout: crate::layout::Layout,
     pub paint: Option<Rc<dyn Fn(&mut crate::paint::Paint<'_>)>>,
-    pub measure: Option<fn(&Shape, u16) -> (u16, u16)>,
+    pub measure: Option<fn(&HostDesc, u16) -> (u16, u16)>,
     pub listeners: crate::event::Listeners,
     pub focusable: bool,
     pub node_ref: Option<crate::hook::Ref<Option<NodeHandle>>>,
@@ -51,12 +51,12 @@ struct Cursor {
 }
 
 /// Runs the root and everything under it that needs running.
-pub(crate) fn frame(held: &Held, root: ScopeId) -> Vec<Rendered> {
+pub(crate) fn frame(held: &RuntimeRef, root: ScopeId) -> Vec<Fiber> {
     run(held, root)
 }
 
 /// Runs one component, or hands back what it produced last frame.
-fn run(held: &Held, scope: ScopeId) -> Vec<Rendered> {
+fn run(held: &RuntimeRef, scope: ScopeId) -> Vec<Fiber> {
     // R6.3 / I12 — a component runs when its props changed, its own state
     // changed, or its parent ran. Otherwise last frame's subtree stands.
     let ready = {
@@ -122,7 +122,7 @@ fn run(held: &Held, scope: ScopeId) -> Vec<Rendered> {
 
 /// Turns one node into the hosts it stands for, mounting or matching every
 /// component it names.
-fn expand(held: &Held, node: Node, owner: ScopeId, cursor: &mut Cursor) -> Vec<Rendered> {
+fn expand(held: &RuntimeRef, node: Node, owner: ScopeId, cursor: &mut Cursor) -> Vec<Fiber> {
     let mut flat = Vec::new();
     node.flatten(&mut flat);
 
@@ -175,7 +175,7 @@ fn expand(held: &Held, node: Node, owner: ScopeId, cursor: &mut Cursor) -> Vec<R
     out
 }
 
-fn host_into(held: &Held, mut host: Host, owner: ScopeId, cursor: &mut Cursor) -> Rendered {
+fn host_into(held: &RuntimeRef, mut host: Host, owner: ScopeId, cursor: &mut Cursor) -> Fiber {
     let children = std::mem::take(&mut host.children);
     let too_small = host.too_small.take();
 
@@ -186,13 +186,13 @@ fn host_into(held: &Held, mut host: Host, owner: ScopeId, cursor: &mut Cursor) -
 
     let too_small = too_small.map(|node| Rc::new(expand(held, *node, owner, cursor)));
 
-    Rendered {
+    Fiber {
         scope: owner,
-        shape: Rc::new(Shape {
+        host_desc: Rc::new(HostDesc {
             name: host.name,
             layout: host.layout,
             paint: host.paint,
-            measure: host.measure.map(|_| measure_text as fn(&Shape, u16) -> (u16, u16)),
+            measure: host.measure.map(|_| measure_text as fn(&HostDesc, u16) -> (u16, u16)),
             listeners: host.listeners,
             focusable: host.focusable,
             node_ref: host.node_ref,
@@ -206,9 +206,9 @@ fn host_into(held: &Held, mut host: Host, owner: ScopeId, cursor: &mut Cursor) -
 }
 
 /// R5.3.1 — the one `measure` in the crate.
-fn measure_text(shape: &Shape, _room: u16) -> (u16, u16) {
-    match &shape.text {
-        Some(text) => (ratatui::text::Span::styled(text.as_ref(), shape.style).width() as u16, 1),
+fn measure_text(desc: &HostDesc, _room: u16) -> (u16, u16) {
+    match &desc.text {
+        Some(text) => (ratatui::text::Span::styled(text.as_ref(), desc.style).width() as u16, 1),
         None => (0, 1),
     }
 }

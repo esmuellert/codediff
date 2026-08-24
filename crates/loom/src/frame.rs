@@ -12,21 +12,21 @@ use crate::event::Listeners;
 use crate::layout::{Axis, Basis, Item, assign};
 use crate::node::NodeHandle;
 use crate::paint::Paint;
-use crate::reconcile::{Held, Rendered, Shape};
+use crate::reconcile::{RuntimeRef, Fiber, HostDesc};
 use crate::runtime::Runtime;
 use crate::scope::ScopeId;
 
 /// One host that got a rectangle. Flat, deepest last, so painting is a walk
 /// forward and hit-testing is a walk back.
 #[derive(Clone)]
-pub(crate) struct Placed {
+pub(crate) struct FrameNode {
     pub scope: ScopeId,
     /// Which host within that scope, in paint order.
     pub nth: u32,
     pub parent: Option<usize>,
     pub area: Rect,
     pub clip: Rect,
-    pub shape: std::rc::Rc<Shape>,
+    pub host_desc: std::rc::Rc<HostDesc>,
     pub listeners: Listeners,
     pub focusable: bool,
 }
@@ -36,7 +36,7 @@ pub(crate) struct Placed {
 const ROUNDS: usize = 4;
 
 /// Reconcile, lay out, run layout effects, paint, run effects.
-pub(crate) fn draw(held: &Held, cells: &mut Cells, area: Rect) {
+pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
     let Some(root) = held.borrow().root else { return };
     held.borrow_mut().renders = 0;
 
@@ -91,23 +91,23 @@ fn commit_state(rt: &mut Runtime) {
 }
 
 /// Lays one host out, then its children, appending to `placed`.
-fn lay_out(node: &Rendered, area: Rect, clip: Rect, parent: Option<usize>, placed: &mut Vec<Placed>) {
-    let layout = node.shape.layout;
+fn lay_out(node: &Fiber, area: Rect, clip: Rect, parent: Option<usize>, placed: &mut Vec<FrameNode>) {
+    let layout = node.host_desc.layout;
     if layout.hidden {
         return;
     }
 
     let nth = placed.iter().filter(|p| p.scope == node.scope).count() as u32;
     let here = placed.len();
-    placed.push(Placed {
+    placed.push(FrameNode {
         scope: node.scope,
         nth,
         parent,
         area,
         clip,
-        shape: std::rc::Rc::clone(&node.shape),
-        listeners: node.shape.listeners.clone(),
-        focusable: node.shape.focusable,
+        host_desc: std::rc::Rc::clone(&node.host_desc),
+        listeners: node.host_desc.listeners.clone(),
+        focusable: node.host_desc.focusable,
     });
 
     // R5.5.2 — padding comes off before the children.
@@ -119,12 +119,12 @@ fn lay_out(node: &Rendered, area: Rect, clip: Rect, parent: Option<usize>, place
         .children
         .iter()
         .map(|child| Item {
-            layout: child.shape.layout,
-            measured: measure(child, node.shape.axis, inner),
+            layout: child.host_desc.layout,
+            measured: measure(child, node.host_desc.axis, inner),
         })
         .collect();
 
-    let out = assign(node.shape.axis, inner, layout.gap, &items);
+    let out = assign(node.host_desc.axis, inner, layout.gap, &items);
 
     // R5.6.2 — a container that cannot fit its children paints its `too_small`
     // node instead, and assigns nothing below it.
@@ -143,8 +143,8 @@ fn lay_out(node: &Rendered, area: Rect, clip: Rect, parent: Option<usize>, place
 }
 
 /// R5.3 — only `Basis::Auto` needs measuring, and only `Text` answers.
-fn measure(node: &Rendered, axis: Axis, room: Rect) -> u16 {
-    let layout = node.shape.layout;
+fn measure(node: &Fiber, axis: Axis, room: Rect) -> u16 {
+    let layout = node.host_desc.layout;
     match layout.basis {
         // R5.3.3 — a fixed child measures as its size.
         Basis::Length(n) => return n,
@@ -153,8 +153,8 @@ fn measure(node: &Rendered, axis: Axis, room: Rect) -> u16 {
         Basis::Auto => {}
     }
 
-    if let Some(ask) = node.shape.measure {
-        let (across, down) = ask(&node.shape, room.width);
+    if let Some(ask) = node.host_desc.measure {
+        let (across, down) = ask(&node.host_desc, room.width);
         return if axis == Axis::Down { down } else { across };
     }
 
@@ -167,7 +167,7 @@ fn measure(node: &Rendered, axis: Axis, room: Rect) -> u16 {
     let pad = if axis == Axis::Down { layout.pad.down() } else { layout.pad.across() };
     let gaps = layout.gap.saturating_mul(node.children.len().saturating_sub(1) as u16);
 
-    if node.shape.axis == axis {
+    if node.host_desc.axis == axis {
         let sum: u32 = node.children.iter().map(|c| u32::from(measure(c, axis, room))).sum();
         (sum.min(u32::from(u16::MAX)) as u16).saturating_add(gaps).saturating_add(pad)
     } else {
@@ -177,13 +177,13 @@ fn measure(node: &Rendered, axis: Axis, room: Rect) -> u16 {
 }
 
 /// R5.8 — every `ref` holds its node before a layout effect runs.
-fn write_refs(held: &Held) {
+fn write_refs(held: &RuntimeRef) {
     let writes: Vec<(crate::hook::Ref<Option<NodeHandle>>, NodeHandle)> = held
         .borrow()
         .placed
         .iter()
         .filter_map(|p| {
-            p.shape.node_ref.map(|slot| (slot, NodeHandle { scope: p.scope, nth: p.nth }))
+            p.host_desc.node_ref.map(|slot| (slot, NodeHandle { scope: p.scope, nth: p.nth }))
         })
         .collect();
     for (slot, node) in writes {
@@ -193,7 +193,7 @@ fn write_refs(held: &Held) {
 
 /// Runs one queue of effects: the old cleanup first, then the body, then the
 /// new cleanup into the slot.
-fn run_effects(held: &Held, before_paint: bool) {
+fn run_effects(held: &RuntimeRef, before_paint: bool) {
     let queued = {
         let mut rt = held.borrow_mut();
         if before_paint {
@@ -253,13 +253,13 @@ fn generation_of(rt: &Runtime, scope: ScopeId, slot: u16) -> Option<u64> {
 }
 
 /// R7.1 — the walk. Fill first, then the node's own ink.
-fn paint_one(held: &Held, at: usize, cells: &mut Cells) {
-    let (shape, area, clip, focused) = {
+fn paint_one(held: &RuntimeRef, at: usize, cells: &mut Cells) {
+    let (desc, area, clip, focused) = {
         let rt = held.borrow();
         let node = &rt.placed[at];
         let clip = node.area.intersection(node.clip);
         (
-            std::rc::Rc::clone(&node.shape),
+            std::rc::Rc::clone(&node.host_desc),
             node.area,
             clip,
             rt.focused == Some(NodeHandle { scope: node.scope, nth: node.nth }),
@@ -270,7 +270,7 @@ fn paint_one(held: &Held, at: usize, cells: &mut Cells) {
         return;
     }
 
-    if let Some(fill) = shape.layout.fill {
+    if let Some(fill) = desc.layout.fill {
         for y in clip.top()..clip.bottom() {
             for x in clip.left()..clip.right() {
                 if let Some(cell) = cells.cell_mut((x, y)) {
@@ -280,14 +280,14 @@ fn paint_one(held: &Held, at: usize, cells: &mut Cells) {
         }
     }
 
-    if let Some(text) = &shape.text {
-        let line = ratatui::text::Line::from(ratatui::text::Span::styled(text.as_ref(), shape.style));
+    if let Some(text) = &desc.text {
+        let line = ratatui::text::Line::from(ratatui::text::Span::styled(text.as_ref(), desc.style));
         ratatui::widgets::Widget::render(line, clip, cells);
     }
 
     // The runtime is not borrowed here, so a painter may read a ref or a
     // store while it writes cells.
-    if let Some(paint) = &shape.paint {
+    if let Some(paint) = &desc.paint {
         let mut brush = Paint::new(cells, area, clip, focused);
         paint(&mut brush);
     }

@@ -149,7 +149,7 @@ impl Harness {
                 depth
             };
             out.push_str(&"  ".repeat(depth));
-            out.push_str(placed.shape.name);
+            out.push_str(placed.host_desc.name);
             out.push_str(&format!(
                 " {}x{}+{}+{}\n",
                 placed.area.width, placed.area.height, placed.area.x, placed.area.y
@@ -164,7 +164,7 @@ impl Harness {
         runtime
             .placed
             .iter()
-            .find(|p| runtime.name_of(p.scope) == name || p.shape.name == name)
+            .find(|p| runtime.name_of(p.scope) == name || p.host_desc.name == name)
             .map(|p| p.area)
     }
 

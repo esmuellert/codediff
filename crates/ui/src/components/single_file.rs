@@ -10,7 +10,7 @@ use loom::{
 use ratatui::style::Style;
 
 use super::context::{
-    CursorContext, DiffsContext, FirstCellContext, ThemeContext, ViewLinesContext,
+    CursorContext, DiffDataContext, FirstCellContext, ThemeContext, ViewLinesContext,
 };
 use super::{CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width};
 use crate::view::selection::{Pos, Selection, SelectionColumn};
@@ -25,21 +25,21 @@ const MIN_TEXT: u16 = 4;
 #[component]
 pub fn SingleFile(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
-    let diffs = use_context::<DiffsContext>(scope);
+    let diff_data = use_context::<DiffDataContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let first_cell = use_context::<FirstCellContext>(scope);
 
-    let reading = loom::use_sync_external_store(scope, &diffs);
+    let loaded = loom::use_sync_external_store(scope, &diff_data);
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
 
-    let Some(file) = reading.diff.clone() else { return Node::Empty };
+    let Some(file) = loaded.diff.clone() else { return Node::Empty };
     let alignment = &file.alignment;
     let lines = alignment.lines(DiffVersion::Modified).len() as u32;
     let width = gutter_width(lines);
 
-    let spans = if reading.syntax_on {
-        crate::view::buffer::colour::spans_diff(&file, &reading.colours)
+    let spans = if loaded.syntax_on {
+        crate::view::buffer::colour::spans_diff(&file, &loaded.colours)
     } else {
         syntax::Spans::Off
     };

@@ -13,9 +13,9 @@ thread_local! {
 /// Runs `body` with `runtime` reachable from every hook, setter and ref
 /// inside it.
 pub(crate) fn enter<T>(runtime: &Rc<RefCell<Runtime>>, body: impl FnOnce() -> T) -> T {
-    let held = CURRENT.with(|slot| slot.borrow_mut().replace(Rc::clone(runtime)));
+    let previous = CURRENT.with(|slot| slot.borrow_mut().replace(Rc::clone(runtime)));
     let out = body();
-    CURRENT.with(|slot| *slot.borrow_mut() = held);
+    CURRENT.with(|slot| *slot.borrow_mut() = previous);
     out
 }
 
@@ -39,7 +39,7 @@ pub(crate) fn inside() -> bool {
 }
 
 /// The runtime this thread is inside, as an owned handle.
-pub(crate) fn held() -> Option<crate::reconcile::Held> {
+pub(crate) fn held() -> Option<crate::reconcile::RuntimeRef> {
     CURRENT.with(|slot| slot.borrow().clone())
 }
 

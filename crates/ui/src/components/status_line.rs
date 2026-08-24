@@ -9,11 +9,11 @@ use loom::{
 };
 use ratatui::style::Style;
 
-use super::context::{CursorContext, DiffsContext, FileContext, NoticeContext, ThemeContext};
+use super::context::{CursorContext, DiffDataContext, FileContext, NoticeContext, ThemeContext};
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
-pub struct Body {
+pub struct Title {
     pub text: Rc<str>,
     pub style: Style,
 }
@@ -31,17 +31,17 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
     let file = use_context::<FileContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let notice = use_context::<NoticeContext>(scope);
-    let diffs = use_context::<DiffsContext>(scope);
+    let diff_data = use_context::<DiffDataContext>(scope);
 
-    let reading = loom::use_sync_external_store(scope, &diffs);
+    let loaded = loom::use_sync_external_store(scope, &diff_data);
     let base = theme.status;
 
-    let total = reading
+    let total = loaded
         .diff
         .as_ref()
         .map_or(0, |diff| diff.alignment.view_lines(file_types::DiffType::SideBySide).count() as u32);
-    let changes = reading.diff.as_ref().map_or(0, |diff| runs(&diff.alignment));
-    let change = reading
+    let changes = loaded.diff.as_ref().map_or(0, |diff| runs(&diff.alignment));
+    let change = loaded
         .diff
         .as_ref()
         .and_then(|diff| run_at(&diff.alignment, cursor));
@@ -50,13 +50,13 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
         text: Rc::from(summary(file.is_some(), cursor, total.max(1), changes, change).as_str()),
         style: base,
     };
-    let body = match (notice, file) {
-        (Some(why), _) => Body { text: why, style: base.patch(theme.warning) },
-        (None, Some(file)) => Body {
+    let title = match (notice, file) {
+        (Some(why), _) => Title { text: why, style: base.patch(theme.warning) },
+        (None, Some(file)) => Title {
             text: Rc::from(path_of(&file).as_str()),
             style: base.patch(theme.status_path),
         },
-        (None, None) => Body {
+        (None, None) => Title {
             text: Rc::from("changed files"),
             style: base.patch(theme.status_path),
         },
@@ -73,9 +73,9 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
                 ..Default::default()
             },
             ..,
-            { section(body.text, body.style, 1, Layout { grow: 1, ..Default::default() }) }
+            { text_canvas(title.text, title.style, 1, Layout { grow: 1, ..Default::default() }) }
             {
-                section(
+                text_canvas(
                     sidecar.text,
                     sidecar.style,
                     0,
@@ -91,7 +91,7 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
 }
 
 /// One section of the row, written from `offset` and cut at its own edge.
-fn section(text: Rc<str>, style: Style, offset: u16, layout: Layout) -> Node {
+fn text_canvas(text: Rc<str>, style: Style, offset: u16, layout: Layout) -> Node {
     use loom::Element;
     Canvas::build(
         CanvasProps {

@@ -38,7 +38,7 @@ pub(crate) struct Mounted {
     pub render: fn(&dyn std::any::Any, &mut Scope) -> crate::node::Node,
     pub props_equal: Option<fn(&dyn std::any::Any, &dyn std::any::Any) -> bool>,
     /// The hosts this scope produced last frame, handed back when it is clean.
-    pub produced: Vec<crate::reconcile::Rendered>,
+    pub produced: Vec<crate::reconcile::Fiber>,
     /// Set when something asked for this scope to run again.
     pub dirty: bool,
     /// How many times this scope's function has run.

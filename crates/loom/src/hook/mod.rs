@@ -88,7 +88,7 @@ impl Hooks {
 #[track_caller]
 pub(crate) fn use_hook<H>(
     scope: &mut Scope,
-    shape: &'static str,
+    kind: &'static str,
     first: impl FnOnce() -> Slot,
     read: impl FnOnce(&mut Slot) -> H,
 ) -> H {
@@ -116,19 +116,19 @@ pub(crate) fn use_hook<H>(
     crate::current::with_mut(|rt| {
         let name = rt.name_of(id);
         let hooks = rt.hooks.get_mut(&id).expect("a running scope has hook storage");
-        let held = hooks.slots[index].shape();
-        if held != shape {
+        let current = hooks.slots[index].shape();
+        if current != kind {
             #[cfg(debug_assertions)]
             let was = hooks.sites[index];
             #[cfg(debug_assertions)]
             panic!(
-                "{name}: hook {index} was a {held} at {was}, and is a {shape} here at {site}. \
+                "{name}: hook {index} was a {current} at {was}, and is a {kind} here at {site}. \
                  Hooks must run in the same order every render \u{2014} none inside an if, a loop, \
                  or after an early return."
             );
             #[cfg(not(debug_assertions))]
             panic!(
-                "{name}: hook {index} was a {held} and is a {shape}. Hooks must run in the \
+                "{name}: hook {index} was a {current} and is a {kind}. Hooks must run in the \
                  same order every render."
             );
         }

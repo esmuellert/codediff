@@ -9,7 +9,7 @@ use ratatui::layout::Position;
 
 use super::{Bubble, Focus, Listeners, Mouse, hit};
 use crate::node::NodeHandle;
-use crate::reconcile::Held;
+use crate::reconcile::RuntimeRef;
 use crate::runtime::Runtime;
 
 /// One step of a bubble: which node, what it listens for, and where the
@@ -21,18 +21,18 @@ struct Step {
 }
 
 /// The chain from the node an event started at up to the root.
-fn chain(held: &Held, start: usize, at: Position) -> Vec<Step> {
+fn chain(held: &RuntimeRef, start: usize, at: Position) -> Vec<Step> {
     let rt = held.borrow();
     hit::upward(&rt, start)
         .into_iter()
         .map(|index| {
-            let placed = &rt.placed[index];
+            let frame_node = &rt.placed[index];
             Step {
-                node: NodeHandle { scope: placed.scope, nth: placed.nth },
-                listeners: placed.listeners.clone(),
+                node: NodeHandle { scope: frame_node.scope, nth: frame_node.nth },
+                listeners: frame_node.listeners.clone(),
                 local: Position {
-                    x: at.x.saturating_sub(placed.area.x),
-                    y: at.y.saturating_sub(placed.area.y),
+                    x: at.x.saturating_sub(frame_node.area.x),
+                    y: at.y.saturating_sub(frame_node.area.y),
                 },
             }
         })
@@ -41,7 +41,7 @@ fn chain(held: &Held, start: usize, at: Position) -> Vec<Step> {
 
 /// Runs one listener with the runtime free, naming the node it belongs to so
 /// `capture_pointer` knows what to capture.
-fn fire<T>(held: &Held, node: NodeHandle, listen: &dyn Fn(T) -> Bubble, event: T) -> Bubble {
+fn fire<T>(held: &RuntimeRef, node: NodeHandle, listen: &dyn Fn(T) -> Bubble, event: T) -> Bubble {
     held.borrow_mut().handling = Some(node);
     let answer = listen(event);
     held.borrow_mut().handling = None;
@@ -49,7 +49,7 @@ fn fire<T>(held: &Held, node: NodeHandle, listen: &dyn Fn(T) -> Bubble, event: T
 }
 
 /// R8.3 — a key goes to the focused node, then upward.
-pub(crate) fn key(held: &Held, press: KeyCombination) -> bool {
+pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
     let start = {
         let rt = held.borrow();
         match rt.focused {
@@ -70,7 +70,7 @@ pub(crate) fn key(held: &Held, press: KeyCombination) -> bool {
 }
 
 /// R8.1 and R8.4 — hit-test unless the pointer is captured, then bubble.
-pub(crate) fn mouse(held: &Held, event: MouseEvent) -> bool {
+pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
     let at = Position { x: event.column, y: event.row };
 
     let start = {
@@ -136,7 +136,7 @@ pub(crate) fn mouse(held: &Held, event: MouseEvent) -> bool {
 }
 
 /// R8.2 — the blur fires before the focus, each with the other node.
-pub(crate) fn move_focus(held: &Held, to: Option<NodeHandle>) {
+pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
     let from = held.borrow().focused;
     if from == to {
         return;
@@ -165,7 +165,7 @@ pub(crate) fn move_focus(held: &Held, to: Option<NodeHandle>) {
 }
 
 /// Focus order is paint order, and it wraps.
-pub(crate) fn step_focus(held: &Held, by: i32) {
+pub(crate) fn step_focus(held: &RuntimeRef, by: i32) {
     let order: Vec<NodeHandle> = {
         let rt = held.borrow();
         rt.placed

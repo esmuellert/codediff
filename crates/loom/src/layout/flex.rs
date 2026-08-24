@@ -180,12 +180,12 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
                 u32::from(size[i]).saturating_sub(given[n])
             };
             let want = want.min(u32::from(u16::MAX)) as u16;
-            let held = clamp(want, min_on(layout, axis), max_on(layout, axis));
-            if held != want {
+            let clamped = clamp(want, min_on(layout, axis), max_on(layout, axis));
+            if clamped != want {
                 frozen[i] = true;
                 froze = true;
             }
-            size[i] = held;
+            size[i] = clamped;
         }
 
         // Nothing hit a bound, so the space is spent and the pass is done.

@@ -11,7 +11,7 @@ use loom::{
 };
 
 use super::context::{
-    CursorContext, DiffsContext, FirstCellContext, ThemeContext, ViewLinesContext,
+    CursorContext, DiffDataContext, FirstCellContext, ThemeContext, ViewLinesContext,
 };
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
@@ -100,7 +100,7 @@ impl Rows<'_> {
 #[component]
 pub fn SideBySide(scope: &mut Scope) -> Node {
     let theme = use_context::<ThemeContext>(scope);
-    let diffs = use_context::<DiffsContext>(scope);
+    let diff_data = use_context::<DiffDataContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let first_cell = use_context::<FirstCellContext>(scope);
@@ -108,7 +108,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     // Percent of the pane the left column takes.
     // The workers fill this; a component subscribes rather than being handed
     // what they produced.
-    let reading = loom::use_sync_external_store(scope, &diffs);
+    let loaded = loom::use_sync_external_store(scope, &diff_data);
 
     let (divider, _set_divider) = use_state(scope, || 50u16);
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
@@ -123,7 +123,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         set_width(&move |_| now);
     });
 
-    let Some(alignment) = reading.diff.clone() else { return Node::Empty };
+    let Some(alignment) = loaded.diff.clone() else { return Node::Empty };
 
     // Collected once and read by both columns, so the two cannot disagree
     // about what line they are on.
@@ -176,8 +176,8 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         let rows = Rows {
             alignment: &alignment.alignment,
             theme: &theme,
-            spans: if reading.syntax_on {
-                crate::view::buffer::colour::spans_diff(&alignment, &reading.colours)
+            spans: if loaded.syntax_on {
+                crate::view::buffer::colour::spans_diff(&alignment, &loaded.colours)
             } else {
                 syntax::Spans::Off
             },
