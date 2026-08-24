@@ -12,7 +12,7 @@
 
 use file_types::{ChangeType, File, Oid, RepoPath, Rev, Revs, Stats};
 use std::path::Path;
-use ui::components::explorer::model::{Explorer, ViewLine, ViewMode};
+use ui::components::explorer::model::{Content, Explorer, ViewMode};
 
 /// One line's facts, in the form these tests read them by.
 ///
@@ -22,7 +22,7 @@ fn spell(explorer: &Explorer, line: u32) -> String {
     let mut out = String::new();
     let view_line = explorer.view_line(line).expect("a line");
 
-    if let ViewLine::Heading { name, files, stats } = &view_line {
+    if let Content::Heading { name, files, stats } = &view_line {
         out.push_str(&format!("{name} ({files}"));
         if !stats.is_empty() {
             out.push_str(" · ");
@@ -41,12 +41,12 @@ fn spell(explorer: &Explorer, line: u32) -> String {
     out.push_str(&indent(explorer, line));
 
     match view_line {
-        ViewLine::Heading { .. } => unreachable!("answered above"),
-        ViewLine::Directory { name, open } => {
+        Content::Heading { .. } => unreachable!("answered above"),
+        Content::Directory { name, open } => {
             out.push_str(if open { "▾ " } else { "▸ " });
             out.push_str(name);
         }
-        ViewLine::File { name, file } => {
+        Content::File { name, file } => {
             out.push_str(name);
             if let Some(previous) = file.previous_path() {
                 out.push_str(&format!(" ← {previous}"));
@@ -287,7 +287,7 @@ fn shutting_a_directory_hides_what_is_under_it_and_nothing_else() {
 fn a_file_row_cannot_be_folded() {
     let mut explorer = Explorer::new(nested());
     assert!(
-        matches!(explorer.view_line(2), Some(ViewLine::File { name, .. }) if name == "leaf.txt")
+        matches!(explorer.view_line(2), Some(Content::File { name, .. }) if name == "leaf.txt")
     );
     assert!(!explorer.toggle(2), "there is nothing under it to hide");
 }

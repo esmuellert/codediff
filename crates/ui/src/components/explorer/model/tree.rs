@@ -11,8 +11,8 @@
 
 use file_types::File;
 
-use super::ViewLine;
-use super::order;
+use super::Content;
+use crate::components::explorer::utils::order;
 
 /// A node's place in [`Tree::nodes`].
 ///
@@ -192,14 +192,14 @@ impl Tree {
     }
 
     /// What is on a line, as facts.
-    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<ViewLine<'a>> {
+    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
         let node = self.node(*self.view_lines.get(line)?);
         Some(match node.node_type {
-            NodeType::Folder { open, .. } => ViewLine::Directory {
+            NodeType::Folder { open, .. } => Content::Directory {
                 name: &node.name,
                 open,
             },
-            NodeType::File { index } => ViewLine::File {
+            NodeType::File { index } => Content::File {
                 name: &node.name,
                 file: files.get(index)?,
             },

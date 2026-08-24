@@ -6,18 +6,16 @@
 //! style.rs   tree or flat arrangement
 //! tree.rs    the nested arrangement — directories and folds
 //! list.rs    the flat arrangement — paths only
-//! order.rs   sort order
-//! filter.rs  glob filtering
 //! ```
+//!
+//! Sort order and glob filtering are in `explorer::utils`.
 //!
 //! A group is a revision pair (e.g. "Staged Changes" = index vs commit).
 //! An arrangement is handed one group's files and knows nothing about groups.
 //! Drawing (characters, colours) is in `draw::buffer::explorer`.
 
-mod filter;
 mod group;
 mod list;
-mod order;
 mod style;
 mod tree;
 
@@ -27,6 +25,8 @@ pub use style::Style;
 pub use tree::{Node, NodeId, Tree};
 
 use file_types::{File, Revs, Stats};
+
+use super::utils::filter;
 
 /// Which arrangement the reader has chosen.
 ///
@@ -49,13 +49,8 @@ pub enum ViewMode {
 /// Everything `draw` needs to write a line and nothing about how it looks —
 /// `▾`, `│ ` and `+4` are chosen beside the theme that colours them. That is
 /// what lets one file draw a line of any arrangement. See D65.
-///
-/// The counterpart of [`align::ViewLine`], which is one line of a *diff* on
-/// the same terms, and named the same because it is the same idea. Two crates
-/// naming one idea alike is not the collision D28 removed — that was one idea
-/// with two names.
 #[derive(Debug)]
-pub enum ViewLine<'a> {
+pub enum Content<'a> {
     /// A comparison's heading: what it is called, how many files it holds, and
     /// their total. Never produced by an arrangement — always by the explorer.
     Heading {
@@ -183,10 +178,10 @@ impl Explorer {
     }
 
     /// What is on a line, or `None` past the end.
-    pub fn view_line(&self, line: u32) -> Option<ViewLine<'_>> {
+    pub fn view_line(&self, line: u32) -> Option<Content<'_>> {
         if let Some(index) = group::get_heading_line(&self.groups, line) {
             let group = &self.groups[index];
-            return Some(ViewLine::Heading {
+            return Some(Content::Heading {
                 name: group.heading,
                 files: group.files.len(),
                 stats: if self.stats_shown {

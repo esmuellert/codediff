@@ -6,7 +6,7 @@
 
 use file_types::File;
 
-use super::{List, NodeId, Tree, ViewLine};
+use super::{Content, List, NodeId, Tree};
 
 /// How the files under a heading are arranged.
 #[derive(Debug)]
@@ -35,7 +35,7 @@ impl Style {
     }
 
     /// What is on a line, as facts.
-    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<ViewLine<'a>> {
+    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
         match self {
             Style::Tree(tree) => tree.view_line(line, files),
             Style::List(list) => list.view_line(line, files),

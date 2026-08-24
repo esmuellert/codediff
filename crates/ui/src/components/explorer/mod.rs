@@ -1,6 +1,7 @@
 //! The file list.
 
 pub mod model;
+mod utils;
 
 use std::rc::Rc;
 
@@ -11,7 +12,7 @@ use loom::{
 };
 use ratatui::style::{Modifier, Style};
 
-use self::model::{Explorer as Model, NodeId, Tree, ViewLine};
+use self::model::{Content, Explorer as Model, NodeId, Tree};
 use super::context::{
     ArrangementContext, CursorContext, FileListStoreContext, RepoContext, ThemeContext,
     ViewLinesContext,
@@ -61,11 +62,11 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
             };
 
             let (body, status) = match &content {
-                ViewLine::Heading { name, files, stats } => {
+                Content::Heading { name, files, stats } => {
                     heading(name, *files, *stats, &theme, background)
                 }
-                ViewLine::Directory { name, open } => directory(name, *open, &theme, background),
-                ViewLine::File { name, file } => file_row(name, file, &theme, background),
+                Content::Directory { name, open } => directory(name, *open, &theme, background),
+                Content::File { name, file } => file_row(name, file, &theme, background),
             };
 
             rsx! {

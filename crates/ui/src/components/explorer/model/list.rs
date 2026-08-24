@@ -4,8 +4,8 @@
 
 use file_types::File;
 
-use super::ViewLine;
-use super::order;
+use super::Content;
+use crate::components::explorer::utils::order;
 
 /// One group's files, in the order VS Code lists them.
 #[derive(Debug, Default)]
@@ -50,9 +50,9 @@ impl List {
     ///
     /// The name is the whole path, because nothing above it says where the
     /// file is — which is the whole difference from the nested arrangement.
-    pub fn view_line<'a>(&self, line: usize, files: &'a [File]) -> Option<ViewLine<'a>> {
+    pub fn view_line<'a>(&self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
         let file = files.get(self.file_on(line)?)?;
-        Some(ViewLine::File {
+        Some(Content::File {
             name: file.path().as_str(),
             file,
         })
@@ -83,7 +83,7 @@ mod tests {
     fn names(files: &[File], list: &List) -> Vec<String> {
         (0..list.view_lines().len())
             .map(|line| match list.view_line(line, files) {
-                Some(ViewLine::File { name, .. }) => name.to_owned(),
+                Some(Content::File { name, .. }) => name.to_owned(),
                 _ => panic!("a flat list holds files and nothing else"),
             })
             .collect()
