@@ -15,12 +15,13 @@ use loom::{
 };
 
 use super::context::{
-    CursorCellContext, CursorContext, CursorContextProps, DiffStoreContext, FileContext,
-    FileContextProps, FileListStoreContext, FirstCellContext, FirstCellContextProps,
-    LayoutCellContext, NoticeContext, NoticeContextProps, OnSelectContext, OnSelectContextProps,
-    OpenContext, PaneContext, PaneContextProps, ScreenMapCellContext, SelectionCellContext,
-    SelectionContext, SelectionContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
-    ViewLinesCellContext, ViewLinesContext, ViewLinesContextProps,
+    ArrangementContext, ArrangementContextProps, CursorCellContext, CursorContext,
+    CursorContextProps, DiffStoreContext, FileContext, FileContextProps, FileListStoreContext,
+    FirstCellContext, FirstCellContextProps, LayoutCellContext, NoticeContext, NoticeContextProps,
+    OnSelectContext, OnSelectContextProps, OpenContext, PaneContext, PaneContextProps,
+    ScreenMapCellContext, SelectionCellContext, SelectionContext, SelectionContextProps,
+    SyntaxOnContext, SyntaxOnContextProps, ThemeContext, ViewLinesCellContext, ViewLinesContext,
+    ViewLinesContextProps,
 };
 use super::{
     Explorer, ExplorerProps, Inline, InlineProps, SideBySide, SideBySideProps, SingleFile,
@@ -31,7 +32,7 @@ use crate::input::{
     Action, BufferAction, KeymapType, ProgramAction, Resolution, Resolver, TabAction, ViewAction,
 };
 use crate::screen_map::PaneId;
-use crate::state::buffer::explorer::Explorer as Model;
+use crate::state::buffer::explorer::{Arrangement, Explorer as Model};
 use crate::state::selection::Selection;
 use crate::state::{Direction, Viewport};
 
@@ -76,23 +77,29 @@ pub fn App(scope: &mut Scope) -> Node {
     let selection_cell = use_context::<SelectionCellContext>(scope);
     let map_cell = use_context::<ScreenMapCellContext>(scope);
 
-    // The list as the reader has arranged it: which rows are folded, and
-    // whether it is nested or flat. A ref rather than a state slot because
-    // folding changes it in place, and a ref alone redraws nothing — `shape`
-    // is the slot that asks for the frame which shows the change.
-    let model = use_ref(scope, || Model::new(files.to_vec()));
-    let (shape, set_shape) = use_state(scope, || 0u32);
-    // Nothing reads the count; writing it is the whole of its job.
-    let _ = shape;
+    // How the reader has arranged the list: which rows are folded, and
+    // whether it is nested or flat. The rows themselves follow from this and
+    // the store, so they are worked out rather than kept and changed in place
+    // — the component that draws them works out the same rows from the same
+    // two things.
+    let (arrangement, set_arrangement) = use_state(scope, Arrangement::default);
+    let model = use_memo(scope, (files.clone(), arrangement.clone()), || {
+        Model::arranged(files.to_vec(), &arrangement)
+    });
+    // The list the last render worked out. A rebuilt list renumbers every
+    // row, so the file the reader was on is named in the old one and looked
+    // up in the new (D54).
+    let previous = use_ref(scope, || Rc::clone(&model));
+    let before = Rc::clone(&previous.current());
+    *previous.current() = Rc::clone(&model);
 
     // One position per pane. The list and the diff are different documents, so
     // where the reader is in one says nothing about the other.
     let (list, set_list) = use_state(scope, || {
         // The reader starts on the first file, not on the heading above it
         // (D48), so where the list begins is settled with the model.
-        let held = model.current();
         let mut viewport = Viewport::new();
-        viewport.place(held.first_file(), held.view_lines());
+        viewport.place(model.first_file(), model.view_lines());
         viewport
     });
     let (diff, set_diff) = use_state(scope, Viewport::new);
@@ -115,7 +122,7 @@ pub fn App(scope: &mut Scope) -> Node {
     // another can tell itself from re-reading the same one.
     let shown = use_ref(scope, || None::<File>);
 
-    let list_rows = model.current().view_lines();
+    let list_rows = model.view_lines();
     let list_cursor = list.cursor();
     let list_top = list.top();
 
@@ -170,13 +177,10 @@ pub fn App(scope: &mut Scope) -> Node {
 
     // A new list from the store. The reader keeps their place by name, since a
     // row number means nothing across a rebuild (D54).
-    let incoming = files.clone();
+    let landed = Rc::clone(&model);
     use_layout_effect(scope, files.clone(), move || {
-        let landing = model
-            .current()
-            .reshape_around(list_cursor, |model| model.refresh(incoming.to_vec()));
-        let rows = model.current().view_lines();
-        set_shape(&|shape: u32| shape.wrapping_add(1));
+        let landing = landed.line_after(&before, list_cursor);
+        let rows = landed.view_lines();
         set_list(&move |mut viewport: Viewport| {
             viewport.place(landing, rows);
             viewport
@@ -232,12 +236,14 @@ pub fn App(scope: &mut Scope) -> Node {
 
     // Folding a row, and the cursor named again afterwards because the rows
     // it counted have moved. Answers whether there was anything to fold.
+    let folding_model = Rc::clone(&model);
+    let folding_files = files.clone();
     let fold: Rc<dyn Fn(u32) -> bool> = Rc::new(move |line: u32| {
-        if !model.current().toggle(line) {
+        let Some(next) = folding_model.folded(line) else {
             return false;
-        }
-        let rows = model.current().view_lines();
-        set_shape(&|shape: u32| shape.wrapping_add(1));
+        };
+        let rows = Model::arranged(folding_files.to_vec(), &next).view_lines();
+        set_arrangement(&move |_| next.clone());
         set_list(&move |mut viewport: Viewport| {
             let at = viewport.cursor().min(rows.saturating_sub(1));
             viewport.place(at, rows);
@@ -251,12 +257,12 @@ pub fn App(scope: &mut Scope) -> Node {
     let open_row: Rc<dyn Fn(u32)> = {
         let folding = Rc::clone(&fold);
         let request = Rc::clone(&on_open);
+        let held = Rc::clone(&model);
         Rc::new(move |line: u32| {
             if folding(line) {
                 return;
             }
-            let file = model.current().file(line).cloned();
-            if let Some(file) = file {
+            if let Some(file) = held.file(line).cloned() {
                 request(file);
             }
         })
@@ -273,6 +279,8 @@ pub fn App(scope: &mut Scope) -> Node {
     let jumps = Rc::clone(&blocks);
     let opening = Rc::clone(&open_row);
     let folding = Rc::clone(&fold);
+    let flipping_model = Rc::clone(&model);
+    let flipping_files = files.clone();
     let keys = Listeners::new().on_key(move |key| {
         // Both answered the key before this one, and neither survives it.
         set_notice(&|_| None);
@@ -329,11 +337,11 @@ pub fn App(scope: &mut Scope) -> Node {
                 folding(list_cursor);
             }
             Action::Buffer(BufferAction::ToggleViewMode) => {
-                let landing = model
-                    .current()
-                    .reshape_around(list_cursor, |model| model.toggle_mode());
-                let rows = model.current().view_lines();
-                set_shape(&|shape: u32| shape.wrapping_add(1));
+                let next = flipping_model.arrangement().other_mode();
+                let flipped = Model::arranged(flipping_files.to_vec(), &next);
+                let landing = flipped.line_after(&flipping_model, list_cursor);
+                let rows = flipped.view_lines();
+                set_arrangement(&move |_| next.clone());
                 set_list(&move |mut viewport: Viewport| {
                     viewport.place(landing, rows);
                     viewport
@@ -432,7 +440,10 @@ pub fn App(scope: &mut Scope) -> Node {
                         value: list.visible(list_rows),
                         CursorContext {
                             value: list_cursor,
-                            Explorer { model: model }
+                            ArrangementContext {
+                                value: arrangement.clone(),
+                                Explorer { on_open: Rc::clone(&on_open) }
+                            }
                         }
                     }
                 }

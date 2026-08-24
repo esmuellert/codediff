@@ -80,6 +80,42 @@ pub struct Anchor {
     pub path: String,
 }
 
+/// How the reader has arranged the list: nested or flat, and which rows are
+/// shut.
+///
+/// Held apart from the list itself so it can be put on another built from the
+/// same files. That is what lets the list be worked out from the file list and
+/// this, rather than kept somewhere and changed in place — the component that
+/// draws it and the one that holds the keys each build their own, and the two
+/// agree because they were given the same two things.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Arrangement {
+    mode: ViewMode,
+    /// One per group, in the order the groups are in: whether the heading is
+    /// open, and which of the group's nodes are shut.
+    groups: Vec<(bool, Vec<NodeId>)>,
+}
+
+impl Arrangement {
+    /// The same list, flat if it was nested and nested if it was flat.
+    ///
+    /// The folds do not come with it: a node means nothing once the
+    /// arrangement it belonged to has been rebuilt.
+    pub fn other_mode(&self) -> Self {
+        Self {
+            mode: match self.mode {
+                ViewMode::Tree => ViewMode::List,
+                ViewMode::List => ViewMode::Tree,
+            },
+            groups: self
+                .groups
+                .iter()
+                .map(|&(open, _)| (open, Vec::new()))
+                .collect(),
+        }
+    }
+}
+
 /// The list of changed files, as the reader is looking at it.
 #[derive(Debug)]
 pub struct Explorer {
@@ -112,6 +148,13 @@ impl Explorer {
             pattern: None,
         };
         explorer.reshape();
+        explorer
+    }
+
+    /// The list those files make, arranged the way the reader has asked.
+    pub fn arranged(files: Vec<File>, arrangement: &Arrangement) -> Self {
+        let mut explorer = Self::new(files);
+        explorer.arrange(arrangement);
         explorer
     }
 
@@ -218,6 +261,70 @@ impl Explorer {
             .and_then(|anchor| self.line_of(&anchor))
             .unwrap_or(cursor);
         landing.min(self.view_lines().saturating_sub(1))
+    }
+
+    /// Where the file on `line` of `previous` is in this list.
+    ///
+    /// The same as [`Self::reshape_around`] for a list that is built afresh
+    /// rather than changed in place: the file is named in the old one and
+    /// looked up in this one, because a line number means nothing across a
+    /// rebuild. See D54.
+    pub fn line_after(&self, previous: &Self, line: u32) -> u32 {
+        previous
+            .anchor(line)
+            .and_then(|anchor| self.line_of(&anchor))
+            .unwrap_or(line)
+            .min(self.view_lines().saturating_sub(1))
+    }
+
+    /// How the reader has arranged the list, in terms another explorer over
+    /// the same files can be given.
+    pub fn arrangement(&self) -> Arrangement {
+        Arrangement {
+            mode: self.mode,
+            groups: self
+                .groups
+                .iter()
+                .map(|group| (group.open, group.style.closed()))
+                .collect(),
+        }
+    }
+
+    /// Arranges this list the way `arrangement` describes.
+    ///
+    /// A group the arrangement says nothing about is left as it was built,
+    /// which is open: an arrangement named over one set of files is put on
+    /// whatever the next set produced.
+    pub fn arrange(&mut self, arrangement: &Arrangement) {
+        self.set_mode(arrangement.mode);
+        for (group, (open, closed)) in self.groups.iter_mut().zip(&arrangement.groups) {
+            group.open = *open;
+            group.style.set_closed(closed);
+        }
+    }
+
+    /// The arrangement with whatever is on `line` shut if it was open and
+    /// opened if it was shut, or `None` when there is nothing there to fold.
+    ///
+    /// [`Self::toggle`] for a list that is worked out rather than kept: the
+    /// answer is what to arrange it by next.
+    pub fn folded(&self, line: u32) -> Option<Arrangement> {
+        let mut arrangement = self.arrangement();
+        if let Some(index) = group::get_heading_line(&self.groups, line) {
+            let open = &mut arrangement.groups[index].0;
+            *open = !*open;
+            return Some(arrangement);
+        }
+        let (group, line) = group::get_line_style(&self.groups, line)?;
+        let id = self.groups[group].style.foldable_on(line)?;
+        let closed = &mut arrangement.groups[group].1;
+        match closed.iter().position(|&shut| shut == id) {
+            Some(at) => {
+                closed.remove(at);
+            }
+            None => closed.push(id),
+        }
+        Some(arrangement)
     }
 
     pub fn set_mode(&mut self, mode: ViewMode) {

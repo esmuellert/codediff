@@ -3,10 +3,15 @@
 use std::rc::Rc;
 
 use file_types::{ChangeType, File, Stats};
-use loom::{Column, ColumnProps, Layout, Node, Scope, component, rsx, use_context};
+use loom::{
+    Column, ColumnProps, Layout, Node, Scope, component, rsx, use_context, use_memo,
+    use_sync_external_store,
+};
 use ratatui::style::{Modifier, Style};
 
-use super::context::{CursorContext, ThemeContext, ViewLinesContext};
+use super::context::{
+    ArrangementContext, CursorContext, FileListStoreContext, ThemeContext, ViewLinesContext,
+};
 use super::entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
 use crate::state::buffer::explorer::{Explorer as Model, NodeId, Tree, ViewLine};
 use crate::theme::{Theme, icon};
@@ -14,15 +19,25 @@ use crate::theme::{Theme, icon};
 /// The file list.
 ///
 /// The model decides what the rows are; this decides what they look like.
-/// Folding a row and opening a file change what the *session* is showing, so
-/// the model and the keys that move it live one level up.
+/// The files come from the list store and how they are arranged comes from
+/// context, so the rows are worked out here rather than handed over.
 #[component]
-pub fn Explorer(scope: &mut Scope, model: loom::Ref<Model>) -> Node {
+pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
+    let store = use_context::<FileListStoreContext>(scope);
+    let arrangement = use_context::<ArrangementContext>(scope);
+    // The list worker fills the store; this subscribes rather than being
+    // handed what it produced.
+    let files = use_sync_external_store(scope, &store);
+    let model = use_memo(scope, (files.clone(), arrangement.clone()), || {
+        Model::arranged(files.to_vec(), &arrangement)
+    });
+    // Opening a row is still done by the key and the click that `App` holds,
+    // so nothing here calls this yet.
+    let _ = on_open;
 
-    let model = model.current();
     let base = theme.normal;
     let rows: Vec<Node> = view_lines
         .clone()

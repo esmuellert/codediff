@@ -172,6 +172,61 @@ fn folding_a_directory_takes_its_files_off_the_list() {
 }
 
 #[test]
+fn a_second_fold_leaves_the_first_one_shut() {
+    // The list is worked out afresh from the files and the reader's
+    // arrangement. The failure this prevents: a fold arriving without the
+    // ones before it, so shutting one directory opens the last.
+    let mut session = TestSession::new(
+        Buffer::explorer(vec![
+            untracked("nest/a/one.txt"),
+            untracked("nest/b/two.txt"),
+        ]),
+        Theme::named("basic-dark").unwrap(),
+    );
+    // Up from the first file to `a` and shut it, then down to `b` and shut
+    // that.
+    session.press(crokey::key!(k));
+    session.press(crokey::key!(h));
+    session.press(crokey::key!(j));
+    session.press(crokey::key!(h));
+
+    let rows = screen(&mut session, 30, 7);
+    assert!(
+        !rows.iter().any(|row| row.contains("one.txt")),
+        "shutting the second directory opened the first: {rows:?}"
+    );
+    assert!(
+        !rows.iter().any(|row| row.contains("two.txt")),
+        "the second directory did not shut: {rows:?}"
+    );
+}
+
+#[test]
+fn a_file_added_above_the_reader_leaves_them_on_their_own_row() {
+    // A row number means nothing across a rebuild, so the file is named
+    // before and looked up after (D54). The failure this prevents: the
+    // watcher seeing a new file and the cursor sliding onto another one.
+    let mut session = TestSession::new(
+        Buffer::explorer(vec![modified("b.rs"), modified("c.rs")]),
+        Theme::named("basic-dark").unwrap(),
+    );
+    // Down from `b.rs` to `c.rs`, which is the row the refresh must keep.
+    session.press(crokey::key!(j));
+
+    session.refresh_list(vec![modified("a.rs"), modified("b.rs"), modified("c.rs")]);
+    let rows = screen(&mut session, 44, 8);
+    let landed = rows
+        .iter()
+        .position(|row| row.contains("c.rs"))
+        .expect("c.rs is on screen") as u32;
+    assert_eq!(
+        session.cursor(),
+        landed,
+        "the reader was moved off c.rs: {rows:?}"
+    );
+}
+
+#[test]
 fn the_status_line_names_the_list_rather_than_a_file() {
     // The failure this prevents: showing the first file's name while the
     // reader is looking at all of them.

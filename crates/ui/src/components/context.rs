@@ -33,6 +33,16 @@ context!(
 );
 
 context!(
+    /// How the reader has arranged the file list: which rows are folded, and
+    /// whether it is nested or flat.
+    ///
+    /// The rows themselves are not here. They follow from this and the file
+    /// list store, so whoever needs them works them out from the two.
+    pub ArrangementContext: crate::state::buffer::explorer::Arrangement =
+        crate::state::buffer::explorer::Arrangement::default()
+);
+
+context!(
     /// Which pane a subtree is drawn in, for whatever records where it landed.
     pub PaneContext: Option<crate::screen_map::PaneId> = None
 );

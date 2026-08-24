@@ -6,7 +6,7 @@
 
 use file_types::File;
 
-use super::{List, Tree, ViewLine};
+use super::{List, NodeId, Tree, ViewLine};
 
 /// How the files under a heading are arranged.
 #[derive(Debug)]
@@ -49,6 +49,29 @@ impl Style {
             // Nothing in a flat list has anything under it. Its heading folds,
             // and that is the group's, one level up.
             Style::List(_) => false,
+        }
+    }
+
+    /// The node on a line that can be opened and shut, if there is one.
+    pub fn foldable_on(&self, line: usize) -> Option<NodeId> {
+        match self {
+            Style::Tree(tree) => tree.foldable_on(line),
+            Style::List(_) => None,
+        }
+    }
+
+    /// Which nodes are shut, which for a flat list is none.
+    pub fn closed(&self) -> Vec<NodeId> {
+        match self {
+            Style::Tree(tree) => tree.closed(),
+            Style::List(_) => Vec::new(),
+        }
+    }
+
+    /// Shuts exactly these nodes and opens every other.
+    pub fn set_closed(&mut self, closed: &[NodeId]) {
+        if let Style::Tree(tree) = self {
+            tree.set_closed(closed);
         }
     }
 }

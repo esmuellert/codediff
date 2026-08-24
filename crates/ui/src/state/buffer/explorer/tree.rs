@@ -225,6 +225,34 @@ impl Tree {
         true
     }
 
+    /// The node on a line, if it is one that can be opened and shut.
+    pub fn foldable_on(&self, line: usize) -> Option<NodeId> {
+        let &id = self.view_lines.get(line)?;
+        self.nodes[id.0].is_foldable().then_some(id)
+    }
+
+    /// Which nodes are shut, so the same folds can be put on another tree
+    /// built from the same files.
+    pub fn closed(&self) -> Vec<NodeId> {
+        (0..self.nodes.len())
+            .map(NodeId)
+            .filter(|&id| self.nodes[id.0].is_foldable() && !self.nodes[id.0].is_open())
+            .collect()
+    }
+
+    /// Shuts exactly these nodes and opens every other.
+    ///
+    /// A node that is not there is ignored: folds named over one set of files
+    /// are put on whatever the next set nested into.
+    pub fn set_closed(&mut self, closed: &[NodeId]) {
+        for (index, node) in self.nodes.iter_mut().enumerate() {
+            if let NodeType::Folder { open, .. } = &mut node.node_type {
+                *open = !closed.contains(&NodeId(index));
+            }
+        }
+        self.reflow();
+    }
+
     fn push(&mut self, node: Node) -> NodeId {
         self.nodes.push(node);
         NodeId(self.nodes.len() - 1)
