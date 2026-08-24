@@ -11,8 +11,8 @@ use loom::{
 use ratatui::style::Style;
 
 use super::context::{
-    CursorContext, DiffStoreContext, FirstCellContext, OnSelectContext, PaneContext,
-    ScreenMapCellContext, SelectionContext, SyntaxOnContext, ThemeContext, ViewLinesContext,
+    CursorContext, DiffStoreContext, FirstCellContext, PaneContext, ScreenMapCellContext,
+    SelectionContext, SyntaxOnContext, ThemeContext, ViewLinesContext,
 };
 use super::{CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width};
 use crate::state::selection::{Pos, Selection, SelectionColumn};
@@ -27,14 +27,15 @@ const MIN_TEXT: u16 = 4;
 /// is the side a lone file is read as.
 ///
 /// The selection is held above this component: a new file ends one, and that
-/// is not this component's to know.
+/// is not this component's to know, so it is read from context and changed
+/// through `on_select`.
 enum LinesSource<'a> {
     Alignment(&'a align::Alignment, u32),
     Plain(&'a [String]),
 }
 
 #[component]
-pub fn SingleFile(scope: &mut Scope) -> Node {
+pub fn SingleFile(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
@@ -42,7 +43,6 @@ pub fn SingleFile(scope: &mut Scope) -> Node {
     let syntax_on = use_context::<SyntaxOnContext>(scope);
     let diffs = use_context::<DiffStoreContext>(scope);
     let selection = use_context::<SelectionContext>(scope);
-    let on_select = use_context::<OnSelectContext>(scope);
     let pane = use_context::<PaneContext>(scope);
     let map = use_context::<ScreenMapCellContext>(scope);
     // The workers fill the store; this subscribes rather than being handed
@@ -133,9 +133,9 @@ pub fn SingleFile(scope: &mut Scope) -> Node {
     // The pointer is captured on the way down, so a drag that leaves the
     // column keeps arriving until the button comes up. The press itself is
     // passed on, so that clicking a diff also moves the focus into it.
-    let start = Rc::clone(&on_select);
-    let drag = Rc::clone(&on_select);
-    let end = Rc::clone(&on_select);
+    let start = Rc::clone(on_select);
+    let drag = Rc::clone(on_select);
+    let end = Rc::clone(on_select);
     let listeners = Listeners::new()
         .on_mouse_down(move |mouse| {
             *pending.current() = at(mouse);

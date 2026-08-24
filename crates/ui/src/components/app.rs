@@ -19,10 +19,9 @@ use super::context::{
     CursorContextProps, DiffStoreContext, ExhaustedContext, ExhaustedContextProps, FileContext,
     FileContextProps, FileListStoreContext, FirstCellContext, FirstCellContextProps,
     LayoutCellContext, LayoutContext, LayoutContextProps, NoticeContext, NoticeContextProps,
-    OnSelectContext, OnSelectContextProps, OpenContext, PaneContext, PaneContextProps,
-    ScreenMapCellContext, SelectionCellContext, SelectionContext, SelectionContextProps,
-    SyntaxOnContext, SyntaxOnContextProps, ThemeContext, ViewLinesCellContext, ViewLinesContext,
-    ViewLinesContextProps,
+    OpenContext, PaneContext, PaneContextProps, ScreenMapCellContext, SelectionCellContext,
+    SelectionContext, SelectionContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
+    ViewLinesCellContext, ViewLinesContext, ViewLinesContextProps,
 };
 use super::{
     Explorer, ExplorerProps, Inline, InlineProps, SideBySide, SideBySideProps, SingleFile,
@@ -417,6 +416,9 @@ pub fn App(scope: &mut Scope) -> Node {
             Bubble::Stop
         });
 
+    // The selection goes down as context and comes back up through this: a
+    // screen says what the pointer selected, and the slot here is what every
+    // screen then draws from.
     let on_select: Rc<dyn Fn(Option<Selection>)> =
         Rc::new(move |held| set_selection(&move |_| held));
 
@@ -468,12 +470,15 @@ pub fn App(scope: &mut Scope) -> Node {
                                 value: diff.left(),
                                 SelectionContext {
                                     value: selection,
-                                    OnSelectContext {
-                                        value: Rc::clone(&on_select),
-                                        match effective_layout {
-                                            DiffType::SideBySide => { SideBySide {} }
-                                            DiffType::Inline => { Inline {} }
-                                            DiffType::Single => { SingleFile {} }
+                                    match effective_layout {
+                                        DiffType::SideBySide => {
+                                            SideBySide { on_select: Rc::clone(&on_select) }
+                                        }
+                                        DiffType::Inline => {
+                                            Inline { on_select: Rc::clone(&on_select) }
+                                        }
+                                        DiffType::Single => {
+                                            SingleFile { on_select: Rc::clone(&on_select) }
                                         }
                                     }
                                 }

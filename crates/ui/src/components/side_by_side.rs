@@ -11,8 +11,8 @@ use loom::{
 };
 
 use super::context::{
-    CursorContext, DiffStoreContext, FirstCellContext, OnSelectContext, PaneContext,
-    ScreenMapCellContext, SelectionContext, SyntaxOnContext, ThemeContext, ViewLinesContext,
+    CursorContext, DiffStoreContext, FirstCellContext, PaneContext, ScreenMapCellContext,
+    SelectionContext, SyntaxOnContext, ThemeContext, ViewLinesContext,
 };
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
@@ -27,9 +27,10 @@ const MIN_TEXT: u16 = 4;
 ///
 /// The divider's position is this component's own state. The selection is
 /// not: a new file and a new layout both end one, and neither is this
-/// component's to know.
+/// component's to know, so it is read from context and changed through
+/// `on_select`.
 #[component]
-pub fn SideBySide(scope: &mut Scope) -> Node {
+pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
@@ -37,7 +38,6 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let syntax_on = use_context::<SyntaxOnContext>(scope);
     let diffs = use_context::<DiffStoreContext>(scope);
     let selection = use_context::<SelectionContext>(scope);
-    let on_select = use_context::<OnSelectContext>(scope);
     let pane = use_context::<PaneContext>(scope);
     let map = use_context::<ScreenMapCellContext>(scope);
     // The workers fill the store; this subscribes rather than being handed
@@ -148,9 +148,9 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         // column keeps arriving until the button comes up. The press itself
         // is passed on, so that clicking a diff also moves the focus into it.
         let held = selection;
-        let start = Rc::clone(&on_select);
-        let drag = Rc::clone(&on_select);
-        let end = Rc::clone(&on_select);
+        let start = Rc::clone(on_select);
+        let drag = Rc::clone(on_select);
+        let end = Rc::clone(on_select);
         let listeners = Listeners::new()
             .on_mouse_down(move |mouse| {
                 *pending.current() = at(mouse).map(|pos| (which, pos));

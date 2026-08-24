@@ -50,15 +50,9 @@ context!(
 context!(
     /// The live text selection. Held above the diff screens because a new
     /// file and a new layout both end it, and neither is theirs to know.
+    /// A screen reads it from here and changes it through its `on_select`
+    /// prop, the way a controlled component is written.
     pub SelectionContext: Option<crate::state::selection::Selection> = None
-);
-
-context!(
-    /// How a text column says what the pointer selected in it.
-    pub OnSelectContext: Rc<dyn Fn(Option<crate::state::selection::Selection>)> =
-        Rc::new(|_| {}),
-    |a: &Rc<dyn Fn(Option<crate::state::selection::Selection>)>,
-     b: &Rc<dyn Fn(Option<crate::state::selection::Selection>)>| Rc::ptr_eq(a, b)
 );
 
 context!(
