@@ -2,40 +2,64 @@
 
 use std::rc::Rc;
 
+use crokey::key;
 use file_types::{ChangeType, File, Stats};
 use loom::{
-    Column, ColumnProps, Element, Key, Layout, Listeners, Node, Scope, component, rsx,
-    use_context,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_context,
+    use_memo, use_state, use_sync_external_store,
 };
 use ratatui::style::{Modifier, Style};
 
-use super::context::{CursorContext, ThemeContext, ViewLinesContext};
+use super::context::{CursorContext, FileListStoreContext, ThemeContext, ViewLinesContext};
 use super::entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
-use crate::state::buffer::explorer::{NodeId, Tree, ViewLine};
-use crate::state::{BufferId, View};
+use crate::state::buffer::explorer::{Explorer as Model, NodeId, Tree, ViewLine, ViewMode};
 use crate::theme::{Theme, icon};
 
 /// The file list.
 ///
-/// The model decides what the rows are; this decides what they look like. It
-/// is borrowed rather than owned because the tree is a large mutable model
-/// that the session keeps between frames.
+/// The model decides what the rows are; this decides what they look like.
+/// Nothing hands the model in: the list worker fills the store, this
+/// subscribes to it, and the groups and folds follow from what it read.
 #[component]
-pub fn Explorer(
-    scope: &mut Scope,
-    view: Rc<std::cell::RefCell<View>>,
-    buffer: BufferId,
-    on_open: Rc<dyn Fn(File)>,
-) -> Node {
+pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
-    let _ = on_open;
+    let store = use_context::<FileListStoreContext>(scope);
+    let files = use_sync_external_store(scope, &store);
 
-    let read = view.borrow();
-    let Some(model) = read.buffer(*buffer).as_explorer() else {
-        return Node::Empty;
-    };
+    // Nested or flat. The reader's choice, and nothing above this has any use
+    // for it.
+    let (tree_mode, set_tree_mode) = use_state(scope, || true);
+
+    // What the files mean: groups, directories, folds. Rebuilt when the list
+    // changes, and when the arrangement does — the mode decides what the
+    // lines *are*, not just how they are drawn.
+    let model = use_memo(scope, (files.clone(), tree_mode), || {
+        let mut model = Model::new(files.to_vec());
+        if !tree_mode {
+            model.set_mode(ViewMode::List);
+        }
+        model
+    });
+
+    let opening = Rc::clone(&model);
+    let on_open = Rc::clone(on_open);
+    let listeners = Listeners::new().on_key(move |press| {
+        if press == key!(t) {
+            set_tree_mode(&|nested: bool| !nested);
+            Bubble::Stop
+        } else if press == key!(enter) {
+            // A heading and a directory are not files, so there is nothing to
+            // open on one.
+            if let Some(file) = opening.file(cursor) {
+                on_open(file.clone());
+            }
+            Bubble::Stop
+        } else {
+            Bubble::Continue
+        }
+    });
 
     let base = theme.normal;
     let rows: Vec<Node> = view_lines
@@ -63,10 +87,15 @@ pub fn Explorer(
                 ViewLine::File { name, file } => file_row(name, file, &theme, background),
             };
 
-            Entry::build(
-                EntryProps { indent, body, status, selected },
-                Some(Key::from(line)),
-            )
+            rsx! {
+                Entry {
+                    key: line,
+                    indent: indent,
+                    body: body,
+                    status: status,
+                    selected: selected,
+                }
+            }
         })
         .collect();
 
@@ -74,7 +103,7 @@ pub fn Explorer(
         Column {
             // How wide the list is, is the pane's business.
             layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
-            listeners: Listeners::new(),
+            listeners: listeners,
             ..,
             { rows }
         }
@@ -165,8 +194,10 @@ fn file_row(name: &str, file: &File, theme: &Theme, background: Style) -> (Body,
         background.fg(theme.change.of(change)).add_modifier(Modifier::BOLD),
     ));
 
+    // The name carries the whole path in the flat arrangement, and the lookup
+    // drops the directories, so one call answers both.
     (
-        Body { icon: Some(icon::file(file.path().file_name())), runs: runs.into() },
+        Body { icon: Some(icon::file(name)), runs: runs.into() },
         Some(Status { runs: status.into() }),
     )
 }

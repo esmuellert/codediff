@@ -1,46 +1,44 @@
 //! What sits above the interface: the values that last as long as the session.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use loom::{Node, Scope, component, rsx};
 
+use super::app::{App, AppProps, FlowContext, FlowContextProps};
 use super::context::{
-    ColoursContext, ColoursContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
-    ThemeContextProps,
+    DiffStore, DiffStoreContext, DiffStoreContextProps, FileListStore, FileListStoreContext,
+    FileListStoreContextProps, ThemeContext, ThemeContextProps,
 };
-use super::{App, AppProps};
-use crate::screen_map::ScreenMap;
-use crate::state::View;
+use crate::app::Flow;
 use crate::theme::Theme;
 
-/// The theme and the worker store, provided once, above everything.
+/// The mount point. The session owns the theme, the two stores the workers
+/// write, and the callback that takes the program out; this offers all four to
+/// whoever below asks for them.
 ///
-/// They outlast every frame, so they are offered here rather than held by the
-/// interface that reads them.
+/// Nothing is handed down as a prop — `App` takes none — so a component that
+/// reads a store subscribes to it rather than waiting for a parent to pass on
+/// what it read.
 #[component]
 pub fn Root(
     scope: &mut Scope,
-    view: Rc<RefCell<View>>,
-    notice: Option<Rc<str>>,
-    map: Rc<RefCell<ScreenMap>>,
     theme: Rc<Theme>,
-    colours: Rc<std::cell::RefCell<syntax::Store>>,
-    syntax_on: bool,
+    diff_store: DiffStore,
+    file_list_store: FileListStore,
+    on_flow: Rc<dyn Fn(Flow)>,
 ) -> Node {
     let _ = scope;
 
     rsx! {
         ThemeContext {
             value: Rc::clone(theme),
-            ColoursContext {
-                value: Rc::clone(colours),
-                SyntaxOnContext {
-                    value: *syntax_on,
-                    App {
-                        view: Rc::clone(view),
-                        notice: notice.clone(),
-                        map: Rc::clone(map),
+            DiffStoreContext {
+                value: diff_store.clone(),
+                FileListStoreContext {
+                    value: file_list_store.clone(),
+                    FlowContext {
+                        value: Rc::clone(on_flow),
+                        App {}
                     }
                 }
             }

@@ -1,16 +1,16 @@
 //! Test support: a Session with its own event channel for blocking helpers.
 
+use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
-use channel::Emitter;
-use channel::Worker;
+use channel::{Emitter, Worker};
 use pipeline::file::{DiffContent, FileWorker};
 
 use crate::app::event::Event;
 use crate::app::{Session, Workers};
-use crate::theme::Theme;
 use crate::state::Buffer;
+use crate::theme::Theme;
 
 use pipeline::list::ListWorker;
 use syntax::Syntax;
@@ -53,7 +53,27 @@ impl TestSession {
             list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
             _watcher: None,
         };
-        let session = Session::new(buffer, theme, workers);
+        let mut session = Session::new(theme, workers);
+
+        // A test that hands in a Buffer feeds the store directly.
+        match buffer {
+            Buffer { .. } => {
+                // If the buffer is a diff, fill the diff store.
+                if let Some(alignment) = buffer.alignment() {
+                    if let Some(file) = buffer.file() {
+                        session.diff_store.set_diff(Some(Rc::new(pipeline::file::Diff {
+                            file: file.clone(),
+                            alignment: alignment.clone(),
+                        })));
+                    }
+                }
+                // If the buffer is an explorer, fill the file list store.
+                if let Some(explorer) = buffer.as_explorer() {
+                    session.file_list_store.fill(vec![]);
+                }
+            }
+        }
+
         Self { session, rx }
     }
 
@@ -69,7 +89,21 @@ impl TestSession {
             list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
             _watcher: None,
         };
-        let session = Session::new(buffer, theme, workers);
+        let mut session = Session::new(theme, workers);
+
+        // Same as above.
+        if let Some(alignment) = buffer.alignment() {
+            if let Some(file) = buffer.file() {
+                session.diff_store.set_diff(Some(Rc::new(pipeline::file::Diff {
+                    file: file.clone(),
+                    alignment: alignment.clone(),
+                })));
+            }
+        }
+        if let Some(explorer) = buffer.as_explorer() {
+            session.file_list_store.fill(vec![]);
+        }
+
         Self { session, rx }
     }
 
@@ -87,7 +121,6 @@ impl TestSession {
                     } else {
                         idle += 1;
                     }
-                    self.session.send_colour_request();
                 }
                 Err(_) => break,
             }
@@ -102,7 +135,6 @@ impl TestSession {
 
     /// Blocks until a file response arrives.
     pub fn has_file_arrived(&mut self) -> bool {
-        self.session.send_file_request();
         loop {
             match self.rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(event) => {

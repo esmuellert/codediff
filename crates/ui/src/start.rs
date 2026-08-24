@@ -9,7 +9,6 @@ use anyhow::{Context, Result, bail};
 
 use crate::app::{Exit, Session, run};
 use crate::theme::Theme;
-use crate::state::Buffer;
 
 /// Reviews everything that changed under `cwd`, until the reader quits.
 pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<Exit> {
@@ -27,11 +26,10 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
     let (tx, rx) = std::sync::mpsc::channel();
     tracing::info!("spawning workers");
     let mut session = Session::new(
-        Buffer::explorer(files),
         theme,
         crate::app::threads::spawn_workers(&tx, &cwd),
     );
-    session.open();
+    session.file_list_store.fill(files);
     tracing::info!("startup complete");
     run(&mut session, &cwd, tx, rx).context("running the review interface")
 }

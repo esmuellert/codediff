@@ -24,5 +24,5 @@ pub use start::start;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 pub use state::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};
-pub use state::{View, Viewport};
+pub use state::Viewport;
 pub mod testing;

@@ -14,7 +14,7 @@ mod side_by_side;
 mod single_file;
 mod status_line;
 
-pub use app::{App, AppProps};
+pub use app::{App, AppProps, FlowContext, FlowContextProps};
 pub use code_text::{CodeText, CodeTextProps};
 pub use context::*;
 pub use entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
