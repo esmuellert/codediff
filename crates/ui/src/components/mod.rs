@@ -17,7 +17,7 @@ mod status_line;
 pub use app::{App, AppProps};
 pub use code_text::{CodeText, CodeTextProps};
 pub use context::*;
-pub use entry::{Body, Entry, EntryProps, Indent, Run, Status};
+pub use entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
 pub use explorer::{Explorer, ExplorerProps, letter};
 pub use filler::{Filler, FillerProps};
 pub use gutter::{Gutter, GutterProps};

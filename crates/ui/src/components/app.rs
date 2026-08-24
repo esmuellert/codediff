@@ -38,14 +38,22 @@ pub fn App(
 
     let body = use_ref(scope, || None::<loom::NodeHandle>);
     let (height, set_height) = use_state(scope, || 0u32);
+    let (width, set_width) = use_state(scope, || u16::MAX);
     // One slot per pane. A tab holds at most two, and a hook cannot run
     // behind a condition, so both are made every render.
     let first = use_ref(scope, || None::<loom::NodeHandle>);
     let second = use_ref(scope, || None::<loom::NodeHandle>);
 
     let read = view.borrow();
-    let split = read.tab().is_split();
-    let panes: Vec<PaneId> = read.tab().ids().collect();
+    // Two panes need room for both and the divider between them. When that
+    // does not fit, the reader sees the one they are working in rather than
+    // nothing at all.
+    let split = read.tab().is_split() && width >= MIN_LIST + 1 + MIN_DIFF;
+    let panes: Vec<PaneId> = if split {
+        read.tab().ids().collect()
+    } else {
+        vec![read.tab().focus()]
+    };
     drop(read);
 
     let slots = [first, second];
@@ -58,8 +66,11 @@ pub fn App(
     let held = Rc::clone(view);
     let filling = Rc::clone(&map);
     use_layout_effect(scope, loom::Always, move || {
-        let rows = u32::from(body.current().map_or(0, |node| node.area().height));
+        let area = body.current().map_or(ratatui::layout::Rect::ZERO, |node| node.area());
+        let rows = u32::from(area.height);
         set_height(&move |_| rows);
+        let across = area.width;
+        set_width(&move |_| across);
         {
             let mut view = held.borrow_mut();
             let ids: Vec<PaneId> = view.tab().ids().collect();
@@ -74,7 +85,7 @@ pub fn App(
         let mut map = filling.borrow_mut();
         map.panes.clear();
         map.text_areas.clear();
-        map.body = body.current().map_or(ratatui::layout::Rect::ZERO, |node| node.area());
+        map.body = area;
         for (id, slot) in &recorded {
             if let Some(node) = *slot.current() {
                 map.panes.push((*id, node.area()));
@@ -106,12 +117,9 @@ pub fn App(
             // When the minimum does not fit, loom shows this instead of the
             // tree.
             too_small: Some(rsx! { Text { text: "terminal too small".into(), .. } }),
-            layout: Layout {
-                grow: 1,
-                min_width: MIN_DIFF,
-                min_height: 2,
-                ..Default::default()
-            },
+            // What the screen needs is whatever is in it: a list asks for
+            // less than a diff, so the panes carry their own minimums.
+            layout: Layout { grow: 1, min_height: 2, ..Default::default() },
             ..,
             Row {
                 ref: Some(body),
@@ -175,10 +183,12 @@ fn pane(
         }
     };
 
+    // What a pane needs is what it shows: a list asks for less than a diff.
+    let least = if is_explorer { MIN_LIST } else { MIN_DIFF };
     let layout = if is_list {
-        Layout { basis: Basis::Length(40), min_width: MIN_LIST, ..Default::default() }
+        Layout { basis: Basis::Length(40), min_width: least, ..Default::default() }
     } else {
-        Layout { grow: 1, min_width: MIN_DIFF, ..Default::default() }
+        Layout { grow: 1, min_width: least, ..Default::default() }
     };
 
     rsx! {

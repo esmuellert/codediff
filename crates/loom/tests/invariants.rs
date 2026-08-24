@@ -375,3 +375,29 @@ fn a_write_below_a_clean_parent_still_reaches_the_screen() {
     screen.draw();
     assert_eq!(screen.screen_row(0), "n=42");
 }
+
+/// I6.2 — a container that cannot fit its children, and has nothing to say
+/// about it, passes the condition to its parent.
+#[component]
+fn Cramped(scope: &mut Scope) -> Node {
+    let _ = scope;
+    rsx! {
+        Column {
+            too_small: Some(rsx! { Text { text: "too small".into(), .. } }),
+            ..,
+            Row {
+                // No message of its own, so the column above answers.
+                Row { layout: Layout { min_width: 40, ..Default::default() }, .. }
+            }
+        }
+    }
+}
+
+#[test]
+fn too_small_climbs_until_someone_answers_for_it() {
+    let mut wide = Harness::new::<Cramped>(CrampedProps {}, 50, 1);
+    assert_eq!(wide.screen_row(0), "");
+
+    let mut narrow = Harness::new::<Cramped>(CrampedProps {}, 20, 1);
+    assert_eq!(narrow.screen_row(0), "too small");
+}

@@ -10,7 +10,7 @@ use loom::{
 use ratatui::style::{Modifier, Style};
 
 use super::context::{CursorContext, ThemeContext, ViewLinesContext};
-use super::entry::{Body, Entry, EntryProps, Indent, Run, Status};
+use super::entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
 use crate::state::buffer::explorer::{NodeId, Tree, ViewLine};
 use crate::state::{BufferId, View};
 use crate::theme::{Theme, icon};
@@ -52,7 +52,7 @@ pub fn Explorer(
                     // in it.
                     None => String::new(),
                 }),
-                style: background.fg(theme.tree.marker),
+                style: base.fg(theme.tree.marker),
             };
 
             let (body, status) = match &content {
@@ -72,12 +72,8 @@ pub fn Explorer(
 
     rsx! {
         Column {
-            layout: Layout {
-                basis: Basis::Length(40),
-                min_width: 8,
-                fill: Some(base),
-                ..Default::default()
-            },
+            // How wide the list is, is the pane's business.
+            layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
             listeners: Listeners::new(),
             ..,
             { rows }
@@ -114,17 +110,17 @@ fn heading(
     background: Style,
 ) -> (Body, Option<Status>) {
     let count = background.fg(theme.tree.count);
-    let mut runs = vec![Run::new(
+    let mut runs = vec![Run::fixed(
         name,
         background.fg(theme.tree.heading).add_modifier(Modifier::BOLD),
     )];
 
     if stats.is_empty() {
-        runs.push(Run::new(format!(" ({files})"), count));
+        runs.push(Run::droppable(format!(" ({files})"), count, priority::FILES));
     } else {
-        runs.push(Run::new(format!(" ({files} · "), count));
-        push_stats(&mut runs, stats, theme, background);
-        runs.push(Run::new(")", count));
+        runs.push(Run::droppable(format!(" ({files} · "), count, priority::FILES));
+        push_stats(&mut runs, stats, theme, background, priority::FILES);
+        runs.push(Run::droppable(")", count, priority::FILES));
     }
 
     (Body { icon: None, runs: runs.into() }, None)
@@ -135,7 +131,7 @@ fn directory(name: &str, open: bool, theme: &Theme, background: Style) -> (Body,
     (
         Body {
             icon: Some(icon::folder(open)),
-            runs: vec![Run::new(name, background.fg(theme.tree.directory))].into(),
+            runs: vec![Run::fixed(name, background.fg(theme.tree.directory))].into(),
         },
         None,
     )
@@ -144,50 +140,58 @@ fn directory(name: &str, open: bool, theme: &Theme, background: Style) -> (Body,
 /// A file: its icon, name, where it came from, what it gained, and what
 /// happened.
 fn file_row(name: &str, file: &File, theme: &Theme, background: Style) -> (Body, Option<Status>) {
-    let mut runs = vec![Run::new(name, background.fg(theme.tree.name))];
+    let mut runs = vec![Run::fixed(name, background.fg(theme.tree.name))];
     if let Some(previous) = file.previous_path() {
-        runs.push(Run::new(
+        runs.push(Run::droppable(
             format!(" ← {previous}"),
             background.fg(theme.tree.previous),
+            priority::MOVED,
         ));
     }
 
-    let mut counts = Vec::new();
+    let mut status = Vec::new();
     // A file that gained and lost nothing says nothing, rather than `+0 -0` in
     // a column the eye is scanning.
     if let Some(stats) = file.get_stats().filter(|s| !s.is_empty()) {
-        push_stats(&mut counts, stats, theme, background);
+        push_stats(&mut status, stats, theme, background, priority::COUNTS);
         // The space between the counts and the letter, which goes with them
         // rather than staying behind as a lone column.
-        counts.push(Run::new(" ", background.fg(theme.tree.name)));
+        status.push(Run::droppable(" ", background.fg(theme.tree.name), priority::COUNTS));
     }
 
     let change = file.get_change_type();
+    status.push(Run::fixed(
+        letter(change),
+        background.fg(theme.change.of(change)).add_modifier(Modifier::BOLD),
+    ));
+
     (
         Body { icon: Some(icon::file(file.path().file_name())), runs: runs.into() },
-        Some(Status {
-            counts: counts.into(),
-            letter: Run::new(
-                letter(change),
-                background.fg(theme.change.of(change)).add_modifier(Modifier::BOLD),
-            ),
-        }),
+        Some(Status { runs: status.into() }),
     )
 }
 
 /// The `+4 -3` pair, with a side left out when it is zero.
-fn push_stats(runs: &mut Vec<Run>, stats: Stats, theme: &Theme, background: Style) {
+fn push_stats(
+    runs: &mut Vec<Run>,
+    stats: Stats,
+    theme: &Theme,
+    background: Style,
+    priority: u8,
+) {
     if stats.added > 0 {
-        runs.push(Run::new(
+        runs.push(Run::droppable(
             format!("+{}", stats.added),
             background.fg(theme.change.gained),
+            priority,
         ));
     }
     if stats.removed > 0 {
         let separator = if stats.added > 0 { " " } else { "" };
-        runs.push(Run::new(
+        runs.push(Run::droppable(
             format!("{separator}-{}", stats.removed),
             background.fg(theme.change.lost),
+            priority,
         ));
     }
 }

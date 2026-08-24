@@ -46,17 +46,13 @@ pub fn SingleFile(
         .selection
         .filter(|(owner, _)| Some(*owner) == pane)
         .map(|(_, held)| held);
-    let held = read.buffer(*buffer);
-    let Some(alignment) = held.alignment() else { return Node::Empty };
-    let Some(file) = held.file() else { return Node::Empty };
-    let lines = alignment.lines(DiffVersion::Modified).len() as u32;
-    let width = gutter_width(lines);
-
-    let spans = if syntax_on {
-        crate::state::buffer::colour::spans_for(file, &store)
-    } else {
-        syntax::Spans::Off
+    let crate::state::BufferType::SingleFile(single) = read.buffer(*buffer).buffer_type() else {
+        return Node::Empty;
     };
+
+    let lines = single.lines();
+    let width = gutter_width(lines);
+    let spans = if syntax_on { single.spans(&store) } else { syntax::Spans::Off };
 
 
     // The text column is the row less its gutter.
@@ -93,7 +89,7 @@ pub fn SingleFile(
 
             // The gutter shows `line + 1`, and so does the syntax lookup.
             let number = line + 1;
-            let text: Rc<str> = Rc::from(alignment.line(DiffVersion::Modified, number).unwrap_or(""));
+            let text: Rc<str> = Rc::from(single.line(line).unwrap_or(""));
             let syntax: Rc<[syntax::Span]> = Rc::from(spans.line(DiffVersion::Modified, number));
 
             rsx! {

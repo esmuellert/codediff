@@ -92,10 +92,20 @@ fn commit_state(rt: &mut Runtime) {
 }
 
 /// Lays one host out, then its children, appending to `placed`.
-fn lay_out(node: &Fiber, area: Rect, clip: Rect, parent: Option<usize>, placed: &mut Vec<FrameNode>) {
+///
+/// Answers whether this node could not fit its children. A container that
+/// cannot paints its own `too_small` node instead; one with nothing to say
+/// passes the condition to its parent (R5.6.2).
+fn lay_out(
+    node: &Fiber,
+    area: Rect,
+    clip: Rect,
+    parent: Option<usize>,
+    placed: &mut Vec<FrameNode>,
+) -> bool {
     let layout = node.host_desc.layout;
     if layout.hidden {
-        return;
+        return false;
     }
 
     let nth = placed.iter().filter(|p| p.scope == node.scope).count() as u32;
@@ -127,20 +137,40 @@ fn lay_out(node: &Fiber, area: Rect, clip: Rect, parent: Option<usize>, placed: 
 
     let out = assign(node.host_desc.axis, inner, layout.gap, &items);
 
-    // R5.6.2 — a container that cannot fit its children paints its `too_small`
-    // node instead, and assigns nothing below it.
-    if out.too_small && let Some(message) = &node.too_small {
-        for child in message.iter() {
-            lay_out(child, inner, inner_clip, Some(here), placed);
+    // Everything below this node, so it can be taken back if the subtree
+    // turns out not to fit.
+    let below = placed.len();
+
+    let mut short = out.too_small;
+    if !short {
+        for (child, child_area) in node.children.iter().zip(out.areas) {
+            // I5 — every rectangle handed to a child lies inside its parent's.
+            let child_area = child_area.intersection(inner);
+            short |= lay_out(
+                child,
+                child_area,
+                inner_clip.intersection(child_area),
+                Some(here),
+                placed,
+            );
         }
-        return;
     }
 
-    for (child, child_area) in node.children.iter().zip(out.areas) {
-        // I5 — every rectangle handed to a child lies inside its parent's.
-        let child_area = child_area.intersection(inner);
-        lay_out(child, child_area, inner_clip.intersection(child_area), Some(here), placed);
+    if !short {
+        return false;
     }
+
+    // R5.6.2 — a container that cannot fit its children assigns nothing below
+    // it and paints its `too_small` node instead. One with nothing to say
+    // passes the condition up.
+    placed.truncate(below);
+    let Some(message) = &node.too_small else {
+        return true;
+    };
+    for child in message.iter() {
+        lay_out(child, inner, inner_clip, Some(here), placed);
+    }
+    false
 }
 
 /// R5.3 — only `Basis::Auto` needs measuring, and only `Text` answers.
