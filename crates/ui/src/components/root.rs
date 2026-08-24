@@ -8,20 +8,21 @@ use super::app::{App, AppProps, FlowContext, FlowContextProps};
 use super::context::{
     CursorCellContext, CursorCellContextProps, DiffStore, DiffStoreContext,
     DiffStoreContextProps, FileListStore, FileListStoreContext, FileListStoreContextProps,
-    LayoutCellContext, LayoutCellContextProps, OpenContext, OpenContextProps,
-    ScreenMapCellContext, ScreenMapCellContextProps, SelectionCellContext,
+    LayoutCellContext, LayoutCellContextProps, OpenContext, OpenContextProps, RepoContext,
+    RepoContextProps, ScreenMapCellContext, ScreenMapCellContextProps, SelectionCellContext,
     SelectionCellContextProps, ThemeContext, ThemeContextProps, ViewLinesCellContext,
     ViewLinesCellContextProps,
 };
 use crate::app::Flow;
 use crate::theme::Theme;
 
-/// The mount point. Session provides the theme, the two stores, the flow and
-/// open callbacks, and the observation cells for tests.
+/// The mount point. Session provides the theme, the repository path, the two
+/// stores, the flow and open callbacks, and the observation cells for tests.
 #[component]
 pub fn Root(
     scope: &mut Scope,
     theme: Rc<Theme>,
+    repo: Option<Rc<std::path::Path>>,
     diff_store: DiffStore,
     file_list_store: FileListStore,
     on_flow: Rc<dyn Fn(Flow)>,
@@ -47,15 +48,18 @@ pub fn Root(
                             value: Rc::clone(layout_cell),
                             ThemeContext {
                                 value: Rc::clone(theme),
-                                DiffStoreContext {
-                                    value: diff_store.clone(),
-                                    FileListStoreContext {
-                                        value: file_list_store.clone(),
-                                        OpenContext {
-                                            value: Rc::clone(on_open),
-                                            FlowContext {
-                                                value: Rc::clone(on_flow),
-                                                App {}
+                                RepoContext {
+                                    value: repo.clone(),
+                                    DiffStoreContext {
+                                        value: diff_store.clone(),
+                                        FileListStoreContext {
+                                            value: file_list_store.clone(),
+                                            OpenContext {
+                                                value: Rc::clone(on_open),
+                                                FlowContext {
+                                                    value: Rc::clone(on_flow),
+                                                    App {}
+                                                }
                                             }
                                         }
                                     }

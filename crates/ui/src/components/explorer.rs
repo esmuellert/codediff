@@ -10,7 +10,8 @@ use loom::{
 use ratatui::style::{Modifier, Style};
 
 use super::context::{
-    ArrangementContext, CursorContext, FileListStoreContext, ThemeContext, ViewLinesContext,
+    ArrangementContext, CursorContext, FileListStoreContext, RepoContext, ThemeContext,
+    ViewLinesContext,
 };
 use super::entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
 use crate::state::buffer::explorer::{Explorer as Model, NodeId, Tree, ViewLine};
@@ -24,6 +25,8 @@ use crate::theme::{Theme, icon};
 #[component]
 pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let theme = use_context::<ThemeContext>(scope);
+    // Where the repository is. Nothing on a row shows it yet.
+    let _repo = use_context::<RepoContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let store = use_context::<FileListStoreContext>(scope);

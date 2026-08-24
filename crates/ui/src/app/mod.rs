@@ -81,6 +81,9 @@ impl Session {
 
         let tree = loom::Tree::new::<Root>(RootProps {
             theme: Rc::new(theme),
+            // The session is not told where the repository is yet; the caller
+            // that knows will hand it over.
+            repo: None,
             diff_store: diff_store.clone(),
             file_list_store: file_list_store.clone(),
             on_flow: flow_cb,

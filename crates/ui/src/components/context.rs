@@ -18,6 +18,11 @@ context!(
 );
 
 context!(
+    /// The repository path.
+    pub RepoContext: Option<Rc<std::path::Path>> = None
+);
+
+context!(
     /// The focused file, or `None` when no file is open.
     pub FileContext: Option<Rc<File>> = None
 );
