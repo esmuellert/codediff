@@ -13,10 +13,10 @@
 mod harness;
 
 use harness::{cells, diff};
+use ui::Theme;
 use ui::ratatui::buffer::Buffer as Cells;
 use ui::ratatui::style::Color;
 use ui::testing::TestSession;
-use ui::{Buffer, Theme};
 
 /// The colours found on one row, left to right, ignoring runs.
 fn foregrounds(cells: &Cells, y: u16) -> Vec<Color> {
@@ -63,7 +63,7 @@ fn background_at(cells: &Cells, y: u16, needle: char) -> Option<Color> {
 }
 
 fn rust_session(before: &str, after: &str) -> TestSession {
-    TestSession::new(diff("src/main.rs", before, after), Theme::DARK)
+    TestSession::new_diff(diff("src/main.rs", before, after), Theme::DARK)
 }
 
 const BEFORE: &str = "// a note\nfn main() {\n    let x = 1;\n}\n";
@@ -203,15 +203,15 @@ fn a_file_read_inline_is_coloured_the_same_way() {
 
 #[test]
 fn a_lone_file_is_coloured_too() {
-    let buffer = harness::added("src/main.rs", "fn main() {\n    let x = 1;\n}\n");
-    let mut session = TestSession::new(buffer, Theme::DARK);
+    let content = harness::added("src/main.rs", "fn main() {\n    let x = 1;\n}\n");
+    let mut session = TestSession::new_diff(content, Theme::DARK);
     let cells = settled(&mut session, 80, 10);
     assert!(foregrounds(&cells, 0).contains(&Theme::DARK.code.keyword));
 }
 
 #[test]
 fn a_language_nothing_claims_is_drawn_plainly_rather_than_refused() {
-    let mut session = TestSession::new(
+    let mut session = TestSession::new_diff(
         diff("notes.qqzz", "one line\n", "another line\n"),
         Theme::DARK,
     );
@@ -235,7 +235,7 @@ fn a_rename_is_coloured_as_each_side_is_named() {
         ),
         alignment: alignment("def f():\n    pass\n", "fn f() {}\n"),
     });
-    let mut session = TestSession::new(Buffer::diff(file), Theme::DARK);
+    let mut session = TestSession::new_diff(file, Theme::DARK);
     let cells = settled(&mut session, 100, 10);
     let code = Theme::DARK.code;
     assert!(
@@ -265,7 +265,7 @@ fn a_very_long_file_shows_at_once_and_colours_as_it_goes() {
     let mut after = long;
     after.push_str("fn changed() {}\n");
 
-    let mut session = TestSession::new(diff("src/big.rs", &before, &after), Theme::DARK);
+    let mut session = TestSession::new_diff(diff("src/big.rs", &before, &after), Theme::DARK);
     let first = cells(&mut session, 80, 24);
     assert!(text_of(&first).contains("f0"), "the text is there at once");
 

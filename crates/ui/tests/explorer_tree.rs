@@ -12,7 +12,7 @@
 
 use file_types::{ChangeType, File, Oid, RepoPath, Rev, Revs, Stats};
 use std::path::Path;
-use ui::state::buffer::explorer::{Explorer, ViewLine, ViewMode};
+use ui::components::explorer::model::{Explorer, ViewLine, ViewMode};
 
 /// One line's facts, in the form these tests read them by.
 ///

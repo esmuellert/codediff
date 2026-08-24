@@ -1,6 +1,6 @@
 //! Asking the syntax worker for colour and reading the answer back.
 //!
-//! Shared by all buffer types showing a file. A diff asks about two
+//! Shared by every component showing a file. A diff asks about two
 //! versions, a single file about one.
 
 use std::sync::Arc;
@@ -49,14 +49,6 @@ pub fn request_single_file(
         version,
         last,
     );
-}
-
-/// How both versions of a paired file are coloured, for a frame.
-pub fn spans_diff<'a>(read: &file::Diff, store: &'a Store) -> Spans<'a> {
-    Spans::Both {
-        original: colours(store, &read.file, DiffVersion::Original),
-        modified: colours(store, &read.file, DiffVersion::Modified),
-    }
 }
 
 /// How the one version of a lone file is coloured, for a frame.

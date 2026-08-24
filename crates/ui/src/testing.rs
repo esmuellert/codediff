@@ -1,16 +1,15 @@
 //! Test support: a Session with its own event channel for blocking helpers.
 
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 use channel::{Emitter, Worker};
+use file_types::File;
 use pipeline::file::{DiffContent, FileWorker};
 
 use crate::app::event::Event;
 use crate::app::{Session, Workers};
-use crate::state::{Buffer, BufferType};
 use crate::theme::Theme;
 
 use pipeline::list::ListWorker;
@@ -46,43 +45,56 @@ impl TestSession {
         self.session.workers.files.is_busy()
     }
 
-    pub fn new(buffer: Buffer, theme: Theme) -> Self {
-        let (tx, rx) = mpsc::channel();
-        let workers = Workers {
-            syntax: Syntax::start(Emitter::new(tx.clone(), Event::Coloured)),
-            files: FileWorker::start(Emitter::new(tx.clone(), Event::FileReady)),
-            list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
-            _watcher: None,
-        };
-        let mut session = Session::new(theme, workers);
-
-        fill_stores(&mut session, &buffer);
-
-        // The tree must have drawn at a real size before a key that depends
-        // on the viewport height (G, PageDown) can have its intended effect.
-        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
-        let mut cells = ratatui::buffer::Buffer::empty(area);
-        session.draw_into(&mut cells, area);
-
-        Self { session, rx }
+    /// A session over one comparison, as the pipeline would have delivered it.
+    pub fn new_diff(content: DiffContent, theme: Theme) -> Self {
+        Self::start(theme, None, |session| {
+            session.diff_store.set_content(Some(Rc::new(content)));
+        })
     }
 
+    /// A session over the list of changed files, with nothing open beside it.
+    pub fn new_explorer(files: Vec<File>, theme: Theme) -> Self {
+        Self::start(theme, None, |session| session.file_list_store.fill(files))
+    }
+
+    /// The same, with the comparisons the test wants opened waiting in
+    /// `script` rather than read from a repository.
     pub fn with_files(
-        buffer: Buffer,
+        files: Vec<File>,
         theme: Theme,
         script: Vec<Result<DiffContent, String>>,
     ) -> Self {
+        Self::start(theme, Some(script), |session| {
+            session.file_list_store.fill(files)
+        })
+    }
+
+    /// Builds the session, fills the store the test starts from, and draws.
+    ///
+    /// Nothing hands the tree what to show: it builds every frame from the
+    /// stores, so a test starting from a fixture puts it where the tree looks.
+    fn start(
+        theme: Theme,
+        script: Option<Vec<Result<DiffContent, String>>>,
+        fill: impl FnOnce(&mut Session),
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
+        let files = match script {
+            Some(script) => FileWorker::mock(script, Emitter::new(tx.clone(), Event::FileReady)),
+            None => FileWorker::start(Emitter::new(tx.clone(), Event::FileReady)),
+        };
         let workers = Workers {
             syntax: Syntax::start(Emitter::new(tx.clone(), Event::Coloured)),
-            files: FileWorker::mock(script, Emitter::new(tx.clone(), Event::FileReady)),
+            files,
             list_worker: ListWorker::start(Emitter::new(tx, Event::ListRefreshed)),
             _watcher: None,
         };
         let mut session = Session::new(theme, workers);
 
-        fill_stores(&mut session, &buffer);
+        fill(&mut session);
 
+        // The tree must have drawn at a real size before a key that depends
+        // on the viewport height (G, PageDown) can have its intended effect.
         let area = ratatui::layout::Rect::new(0, 0, 80, 24);
         let mut cells = ratatui::buffer::Buffer::empty(area);
         session.draw_into(&mut cells, area);
@@ -141,54 +153,4 @@ impl TestSession {
         self.session.settle();
         changed
     }
-}
-
-/// Puts what a test's buffer holds into the stores the tree reads from.
-///
-/// Nothing hands a buffer to the tree: it builds its own from a store, so a
-/// test that starts from one has to put what it holds where the tree looks.
-fn fill_stores(session: &mut Session, buffer: &Buffer) {
-    match buffer.buffer_type() {
-        BufferType::SideBySide(side_by_side) => {
-            set_diff(session, side_by_side.file(), side_by_side.alignment());
-        }
-        BufferType::Inline(inline) => {
-            set_diff(session, inline.file(), inline.alignment());
-        }
-        BufferType::SingleFile(single) => {
-            // The buffer keeps its lines to itself, so read them back a line
-            // at a time; a test's file is short.
-            let lines = (0..single.lines())
-                .filter_map(|line| single.line(line))
-                .map(str::to_owned)
-                .collect();
-            session
-                .diff_store
-                .set_content(Some(Rc::new(DiffContent::SingleFile(
-                    pipeline::file::SingleFile {
-                        file: single.file().clone(),
-                        lines: Arc::new(lines),
-                    },
-                ))));
-        }
-        BufferType::Explorer(explorer) => {
-            // Same again: the list is reachable a row at a time, and a
-            // freshly built explorer has every row open.
-            let files = (0..explorer.view_lines())
-                .filter_map(|line| explorer.file(line))
-                .cloned()
-                .collect();
-            session.file_list_store.fill(files);
-        }
-    }
-}
-
-/// The two-sided case, which side-by-side and inline fill the same way.
-fn set_diff(session: &mut Session, file: &file_types::File, alignment: &align::Alignment) {
-    session
-        .diff_store
-        .set_content(Some(Rc::new(DiffContent::Diff(pipeline::file::Diff {
-            file: file.clone(),
-            alignment: alignment.clone(),
-        }))));
 }

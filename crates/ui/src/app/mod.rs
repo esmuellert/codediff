@@ -51,7 +51,7 @@ pub struct Session {
     cursor_cell: Rc<Cell<u32>>,
     view_lines_cell: Rc<Cell<u32>>,
     layout_cell: Rc<Cell<file_types::DiffType>>,
-    selection_cell: Rc<RefCell<Option<crate::state::selection::Selection>>>,
+    selection_cell: Rc<RefCell<Option<crate::components::selection::Selection>>>,
     screen_map_cell: Rc<RefCell<crate::screen_map::ScreenMap>>,
 }
 
@@ -180,10 +180,10 @@ impl Session {
         let syntax = &mut self.workers.syntax;
         match content.as_ref() {
             pipeline::file::DiffContent::Diff(diff) => {
-                crate::state::buffer::colour::request_diff(diff, syntax, store, version, last);
+                crate::components::colour::request_diff(diff, syntax, store, version, last);
             }
             pipeline::file::DiffContent::SingleFile(single) => {
-                crate::state::buffer::colour::request_single_file(
+                crate::components::colour::request_single_file(
                     single, syntax, store, version, last,
                 );
             }
@@ -204,7 +204,7 @@ impl Session {
     }
 
     /// The text selection, if any.
-    pub fn selection(&self) -> Option<crate::state::selection::Selection> {
+    pub fn selection(&self) -> Option<crate::components::selection::Selection> {
         *self.selection_cell.borrow()
     }
 

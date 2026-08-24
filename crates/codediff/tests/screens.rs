@@ -261,8 +261,8 @@ fn a_diff_the_engine_abandoned_says_so_on_screen() {
         "a complete diff must not claim to be partial"
     );
 
-    let buffer = harness::with_diff("src/demo.rs", BEFORE, AFTER, abandoned);
-    let mut s = TestSession::new(buffer, Theme::DARK);
+    let content = harness::with_diff("src/demo.rs", BEFORE, AFTER, abandoned);
+    let mut s = TestSession::new_diff(content, Theme::DARK);
     assert!(
         screen(&mut s, 60, 8).contains("PARTIAL"),
         "an abandoned diff was not announced"
@@ -283,8 +283,8 @@ fn the_list_says_nothing_about_the_diff_beside_it() {
         ..real
     };
 
-    let buffer = harness::with_diff("src/demo.rs", BEFORE, AFTER, abandoned);
-    let mut s = TestSession::new(buffer, Theme::DARK);
+    let content = harness::with_diff("src/demo.rs", BEFORE, AFTER, abandoned);
+    let mut s = TestSession::new_diff(content, Theme::DARK);
     // A list beside the open file, which is where the reader starts.
     s.refresh_list(vec![harness::file("src/demo.rs")]);
 
@@ -341,9 +341,9 @@ fn reading_inline_gives_the_text_more_room_than_two_columns() {
 
 #[test]
 fn a_file_with_no_second_version_has_only_one_way_to_be_read() {
-    // `t` is bound at the view level, so it reaches a single-file buffer too.
+    // `t` is bound at the view level, so it reaches a single file too.
     // Nothing to lay out two ways, so it must be inert rather than an error.
-    let mut s = TestSession::new(single("new.rs", "alpha\nbeta"), Theme::DARK);
+    let mut s = TestSession::new_diff(single("new.rs", "alpha\nbeta"), Theme::DARK);
     let before = screen(&mut s, 40, 4);
     type_keys(&mut s, "t");
     assert_eq!(screen(&mut s, 40, 4), before);

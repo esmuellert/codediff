@@ -18,7 +18,7 @@ use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
     row_styles,
 };
-use crate::state::selection::{Pos, Selection, SelectionColumn};
+use crate::components::selection::{Pos, Selection, SelectionColumn};
 
 /// How narrow a text column may get before the pane refuses to draw.
 const MIN_TEXT: u16 = 4;
@@ -109,7 +109,7 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
     // body, because the spans are borrowed from it rather than copied.
     let colours = reading.colours.borrow();
     let spans = if syntax_on {
-        crate::state::buffer::colour::spans_for(&diff.file, &colours)
+        crate::components::colour::spans_for(&diff.file, &colours)
     } else {
         syntax::Spans::Off
     };

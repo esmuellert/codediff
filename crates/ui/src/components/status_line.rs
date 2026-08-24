@@ -195,7 +195,7 @@ fn summary(
     total: u32,
     changes: usize,
     change: Option<usize>,
-    exhausted: Option<crate::state::Direction>,
+    exhausted: Option<crate::components::Direction>,
 ) -> String {
     let position = format!("{}/{}", cursor + 1, total);
     // A list of changed files is not a diff, so it has no changes to count.
@@ -206,8 +206,8 @@ fn summary(
     // counter would only repeat what it already said.
     if let Some(direction) = exhausted {
         let which = match direction {
-            crate::state::Direction::Next => "next",
-            crate::state::Direction::Previous => "previous",
+            crate::components::Direction::Next => "next",
+            crate::components::Direction::Previous => "previous",
         };
         return format!("no {which} change   {position}");
     }

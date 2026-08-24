@@ -10,7 +10,7 @@ pub use ratatui::layout::Rect;
 pub use ratatui::style::Color;
 pub use std::path::Path;
 pub use ui::testing::TestSession;
-pub use ui::{Buffer, Session, Theme};
+pub use ui::{Session, Theme};
 
 /// The two comparisons `codediff` with no arguments produces.
 ///
@@ -120,7 +120,7 @@ pub fn scripted(
     theme: Theme,
     script: Vec<Result<DiffContent, String>>,
 ) -> TestSession {
-    TestSession::with_files(Buffer::explorer(files), theme, script)
+    TestSession::with_files(files, theme, script)
 }
 
 /// Opens the selected row and waits for its comparison.

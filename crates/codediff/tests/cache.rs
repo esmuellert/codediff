@@ -32,7 +32,7 @@ fn perl(lines: usize) -> String {
 
 /// A session over one Perl file, drawn once so the viewport has a height.
 fn session(lines: usize) -> TestSession {
-    let mut session = TestSession::new(single("a.pl", &perl(lines)), Theme::DARK);
+    let mut session = TestSession::new_diff(single("a.pl", &perl(lines)), Theme::DARK);
     let _ = cells(&mut session, WIDTH, HEIGHT);
     session
 }
@@ -153,7 +153,8 @@ fn reaching_further_into_a_file_keeps_what_was_already_read() {
 
 #[test]
 fn a_language_nothing_claims_draws_plainly_and_stops_asking() {
-    let mut session = TestSession::new(single("a.qqqqq", "nothing claims this\n"), Theme::DARK);
+    let mut session =
+        TestSession::new_diff(single("a.qqqqq", "nothing claims this\n"), Theme::DARK);
     let _ = cells(&mut session, WIDTH, HEIGHT);
     session.wait_until_idle();
     assert!(

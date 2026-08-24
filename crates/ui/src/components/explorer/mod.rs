@@ -1,5 +1,7 @@
 //! The file list.
 
+pub mod model;
+
 use std::rc::Rc;
 
 use file_types::{ChangeType, File, Stats};
@@ -9,12 +11,12 @@ use loom::{
 };
 use ratatui::style::{Modifier, Style};
 
+use self::model::{Explorer as Model, NodeId, Tree, ViewLine};
 use super::context::{
     ArrangementContext, CursorContext, FileListStoreContext, RepoContext, ThemeContext,
     ViewLinesContext,
 };
 use super::entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
-use crate::state::buffer::explorer::{Explorer as Model, NodeId, Tree, ViewLine};
 use crate::theme::{Theme, icon};
 
 /// The file list.

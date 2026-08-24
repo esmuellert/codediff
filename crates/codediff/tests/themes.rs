@@ -15,7 +15,7 @@ const AFTER: &str = "one\nTWO\nthree\ninserted\nfour\nfive";
 
 /// The same diff in a named theme.
 fn themed(name: &str) -> TestSession {
-    TestSession::new(
+    TestSession::new_diff(
         diff("src/demo.rs", BEFORE, AFTER),
         Theme::named(name).expect(name),
     )

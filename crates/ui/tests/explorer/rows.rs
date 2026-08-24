@@ -15,10 +15,7 @@ use crate::common::*;
 
 #[test]
 fn the_list_is_drawn_with_its_sections_guides_and_counts() {
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     let rows = screen(&mut session, 44, 10);
     assert_eq!(
         rows,
@@ -48,11 +45,8 @@ fn an_ancestor_that_was_last_leaves_blank_space_and_not_a_guide() {
     // the last of its siblings and has children, so every guide column in it
     // is a `│`. Without a tree shaped like this one, a renderer that drew
     // `│ ` at every depth would pass every other test here.
-    let mut session = TestSession::new(
-        Buffer::explorer(vec![
-            untracked("nest/a/one.txt"),
-            untracked("nest/b/two.txt"),
-        ]),
+    let mut session = TestSession::new_explorer(
+        vec![untracked("nest/a/one.txt"), untracked("nest/b/two.txt")],
         Theme::named("basic-dark").unwrap(),
     );
     let rows = screen(&mut session, 30, 7);
@@ -76,10 +70,7 @@ fn the_flat_shape_draws_whole_paths_and_no_guides() {
     // What VS Code's list mode does: no indent, no fold arrows, the whole
     // path on each line. A guide here would draw a tree where there is none.
     // See D69.
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     session.press(crokey::key!(i));
     let rows = screen(&mut session, 44, 8);
     assert_eq!(
@@ -99,20 +90,14 @@ fn the_flat_shape_draws_whole_paths_and_no_guides() {
 fn the_reader_starts_on_the_first_file_and_not_on_a_heading() {
     // The failure this prevents: opening on the heading, where the key that
     // opens a file does nothing and the tool looks broken.
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     let rows = screen(&mut session, 44, 10);
     assert!(rows[9].ends_with("4/8"), "{:?}", rows[9]);
 }
 
 #[test]
 fn a_narrow_pane_keeps_the_name_and_the_status_and_drops_the_rest() {
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     let rows = screen(&mut session, 20, 10);
     assert_eq!(
         &rows[..8],
@@ -133,10 +118,7 @@ fn a_narrow_pane_keeps_the_name_and_the_status_and_drops_the_rest() {
 
 #[test]
 fn a_pane_narrower_than_the_names_cuts_them_rather_than_wrapping() {
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     let rows = screen(&mut session, 12, 10);
     // Every row still fits, and every row still says what happened to it.
     for row in &rows[..8] {
@@ -152,10 +134,7 @@ fn folding_a_directory_takes_its_files_off_the_list() {
     // `h` on a directory shuts it. The failure this prevents: a key bound in
     // the list that the interface never carries out, so the row stays open
     // and the tool looks broken.
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     // Up from the first file to the `view` directory above it.
     session.press(crokey::key!(k));
     session.press(crokey::key!(h));
@@ -176,11 +155,8 @@ fn a_second_fold_leaves_the_first_one_shut() {
     // The list is worked out afresh from the files and the reader's
     // arrangement. The failure this prevents: a fold arriving without the
     // ones before it, so shutting one directory opens the last.
-    let mut session = TestSession::new(
-        Buffer::explorer(vec![
-            untracked("nest/a/one.txt"),
-            untracked("nest/b/two.txt"),
-        ]),
+    let mut session = TestSession::new_explorer(
+        vec![untracked("nest/a/one.txt"), untracked("nest/b/two.txt")],
         Theme::named("basic-dark").unwrap(),
     );
     // Up from the first file to `a` and shut it, then down to `b` and shut
@@ -206,8 +182,8 @@ fn a_file_added_above_the_reader_leaves_them_on_their_own_row() {
     // A row number means nothing across a rebuild, so the file is named
     // before and looked up after (D54). The failure this prevents: the
     // watcher seeing a new file and the cursor sliding onto another one.
-    let mut session = TestSession::new(
-        Buffer::explorer(vec![modified("b.rs"), modified("c.rs")]),
+    let mut session = TestSession::new_explorer(
+        vec![modified("b.rs"), modified("c.rs")],
         Theme::named("basic-dark").unwrap(),
     );
     // Down from `b.rs` to `c.rs`, which is the row the refresh must keep.
@@ -230,10 +206,7 @@ fn a_file_added_above_the_reader_leaves_them_on_their_own_row() {
 fn the_status_line_names_the_list_rather_than_a_file() {
     // The failure this prevents: showing the first file's name while the
     // reader is looking at all of them.
-    let mut session = TestSession::new(
-        Buffer::explorer(entries()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
     let rows = screen(&mut session, 44, 4);
     assert!(
         rows[3].trim_start().starts_with("changed files"),
@@ -246,10 +219,7 @@ fn the_status_line_names_the_list_rather_than_a_file() {
 fn an_empty_list_draws_nothing_rather_than_panicking() {
     // Reachable through a filter that matches no file. The binary refuses to
     // start on a clean tree, but nothing here may depend on that.
-    let mut session = TestSession::new(
-        Buffer::explorer(Vec::new()),
-        Theme::named("basic-dark").unwrap(),
-    );
+    let mut session = TestSession::new_explorer(Vec::new(), Theme::named("basic-dark").unwrap());
     let rows = screen(&mut session, 40, 4);
     assert_eq!(rows[0], "");
 }

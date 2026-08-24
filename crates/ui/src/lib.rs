@@ -13,7 +13,6 @@ pub mod components;
 
 pub use screen_map::ScreenMap;
 pub mod input;
-pub mod state;
 mod start;
 mod terminal;
 pub mod theme;
@@ -23,6 +22,4 @@ pub use app::{Exit, Flow, Session, Workers, run};
 pub use start::start;
 pub use terminal::{Screen, restore};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
-pub use state::buffer::{Buffer, BufferType, Inline, SideBySide, SingleFile};
-pub use state::Viewport;
 pub mod testing;

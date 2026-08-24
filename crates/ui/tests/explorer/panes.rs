@@ -49,7 +49,7 @@ fn the_layout_key_acts_on_the_diff_even_when_the_list_has_focus() {
 #[test]
 fn the_layout_key_does_nothing_when_there_is_no_diff_on_screen() {
     let theme = Theme::named("catppuccin-mocha").unwrap();
-    let mut session = TestSession::new(Buffer::explorer(only(vec![modified("src/lib.rs")])), theme);
+    let mut session = TestSession::new_explorer(only(vec![modified("src/lib.rs")]), theme);
     let area = Rect::new(0, 0, 80, 6);
     let before = drawn(&mut session, area);
     session.press(crokey::key!(t));

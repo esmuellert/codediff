@@ -15,7 +15,7 @@ use super::context::{
     SelectionContext, SyntaxOnContext, ThemeContext, ViewLinesContext,
 };
 use super::{CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width};
-use crate::state::selection::{Pos, Selection, SelectionColumn};
+use crate::components::selection::{Pos, Selection, SelectionColumn};
 
 /// How narrow the text column may get before the pane refuses to draw.
 const MIN_TEXT: u16 = 4;
@@ -107,10 +107,10 @@ pub fn SingleFile(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
             // A lone file has one side, and it is the side it exists on — an
             // added file has no original to be coloured as.
             pipeline::file::DiffContent::SingleFile(single) => {
-                crate::state::buffer::colour::spans_single_file(single, &colours)
+                crate::components::colour::spans_single_file(single, &colours)
             }
             pipeline::file::DiffContent::Diff(diff) => {
-                crate::state::buffer::colour::spans_for(&diff.file, &colours)
+                crate::components::colour::spans_for(&diff.file, &colours)
             }
         }
     } else {

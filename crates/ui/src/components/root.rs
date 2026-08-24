@@ -30,7 +30,7 @@ pub fn Root(
     cursor_cell: Rc<std::cell::Cell<u32>>,
     view_lines_cell: Rc<std::cell::Cell<u32>>,
     layout_cell: Rc<std::cell::Cell<file_types::DiffType>>,
-    selection_cell: Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>,
+    selection_cell: Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>>,
     screen_map_cell: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
 ) -> Node {
     let _ = scope;

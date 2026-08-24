@@ -50,7 +50,7 @@ pub fn row_styles(
 ///
 /// `None` when the selection does not reach this line at all.
 pub fn clip_to_line(
-    selection: Option<&crate::state::selection::Selection>,
+    selection: Option<&crate::components::selection::Selection>,
     line: u32,
 ) -> Option<std::ops::Range<u32>> {
     let selection = selection?;

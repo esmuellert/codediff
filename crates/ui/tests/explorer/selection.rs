@@ -5,7 +5,7 @@ use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 use ui::Session;
-use ui::state::selection::{Selection, SelectionColumn};
+use ui::components::selection::{Selection, SelectionColumn};
 
 /// Returns the active selection, or panics.
 fn sel(session: &Session) -> Selection {

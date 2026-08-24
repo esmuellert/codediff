@@ -43,8 +43,8 @@ context!(
     ///
     /// The rows themselves are not here. They follow from this and the file
     /// list store, so whoever needs them works them out from the two.
-    pub ArrangementContext: crate::state::buffer::explorer::Arrangement =
-        crate::state::buffer::explorer::Arrangement::default()
+    pub ArrangementContext: crate::components::explorer::model::Arrangement =
+        crate::components::explorer::model::Arrangement::default()
 );
 
 context!(
@@ -57,7 +57,7 @@ context!(
     /// file and a new layout both end it, and neither is theirs to know.
     /// A screen reads it from here and changes it through its `on_select`
     /// prop, the way a controlled component is written.
-    pub SelectionContext: Option<crate::state::selection::Selection> = None
+    pub SelectionContext: Option<crate::components::selection::Selection> = None
 );
 
 context!(
@@ -93,7 +93,7 @@ context!(
 context!(
     /// Which way a change key went with nowhere to go, cleared by the next
     /// key. Only the status line has anything to say about it.
-    pub ExhaustedContext: Option<crate::state::Direction> = None
+    pub ExhaustedContext: Option<crate::components::Direction> = None
 );
 
 context!(
@@ -338,10 +338,10 @@ context!(
 context!(
     /// The active text selection, written each render by whoever holds it.
     /// Tests read it through Session.
-    pub SelectionCellContext: Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>> =
+    pub SelectionCellContext: Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>> =
         Rc::new(std::cell::RefCell::new(None)),
-    |a: &Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>,
-     b: &Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>| Rc::ptr_eq(a, b)
+    |a: &Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>>,
+     b: &Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>>| Rc::ptr_eq(a, b)
 );
 
 context!(

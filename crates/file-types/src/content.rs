@@ -7,8 +7,7 @@
 /// What one version of a file holds, once we know whether it is text.
 ///
 /// `Text` here means *not binary*, which is the only question this type
-/// answers. It is unrelated to how a file is shown — that is a `ui::Buffer`,
-/// and the two used to share the word.
+/// answers. It is unrelated to how a file is shown, which is `ui`'s business.
 #[derive(Debug)]
 pub enum FileContent {
     Text(String),

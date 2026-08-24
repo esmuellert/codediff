@@ -14,8 +14,8 @@ impl PaneId {
     }
 }
 
-use crate::state::Viewport;
-use crate::state::selection::{Pos, SelectionColumn};
+use crate::components::Viewport;
+use crate::components::selection::{Pos, SelectionColumn};
 
 /// One text area within a pane, for per-column hit-testing and selection.
 #[derive(Debug, Clone)]

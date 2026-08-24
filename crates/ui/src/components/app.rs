@@ -23,6 +23,9 @@ use super::context::{
     SelectionContext, SelectionContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
     ViewLinesCellContext, ViewLinesContext, ViewLinesContextProps,
 };
+use super::explorer::model::{Arrangement, Explorer as Model};
+use super::selection::Selection;
+use super::{Direction, Viewport};
 use super::{
     Explorer, ExplorerProps, Inline, InlineProps, SideBySide, SideBySideProps, SingleFile,
     SingleFileProps, StatusLine, StatusLineProps,
@@ -32,9 +35,6 @@ use crate::input::{
     Action, BufferAction, KeymapType, ProgramAction, Resolution, Resolver, TabAction, ViewAction,
 };
 use crate::screen_map::PaneId;
-use crate::state::buffer::explorer::{Arrangement, Explorer as Model};
-use crate::state::selection::Selection;
-use crate::state::{Direction, Viewport};
 
 /// Columns the list gets once something is open beside it.
 ///
