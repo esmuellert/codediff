@@ -40,14 +40,17 @@ pub enum Exit {
 /// One review session.
 pub struct Session {
     tree: loom::Tree,
-    theme: Theme,
     pub diff_store: DiffStore,
     pub file_list_store: FileListStore,
     pub workers: Workers,
     flow: Rc<Cell<Option<Flow>>>,
+    /// The file the interface last chose. A component cannot reach a worker,
+    /// so it names the file here and the session sends it.
+    to_compare: Rc<RefCell<Option<file_types::File>>>,
     last_area: Rect,
     cursor_cell: Rc<Cell<u32>>,
     view_lines_cell: Rc<Cell<u32>>,
+    layout_cell: Rc<Cell<file_types::DiffType>>,
     selection_cell: Rc<RefCell<Option<crate::state::selection::Selection>>>,
     screen_map_cell: Rc<RefCell<crate::screen_map::ScreenMap>>,
 }
@@ -63,8 +66,16 @@ impl Session {
             Rc::new(move |f: Flow| cell.set(Some(f))) as Rc<dyn Fn(Flow)>
         };
 
+        let to_compare = Rc::new(RefCell::new(None));
+        let open_cb = {
+            let cell = Rc::clone(&to_compare);
+            Rc::new(move |file: file_types::File| *cell.borrow_mut() = Some(file))
+                as Rc<dyn Fn(file_types::File)>
+        };
+
         let cursor_cell = Rc::new(Cell::new(0u32));
         let view_lines_cell = Rc::new(Cell::new(0u32));
+        let layout_cell = Rc::new(Cell::new(file_types::DiffType::SideBySide));
         let selection_cell = Rc::new(RefCell::new(None));
         let screen_map_cell = Rc::new(RefCell::new(crate::screen_map::ScreenMap::default()));
 
@@ -73,15 +84,17 @@ impl Session {
             diff_store: diff_store.clone(),
             file_list_store: file_list_store.clone(),
             on_flow: flow_cb,
+            on_open: open_cb,
             cursor_cell: Rc::clone(&cursor_cell),
             view_lines_cell: Rc::clone(&view_lines_cell),
+            layout_cell: Rc::clone(&layout_cell),
             selection_cell: Rc::clone(&selection_cell),
             screen_map_cell: Rc::clone(&screen_map_cell),
         });
 
         Self {
-            tree, theme, diff_store, file_list_store, workers, flow,
-            cursor_cell, view_lines_cell, selection_cell, screen_map_cell,
+            tree, diff_store, file_list_store, workers, flow, to_compare,
+            cursor_cell, view_lines_cell, layout_cell, selection_cell, screen_map_cell,
             last_area: Rect::ZERO,
         }
     }
@@ -90,6 +103,7 @@ impl Session {
     pub fn draw_into(&mut self, cells: &mut ratatui::buffer::Buffer, area: Rect) {
         self.last_area = area;
         self.tree.draw(cells, area);
+        self.request_colours();
     }
 
     pub fn draw<B: Backend>(
@@ -97,20 +111,20 @@ impl Session {
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
         let tree = &mut self.tree;
+        let drawn = std::cell::Cell::new(Rect::ZERO);
         terminal.draw(|frame| {
             let area = frame.area();
+            drawn.set(area);
             tree.draw(frame.buffer_mut(), area);
         })?;
+        self.last_area = drawn.get();
+        self.request_colours();
         Ok(())
     }
 
     /// The cursor position, after applying any pending state.
     pub fn cursor(&mut self) -> u32 {
-        if self.last_area.width > 0 {
-            let area = self.last_area;
-            let mut cells = ratatui::buffer::Buffer::empty(area);
-            self.tree.draw(&mut cells, area);
-        }
+        self.settle();
         self.cursor_cell.get()
     }
 
@@ -119,14 +133,76 @@ impl Session {
         self.view_lines_cell.get()
     }
 
-    /// Asks the file worker for a comparison of .
+    /// Which way the open diff is laid out, as last rendered.
+    pub fn layout(&self) -> file_types::DiffType {
+        self.layout_cell.get()
+    }
+
+    /// Draws into a scratch grid, so that whatever a key changed takes effect,
+    /// then asks for the colour the new frame turned out to need.
+    ///
+    /// A key only marks state dirty; the frame after it is what reads it. A
+    /// caller that presses a key and then asks a question needs that frame
+    /// without wanting the pixels, and so does the read-ahead, which is a
+    /// function of where the cursor ended up.
+    pub(crate) fn settle(&mut self) {
+        if self.last_area.width == 0 {
+            return;
+        }
+        let area = self.last_area;
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        self.tree.draw(&mut cells, area);
+        self.request_colours();
+    }
+
+    /// Asks the syntax worker for what is on screen and not coloured yet,
+    /// plus a margin below it.
+    ///
+    /// After drawing rather than before, because what is worth colouring is
+    /// where the reader has just arrived. The store refuses to ask twice for
+    /// the same lines, so the ordinary frame sends nothing.
+    pub(crate) fn request_colours(&mut self) {
+        // How far past the cursor to read ahead. Enough that scrolling does
+        // not outrun it, little enough that opening a very large file does
+        // not read all of it.
+        const MARGIN: u32 = 2_000;
+
+        let Some(content) = self.diff_store.content() else {
+            return;
+        };
+        let version = self.diff_store.version();
+        let last = self.cursor_cell.get().saturating_add(MARGIN);
+        let colours = self.diff_store.colours();
+        let store = &mut *colours.borrow_mut();
+        let syntax = &mut self.workers.syntax;
+        match content.as_ref() {
+            pipeline::file::DiffContent::Diff(diff) => {
+                crate::state::buffer::colour::request_diff(diff, syntax, store, version, last);
+            }
+            pipeline::file::DiffContent::SingleFile(single) => {
+                crate::state::buffer::colour::request_single_file(
+                    single, syntax, store, version, last,
+                );
+            }
+        }
+    }
+
+    /// Asks the file worker for a comparison of `file`.
     pub fn open_file(&mut self, file: file_types::File) {
         self.workers.files.send(file);
     }
 
+    /// Sends whatever the interface chose while it was answering an event.
+    fn send_open_request(&mut self) {
+        let file = self.to_compare.borrow_mut().take();
+        if let Some(file) = file {
+            self.open_file(file);
+        }
+    }
+
     /// The text selection, if any.
     pub fn selection(&self) -> Option<crate::state::selection::Selection> {
-        self.selection_cell.borrow().clone()
+        *self.selection_cell.borrow()
     }
 
     /// Where things landed on screen, for mouse hit-testing.
@@ -167,6 +243,10 @@ impl Session {
             }
             _ => {}
         }
+        // Where the key left the cursor decides what is worth colouring, and
+        // only a frame knows that.
+        self.settle();
+        self.send_open_request();
         self.flow.take().unwrap_or(Flow::Continue)
     }
 
@@ -178,6 +258,8 @@ impl Session {
             self.tree.draw(&mut cells, area);
         }
         self.tree.press(key);
+        self.settle();
+        self.send_open_request();
         self.flow.take().unwrap_or(Flow::Continue)
     }
 }

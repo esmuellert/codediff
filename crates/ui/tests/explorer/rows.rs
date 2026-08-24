@@ -148,6 +148,30 @@ fn a_pane_narrower_than_the_names_cuts_them_rather_than_wrapping() {
 }
 
 #[test]
+fn folding_a_directory_takes_its_files_off_the_list() {
+    // `h` on a directory shuts it. The failure this prevents: a key bound in
+    // the list that the interface never carries out, so the row stays open
+    // and the tool looks broken.
+    let mut session = TestSession::new(
+        Buffer::explorer(entries()),
+        Theme::named("basic-dark").unwrap(),
+    );
+    // Up from the first file to the `view` directory above it.
+    session.press(crokey::key!(k));
+    session.press(crokey::key!(h));
+
+    let rows = screen(&mut session, 44, 10);
+    assert!(
+        !rows.iter().any(|row| row.contains("tab.rs")),
+        "the folded directory still shows its file: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.contains("app.rs")),
+        "folding one directory shut the others too: {rows:?}"
+    );
+}
+
+#[test]
 fn the_status_line_names_the_list_rather_than_a_file() {
     // The failure this prevents: showing the first file's name while the
     // reader is looking at all of them.

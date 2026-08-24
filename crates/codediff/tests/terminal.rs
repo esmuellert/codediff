@@ -11,9 +11,65 @@
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+/// Everything the child has written, and when it last wrote.
+#[derive(Default)]
+struct Output {
+    bytes: Vec<u8>,
+    last: Option<Instant>,
+}
+
+/// Reads the pty on a thread of its own, into something a test can watch.
+fn collect(mut reader: Box<dyn Read + Send>) -> (std::thread::JoinHandle<()>, Arc<Mutex<Output>>) {
+    let shared = Arc::new(Mutex::new(Output::default()));
+    let filling = Arc::clone(&shared);
+    let thread = std::thread::spawn(move || {
+        let mut chunk = [0u8; 4096];
+        while let Ok(read) = reader.read(&mut chunk) {
+            if read == 0 {
+                break;
+            }
+            let mut held = filling.lock().expect("nothing else holds the lock");
+            held.bytes.extend_from_slice(&chunk[..read]);
+            held.last = Some(Instant::now());
+        }
+    });
+    (thread, shared)
+}
+
+/// Blocks until the child has drawn and then gone quiet.
+///
+/// A keystroke means nothing until the first frame is on screen, and what that
+/// frame waits for — a process started, a repository listed, a file diffed —
+/// takes a different length of time on every machine. Measured here at 840 ms
+/// for a debug build, against the 400 ms a fixed sleep used to guess: the keys
+/// landed before the diff they act on, and the test read a screen with only
+/// the list on it. So wait for the writing to stop rather than guess.
+fn drawn(output: &Arc<Mutex<Output>>) {
+    const QUIET: Duration = Duration::from_millis(250);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        {
+            let held = output.lock().expect("nothing else holds the lock");
+            if held.last.is_some_and(|last| last.elapsed() >= QUIET) {
+                return;
+            }
+        }
+        assert!(Instant::now() < deadline, "the child never drew anything");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// What the child wrote, once it has stopped writing.
+fn written(thread: std::thread::JoinHandle<()>, output: &Arc<Mutex<Output>>) -> String {
+    thread.join().expect("collecting output");
+    let held = output.lock().expect("the reader is gone");
+    String::from_utf8_lossy(&held.bytes).into_owned()
+}
 
 /// `CSI ? 1049 h` and `l` — the alternate screen on and off.
 const ENTER_ALT: &str = "\u{1b}[?1049h";
@@ -61,24 +117,14 @@ fn on_a_terminal(args: &[&str], cwd: Option<&PathBuf>, keys: &[u8]) -> (String, 
     let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
     drop(pty.slave);
 
-    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
-    let collector = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            output.extend_from_slice(&chunk[..read]);
-        }
-        output
-    });
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
 
     if !keys.is_empty() {
         // The child has to have drawn its first frame before a keystroke means
         // anything; without this the key can arrive before raw mode is on and
         // be echoed instead of read.
-        std::thread::sleep(Duration::from_millis(400));
+        drawn(&output);
         let mut writer = pty.master.take_writer().expect("writing to the pty");
         writer.write_all(keys).expect("sending keys");
         writer.flush().expect("flushing");
@@ -95,11 +141,7 @@ fn on_a_terminal(args: &[&str], cwd: Option<&PathBuf>, keys: &[u8]) -> (String, 
     };
 
     drop(pty.master);
-    let output = collector.join().expect("collecting output");
-    (
-        String::from_utf8_lossy(&output).into_owned(),
-        status.success(),
-    )
+    (written(collector, &output), status.success())
 }
 
 #[test]
@@ -301,21 +343,11 @@ fn suspending_gives_the_terminal_back_and_resuming_redraws() {
     drop(pty.slave);
     let pid = child.process_id().expect("a process id");
 
-    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
-    let collector = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            output.extend_from_slice(&chunk[..read]);
-        }
-        output
-    });
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
-    std::thread::sleep(Duration::from_millis(400));
+    drawn(&output);
     writer.write_all(&[0x1a]).expect("Ctrl-Z"); // ^Z
     writer.flush().unwrap();
 
@@ -332,7 +364,7 @@ fn suspending_gives_the_terminal_back_and_resuming_redraws() {
         .expect("running kill");
     assert!(resumed.success(), "could not resume the process");
 
-    std::thread::sleep(Duration::from_millis(400));
+    drawn(&output);
     writer.write_all(b"q").expect("quit");
     writer.flush().unwrap();
     drop(writer);
@@ -347,7 +379,7 @@ fn suspending_gives_the_terminal_back_and_resuming_redraws() {
     };
     drop(pty.master);
 
-    let output = String::from_utf8_lossy(&collector.join().expect("output")).into_owned();
+    let output = written(collector, &output);
     assert!(status.success(), "{output}");
     assert_eq!(
         output.matches(ENTER_ALT).count(),
@@ -419,21 +451,11 @@ fn killed_by(args: &[&str], cwd: &PathBuf, signal: i32) -> (String, Option<i32>)
     let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
     drop(pty.slave);
 
-    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
-    let collector = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            output.extend_from_slice(&chunk[..read]);
-        }
-        output
-    });
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
 
     // The first frame has to be on screen, or there is nothing to restore.
-    std::thread::sleep(Duration::from_millis(600));
+    drawn(&output);
     let pid = child.process_id().expect("a process id") as i32;
     std::process::Command::new("kill")
         .args([format!("-{signal}"), pid.to_string()])
@@ -453,6 +475,5 @@ fn killed_by(args: &[&str], cwd: &PathBuf, signal: i32) -> (String, Option<i32>)
     };
 
     drop(pty.master);
-    let output = collector.join().expect("collecting output");
-    (String::from_utf8_lossy(&output).into_owned(), status)
+    (written(collector, &output), status)
 }

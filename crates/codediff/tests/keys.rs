@@ -206,12 +206,14 @@ fn change_navigation_works_the_same_in_both_layouts() {
 /// The file line the cursor is on, as text, whichever layout is in use.
 fn line_under_cursor(session: &mut ui::Session) -> String {
     use loom::ExternalStore;
+    // Read before the snapshot, because it forces the frame that decides it.
+    let cursor = cursor(session);
+    let layout = session.layout();
     let reading = session.diff_store.snapshot();
     let content = reading.content.as_ref().expect("a diff");
     let alignment = content.alignment().expect("a diff");
-    let layout = file_types::DiffType::SideBySide;
     let (version, line) = alignment
-        .line_at(layout, cursor(&mut *session))
+        .line_at(layout, cursor)
         .expect("the cursor is on a line");
     alignment.line(version, line).expect("it exists").to_owned()
 }

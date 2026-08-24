@@ -25,6 +25,24 @@ fn draw(session: &mut Session, width: u16, height: u16) {
     session.draw_into(&mut cells, area);
 }
 
+/// The first view line the diff pane is showing, read off the screen.
+///
+/// The files these tests open name their own lines — `line 0`, `line 1`, … —
+/// so the top row says which one it is. Read rather than asked, because
+/// where a pane is scrolled to is not something the interface offers.
+fn diff_top(session: &mut TestSession, width: u16, height: u16) -> u32 {
+    let rows = screen(session, width, height);
+    let row = rows.first().expect("a first row").clone();
+    let at = row
+        .find("line ")
+        .unwrap_or_else(|| panic!("no diff on the top row: {row:?}"));
+    row[at + "line ".len()..]
+        .split_whitespace()
+        .next()
+        .and_then(|word| word.parse().ok())
+        .unwrap_or_else(|| panic!("no line number in {row:?}"))
+}
+
 #[test]
 fn scroll_moves_the_view_without_moving_the_cursor() {
     let theme = Theme::named("basic-dark").unwrap();
@@ -48,14 +66,14 @@ fn scroll_moves_the_view_without_moving_the_cursor() {
     session.press(crokey::key!(j));
 
     let cursor_before = session.cursor();
-    let top_before = 0;
+    let top_before = diff_top(&mut session, 80, 10);
     assert!(cursor_before > 0, "precondition: cursor not at top");
 
     // Scroll down with the mouse hovering over the focused (diff) pane.
     mouse(&mut session, MouseEventKind::ScrollDown, 60, 3);
 
     let cursor_after = session.cursor();
-    let top_after = 0;
+    let top_after = diff_top(&mut session, 80, 10);
 
     // The view moved down.
     assert!(
@@ -82,33 +100,25 @@ fn scroll_targets_the_hovered_pane_not_the_focused_one() {
     open_selected(&mut session);
     draw(&mut session, 80, 10);
 
-    // Focus is on the explorer (left pane, PaneId(0), columns 0–39).
-    let focused_id = ui::screen_map::PaneId::new(0);
-
-    // The diff is the other pane.
-    let _diff_pane_id = ui::screen_map::PaneId::new(1);
+    // Focus stays on the list, exactly as it does at startup, so the diff is
+    // the pane the pointer is over and not the pane the keys mean.
+    let cursor_before = session.cursor();
+    assert_eq!(diff_top(&mut session, 80, 10), 0, "precondition: at the top");
 
     // Scroll with the mouse hovering over the diff pane (right side, ~col 60),
     // which is NOT focused.
     mouse(&mut session, MouseEventKind::ScrollDown, 60, 3);
 
-    // Focus should NOT have changed.
-    assert_eq!(
-        ui::screen_map::PaneId::new(0),
-        focused_id,
-        "scroll must not change focus"
-    );
-
-    // The diff pane's top should have moved.
-    let diff_top = session.cursor();
     assert!(
-        diff_top > 0,
-        "the hovered (unfocused) pane should have scrolled, top = {diff_top}"
+        diff_top(&mut session, 80, 10) > 0,
+        "the hovered pane should have scrolled"
     );
-
-    // The focused pane (explorer) should NOT have scrolled.
-    let explorer_top = 0;
-    assert_eq!(explorer_top, 0, "the focused pane should not have scrolled");
+    // The list still has the keys, and has not moved under them.
+    assert_eq!(
+        session.cursor(),
+        cursor_before,
+        "scroll must not change focus, nor move the focused pane"
+    );
 }
 
 #[test]
@@ -131,10 +141,12 @@ fn a_file_a_refresh_added_can_be_clicked() {
         row,
     );
 
+    // The list is at its top and starts at the first screen row, so the row
+    // the click landed on is the view line the cursor should be on — and
+    // where the cursor is, is the file the click asked to open.
     assert_eq!(
-        session
-            .diff_store.content().map(|c| c.file().path().as_str().to_owned()),
-        Some("src/zeta.rs".to_owned()),
+        session.cursor(),
+        u32::from(row),
         "the click did not land on the new file"
     );
 }

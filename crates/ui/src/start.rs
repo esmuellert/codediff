@@ -29,7 +29,17 @@ pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result
         theme,
         crate::app::threads::spawn_workers(&tx, &cwd),
     );
+    // The reader lands on the first file with it already open beside the
+    // list: `codediff <path>` is a filter on the list rather than a different
+    // mode (D58), so opening is what the list would have done anyway.
+    let first = {
+        let list = crate::state::buffer::explorer::Explorer::new(files.clone());
+        list.file(list.first_file()).cloned()
+    };
     session.file_list_store.fill(files);
+    if let Some(file) = first {
+        session.open_file(file);
+    }
     tracing::info!("startup complete");
     run(&mut session, &cwd, tx, rx).context("running the review interface")
 }

@@ -21,17 +21,18 @@ impl Session {
     /// Applies a worker result. Returns whether the screen changed.
     pub(crate) fn apply(&mut self, event: super::event::Event) -> bool {
         use super::event::Event;
-        match event {
+        let changed = match event {
             Event::Coloured(response) => {
                 self.workers.syntax.received(&response);
-                // Install the spans and tell the diff store, which tells its
-                // subscribers.
-                // syntax::Store is not Clone and lives in a RefCell; the
-                // DiffStore takes ownership of a new Store copy for its
-                // snapshot. Since Store is large, we just notify that
-                // colours changed.
-                self.diff_store.notify_colours_changed();
-                true
+                // The store keeps the spans; the notification is separate
+                // because a piece for content that has moved on is refused,
+                // and refusing one changes nothing on screen.
+                if self.diff_store.install_colours(response) {
+                    self.diff_store.notify_colours_changed();
+                    true
+                } else {
+                    false
+                }
             }
             Event::FileReady(response) => {
                 self.workers.files.received(&response);
@@ -43,7 +44,12 @@ impl Session {
                 true
             }
             _ => false,
-        }
+        };
+        // A comparison that has just arrived is uncoloured, and a piece that
+        // has just landed leaves the next one still to ask for. Both are
+        // known here, before anything is drawn.
+        self.request_colours();
+        changed
     }
 
     /// Puts a comparison result on screen, or shows the error on the status

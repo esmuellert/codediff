@@ -8,6 +8,7 @@ use super::app::{App, AppProps, FlowContext, FlowContextProps};
 use super::context::{
     CursorCellContext, CursorCellContextProps, DiffStore, DiffStoreContext,
     DiffStoreContextProps, FileListStore, FileListStoreContext, FileListStoreContextProps,
+    LayoutCellContext, LayoutCellContextProps, OpenContext, OpenContextProps,
     ScreenMapCellContext, ScreenMapCellContextProps, SelectionCellContext,
     SelectionCellContextProps, ThemeContext, ThemeContextProps, ViewLinesCellContext,
     ViewLinesCellContextProps,
@@ -15,8 +16,8 @@ use super::context::{
 use crate::app::Flow;
 use crate::theme::Theme;
 
-/// The mount point. Session provides the theme, the two stores, the flow
-/// callback, and the observation cells for tests.
+/// The mount point. Session provides the theme, the two stores, the flow and
+/// open callbacks, and the observation cells for tests.
 #[component]
 pub fn Root(
     scope: &mut Scope,
@@ -24,8 +25,10 @@ pub fn Root(
     diff_store: DiffStore,
     file_list_store: FileListStore,
     on_flow: Rc<dyn Fn(Flow)>,
+    on_open: Rc<dyn Fn(file_types::File)>,
     cursor_cell: Rc<std::cell::Cell<u32>>,
     view_lines_cell: Rc<std::cell::Cell<u32>>,
+    layout_cell: Rc<std::cell::Cell<file_types::DiffType>>,
     selection_cell: Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>,
     screen_map_cell: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
 ) -> Node {
@@ -40,15 +43,21 @@ pub fn Root(
                     value: Rc::clone(cursor_cell),
                     ViewLinesCellContext {
                         value: Rc::clone(view_lines_cell),
-                        ThemeContext {
-                            value: Rc::clone(theme),
-                            DiffStoreContext {
-                                value: diff_store.clone(),
-                                FileListStoreContext {
-                                    value: file_list_store.clone(),
-                                    FlowContext {
-                                        value: Rc::clone(on_flow),
-                                        App {}
+                        LayoutCellContext {
+                            value: Rc::clone(layout_cell),
+                            ThemeContext {
+                                value: Rc::clone(theme),
+                                DiffStoreContext {
+                                    value: diff_store.clone(),
+                                    FileListStoreContext {
+                                        value: file_list_store.clone(),
+                                        OpenContext {
+                                            value: Rc::clone(on_open),
+                                            FlowContext {
+                                                value: Rc::clone(on_flow),
+                                                App {}
+                                            }
+                                        }
                                     }
                                 }
                             }

@@ -33,6 +33,32 @@ context!(
 );
 
 context!(
+    /// Which pane a subtree is drawn in, for whatever records where it landed.
+    pub PaneContext: Option<crate::screen_map::PaneId> = None
+);
+
+context!(
+    /// The live text selection. Held above the diff screens because a new
+    /// file and a new layout both end it, and neither is theirs to know.
+    pub SelectionContext: Option<crate::state::selection::Selection> = None
+);
+
+context!(
+    /// How a text column says what the pointer selected in it.
+    pub OnSelectContext: Rc<dyn Fn(Option<crate::state::selection::Selection>)> =
+        Rc::new(|_| {}),
+    |a: &Rc<dyn Fn(Option<crate::state::selection::Selection>)>,
+     b: &Rc<dyn Fn(Option<crate::state::selection::Selection>)>| Rc::ptr_eq(a, b)
+);
+
+context!(
+    /// How the interface asks for a file to be compared. A component cannot
+    /// reach a worker, so it says which file and the session sends it.
+    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}),
+    |a: &Rc<dyn Fn(File)>, b: &Rc<dyn Fn(File)>| Rc::ptr_eq(a, b)
+);
+
+context!(
     /// Horizontal scroll offset in cells.
     pub FirstCellContext: u32 = 0
 );
@@ -72,12 +98,23 @@ pub struct DiffStore {
 /// One reading of a [`DiffStore`].
 pub struct DiffStoreSnapshot {
     pub content: Option<Rc<pipeline::file::DiffContent>>,
-    pub colours: Rc<syntax::Store>,
+    /// Which content this is a reading of. Bumped by every new comparison and
+    /// not by new colours, so a re-read of the same file — which has the same
+    /// name and the same revisions — is still a different thing to show.
+    pub version: syntax::Version,
+    /// Shared and mutable, because the worker fills it while the screen reads
+    /// it. A reading cannot own a copy: the spans of a large file are the
+    /// biggest thing the program holds, and a frame would copy them all.
+    pub colours: Rc<RefCell<syntax::Store>>,
 }
 
 struct DiffStoreInner {
     content: Option<Rc<pipeline::file::DiffContent>>,
-    colours: Rc<syntax::Store>,
+    colours: Rc<RefCell<syntax::Store>>,
+    /// Which content the colours describe. Bumped by every new diff, so an
+    /// answer for the file that was open before is refused rather than mixed
+    /// into the one that replaced it.
+    version: syntax::Version,
     /// What `snapshot` hands out, rebuilt only by a write. Readers compare
     /// readings by pointer, so a fresh one per render would read as a change
     /// every render.
@@ -87,12 +124,17 @@ struct DiffStoreInner {
 
 impl DiffStore {
     pub fn new() -> Self {
-        let colours = Rc::new(syntax::Store::new());
-        let reading = Rc::new(DiffStoreSnapshot { content: None, colours: Rc::clone(&colours) });
+        let colours = Rc::new(RefCell::new(syntax::Store::new()));
+        let reading = Rc::new(DiffStoreSnapshot {
+            content: None,
+            version: syntax::Version(0),
+            colours: Rc::clone(&colours),
+        });
         Self {
             inner: Rc::new(RefCell::new(DiffStoreInner {
                 content: None,
                 colours,
+                version: syntax::Version(0),
                 reading,
                 listeners: Vec::new(),
             })),
@@ -104,21 +146,22 @@ impl DiffStore {
         let listeners = {
             let mut inner = self.inner.borrow_mut();
             inner.content = content;
+            inner.version = syntax::Version(inner.version.0 + 1);
             inner.refresh();
             inner.listeners.clone()
         };
         announce(listeners);
     }
 
-    /// What the syntax worker has coloured so far.
-    pub fn set_colours(&self, store: syntax::Store) {
-        let listeners = {
-            let mut inner = self.inner.borrow_mut();
-            inner.colours = Rc::new(store);
-            inner.refresh();
-            inner.listeners.clone()
-        };
-        announce(listeners);
+    /// Which content the colours are for, for whoever asks the worker.
+    pub fn version(&self) -> syntax::Version {
+        self.inner.borrow().version
+    }
+
+    /// Takes a piece of colouring from the worker, and says whether it was
+    /// taken — a piece for content that has moved on is refused.
+    pub fn install_colours(&self, response: syntax::SyntaxResponse) -> bool {
+        self.colours().borrow_mut().install(response)
     }
 
     pub fn content(&self) -> Option<Rc<pipeline::file::DiffContent>> {
@@ -136,7 +179,7 @@ impl DiffStore {
         announce(listeners);
     }
 
-    pub fn colours(&self) -> Rc<syntax::Store> {
+    pub fn colours(&self) -> Rc<RefCell<syntax::Store>> {
         Rc::clone(&self.inner.borrow().colours)
     }
 }
@@ -152,6 +195,7 @@ impl DiffStoreInner {
     fn refresh(&mut self) {
         self.reading = Rc::new(DiffStoreSnapshot {
             content: self.content.clone(),
+            version: self.version,
             colours: Rc::clone(&self.colours),
         });
     }
@@ -245,31 +289,41 @@ fn announce(listeners: Vec<Option<Notify>>) {
     }
 }
 
-/// A shared cell the root writes the cursor into each render, so the
-/// session can read it from outside the tree for tests.
 context!(
+    /// A shared cell the root writes the focused pane's cursor into each
+    /// render, so the session can read it from outside the tree.
     pub CursorCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
     |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
 );
 
-/// A shared cell the root writes the view_lines count into.
 context!(
+    /// The same, for how long the focused pane's document is.
     pub ViewLinesCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
     |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
 );
 
-/// The active text selection, written by whichever diff screen owns the
-/// pointer. Tests read it through Session.
 context!(
+    /// A shared cell the root writes the layout into. The state slot is not
+    /// the answer on its own — a one-sided file overrides it — so what was
+    /// drawn is what goes here.
+    pub LayoutCellContext: Rc<std::cell::Cell<file_types::DiffType>> =
+        Rc::new(std::cell::Cell::new(file_types::DiffType::SideBySide)),
+    |a: &Rc<std::cell::Cell<file_types::DiffType>>,
+     b: &Rc<std::cell::Cell<file_types::DiffType>>| Rc::ptr_eq(a, b)
+);
+
+context!(
+    /// The active text selection, written each render by whoever holds it.
+    /// Tests read it through Session.
     pub SelectionCellContext: Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>> =
         Rc::new(std::cell::RefCell::new(None)),
     |a: &Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>,
      b: &Rc<std::cell::RefCell<Option<crate::state::selection::Selection>>>| Rc::ptr_eq(a, b)
 );
 
-/// Where things landed on screen. Filled by layout effects, read by
-/// Session for mouse hit-testing.
 context!(
+    /// Where things landed on screen. Filled by layout effects, read by
+    /// whoever has to say what is under the mouse.
     pub ScreenMapCellContext: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>> =
         Rc::new(std::cell::RefCell::new(crate::screen_map::ScreenMap::default())),
     |a: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,

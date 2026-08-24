@@ -148,11 +148,7 @@ fn opening_the_file_already_shown_re_reads_it_and_keeps_the_readers_place() {
     session.press(crokey::key!(right));
     open_selected(&mut session);
     session.press(crokey::key!(right));
-    assert_eq!(
-        session.cursor(),
-        far,
-        "the reader's place was thrown away"
-    );
+    assert_eq!(session.cursor(), far, "the reader's place was thrown away");
 
     // And the new bytes really are on screen.
     session.draw_into(&mut cells, area);
@@ -183,6 +179,9 @@ fn re_opening_a_file_that_has_grown_shorter_lands_inside_it() {
 
     open_selected(&mut session);
 
+    // Back into the diff, because it is the diff's cursor the clamp is
+    // about; the list's is always inside the list.
+    session.press(crokey::key!(right));
     let rows = session.view_lines();
     assert!(
         session.cursor() < rows,
@@ -192,9 +191,9 @@ fn re_opening_a_file_that_has_grown_shorter_lands_inside_it() {
 
 #[test]
 fn the_file_listed_twice_can_be_opened_from_either_section() {
-    // A file staged and then edited again is two comparisons of one path. The
-    // guard that refuses to re-open the file already shown compares revisions
-    // as well as the path, so it must not mistake one row for the other.
+    // A file staged and then edited again is two comparisons of one path, and
+    // the row is the request (D58). So the second row has to ask for its own
+    // revisions rather than repeat the first row's.
     let theme = Theme::named("catppuccin-mocha").unwrap();
     // Each row is built with the revisions of *its own* group, which is what
     // makes them two comparisons rather than one file listed twice.
@@ -230,9 +229,10 @@ fn the_file_listed_twice_can_be_opened_from_either_section() {
 
 #[test]
 fn enter_on_a_file_row_asks_for_it() {
-    // The key path, which nothing covered: every other test here calls
-    // `open` directly, so a binding that reached the wrong level, or an arm
-    // that folded a file instead of opening it, would go unnoticed.
+    // Enter, checked before the answer comes back, so that what is proved is
+    // the key reaching the worker: a binding that landed at the wrong level,
+    // or an arm that folded a file instead of opening it, would leave nothing
+    // in flight at all.
     let theme = Theme::named("catppuccin-mocha").unwrap();
     let mut session = scripted(
         only(vec![modified("a.rs"), modified("b.rs")]),
@@ -242,7 +242,7 @@ fn enter_on_a_file_row_asks_for_it() {
     // Past the first row, so what is asked for is not what is already shown.
     session.press(crokey::key!(j));
     session.press(crokey::key!(enter));
-    
+
     assert!(session.is_loading_file(), "enter asked for nothing");
 
     assert!(session.has_file_arrived(), "the answer was not installed");
@@ -255,10 +255,13 @@ fn enter_on_a_file_row_asks_for_it() {
 
 /// The file in the pane beside the list.
 fn shown_file(session: &Session) -> File {
-
-    {
-        use loom::ExternalStore;
-        session.diff_store.snapshot().content.as_ref().expect("content loaded").file().clone()
-    }
+    use loom::ExternalStore;
+    session
+        .diff_store
+        .snapshot()
+        .content
+        .as_ref()
+        .expect("content loaded")
+        .file()
         .clone()
 }

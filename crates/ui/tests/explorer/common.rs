@@ -129,8 +129,6 @@ pub fn scripted(
 /// what a test may do and the interface may not: the comparison is on a thread
 /// of its own, and an assertion about a pane has to know when to look.
 pub fn open_selected(session: &mut TestSession) {
-    // The key listener in App triggers the open. For tests, we simulate it
-    // by pressing enter which the explorer's key listener handles.
     session.press(crokey::key!(enter));
     assert!(session.has_file_arrived(), "nothing was installed");
 }

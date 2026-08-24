@@ -8,10 +8,33 @@ use ui::Session;
 use ui::state::selection::{Selection, SelectionColumn};
 
 /// Returns the active selection, or panics.
-fn top(_session: &Session) -> u32 { 0 }
-
 fn sel(session: &Session) -> Selection {
     session.selection().expect("selection should exist")
+}
+
+/// The pane the diff is drawn in, which is the second one when a list is
+/// beside it.
+const DIFF_PANE: ui::screen_map::PaneId = ui::screen_map::PaneId(1);
+
+/// The first view line the diff pane is showing, read off the screen.
+///
+/// The file these tests open names its own lines — `line 0 with some text`,
+/// `line 1 with some text`, … — so the top row says which one it is. Read
+/// rather than asked, because where a pane is scrolled to is not something
+/// the interface offers.
+fn top(session: &mut TestSession) -> u32 {
+    let area = Rect::new(0, 0, 120, 30);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+    let row: String = (0..120).map(|x| cells[(x, 0)].symbol()).collect();
+    let at = row
+        .find("line ")
+        .unwrap_or_else(|| panic!("no diff on the top row: {row:?}"));
+    row[at + "line ".len()..]
+        .split_whitespace()
+        .next()
+        .and_then(|word| word.parse().ok())
+        .unwrap_or_else(|| panic!("no line number in {row:?}"))
 }
 
 /// Sends a mouse event to the session.
@@ -155,6 +178,9 @@ fn selection_is_confined_to_one_column() {
         SelectionColumn::Original,
         "selection should be in the original column"
     );
+    // Let go, as a hand would: a press is what starts a selection, and the
+    // pointer belongs to the column it started in until the button comes up.
+    mouse(&mut session, MouseEventKind::Up(MouseButton::Left), 55, 3);
 
     // Now click and drag in the modified column.
     mouse(&mut session, MouseEventKind::Down(MouseButton::Left), 95, 3);
@@ -183,7 +209,7 @@ fn selection_coordinates_are_buffer_local() {
     }
     draw(&mut session, 120, 30);
 
-    let top_before = top(&session);
+    let top_before = top(&mut session);
     assert!(top_before > 0, "precondition: scrolled down");
 
     // Click and drag to create a selection.
@@ -284,10 +310,13 @@ fn clicking_explorer_opens_diff_pane() {
         "clicking a file in the explorer should trigger a file load"
     );
 
-    // The tab should now be split — a diff pane appeared.
+    // The list is now beside a diff rather than filling the screen, which is
+    // the divider between them appearing.
+    let rows = screen(&mut session, 80, 20);
     assert!(
-        true,
-        "clicking a file in the explorer should open its diff pane"
+        rows[0].contains('│'),
+        "clicking a file in the explorer should open its diff pane: {:?}",
+        rows[0]
     );
 }
 
@@ -369,7 +398,7 @@ fn selection_highlight_matches_click_position() {
     }
     draw(&mut session, 120, 30);
 
-    let top = top(&session);
+    let top = top(&mut session);
     assert!(top > 3, "precondition: scrolled past scrolloff");
 
     // Click row 5, then drag to row 5 col+1 to create a 1-cell selection.
@@ -412,10 +441,9 @@ fn highlight_exact_extent() {
     session.draw_into(&mut cells, area);
 
     // Use screen_map to get the exact text rect.
-    let focus = ui::screen_map::PaneId::new(0);
     let text_x = session
         .screen_map()
-        .text_area_of(focus, SelectionColumn::Modified)
+        .text_area_of(DIFF_PANE, SelectionColumn::Modified)
         .expect("modified text area should exist")
         .rect
         .x;
@@ -476,10 +504,9 @@ fn selection_does_not_highlight_other_pane() {
     let mut session = setup_diff_session();
 
     // Get the original column text area x range.
-    let focus = ui::screen_map::PaneId::new(0);
     let orig_rect = session
         .screen_map()
-        .text_area_of(focus, SelectionColumn::Original)
+        .text_area_of(DIFF_PANE, SelectionColumn::Original)
         .expect("original text area")
         .rect;
 

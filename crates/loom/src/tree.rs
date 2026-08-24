@@ -39,13 +39,7 @@ impl Tree {
             id
         });
         let _: ScopeId = root;
-        let mut tree = Self { runtime, area: Rect::ZERO };
-        // Draw once at Rect::ZERO so every component runs and registers its
-        // listeners. A key or a mouse before the first real draw hits the
-        // tree these listeners live on.
-        let mut cells = ratatui::buffer::Buffer::empty(Rect::ZERO);
-        tree.draw(&mut cells, Rect::ZERO);
-        tree
+        Self { runtime, area: Rect::ZERO }
     }
 
     /// Replaces the root's props and redraws it.
