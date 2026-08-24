@@ -13,9 +13,21 @@ use super::context::{CursorContext, FileContext, NoticeContext, ThemeContext, Vi
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
+///
+/// Several runs, because a name and the note beside it are not the same
+/// thing and must not look like one.
 pub struct Title {
-    pub text: Rc<str>,
-    pub style: Style,
+    pub runs: Vec<(Rc<str>, Style)>,
+}
+
+impl Title {
+    fn one(text: impl AsRef<str>, style: Style) -> Self {
+        Self { runs: vec![(Rc::from(text.as_ref()), style)] }
+    }
+
+    fn width(&self) -> u16 {
+        self.runs.iter().map(|(text, _)| text.chars().count() as u16).sum()
+    }
 }
 
 /// The right section: where in it the cursor is. Keeps its width.
@@ -50,27 +62,21 @@ pub fn StatusLine(
         style: base,
     };
     let title = match (notice, file) {
-        (Some(why), _) => Title { text: why, style: base.patch(theme.warning) },
-        (None, Some(file)) => Title {
-            text: Rc::from(path_of(&file).as_str()),
-            style: base.patch(theme.status_path),
-        },
-        (None, None) => Title {
-            text: Rc::from("changed files"),
-            style: base.patch(theme.status_path),
-        },
+        (Some(why), _) => Title { runs: vec![(why, base.patch(theme.warning))] },
+        (None, Some(file)) => name_of(&file, base, &theme),
+        (None, None) => Title::one("changed files", base.patch(theme.status_path)),
     };
 
     // Loud. A diff the engine abandoned is not a diff, and a reviewer who
     // mistakes one for a complete one will approve code they have not seen.
-    let title = if *timed_out {
-        Title {
-            text: Rc::from(format!("{}  PARTIAL — diff timed out", title.text).as_str()),
-            style: base.patch(theme.warning),
-        }
-    } else {
-        title
-    };
+    let mut title = title;
+    if *timed_out {
+        title.runs.push((
+            Rc::from("  PARTIAL — diff timed out"),
+            base.patch(theme.warning),
+        ));
+    }
+    let _ = title.width();
 
     let sidecar_width = sidecar.text.chars().count() as u16 + 1;
 
@@ -83,7 +89,7 @@ pub fn StatusLine(
                 ..Default::default()
             },
             ..,
-            { text_canvas(title.text, title.style, 1, Layout { grow: 1, ..Default::default() }) }
+            { runs_canvas(title.runs, base, 1, Layout { grow: 1, ..Default::default() }) }
             {
                 text_canvas(
                     sidecar.text,
@@ -117,20 +123,49 @@ fn text_canvas(text: Rc<str>, style: Style, offset: u16, layout: Layout) -> Node
     )
 }
 
-/// The path, with the directory dropped before the file name is.
-fn path_of(file: &file_types::File) -> String {
+/// The path, and the note beside it in its own style.
+fn name_of(file: &file_types::File, base: Style, theme: &crate::theme::Theme) -> Title {
     let path = file.path();
+    let styled = base.patch(theme.status_path);
+    let mut runs = Vec::new();
+
+    let directory = path.directory();
+    if !directory.is_empty() {
+        runs.push((Rc::from(directory), base.patch(theme.divider)));
+        runs.push((Rc::from("/"), base.patch(theme.divider)));
+    }
+    runs.push((Rc::from(path.file_name()), styled));
+
     let note = match file.is_one_sided() {
         Some(file_types::DiffVersion::Modified) => "   (added)",
         Some(file_types::DiffVersion::Original) => "   (deleted)",
         None => "",
     };
-    let directory = path.directory();
-    if directory.is_empty() {
-        format!("{}{note}", path.file_name())
-    } else {
-        format!("{directory}/{}{note}", path.file_name())
+    if !note.is_empty() {
+        runs.push((Rc::from(note), base));
     }
+
+    Title { runs }
+}
+
+/// Several runs, written from `offset` and cut at the section's edge.
+fn runs_canvas(runs: Vec<(Rc<str>, Style)>, base: Style, offset: u16, layout: Layout) -> Node {
+    use loom::Element;
+    Canvas::build(
+        CanvasProps {
+            layout,
+            paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
+                let area = paint.area();
+                cells::fill(paint.cells(), area, base);
+                let mut at = offset;
+                for (text, style) in &runs {
+                    at = cells::write(paint.cells(), area, at, text, *style);
+                }
+            }),
+            ..Default::default()
+        },
+        None,
+    )
 }
 
 /// A list of changed files is not a diff, so it has no changes to count.

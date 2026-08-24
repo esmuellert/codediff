@@ -5,8 +5,7 @@ use std::rc::Rc;
 use align::DiffVersion;
 use loom::{
     use_layout_effect, use_ref,
-    Basis, Bubble, Column, ColumnProps, Layout, Listeners, Mouse, Node, Row, RowProps, Scope,
-    capture_pointer, component, release_pointer, rsx, use_context, use_state,
+    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
 };
 use ratatui::style::Style;
 
@@ -15,7 +14,7 @@ use super::context::{
     ThemeContext, ViewLinesContext,
 };
 use super::{CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width};
-use crate::state::selection::{Pos, Selection, SelectionColumn};
+use crate::state::selection::SelectionColumn;
 
 /// How narrow the text column may get before the pane refuses to draw.
 const MIN_TEXT: u16 = 4;
@@ -37,7 +36,7 @@ pub fn SingleFile(
     let pane = use_context::<PaneContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
-    let first_cell = use_context::<FirstCellContext>(scope);
+    let _first_cell = use_context::<FirstCellContext>(scope);
 
 
     let store = colours.borrow();
@@ -119,7 +118,12 @@ pub fn SingleFile(
     rsx! {
         Column {
             ref: Some(node),
-            layout: Layout { grow: 1, min_width: width + MIN_TEXT, ..Default::default() },
+            layout: Layout {
+                grow: 1,
+                min_width: width + MIN_TEXT,
+                fill: Some(theme.normal),
+                ..Default::default()
+            },
             ..,
             { rows }
         }

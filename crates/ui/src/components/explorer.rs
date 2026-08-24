@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use file_types::{ChangeType, File, Stats};
 use loom::{
-    Basis, Column, ColumnProps, Element, Key, Layout, Listeners, Node, Scope, component, rsx,
+    Column, ColumnProps, Element, Key, Layout, Listeners, Node, Scope, component, rsx,
     use_context,
 };
 use ratatui::style::{Modifier, Style};

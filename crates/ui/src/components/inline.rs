@@ -6,8 +6,8 @@ use align::{DiffVersion, Slot};
 use file_types::DiffType;
 use loom::{
     use_layout_effect, use_ref,
-    Basis, Bubble, Column, ColumnProps, Element, Layout, Listeners, Mouse, Node, Row,
-    RowProps, Scope, capture_pointer, component, release_pointer, rsx, use_context, use_state,
+    Basis, Column, ColumnProps, Element, Layout, Node, Row,
+    RowProps, Scope, component, rsx, use_context,
 };
 
 use super::context::{
@@ -17,7 +17,7 @@ use super::context::{
 use super::{
     CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width, row_styles,
 };
-use crate::state::selection::{Pos, Selection, SelectionColumn};
+use crate::state::selection::SelectionColumn;
 
 /// How narrow the text column may get before the pane refuses to draw.
 const MIN_TEXT: u16 = 4;
@@ -39,7 +39,7 @@ pub fn Inline(
     let pane = use_context::<PaneContext>(scope);
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
-    let first_cell = use_context::<FirstCellContext>(scope);
+    let _first_cell = use_context::<FirstCellContext>(scope);
 
 
     let store = colours.borrow();
@@ -54,7 +54,7 @@ pub fn Inline(
 
     let original_width = gutter_width(alignment.lines(DiffVersion::Original).len() as u32);
     let modified_width = gutter_width(alignment.lines(DiffVersion::Modified).len() as u32);
-    let gutters = original_width + modified_width;
+    let _gutters = original_width + modified_width;
 
     let spans = if syntax_on {
         crate::state::buffer::colour::spans_for(file, &store)
@@ -167,7 +167,12 @@ pub fn Inline(
     rsx! {
         Column {
             ref: Some(node),
-            layout: Layout { grow: 1, min_width: gutters + MIN_TEXT, ..Default::default() },
+            layout: Layout {
+                grow: 1,
+                min_width: gutters + MIN_TEXT,
+                fill: Some(theme.normal),
+                ..Default::default()
+            },
             ..,
             { rows }
         }

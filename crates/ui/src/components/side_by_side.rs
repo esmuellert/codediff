@@ -5,8 +5,8 @@ use std::rc::Rc;
 use align::{Alignment, DiffVersion, Slot};
 use file_types::DiffType;
 use loom::{
-    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Element, Key, Layout, Listeners,
-    Mouse, Node, Row, RowProps, Scope, capture_pointer, component, release_pointer, rsx,
+    Basis, Column, ColumnProps, Divider, DividerProps, Element, Key, Layout, Listeners,
+    Mouse, Node, Row, RowProps, Scope, component, rsx,
     use_context, use_layout_effect, use_ref, use_state,
 };
 
@@ -156,7 +156,7 @@ pub fn SideBySide(
 
         // Where in the file a pointer landed, or `None` over the gutter.
         let top = view_lines.start;
-        let at = move |mouse: Mouse| -> Option<Pos> {
+        let _at = move |mouse: Mouse| -> Option<Pos> {
             let x = mouse.local.x.checked_sub(width)?;
             Some(Pos::new(top + u32::from(mouse.local.y), first_cell + u32::from(x)))
         };
@@ -186,7 +186,9 @@ pub fn SideBySide(
         rsx! {
             Column {
                 ref: Some(slot),
-                layout: layout,
+                // Below the end of the document, so the two sides' ends stay
+                // visually comparable.
+                layout: Layout { fill: Some(theme.normal), ..layout },
                 listeners: listeners,
                 ..,
                 { children }

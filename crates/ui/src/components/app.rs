@@ -36,24 +36,20 @@ pub fn App(
 ) -> Node {
     let theme = use_context::<ThemeContext>(scope);
 
-    let body = use_ref(scope, || None::<loom::NodeHandle>);
+    // Measured on the outermost node, which always has a rectangle. The row
+    // of panes does not: when the screen is too small it is replaced by the
+    // message, and a size read from it would swing between frames.
+    let outer = use_ref(scope, || None::<loom::NodeHandle>);
     let (height, set_height) = use_state(scope, || 0u32);
-    let (width, set_width) = use_state(scope, || u16::MAX);
     // One slot per pane. A tab holds at most two, and a hook cannot run
     // behind a condition, so both are made every render.
     let first = use_ref(scope, || None::<loom::NodeHandle>);
     let second = use_ref(scope, || None::<loom::NodeHandle>);
 
     let read = view.borrow();
-    // Two panes need room for both and the divider between them. When that
-    // does not fit, the reader sees the one they are working in rather than
-    // nothing at all.
-    let split = read.tab().is_split() && width >= MIN_LIST + 1 + MIN_DIFF;
-    let panes: Vec<PaneId> = if split {
-        read.tab().ids().collect()
-    } else {
-        vec![read.tab().focus()]
-    };
+    let split = read.tab().is_split();
+    let focus = read.tab().focus();
+    let panes: Vec<PaneId> = read.tab().ids().collect();
     drop(read);
 
     let slots = [first, second];
@@ -66,11 +62,11 @@ pub fn App(
     let held = Rc::clone(view);
     let filling = Rc::clone(&map);
     use_layout_effect(scope, loom::Always, move || {
-        let area = body.current().map_or(ratatui::layout::Rect::ZERO, |node| node.area());
-        let rows = u32::from(area.height);
+        let area = outer.current().map_or(ratatui::layout::Rect::ZERO, |node| node.area());
+        // Every row the status line takes is a row of diff it hides, and it
+        // takes exactly one.
+        let rows = u32::from(area.height.saturating_sub(1));
         set_height(&move |_| rows);
-        let across = area.width;
-        set_width(&move |_| across);
         {
             let mut view = held.borrow_mut();
             let ids: Vec<PaneId> = view.tab().ids().collect();
@@ -85,7 +81,10 @@ pub fn App(
         let mut map = filling.borrow_mut();
         map.panes.clear();
         map.text_areas.clear();
-        map.body = area;
+        map.body = ratatui::layout::Rect {
+            height: area.height.saturating_sub(1),
+            ..area
+        };
         for (id, slot) in &recorded {
             if let Some(node) = *slot.current() {
                 map.panes.push((*id, node.area()));
@@ -109,11 +108,22 @@ pub fn App(
         if at > 0 {
             children.push(divider.clone());
         }
-        children.push(pane(Rc::clone(view), id, split && at == 0, slots[at], Rc::clone(map)));
+        children.push(pane(Rc::clone(view), id, split && at == 0, slots[at], Rc::clone(map), height));
     }
+
+    // Whether a diff fits depends on how wide its line numbers are, which no
+    // arithmetic here can know. The only thing that can answer is the
+    // attempt, so the fallback is the pane the reader is working in, on its
+    // own — better than saying the terminal is too small while the list
+    // beside it would have drawn perfectly.
+    let alone = split.then(|| {
+        let at = panes.iter().position(|&id| id == focus).unwrap_or(0);
+        pane(Rc::clone(view), focus, false, slots[at], Rc::clone(map), height)
+    });
 
     rsx! {
         Column {
+            ref: Some(outer),
             // When the minimum does not fit, loom shows this instead of the
             // tree.
             too_small: Some(rsx! { Text { text: "terminal too small".into(), .. } }),
@@ -122,8 +132,8 @@ pub fn App(
             layout: Layout { grow: 1, min_height: 2, ..Default::default() },
             ..,
             Row {
-                ref: Some(body),
                 layout: Layout { grow: 1, ..Default::default() },
+                too_small: alone,
                 ..,
                 { children }
             }
@@ -145,13 +155,19 @@ fn pane(
     is_list: bool,
     slot: loom::Ref<Option<loom::NodeHandle>>,
     map: Rc<RefCell<crate::screen_map::ScreenMap>>,
+    height: u32,
 ) -> Node {
     let read = view.borrow();
     let held = read.tab().pane(id);
     let buffer = read.buffer(held.buffer);
 
     let lines = buffer.view_lines();
-    let visible = held.viewport.visible(lines);
+    // The height comes from the last layout rather than from the viewport,
+    // so a buffer that has just arrived shows its rows on the frame it
+    // arrives on rather than the one after.
+    let mut looking = held.viewport.clone();
+    looking.set_height(height, lines);
+    let visible = looking.visible(lines);
     let cursor = held.viewport.cursor();
     let first_cell = held.viewport.left();
     let file = buffer.file().cloned().map(Rc::new);
