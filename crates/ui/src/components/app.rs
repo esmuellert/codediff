@@ -15,15 +15,16 @@ use loom::{
 };
 
 use super::context::{
-    ArrangementContext, ArrangementContextProps, CursorCellContext, CursorContext,
-    CursorContextProps, DiffStoreContext, ExhaustedContext, ExhaustedContextProps, FileContext,
-    FileContextProps, FileListStoreContext, FirstCellContext, FirstCellContextProps,
-    LayoutCellContext, LayoutContext, LayoutContextProps, NoticeContext, NoticeContextProps,
-    OpenContext, PaneContext, PaneContextProps, ScreenMapCellContext, SelectionCellContext,
-    SelectionContext, SelectionContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
-    ViewLinesCellContext, ViewLinesContext, ViewLinesContextProps,
+    CursorCellContext, CursorContext, CursorContextProps, DiffStoreContext, ExhaustedContext,
+    ExhaustedContextProps, FileContext, FileContextProps, FileListStoreContext, FirstCellContext,
+    FirstCellContextProps, FoldStateContext, FoldStateContextProps, LayoutCellContext,
+    LayoutContext, LayoutContextProps, NoticeContext, NoticeContextProps, OpenContext, PaneContext,
+    PaneContextProps, ScreenMapCellContext, SelectionCellContext, SelectionContext,
+    SelectionContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
+    ViewLinesCellContext, ViewLinesContext, ViewLinesContextProps, ViewModeContext,
+    ViewModeContextProps,
 };
-use super::explorer::model::{Arrangement, Explorer as Model};
+use super::explorer::model::{Explorer as Model, FoldState, ViewMode};
 use super::selection::Selection;
 use super::{Direction, Viewport};
 use super::{
@@ -74,14 +75,15 @@ pub fn App(scope: &mut Scope) -> Node {
     let selection_cell = use_context::<SelectionCellContext>(scope);
     let map_cell = use_context::<ScreenMapCellContext>(scope);
 
-    // How the reader has arranged the list: which rows are folded, and
-    // whether it is nested or flat. The rows themselves follow from this and
-    // the store, so they are worked out rather than kept and changed in place
+    // How the reader has arranged the list: whether it is nested or flat, and
+    // which rows are folded. The rows themselves follow from these and the
+    // store, so they are worked out rather than kept and changed in place
     // — the component that draws them works out the same rows from the same
-    // two things.
-    let (arrangement, set_arrangement) = use_state(scope, Arrangement::default);
-    let model = use_memo(scope, (files.clone(), arrangement.clone()), || {
-        Model::arranged(files.to_vec(), &arrangement)
+    // three things.
+    let (mode, set_mode) = use_state(scope, ViewMode::default);
+    let (folds, set_folds) = use_state(scope, FoldState::default);
+    let model = use_memo(scope, (files.clone(), mode, folds.clone()), || {
+        Model::arranged(files.to_vec(), mode, &folds)
     });
     // The list the last render worked out. A rebuilt list renumbers every
     // row, so the file the reader was on is named in the old one and looked
@@ -238,8 +240,8 @@ pub fn App(scope: &mut Scope) -> Node {
         let Some(next) = folding_model.folded(line) else {
             return false;
         };
-        let rows = Model::arranged(folding_files.to_vec(), &next).view_lines();
-        set_arrangement(&move |_| next.clone());
+        let rows = Model::arranged(folding_files.to_vec(), mode, &next).view_lines();
+        set_folds(&move |_| next.clone());
         set_list(&move |mut viewport: Viewport| {
             let at = viewport.cursor().min(rows.saturating_sub(1));
             viewport.place(at, rows);
@@ -327,17 +329,19 @@ pub fn App(scope: &mut Scope) -> Node {
             }
             Action::Buffer(BufferAction::NextChange) => step(Direction::Next),
             Action::Buffer(BufferAction::PrevChange) => step(Direction::Previous),
-            // The list's own keys. A fold and a change of arrangement both
+            // The list's own keys. A fold and a change of view mode both
             // renumber the rows, so the cursor is named again afterwards.
             Action::Buffer(BufferAction::Toggle) => {
                 folding(list_cursor);
             }
             Action::Buffer(BufferAction::ToggleViewMode) => {
-                let next = flipping_model.arrangement().other_mode();
-                let flipped = Model::arranged(flipping_files.to_vec(), &next);
+                let next_mode = mode.other();
+                let next_folds = flipping_model.fold_state().headings_only();
+                let flipped = Model::arranged(flipping_files.to_vec(), next_mode, &next_folds);
                 let landing = flipped.line_after(&flipping_model, list_cursor);
                 let rows = flipped.view_lines();
-                set_arrangement(&move |_| next.clone());
+                set_mode(&move |_| next_mode);
+                set_folds(&move |_| next_folds.clone());
                 set_list(&move |mut viewport: Viewport| {
                     viewport.place(landing, rows);
                     viewport
@@ -439,9 +443,12 @@ pub fn App(scope: &mut Scope) -> Node {
                         value: list.visible(list_rows),
                         CursorContext {
                             value: list_cursor,
-                            ArrangementContext {
-                                value: arrangement.clone(),
-                                Explorer { on_open: Rc::clone(&on_open) }
+                            ViewModeContext {
+                                value: mode,
+                                FoldStateContext {
+                                    value: folds.clone(),
+                                    Explorer { on_open: Rc::clone(&on_open) }
+                                }
                             }
                         }
                     }

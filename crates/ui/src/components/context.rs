@@ -38,13 +38,19 @@ context!(
 );
 
 context!(
-    /// How the reader has arranged the file list: which rows are folded, and
-    /// whether it is nested or flat.
+    /// Whether the file list is nested or flat.
+    pub ViewModeContext: crate::components::explorer::model::ViewMode =
+        crate::components::explorer::model::ViewMode::default()
+);
+
+context!(
+    /// Which rows of the file list the reader has shut.
     ///
-    /// The rows themselves are not here. They follow from this and the file
-    /// list store, so whoever needs them works them out from the two.
-    pub ArrangementContext: crate::components::explorer::model::Arrangement =
-        crate::components::explorer::model::Arrangement::default()
+    /// The rows themselves are not here. They follow from this, the view mode
+    /// and the file list store, so whoever needs them works them out from the
+    /// three.
+    pub FoldStateContext: crate::components::explorer::model::FoldState =
+        crate::components::explorer::model::FoldState::default()
 );
 
 context!(

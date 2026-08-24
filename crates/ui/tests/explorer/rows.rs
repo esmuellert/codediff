@@ -178,6 +178,30 @@ fn a_second_fold_leaves_the_first_one_shut() {
 }
 
 #[test]
+fn a_shut_heading_stays_shut_when_the_shape_flips() {
+    // Changing the shape rebuilds the list, and a directory from the old one
+    // means nothing in the new — but a heading belongs to its group, so it
+    // holds either way. The failure this prevents: pressing `i` and having a
+    // group the reader had put away come back open.
+    let mut session = TestSession::new_explorer(entries(), Theme::named("basic-dark").unwrap());
+    // Up to the `Changes` heading and shut it, then flatten the list.
+    session.press(crokey::key!(g));
+    session.press(crokey::key!(g));
+    session.press(crokey::key!(h));
+    session.press(crokey::key!(i));
+
+    let rows = screen(&mut session, 44, 8);
+    assert!(
+        !rows.iter().any(|row| row.contains("app.rs")),
+        "the shut heading came back open: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.contains("README.md")),
+        "shutting one heading shut the other too: {rows:?}"
+    );
+}
+
+#[test]
 fn a_file_added_above_the_reader_leaves_them_on_their_own_row() {
     // A row number means nothing across a rebuild, so the file is named
     // before and looked up after (D54). The failure this prevents: the

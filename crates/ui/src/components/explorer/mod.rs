@@ -14,8 +14,8 @@ use ratatui::style::{Modifier, Style};
 
 use self::model::{Content, Explorer as Model, NodeId, Tree};
 use super::context::{
-    ArrangementContext, CursorContext, FileListStoreContext, RepoContext, ThemeContext,
-    ViewLinesContext,
+    CursorContext, FileListStoreContext, FoldStateContext, RepoContext, ThemeContext,
+    ViewLinesContext, ViewModeContext,
 };
 use super::entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};
 use crate::theme::{Theme, icon};
@@ -23,7 +23,7 @@ use crate::theme::{Theme, icon};
 /// The file list.
 ///
 /// The model decides what the rows are; this decides what they look like.
-/// The files come from the list store and how they are arranged comes from
+/// The files come from the list store, and the mode and the folds from
 /// context, so the rows are worked out here rather than handed over.
 #[component]
 pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
@@ -33,12 +33,13 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let view_lines = use_context::<ViewLinesContext>(scope);
     let cursor = use_context::<CursorContext>(scope);
     let store = use_context::<FileListStoreContext>(scope);
-    let arrangement = use_context::<ArrangementContext>(scope);
+    let mode = use_context::<ViewModeContext>(scope);
+    let folds = use_context::<FoldStateContext>(scope);
     // The list worker fills the store; this subscribes rather than being
     // handed what it produced.
     let files = use_sync_external_store(scope, &store);
-    let model = use_memo(scope, (files.clone(), arrangement.clone()), || {
-        Model::arranged(files.to_vec(), &arrangement)
+    let model = use_memo(scope, (files.clone(), mode, folds.clone()), || {
+        Model::arranged(files.to_vec(), mode, &folds)
     });
     // Opening a row is still done by the key and the click that `App` holds,
     // so nothing here calls this yet.

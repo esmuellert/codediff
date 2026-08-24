@@ -44,6 +44,16 @@ pub enum ViewMode {
     Tree,
 }
 
+impl ViewMode {
+    /// The other one: flat if this is nested, nested if this is flat.
+    pub fn other(self) -> Self {
+        match self {
+            Self::Tree => Self::List,
+            Self::List => Self::Tree,
+        }
+    }
+}
+
 /// One line of the file list, as facts rather than as text.
 ///
 /// Everything `draw` needs to write a line and nothing about how it looks —
@@ -75,33 +85,28 @@ pub struct Anchor {
     pub path: String,
 }
 
-/// How the reader has arranged the list: nested or flat, and which rows are
-/// shut.
+/// Which rows of the list the reader has shut.
 ///
 /// Held apart from the list itself so it can be put on another built from the
-/// same files. That is what lets the list be worked out from the file list and
-/// this, rather than kept somewhere and changed in place — the component that
-/// draws it and the one that holds the keys each build their own, and the two
-/// agree because they were given the same two things.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Arrangement {
-    mode: ViewMode,
-    /// One per group, in the order the groups are in: whether the heading is
-    /// open, and which of the group's nodes are shut.
-    groups: Vec<(bool, Vec<NodeId>)>,
+/// same files. That is what lets the list be worked out from the file list,
+/// the view mode and this, rather than kept somewhere and changed in place —
+/// the component that draws it and the one that holds the keys each build
+/// their own, and the two agree because they were given the same things.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct FoldState {
+    /// One per group: whether the heading is open, and which directory nodes
+    /// are shut.
+    pub groups: Vec<(bool, Vec<NodeId>)>,
 }
 
-impl Arrangement {
-    /// The same list, flat if it was nested and nested if it was flat.
+impl FoldState {
+    /// The heading folds on their own, with every directory open.
     ///
-    /// The folds do not come with it: a node means nothing once the
-    /// arrangement it belonged to has been rebuilt.
-    pub fn other_mode(&self) -> Self {
+    /// What survives a change of view mode: a shut heading is the group's and
+    /// holds either way, while a node means nothing once the list it belonged
+    /// to has been rebuilt.
+    pub fn headings_only(&self) -> Self {
         Self {
-            mode: match self.mode {
-                ViewMode::Tree => ViewMode::List,
-                ViewMode::List => ViewMode::Tree,
-            },
             groups: self
                 .groups
                 .iter()
@@ -118,9 +123,9 @@ pub struct Explorer {
     /// brings back, and so never narrowed in place.
     files: Vec<File>,
     /// The files the groups were built from — everything, or what a pattern
-    /// left. Kept apart from [`Self::files`] because an arrangement holds
-    /// places in *this* list, and narrowing the other one would silently
-    /// renumber them.
+    /// left. Kept apart from [`Self::files`] because a fold names a place in
+    /// *this* list, and narrowing the other one would silently renumber
+    /// them.
     shown: Vec<File>,
     groups: Vec<Group>,
     mode: ViewMode,
@@ -147,9 +152,10 @@ impl Explorer {
     }
 
     /// The list those files make, arranged the way the reader has asked.
-    pub fn arranged(files: Vec<File>, arrangement: &Arrangement) -> Self {
+    pub fn arranged(files: Vec<File>, mode: ViewMode, folds: &FoldState) -> Self {
         let mut explorer = Self::new(files);
-        explorer.arrange(arrangement);
+        explorer.set_mode(mode);
+        explorer.apply_folds(folds);
         explorer
     }
 
@@ -272,11 +278,10 @@ impl Explorer {
             .min(self.view_lines().saturating_sub(1))
     }
 
-    /// How the reader has arranged the list, in terms another explorer over
-    /// the same files can be given.
-    pub fn arrangement(&self) -> Arrangement {
-        Arrangement {
-            mode: self.mode,
+    /// Which rows are shut, in terms another explorer over the same files can
+    /// be given.
+    pub fn fold_state(&self) -> FoldState {
+        FoldState {
             groups: self
                 .groups
                 .iter()
@@ -285,41 +290,40 @@ impl Explorer {
         }
     }
 
-    /// Arranges this list the way `arrangement` describes.
+    /// Shuts the rows `folds` names and opens every other.
     ///
-    /// A group the arrangement says nothing about is left as it was built,
-    /// which is open: an arrangement named over one set of files is put on
-    /// whatever the next set produced.
-    pub fn arrange(&mut self, arrangement: &Arrangement) {
-        self.set_mode(arrangement.mode);
-        for (group, (open, closed)) in self.groups.iter_mut().zip(&arrangement.groups) {
+    /// A group the folds say nothing about is left as it was built, which is
+    /// open: folds named over one set of files are put on whatever the next
+    /// set produced.
+    pub fn apply_folds(&mut self, folds: &FoldState) {
+        for (group, (open, closed)) in self.groups.iter_mut().zip(&folds.groups) {
             group.open = *open;
             group.style.set_closed(closed);
         }
     }
 
-    /// The arrangement with whatever is on `line` shut if it was open and
-    /// opened if it was shut, or `None` when there is nothing there to fold.
+    /// The folds with whatever is on `line` shut if it was open and opened if
+    /// it was shut, or `None` when there is nothing there to fold.
     ///
     /// [`Self::toggle`] for a list that is worked out rather than kept: the
-    /// answer is what to arrange it by next.
-    pub fn folded(&self, line: u32) -> Option<Arrangement> {
-        let mut arrangement = self.arrangement();
+    /// answer is what to fold it by next.
+    pub fn folded(&self, line: u32) -> Option<FoldState> {
+        let mut folds = self.fold_state();
         if let Some(index) = group::get_heading_line(&self.groups, line) {
-            let open = &mut arrangement.groups[index].0;
+            let open = &mut folds.groups[index].0;
             *open = !*open;
-            return Some(arrangement);
+            return Some(folds);
         }
         let (group, line) = group::get_line_style(&self.groups, line)?;
         let id = self.groups[group].style.foldable_on(line)?;
-        let closed = &mut arrangement.groups[group].1;
+        let closed = &mut folds.groups[group].1;
         match closed.iter().position(|&shut| shut == id) {
             Some(at) => {
                 closed.remove(at);
             }
             None => closed.push(id),
         }
-        Some(arrangement)
+        Some(folds)
     }
 
     pub fn set_mode(&mut self, mode: ViewMode) {
@@ -328,10 +332,7 @@ impl Explorer {
     }
 
     pub fn toggle_mode(&mut self) {
-        self.set_mode(match self.mode {
-            ViewMode::Tree => ViewMode::List,
-            ViewMode::List => ViewMode::Tree,
-        });
+        self.set_mode(self.mode.other());
     }
 
     pub fn set_stats(&mut self, shown: bool) {
@@ -354,8 +355,8 @@ impl Explorer {
     ///
     /// For a refresh: the mode, the pattern and the stats switch survive
     /// because they are the reader's choices, while the folds do not, because
-    /// a node means nothing once the arrangement has been rebuilt from
-    /// different files.
+    /// a node means nothing once the list has been rebuilt from different
+    /// files.
     pub fn refresh(&mut self, files: Vec<File>) {
         self.files = files;
         self.reshape();
