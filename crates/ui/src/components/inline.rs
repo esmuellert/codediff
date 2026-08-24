@@ -15,7 +15,7 @@ use super::context::{
 use super::{
     CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width, row_styles,
 };
-use crate::view::selection::{Pos, Selection, SelectionColumn};
+use crate::state::selection::{Pos, Selection, SelectionColumn};
 
 /// How narrow the text column may get before the pane refuses to draw.
 const MIN_TEXT: u16 = 4;
@@ -43,7 +43,7 @@ pub fn Inline(scope: &mut Scope) -> Node {
     let gutters = original_width + modified_width;
 
     let spans = if loaded.syntax_on {
-        crate::view::buffer::colour::spans_diff(&file, &loaded.colours)
+        crate::state::buffer::colour::spans_diff(&file, &loaded.colours)
     } else {
         syntax::Spans::Off
     };

@@ -9,7 +9,7 @@ use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
 use crate::draw::{Look, TextRects};
-use crate::view::buffer::BufferType;
+use crate::state::buffer::BufferType;
 use crate::view::{Buffer, Viewport};
 
 /// Draws one pane's buffer, whatever type it is.

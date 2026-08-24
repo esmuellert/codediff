@@ -16,10 +16,10 @@ use crate::render::layout;
 use crate::render::line::Painter;
 use crate::cells;
 use crate::render::column;
-use crate::view::Viewport;
-use crate::view::buffer::Buffer;
-use crate::view::buffer::SideBySide;
-use crate::view::selection::SelectionColumn;
+use crate::state::Viewport;
+use crate::state::buffer::Buffer;
+use crate::state::buffer::SideBySide;
+use crate::state::selection::SelectionColumn;
 use syntax::Spans;
 
 /// Draws one diff into the pane's area.

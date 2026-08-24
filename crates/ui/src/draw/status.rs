@@ -10,7 +10,7 @@ use ratatui::layout::Rect;
 
 use crate::cells;
 use crate::theme::Theme;
-use crate::view::Direction;
+use crate::state::Direction;
 
 /// What the status line says.
 pub struct Status<'a> {

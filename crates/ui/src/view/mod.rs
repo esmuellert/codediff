@@ -10,17 +10,17 @@
 //!
 //! Buffers live in [`View`], referenced by [`BufferId`] (not by `&mut`).
 
-pub mod buffer;
 mod pane;
-pub mod selection;
 mod tab;
-mod viewport;
 
-pub use buffer::{Buffer, BufferType, Direction};
+pub use crate::state::buffer;
+pub use crate::state::selection;
+
+pub use crate::state::{Buffer, BufferType, Direction};
 pub use pane::Pane;
 pub use selection::{Selection, SelectionColumn};
 pub use tab::{Layout, PaneId, Tab};
-pub use viewport::Viewport;
+pub use crate::state::Viewport;
 
 use file_types::DiffType;
 

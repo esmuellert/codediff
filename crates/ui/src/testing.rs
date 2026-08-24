@@ -10,7 +10,7 @@ use pipeline::file::{DiffContent, FileWorker};
 use crate::app::event::Event;
 use crate::app::{Session, Workers};
 use crate::theme::Theme;
-use crate::view::Buffer;
+use crate::state::Buffer;
 
 use pipeline::list::ListWorker;
 use syntax::Syntax;

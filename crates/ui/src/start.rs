@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::app::{Exit, Session, run};
 use crate::theme::Theme;
-use crate::view::Buffer;
+use crate::state::Buffer;
 
 /// Reviews everything that changed under `cwd`, until the reader quits.
 pub fn start(cwd: PathBuf, pathspec: Vec<String>, theme: Option<&str>) -> Result<Exit> {

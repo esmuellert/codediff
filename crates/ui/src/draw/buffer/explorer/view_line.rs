@@ -12,7 +12,7 @@ use file_types::{ChangeType, File, Stats};
 use crate::cells;
 use crate::theme::Theme;
 use crate::theme::icon;
-use crate::view::buffer::explorer::ViewLine;
+use crate::state::buffer::explorer::ViewLine;
 
 /// The one column that always separates the two sides.
 const GAP: usize = 1;

@@ -17,7 +17,7 @@
 use ratatui::style::Style;
 
 use crate::theme::Theme;
-use crate::view::buffer::explorer::{NodeId, Tree};
+use crate::state::buffer::explorer::{NodeId, Tree};
 
 use super::view_line::{Piece, priority};
 
@@ -46,7 +46,7 @@ fn indent(tree: &Tree, id: NodeId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::buffer::explorer::{Explorer, ViewMode};
+    use crate::state::buffer::explorer::{Explorer, ViewMode};
     use file_types::{File, Oid, RepoPath, Revs};
     use std::path::Path;
 

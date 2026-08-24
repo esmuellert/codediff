@@ -5,8 +5,8 @@
 use ratatui::layout::Rect;
 
 use crate::view::PaneId;
-use crate::view::Viewport;
-use crate::view::selection::{Pos, SelectionColumn};
+use crate::state::Viewport;
+use crate::state::selection::{Pos, SelectionColumn};
 
 /// One text area within a pane, for per-column hit-testing and selection.
 #[derive(Debug, Clone)]

@@ -11,7 +11,7 @@ use pipeline::file::DiffContent;
 
 use super::{BufferType, Explorer, Inline, SideBySide, SingleFile};
 use crate::input::{BufferAction, KeymapType};
-use crate::view::Viewport;
+use crate::state::Viewport;
 use syntax::{Store, Syntax, Version};
 
 /// A sequence of view lines you can scroll through.

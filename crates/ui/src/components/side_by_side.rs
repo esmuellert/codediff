@@ -18,7 +18,7 @@ use super::{
     row_styles,
 };
 use crate::theme::Theme;
-use crate::view::selection::{Pos, Selection, SelectionColumn};
+use crate::state::selection::{Pos, Selection, SelectionColumn};
 
 /// How narrow a text column may get before the pane refuses to draw.
 const MIN_TEXT: u16 = 4;
@@ -177,7 +177,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
             alignment: &alignment.alignment,
             theme: &theme,
             spans: if loaded.syntax_on {
-                crate::view::buffer::colour::spans_diff(&alignment, &loaded.colours)
+                crate::state::buffer::colour::spans_diff(&alignment, &loaded.colours)
             } else {
                 syntax::Spans::Off
             },

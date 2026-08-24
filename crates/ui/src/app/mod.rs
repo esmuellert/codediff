@@ -70,8 +70,8 @@ pub struct Session {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PendingSelection {
     pub pane: PaneId,
-    pub column: crate::view::selection::SelectionColumn,
-    pub anchor: crate::view::selection::Pos,
+    pub column: crate::state::selection::SelectionColumn,
+    pub anchor: crate::state::selection::Pos,
 }
 
 /// Pre-built workers, ready to be handed to Session.

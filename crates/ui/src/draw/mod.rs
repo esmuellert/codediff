@@ -23,7 +23,7 @@ pub use screen::render;
 use ratatui::layout::Rect;
 
 use crate::theme::Theme;
-use crate::view::selection::SelectionColumn;
+use crate::state::selection::SelectionColumn;
 use syntax::Store;
 
 /// Text areas produced by drawing a buffer. Used for hit-testing and overlay.

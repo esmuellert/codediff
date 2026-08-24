@@ -2,8 +2,8 @@
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
-use crate::view::BufferType;
-use crate::view::selection::{Pos, Selection};
+use crate::state::BufferType;
+use crate::state::selection::{Pos, Selection};
 
 use super::{Flow, PendingSelection, Session};
 

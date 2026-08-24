@@ -14,8 +14,8 @@ use ratatui::layout::Rect;
 
 use crate::cells;
 use crate::theme::Theme;
-use crate::view::Viewport;
-use crate::view::buffer::Explorer;
+use crate::state::Viewport;
+use crate::state::buffer::Explorer;
 
 use crate::draw::TextRects;
 

@@ -14,6 +14,7 @@ mod draw;
 pub use draw::screen_map::ScreenMap;
 pub mod input;
 mod render;
+pub mod state;
 mod start;
 mod terminal;
 pub mod theme;

@@ -16,7 +16,7 @@ use super::context::{
 use super::explorer::{Explorer, ExplorerProps};
 use super::{Inline, InlineProps, SideBySide, SideBySideProps, SingleFile, SingleFileProps};
 use super::{StatusLine, StatusLineProps};
-use crate::view::Viewport;
+use crate::state::Viewport;
 
 /// The whole interface.
 ///
