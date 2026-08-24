@@ -102,6 +102,11 @@ impl Session {
         self.view_lines_cell.get()
     }
 
+    /// Asks the file worker for a comparison of .
+    pub fn open_file(&mut self, file: file_types::File) {
+        self.workers.files.send(file);
+    }
+
     /// Whether anything needs drawing.
     pub fn needs_draw(&self) -> bool {
         self.tree.needs_draw()

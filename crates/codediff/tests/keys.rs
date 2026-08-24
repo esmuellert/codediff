@@ -205,6 +205,7 @@ fn change_navigation_works_the_same_in_both_layouts() {
 
 /// The file line the cursor is on, as text, whichever layout is in use.
 fn line_under_cursor(session: &ui::Session) -> String {
+    use loom::ExternalStore;
     let reading = session.diff_store.snapshot();
     let diff = reading.diff.as_ref().expect("these tests build a diff");
     let alignment = &diff.alignment;
