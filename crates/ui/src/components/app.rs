@@ -18,8 +18,9 @@ use loom::{
 use super::context::{Context, DiffStoreCtx, FileListStoreCtx, ObservedCtx, Ui, UiProps};
 use super::selection::Selection;
 use super::{Direction, Viewport};
+use super::explorer::{Explorer, ExplorerProps};
 use super::{
-    Explorer, ExplorerProps, Inline, InlineProps, SideBySide, SideBySideProps, SingleFile,
+    Inline, InlineProps, SideBySide, SideBySideProps, SingleFile,
     SingleFileProps, StatusLine, StatusLineProps,
 };
 use crate::app::Flow;
