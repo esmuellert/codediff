@@ -184,7 +184,7 @@ impl Explorer {
     }
 
     /// What is on a line, or `None` past the end.
-    pub fn view_line(&self, line: u32) -> Option<Content<'_>> {
+    pub fn content(&self, line: u32) -> Option<Content<'_>> {
         if let Some(index) = group::get_heading_line(&self.groups, line) {
             let group = &self.groups[index];
             return Some(Content::Heading {
@@ -202,7 +202,7 @@ impl Explorer {
             });
         }
         let (group, line) = group::get_line_style(&self.groups, line)?;
-        self.groups[group].style.view_line(line, &self.shown)
+        self.groups[group].style.content(line, &self.shown)
     }
 
     /// The nested arrangement a line belongs to, and which node it is.
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn a_line_past_the_end_is_nothing_rather_than_a_panic() {
         let explorer = Explorer::new(vec![at("a.rs", unstaged())]);
-        assert!(explorer.view_line(explorer.view_lines()).is_none());
+        assert!(explorer.content(explorer.view_lines()).is_none());
         assert!(explorer.file(99).is_none());
     }
 }

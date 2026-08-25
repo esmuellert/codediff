@@ -192,7 +192,7 @@ impl Tree {
     }
 
     /// What is on a line, as facts.
-    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
+    pub fn content<'a>(&'a self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
         let node = self.node(*self.view_lines.get(line)?);
         Some(match node.node_type {
             NodeType::Folder { open, .. } => Content::Directory {

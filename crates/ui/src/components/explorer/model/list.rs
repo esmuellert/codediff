@@ -50,7 +50,7 @@ impl List {
     ///
     /// The name is the whole path, because nothing above it says where the
     /// file is — which is the whole difference from the nested arrangement.
-    pub fn view_line<'a>(&self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
+    pub fn content<'a>(&self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
         let file = files.get(self.file_on(line)?)?;
         Some(Content::File {
             name: file.path().as_str(),
@@ -82,7 +82,7 @@ mod tests {
 
     fn names(files: &[File], list: &List) -> Vec<String> {
         (0..list.view_lines().len())
-            .map(|line| match list.view_line(line, files) {
+            .map(|line| match list.content(line, files) {
                 Some(Content::File { name, .. }) => name.to_owned(),
                 _ => panic!("a flat list holds files and nothing else"),
             })

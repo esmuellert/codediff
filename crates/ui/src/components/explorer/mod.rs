@@ -167,7 +167,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> Node {
     let base = theme.normal;
     let rows: Vec<Node> = view_lines
         .clone()
-        .filter_map(|line| model.view_line(line).map(|content| (line, content)))
+        .filter_map(|line| model.content(line).map(|content| (line, content)))
         .map(|(line, content)| {
             let selected = line == cursor;
             let background = if selected { base.patch(theme.cursor_line) } else { base };

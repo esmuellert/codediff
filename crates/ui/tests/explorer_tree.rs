@@ -20,7 +20,7 @@ use ui::components::explorer::model::{Content, Explorer, ViewMode};
 /// that has ancestors to describe.
 fn spell(explorer: &Explorer, line: u32) -> String {
     let mut out = String::new();
-    let view_line = explorer.view_line(line).expect("a line");
+    let view_line = explorer.content(line).expect("a line");
 
     if let Content::Heading { name, files, stats } = &view_line {
         out.push_str(&format!("{name} ({files}"));
@@ -287,7 +287,7 @@ fn shutting_a_directory_hides_what_is_under_it_and_nothing_else() {
 fn a_file_row_cannot_be_folded() {
     let mut explorer = Explorer::new(nested());
     assert!(
-        matches!(explorer.view_line(2), Some(Content::File { name, .. }) if name == "leaf.txt")
+        matches!(explorer.content(2), Some(Content::File { name, .. }) if name == "leaf.txt")
     );
     assert!(!explorer.toggle(2), "there is nothing under it to hide");
 }

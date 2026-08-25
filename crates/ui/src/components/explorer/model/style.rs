@@ -35,10 +35,10 @@ impl Style {
     }
 
     /// What is on a line, as facts.
-    pub fn view_line<'a>(&'a self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
+    pub fn content<'a>(&'a self, line: usize, files: &'a [File]) -> Option<Content<'a>> {
         match self {
-            Style::Tree(tree) => tree.view_line(line, files),
-            Style::List(list) => list.view_line(line, files),
+            Style::Tree(tree) => tree.content(line, files),
+            Style::List(list) => list.content(line, files),
         }
     }
 
