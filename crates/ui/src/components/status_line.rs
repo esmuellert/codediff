@@ -10,10 +10,7 @@ use loom::{
 };
 use ratatui::style::Style;
 
-use super::context::{
-    CursorContext, DiffStoreContext, ExhaustedContext, FileContext, LayoutContext, NoticeContext,
-    ThemeContext, ViewLinesContext,
-};
+use super::context::{DiffStoreCtx, ObservedCtx, Ui};
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
@@ -41,16 +38,22 @@ pub struct Sidecar {
 }
 
 /// The bottom row.
+///
+/// No props: the layout comes down as context, the counts out of the store,
+/// and the direction a jump ran out in is left in `Observed` by the component
+/// that pressed the key.
 #[component]
 pub fn StatusLine(scope: &mut Scope) -> Node {
-    let theme = use_context::<ThemeContext>(scope);
-    let file = use_context::<FileContext>(scope);
-    let view_lines = use_context::<ViewLinesContext>(scope);
-    let cursor = use_context::<CursorContext>(scope);
-    let notice = use_context::<NoticeContext>(scope);
-    let layout = use_context::<LayoutContext>(scope);
-    let exhausted = use_context::<ExhaustedContext>(scope);
-    let store = use_context::<DiffStoreContext>(scope);
+    let ctx = use_context::<Ui>(scope);
+    let theme = &ctx.theme;
+    let file = ctx.file.clone();
+    let view_lines = &ctx.view_lines;
+    let cursor = ctx.cursor;
+    let notice = ctx.notice.clone();
+    let diff_view_type = ctx.diff_view_type;
+    let observed = use_context::<ObservedCtx>(scope);
+    let exhausted = observed.exhausted.get();
+    let store = use_context::<DiffStoreCtx>(scope);
     // The diff worker fills the store; the row subscribes rather than being
     // handed what it produced.
     let reading = use_sync_external_store(scope, &store);
@@ -61,8 +64,8 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
     let alignment = reading.content.as_ref().and_then(|c| c.alignment());
     // A walk of every view line, so it is done once per diff rather than once
     // per frame.
-    let blocks = use_memo(scope, (reading.clone(), layout), || {
-        alignment.map(|alignment| alignment.blocks(layout)).unwrap_or_default()
+    let blocks = use_memo(scope, (reading.clone(), diff_view_type), || {
+        alignment.map(|alignment| alignment.blocks(diff_view_type)).unwrap_or_default()
     });
 
     // `file` is the focused pane's, so it is `None` exactly when the reader is
@@ -83,7 +86,7 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
     };
     let title = match (notice, file) {
         (Some(why), _) => Title { runs: vec![(why, base.patch(theme.warning))] },
-        (None, Some(file)) => name_of(&file, base, &theme),
+        (None, Some(file)) => name_of(&file, base, theme),
         (None, None) => Title::one("changed files", base.patch(theme.status_path)),
     };
 

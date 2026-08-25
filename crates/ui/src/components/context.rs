@@ -1,115 +1,174 @@
 //! Shared state, provided at the root.
 //!
-//! Components read the values with `use_context` and the two stores with
+//! One context holds everything a screen reads; the two stores are read with
 //! `use_sync_external_store`. Workers write the stores; nothing else does.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::ops::Range;
+use std::path::Path;
 use std::rc::Rc;
 
-use file_types::File;
+use file_types::{DiffType, File};
 use loom::{ExternalStore, Notify, Snapshot, Subscription, context};
 
+use crate::app::Flow;
+use crate::components::Direction;
+use crate::components::selection::Selection;
 use crate::theme::Theme;
 
-context!(
+/// Everything a screen reads.
+///
+/// One struct rather than one context per value: they are read together, by
+/// components that need most of them, and a reading of half of them is not a
+/// frame. `App` builds it, and each pane provides it again with its own
+/// window onto its own document.
+#[derive(Clone)]
+pub struct Context {
     /// Colours and styles for every component.
-    pub ThemeContext: Rc<Theme> = Rc::new(Theme::DARK),
-    |a: &Rc<Theme>, b: &Rc<Theme>| Rc::ptr_eq(a, b)
-);
-
-context!(
+    pub theme: Rc<Theme>,
     /// The repository path.
-    pub RepoContext: Option<Rc<std::path::Path>> = None
-);
-
-context!(
-    /// The focused file, or `None` when no file is open.
-    pub FileContext: Option<Rc<File>> = None
-);
-
-context!(
+    pub repo: Option<Rc<Path>>,
+    /// The focused file, or `None` when the reader is in the list.
+    pub file: Option<Rc<File>>,
     /// Which rows to render.
-    pub ViewLinesContext: std::ops::Range<u32> = 0..0
-);
-
-context!(
+    pub view_lines: Range<u32>,
     /// Which row the cursor is on.
-    pub CursorContext: u32 = 0
-);
-
-context!(
-    /// Whether the file list is nested or flat.
-    pub ViewModeContext: crate::components::explorer::model::ViewMode =
-        crate::components::explorer::model::ViewMode::default()
-);
-
-context!(
-    /// Which rows of the file list the reader has shut.
-    ///
-    /// The rows themselves are not here. They follow from this, the view mode
-    /// and the file list store, so whoever needs them works them out from the
-    /// three.
-    pub FoldStateContext: crate::components::explorer::model::FoldState =
-        crate::components::explorer::model::FoldState::default()
-);
-
-context!(
-    /// Which pane a subtree is drawn in, for whatever records where it landed.
-    pub PaneContext: Option<crate::screen_map::PaneId> = None
-);
-
-context!(
-    /// The live text selection. App owns it and provides it as context.
-    /// Each screen reads it here and writes it through `on_select`.
-    pub SelectionContext: Option<crate::components::selection::Selection> = None
-);
-
-context!(
-    /// How the interface asks for a file to be compared. A component cannot
-    /// reach a worker, so it says which file and the session sends it.
-    pub OpenContext: Rc<dyn Fn(File)> = Rc::new(|_| {}),
-    |a: &Rc<dyn Fn(File)>, b: &Rc<dyn Fn(File)>| Rc::ptr_eq(a, b)
-);
-
-context!(
+    pub cursor: u32,
     /// Horizontal scroll offset in cells.
-    pub FirstCellContext: u32 = 0
-);
-
-context!(
+    pub first_cell: u32,
+    /// The live text selection. A screen reads it here and changes it through
+    /// the setter `App` leaves in [`Observed`].
+    pub selection: Option<Selection>,
     /// An error or warning to display.
-    pub NoticeContext: Option<Rc<str>> = None
-);
+    pub notice: Option<Rc<str>>,
+    /// Which way the open file is laid out. What is on screen, not what the
+    /// toggle says: a one-sided file overrides it.
+    pub diff_view_type: DiffType,
+}
 
-context!(
-    /// Whether code is coloured by its language.
-    pub SyntaxOnContext: bool = true
-);
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            theme: Rc::new(Theme::DARK),
+            repo: None,
+            file: None,
+            view_lines: 0..0,
+            cursor: 0,
+            first_cell: 0,
+            selection: None,
+            notice: None,
+            diff_view_type: DiffType::SideBySide,
+        }
+    }
+}
 
-context!(
-    /// Which layout the diff is drawn in.
+impl Context {
+    /// Whether an offer says the same as the last, so readers can stay put.
     ///
-    /// A view line is a different row side by side than it is inline, so
-    /// whoever counts rows has to know which numbering the cursor is in.
-    pub LayoutContext: file_types::DiffType = file_types::DiffType::SideBySide
-);
+    /// What is shared is compared by pointer: a theme is the same theme when
+    /// it is the same allocation, and answering otherwise means a walk over
+    /// every colour in it.
+    fn same(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.theme, &other.theme)
+            && same_rc(&self.repo, &other.repo)
+            && same_rc(&self.file, &other.file)
+            && self.view_lines == other.view_lines
+            && self.cursor == other.cursor
+            && self.first_cell == other.first_cell
+            && self.selection == other.selection
+            && same_rc(&self.notice, &other.notice)
+            && self.diff_view_type == other.diff_view_type
+    }
+}
+
+fn same_rc<T: ?Sized>(a: &Option<Rc<T>>, b: &Option<Rc<T>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        _ => false,
+    }
+}
+
+/// What the frame decided, for a caller outside the tree — and the few
+/// callbacks that cannot be worked out inside it.
+///
+/// The session cannot ask a component anything — a key only marks state
+/// dirty, and the frame after it is what settles the answer — so `App`
+/// writes down what it drew and the session reads it here. The read-ahead
+/// needs the cursor; the rest is what a test asks about.
+///
+/// It runs the other way too. A screen takes no props, so a screen that has
+/// something to say says it through a setter `App` leaves here, and the
+/// session leaves what only it can do — stop the loop, reach a worker — the
+/// same way.
+#[derive(Default)]
+pub struct Observed {
+    /// The focused pane's cursor.
+    pub cursor: Cell<u32>,
+    /// How long the focused pane's document is.
+    pub view_lines: Cell<u32>,
+    /// The layout that was drawn, which the state slot does not answer on its
+    /// own — a one-sided file overrides it.
+    pub layout: Cell<DiffType>,
+    pub selection: RefCell<Option<Selection>>,
+    /// Which way `]c` or `[c` went with nowhere to go, for the status line to
+    /// report.
+    pub exhausted: Cell<Option<Direction>>,
+    /// What the reader asked of the loop. Only the session can stop it.
+    pub on_flow: Option<Rc<dyn Fn(Flow)>>,
+    /// The file the reader chose. Only the session can reach a worker.
+    pub on_open: Option<Rc<dyn Fn(File)>>,
+    /// Where a diff screen puts what the pointer selected. Left here by `App`
+    /// each render, because the value goes down as context and the screens
+    /// that change it take no props.
+    pub set_selection: RefCell<Option<Box<dyn Fn(Option<Selection>)>>>,
+    /// How long the list turned out to be, and which row the cursor is on.
+    /// Only the explorer knows the first; only the pane holds the second.
+    pub set_list_cursor: RefCell<Option<Box<dyn Fn(u32, u32)>>>,
+}
+
+impl Observed {
+    /// Hands a selection to whoever owns it.
+    ///
+    /// The borrow is held across the call because nothing renders inside a
+    /// listener: a write marks state dirty, and the frame after it is what
+    /// replaces the setter.
+    pub fn select(&self, held: Option<Selection>) {
+        if let Some(set) = self.set_selection.borrow().as_ref() {
+            set(held);
+        }
+    }
+
+    /// Says how long the list is and where in it the reader now is.
+    pub fn place_in_list(&self, rows: u32, line: u32) {
+        if let Some(set) = self.set_list_cursor.borrow().as_ref() {
+            set(rows, line);
+        }
+    }
+}
 
 context!(
-    /// Which way a change key went with nowhere to go, cleared by the next
-    /// key. Only the status line has anything to say about it.
-    pub ExhaustedContext: Option<crate::components::Direction> = None
+    /// Everything a screen reads.
+    pub Ui: Context = Context::default(),
+    |a: &Context, b: &Context| a.same(b)
 );
 
 context!(
     /// The diff on screen and the colours for it.
-    pub DiffStoreContext: DiffStore = DiffStore::new(),
+    pub DiffStoreCtx: DiffStore = DiffStore::new(),
     |a: &DiffStore, b: &DiffStore| Rc::ptr_eq(&a.inner, &b.inner)
 );
 
 context!(
     /// The files this review changes.
-    pub FileListStoreContext: FileListStore = FileListStore::new(),
+    pub FileListStoreCtx: FileListStore = FileListStore::new(),
     |a: &FileListStore, b: &FileListStore| Rc::ptr_eq(&a.inner, &b.inner)
+);
+
+context!(
+    /// Where the frame writes what it decided, for the session to read.
+    pub ObservedCtx: Rc<Observed> = Rc::new(Observed::default()),
+    |a: &Rc<Observed>, b: &Rc<Observed>| Rc::ptr_eq(a, b)
 );
 
 /// The diff on screen, and the colours for it. One file at a time: opening
@@ -312,44 +371,3 @@ fn announce(listeners: Vec<Option<Notify>>) {
         notify.changed();
     }
 }
-
-context!(
-    /// A shared cell the root writes the focused pane's cursor into each
-    /// render, so the session can read it from outside the tree.
-    pub CursorCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
-    |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
-);
-
-context!(
-    /// The same, for how long the focused pane's document is.
-    pub ViewLinesCellContext: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0)),
-    |a: &Rc<std::cell::Cell<u32>>, b: &Rc<std::cell::Cell<u32>>| Rc::ptr_eq(a, b)
-);
-
-context!(
-    /// A shared cell the root writes the layout into. The state slot is not
-    /// the answer on its own — a one-sided file overrides it — so what was
-    /// drawn is what goes here.
-    pub LayoutCellContext: Rc<std::cell::Cell<file_types::DiffType>> =
-        Rc::new(std::cell::Cell::new(file_types::DiffType::SideBySide)),
-    |a: &Rc<std::cell::Cell<file_types::DiffType>>,
-     b: &Rc<std::cell::Cell<file_types::DiffType>>| Rc::ptr_eq(a, b)
-);
-
-context!(
-    /// The active text selection, written each render by whoever holds it.
-    /// Tests read it through Session.
-    pub SelectionCellContext: Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>> =
-        Rc::new(std::cell::RefCell::new(None)),
-    |a: &Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>>,
-     b: &Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>>| Rc::ptr_eq(a, b)
-);
-
-context!(
-    /// Where things landed on screen. Filled by layout effects, read by
-    /// whoever has to say what is under the mouse.
-    pub ScreenMapCellContext: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>> =
-        Rc::new(std::cell::RefCell::new(crate::screen_map::ScreenMap::default())),
-    |a: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
-     b: &Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>| Rc::ptr_eq(a, b)
-);

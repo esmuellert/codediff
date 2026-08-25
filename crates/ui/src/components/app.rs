@@ -1,8 +1,9 @@
 //! The root: the explorer beside a diff, with the status line under both.
 //!
 //! Everything the reader can move is a `use_state` here, offered downwards as
-//! context. Nothing hands this component a model, and nothing below it writes
-//! one: a key changes a state slot, and the frame follows from the slots.
+//! one context. Nothing hands this component a model, and nothing below it
+//! writes one: a key changes a state slot, and the frame follows from the
+//! slots.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -10,21 +11,11 @@ use std::rc::Rc;
 use file_types::{DiffType, File};
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node, Row,
-    RowProps, Scope, Text, TextProps, component, context, rsx, use_context, use_layout_effect,
-    use_memo, use_ref, use_state, use_sync_external_store,
+    RowProps, Scope, Text, TextProps, component, rsx, use_context, use_layout_effect, use_memo,
+    use_ref, use_state, use_sync_external_store,
 };
 
-use super::context::{
-    CursorCellContext, CursorContext, CursorContextProps, DiffStoreContext, ExhaustedContext,
-    ExhaustedContextProps, FileContext, FileContextProps, FileListStoreContext, FirstCellContext,
-    FirstCellContextProps, FoldStateContext, FoldStateContextProps, LayoutCellContext,
-    LayoutContext, LayoutContextProps, NoticeContext, NoticeContextProps, OpenContext, PaneContext,
-    PaneContextProps, ScreenMapCellContext, SelectionCellContext, SelectionContext,
-    SelectionContextProps, SyntaxOnContext, SyntaxOnContextProps, ThemeContext,
-    ViewLinesCellContext, ViewLinesContext, ViewLinesContextProps, ViewModeContext,
-    ViewModeContextProps,
-};
-use super::explorer::model::{Explorer as Model, FoldState, ViewMode};
+use super::context::{Context, DiffStoreCtx, FileListStoreCtx, ObservedCtx, Ui, UiProps};
 use super::selection::Selection;
 use super::{Direction, Viewport};
 use super::{
@@ -35,7 +26,6 @@ use crate::app::Flow;
 use crate::input::{
     Action, BufferAction, KeymapType, ProgramAction, Resolution, Resolver, TabAction, ViewAction,
 };
-use crate::screen_map::PaneId;
 
 /// Columns the list gets once something is open beside it.
 ///
@@ -48,82 +38,51 @@ const MIN_DIFF: u16 = 20;
 /// View lines one turn of the wheel moves.
 const WHEEL: i32 = 3;
 
-context!(
-    /// What the interface asks the session to do next.
-    ///
-    /// How a component asks the session to quit or suspend.
-    pub FlowContext: Rc<dyn Fn(Flow)> = Rc::new(|_| {}),
-    |a: &Rc<dyn Fn(Flow)>, b: &Rc<dyn Fn(Flow)>| Rc::ptr_eq(a, b)
-);
-
 /// The whole interface.
+///
+/// No props: the theme and the repository come down as context, the diff and
+/// the file list from the two stores, and the two things only the session can
+/// do — stop the loop, reach a worker — are left in `Observed` for this to
+/// call.
 #[component]
 pub fn App(scope: &mut Scope) -> Node {
-    let theme = use_context::<ThemeContext>(scope);
-    let store = use_context::<DiffStoreContext>(scope);
-    let listing = use_context::<FileListStoreContext>(scope);
-    let on_flow = use_context::<FlowContext>(scope);
-    let on_open = use_context::<OpenContext>(scope);
+    // What lasts as long as the session, put here by the root. The rest of
+    // the context is filled in below and provided again.
+    let session = use_context::<Ui>(scope);
+    let observed = use_context::<ObservedCtx>(scope);
+    let store = use_context::<DiffStoreCtx>(scope);
+    let listing = use_context::<FileListStoreCtx>(scope);
     // The workers fill the stores; this subscribes rather than being handed
     // what they produced.
     let reading = use_sync_external_store(scope, &store);
     let files = use_sync_external_store(scope, &listing);
 
-    let cursor_cell = use_context::<CursorCellContext>(scope);
-    let vl_cell = use_context::<ViewLinesCellContext>(scope);
-    let layout_cell = use_context::<LayoutCellContext>(scope);
-    let selection_cell = use_context::<SelectionCellContext>(scope);
-    let map_cell = use_context::<ScreenMapCellContext>(scope);
-
-    // How the reader has arranged the list: whether it is nested or flat, and
-    // which rows are folded. The rows themselves follow from these and the
-    // store, so they are worked out rather than kept and changed in place
-    // — the component that draws them works out the same rows from the same
-    // three things.
-    let (mode, set_mode) = use_state(scope, ViewMode::default);
-    let (folds, set_folds) = use_state(scope, FoldState::default);
-    let model = use_memo(scope, (files.clone(), mode, folds.clone()), || {
-        Model::arranged(files.to_vec(), mode, &folds)
-    });
-    // The list the last render worked out. A rebuilt list renumbers every
-    // row, so the file the reader was on is named in the old one and looked
-    // up in the new (D54).
-    let previous = use_ref(scope, || Rc::clone(&model));
-    let before = Rc::clone(&previous.current());
-    *previous.current() = Rc::clone(&model);
-
     // One position per pane. The list and the diff are different documents, so
     // where the reader is in one says nothing about the other.
-    let (list, set_list) = use_state(scope, || {
-        // The reader starts on the first file, not on the heading above it
-        // (D48), so where the list begins is settled with the model.
-        let mut viewport = Viewport::new();
-        viewport.place(model.first_file(), model.view_lines());
-        viewport
-    });
+    let (list, set_list) = use_state(scope, Viewport::new);
     let (diff, set_diff) = use_state(scope, Viewport::new);
     let (on_diff, set_on_diff) = use_state(scope, || false);
+    // How long the list turned out to be. The explorer works the rows out
+    // from the files and the reader's folds and says how many there were,
+    // because the pane holds the viewport and a viewport is clamped against
+    // a document it cannot see.
+    let (list_rows, set_list_rows) = use_state(scope, || 0u32);
 
-    let (layout, set_layout) = use_state(scope, || DiffType::SideBySide);
+    let (diff_view_type, set_diff_view_type) = use_state(scope, || DiffType::SideBySide);
     let (notice, set_notice) = use_state(scope, || None::<Rc<str>>);
-    let (syntax_on, set_syntax_on) = use_state(scope, || true);
     let (selection, set_selection) = use_state(scope, || None::<Selection>);
     // Which way `]c` or `[c` went with nowhere to go, cleared by the next key.
     let (exhausted, set_exhausted) = use_state(scope, || None::<Direction>);
 
-    // The row of panes and each pane in it, measured after layout; and the
-    // keys typed so far that have not resolved. None is worth a frame.
+    // The row of panes, measured after layout; and the keys typed so far that
+    // have not resolved. None is worth a frame.
     let body = use_ref(scope, || None::<loom::NodeHandle>);
-    let list_node = use_ref(scope, || None::<loom::NodeHandle>);
-    let diff_node = use_ref(scope, || None::<loom::NodeHandle>);
     let resolver = use_ref(scope, Resolver::new);
     // The file the diff pane was showing on the last frame, so that opening
     // another can tell itself from re-reading the same one.
     let shown = use_ref(scope, || None::<File>);
 
-    let list_rows = model.view_lines();
     let list_cursor = list.cursor();
-    let list_top = list.top();
 
     let alignment = reading.content.as_ref().and_then(|c| c.alignment());
     // What is on screen decides the layout, not the state slot: a one-sided
@@ -131,17 +90,17 @@ pub fn App(scope: &mut Scope) -> Node {
     // length is its lines, since there is no pairing to lay out.
     let (effective_layout, view_lines_count) = match reading.content.as_deref() {
         Some(pipeline::file::DiffContent::Diff(diff)) => {
-            (layout, diff.alignment.view_line_count(layout))
+            (diff_view_type, diff.alignment.view_line_count(diff_view_type))
         }
         Some(pipeline::file::DiffContent::SingleFile(single)) => {
             (DiffType::Single, single.lines.len() as u32)
         }
-        None => (layout, 0),
+        None => (diff_view_type, 0),
     };
     // A walk of every view line, so it is done once per diff rather than once
     // per frame. Change navigation reads it; the status line counts its own.
-    let blocks = use_memo(scope, (reading.clone(), layout), || {
-        alignment.map(|alignment| alignment.blocks(layout)).unwrap_or_default()
+    let blocks = use_memo(scope, (reading.clone(), diff_view_type), || {
+        alignment.map(|alignment| alignment.blocks(diff_view_type)).unwrap_or_default()
     });
 
     let has_list = !files.is_empty();
@@ -150,39 +109,44 @@ pub fn App(scope: &mut Scope) -> Node {
     // reader starts; with nothing beside it, or with no list at all, there is
     // no choice to make.
     let focus_diff = if has_list { on_diff && has_diff } else { true };
-    let list_id = PaneId::new(0);
-    let diff_id = PaneId::new(if has_list { 1 } else { 0 });
 
     let (cursor, rows) = if focus_diff {
         (diff.cursor(), view_lines_count)
     } else {
         (list_cursor, list_rows)
     };
-    cursor_cell.set(cursor);
-    vl_cell.set(rows);
-    layout_cell.set(effective_layout);
-    *selection_cell.borrow_mut() = selection;
+    observed.cursor.set(cursor);
+    observed.view_lines.set(rows);
+    observed.layout.set(effective_layout);
+    observed.exhausted.set(exhausted);
+    *observed.selection.borrow_mut() = selection;
+
+    // The selection goes down as context and comes back up through this: a
+    // screen says what the pointer selected, and the slot here is what every
+    // screen then draws from. Left where the screens can reach it, because a
+    // screen takes no props.
+    *observed.set_selection.borrow_mut() =
+        Some(Box::new(move |held: Option<Selection>| set_selection(&move |_| held)));
+
+    // What the list turned out to be, once the explorer has worked it out.
+    // A rebuilt list renumbers every row, so it says where the reader now is
+    // as well as how many rows there are; a press says the same two things.
+    *observed.set_list_cursor.borrow_mut() = Some(Box::new(move |rows: u32, line: u32| {
+        set_list_rows(&move |_| rows);
+        set_list(&move |mut viewport: Viewport| {
+            viewport.place(line, rows);
+            viewport
+        });
+    }));
 
     // Where the cursor would land in the other layout, and how long that
     // layout is. Worked out here rather than in the key handler, which cannot
     // borrow the alignment: view line 40 side by side is a different line
     // inline, so the number cannot be carried across — the file line can.
     let flipped = alignment.and_then(|alignment| {
-        let (version, line) = alignment.line_at(layout, diff.cursor())?;
-        let landing = alignment.view_line_at(layout.other(), version, line)?;
-        Some((landing, alignment.view_line_count(layout.other())))
-    });
-
-    // A new list from the store. The reader keeps their place by name, since a
-    // row number means nothing across a rebuild (D54).
-    let landed = Rc::clone(&model);
-    use_layout_effect(scope, files.clone(), move || {
-        let landing = landed.line_after(&before, list_cursor);
-        let rows = landed.view_lines();
-        set_list(&move |mut viewport: Viewport| {
-            viewport.place(landing, rows);
-            viewport
-        });
+        let (version, line) = alignment.line_at(diff_view_type, diff.cursor())?;
+        let landing = alignment.view_line_at(diff_view_type.other(), version, line)?;
+        Some((landing, alignment.view_line_count(diff_view_type.other())))
     });
 
     // A comparison arrived. A different file starts at its own top; the same
@@ -208,8 +172,7 @@ pub fn App(scope: &mut Scope) -> Node {
 
     // Layout knows how many rows the panes have; the render body does not.
     // Both viewports are told as soon as layout has decided, so a page motion
-    // agrees with what is on screen — and so is the screen map, which is
-    // cleared here before the diff screens append their own text areas.
+    // agrees with what is on screen.
     use_layout_effect(scope, loom::Always, move || {
         let area = body.current().map_or(ratatui::layout::Rect::ZERO, |node| node.area());
         let rows = u32::from(area.height);
@@ -221,50 +184,7 @@ pub fn App(scope: &mut Scope) -> Node {
             viewport.set_height(rows, view_lines_count);
             viewport
         });
-
-        let mut map = map_cell.borrow_mut();
-        map.clear();
-        map.body = area;
-        for (slot, id) in [(list_node, list_id), (diff_node, diff_id)] {
-            if let Some(node) = *slot.current() {
-                map.panes.push((id, node.area()));
-            }
-        }
     });
-
-    // Folding a row, and the cursor named again afterwards because the rows
-    // it counted have moved. Answers whether there was anything to fold.
-    let folding_model = Rc::clone(&model);
-    let folding_files = files.clone();
-    let fold: Rc<dyn Fn(u32) -> bool> = Rc::new(move |line: u32| {
-        let Some(next) = folding_model.folded(line) else {
-            return false;
-        };
-        let rows = Model::arranged(folding_files.to_vec(), mode, &next).view_lines();
-        set_folds(&move |_| next.clone());
-        set_list(&move |mut viewport: Viewport| {
-            let at = viewport.cursor().min(rows.saturating_sub(1));
-            viewport.place(at, rows);
-            viewport
-        });
-        true
-    });
-
-    // Opening a row, whether the gesture was Enter or a click. A heading and
-    // a directory have nothing to open, so they fold instead.
-    let open_row: Rc<dyn Fn(u32)> = {
-        let folding = Rc::clone(&fold);
-        let request = Rc::clone(&on_open);
-        let held = Rc::clone(&model);
-        Rc::new(move |line: u32| {
-            if folding(line) {
-                return;
-            }
-            if let Some(file) = held.file(line).cloned() {
-                request(file);
-            }
-        })
-    };
 
     // The list has the keys while the reader is in it, because someone
     // looking at the list is choosing a file rather than reading one.
@@ -275,10 +195,7 @@ pub fn App(scope: &mut Scope) -> Node {
     };
 
     let jumps = Rc::clone(&blocks);
-    let opening = Rc::clone(&open_row);
-    let folding = Rc::clone(&fold);
-    let flipping_model = Rc::clone(&model);
-    let flipping_files = files.clone();
+    let flow = observed.on_flow.clone();
     let keys = Listeners::new().on_key(move |key| {
         // Both answered the key before this one, and neither survives it.
         set_notice(&|_| None);
@@ -329,29 +246,15 @@ pub fn App(scope: &mut Scope) -> Node {
             }
             Action::Buffer(BufferAction::NextChange) => step(Direction::Next),
             Action::Buffer(BufferAction::PrevChange) => step(Direction::Previous),
-            // The list's own keys. A fold and a change of view mode both
-            // renumber the rows, so the cursor is named again afterwards.
-            Action::Buffer(BufferAction::Toggle) => {
-                folding(list_cursor);
-            }
-            Action::Buffer(BufferAction::ToggleViewMode) => {
-                let next_mode = mode.other();
-                let next_folds = flipping_model.fold_state().headings_only();
-                let flipped = Model::arranged(flipping_files.to_vec(), next_mode, &next_folds);
-                let landing = flipped.line_after(&flipping_model, list_cursor);
-                let rows = flipped.view_lines();
-                set_mode(&move |_| next_mode);
-                set_folds(&move |_| next_folds.clone());
-                set_list(&move |mut viewport: Viewport| {
-                    viewport.place(landing, rows);
-                    viewport
-                });
-            }
-            Action::View(ViewAction::Open) => opening(list_cursor),
+            // The list's own keys, answered by the explorer, which is where
+            // the folds and the arrangement live. The key reaches here as
+            // well, so whatever a key clears is still cleared.
+            Action::Buffer(BufferAction::Toggle | BufferAction::ToggleViewMode) => {}
+            Action::View(ViewAction::Open) => {}
             // A one-sided file has no other layout to go to, and the cursor
             // travels by file line rather than by view line.
             Action::View(ViewAction::ToggleLayout) => {
-                set_layout(&|layout: DiffType| layout.other());
+                set_diff_view_type(&|diff_view_type: DiffType| diff_view_type.other());
                 set_selection(&|_| None);
                 if let Some((landing, lines)) = flipped {
                     set_diff(&move |mut viewport: Viewport| {
@@ -360,7 +263,6 @@ pub fn App(scope: &mut Scope) -> Node {
                     });
                 }
             }
-            Action::View(ViewAction::ToggleSyntax) => set_syntax_on(&|on: bool| !on),
             // With one pane there is nowhere else for the focus to go, and no
             // border between panes to move.
             Action::Tab(TabAction::FocusNext | TabAction::FocusPrev) => {
@@ -370,17 +272,17 @@ pub fn App(scope: &mut Scope) -> Node {
             }
             Action::Tab(TabAction::WidenLeft | TabAction::NarrowLeft) => {}
             Action::Pane(action) => match action {},
-            Action::Program(ProgramAction::Quit) => on_flow(Flow::Quit),
-            Action::Program(ProgramAction::Suspend) => on_flow(Flow::Suspend),
+            Action::Program(ProgramAction::Quit) => ask(&flow, Flow::Quit),
+            Action::Program(ProgramAction::Suspend) => ask(&flow, Flow::Suspend),
             #[cfg(debug_assertions)]
-            Action::Program(ProgramAction::Rebuild) => on_flow(Flow::Rebuild),
+            Action::Program(ProgramAction::Rebuild) => ask(&flow, Flow::Rebuild),
         }
         Bubble::Stop
     });
 
     // The wheel turns whatever is under the pointer, which need not be what
-    // has focus, and a press in the list chooses the row it landed on.
-    let opening = Rc::clone(&open_row);
+    // has focus. A press anywhere in the list moves the focus into it, the
+    // way a press anywhere in the diff moves it the other way.
     let list_keys = Listeners::new()
         .on_wheel(move |delta| {
             set_list(&|mut viewport: Viewport| {
@@ -389,16 +291,8 @@ pub fn App(scope: &mut Scope) -> Node {
             });
             Bubble::Stop
         })
-        .on_mouse_down(move |mouse| {
-            let line = list_top + u32::from(mouse.local.y);
-            if line < list_rows {
-                set_on_diff(&|_| false);
-                set_list(&move |mut viewport: Viewport| {
-                    viewport.place(line, list_rows);
-                    viewport
-                });
-                opening(line);
-            }
+        .on_mouse_down(move |_| {
+            set_on_diff(&|_| false);
             Bubble::Stop
         });
 
@@ -417,14 +311,38 @@ pub fn App(scope: &mut Scope) -> Node {
             Bubble::Stop
         });
 
-    // The selection goes down as context and comes back up through this: a
-    // screen says what the pointer selected, and the slot here is what every
-    // screen then draws from.
-    let on_select: Rc<dyn Fn(Option<Selection>)> =
-        Rc::new(move |held| set_selection(&move |_| held));
+    // The file the reader chose. Only the session can reach a worker, so it
+    // leaves the way to ask in `Observed`; with nothing there, a row opens
+    // nothing.
+    let open: Rc<dyn Fn(File)> = match &observed.on_open {
+        Some(open) => Rc::clone(open),
+        None => Rc::new(|_| {}),
+    };
 
-    // One pane's providers: each is looking at its own document, so each gets
-    // its own rather than one set for the whole tree.
+    // The status line reads the focused pane, and a list of changed files is
+    // not a file: it has no name to show, no changes to count, and no engine
+    // that could have given up on it.
+    let shown_file = focus_diff
+        .then(|| reading.content.as_ref().map(|content| Rc::new(content.file().clone())))
+        .flatten();
+
+    // What everything below reads. The rows and the cursor here are the
+    // focused pane's *document*, which is what the status line counts; each
+    // pane provides its own window onto its own.
+    let base = Context {
+        theme: Rc::clone(&session.theme),
+        repo: session.repo.clone(),
+        file: shown_file,
+        view_lines: 0..rows,
+        cursor,
+        first_cell: 0,
+        selection,
+        notice,
+        diff_view_type: effective_layout,
+    };
+
+    // One pane's context: each is looking at its own document, so each gets
+    // its own rather than one for the whole tree.
     let list_pane = |alone: bool| {
         let layout = if has_diff && !alone {
             Layout { basis: Basis::Length(LIST_WIDTH), min_width: MIN_LIST, ..Default::default() }
@@ -433,25 +351,16 @@ pub fn App(scope: &mut Scope) -> Node {
         };
         rsx! {
             Row {
-                ref: Some(list_node),
                 layout: layout,
                 listeners: list_keys.clone(),
                 ..,
-                PaneContext {
-                    value: Some(list_id),
-                    ViewLinesContext {
-                        value: list.visible(list_rows),
-                        CursorContext {
-                            value: list_cursor,
-                            ViewModeContext {
-                                value: mode,
-                                FoldStateContext {
-                                    value: folds.clone(),
-                                    Explorer { on_open: Rc::clone(&on_open) }
-                                }
-                            }
-                        }
-                    }
+                Ui {
+                    value: Context {
+                        view_lines: list.visible(list_rows),
+                        cursor: list_cursor,
+                        ..base.clone()
+                    },
+                    Explorer { on_open: Rc::clone(&open) }
                 }
             }
         }
@@ -460,34 +369,20 @@ pub fn App(scope: &mut Scope) -> Node {
     let diff_pane = || {
         rsx! {
             Row {
-                ref: Some(diff_node),
                 layout: Layout { grow: 1, min_width: MIN_DIFF, ..Default::default() },
                 listeners: diff_keys.clone(),
                 ..,
-                PaneContext {
-                    value: Some(diff_id),
-                    ViewLinesContext {
-                        value: diff.visible(view_lines_count),
-                        CursorContext {
-                            value: diff.cursor(),
-                            FirstCellContext {
-                                value: diff.left(),
-                                SelectionContext {
-                                    value: selection,
-                                    match effective_layout {
-                                        DiffType::SideBySide => {
-                                            SideBySide { on_select: Rc::clone(&on_select) }
-                                        }
-                                        DiffType::Inline => {
-                                            Inline { on_select: Rc::clone(&on_select) }
-                                        }
-                                        DiffType::Single => {
-                                            SingleFile { on_select: Rc::clone(&on_select) }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                Ui {
+                    value: Context {
+                        view_lines: diff.visible(view_lines_count),
+                        cursor: diff.cursor(),
+                        first_cell: diff.left(),
+                        ..base.clone()
+                    },
+                    match effective_layout {
+                        DiffType::SideBySide => { SideBySide {} }
+                        DiffType::Inline => { Inline {} }
+                        DiffType::Single => { SingleFile {} }
                     }
                 }
             }
@@ -504,7 +399,7 @@ pub fn App(scope: &mut Scope) -> Node {
             Divider {
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 symbol: "│",
-                style: theme.normal.patch(theme.divider),
+                style: base.theme.normal.patch(base.theme.divider),
                 ..
             }
         });
@@ -521,13 +416,6 @@ pub fn App(scope: &mut Scope) -> Node {
     let alone = (has_list && has_diff)
         .then(|| if focus_diff { diff_pane() } else { list_pane(true) });
 
-    // The status line reads the focused pane, and a list of changed files is
-    // not a file: it has no name to show, no changes to count, and no engine
-    // that could have given up on it.
-    let shown_file = focus_diff
-        .then(|| reading.content.as_ref().map(|content| Rc::new(content.file().clone())))
-        .flatten();
-
     rsx! {
         Column {
             listeners: keys,
@@ -538,39 +426,27 @@ pub fn App(scope: &mut Scope) -> Node {
             // less than a diff, so the panes carry their own minimums.
             layout: Layout { grow: 1, min_height: 2, ..Default::default() },
             ..,
-            FileContext {
-                value: shown_file,
-                NoticeContext {
-                    value: notice,
-                    SyntaxOnContext {
-                        value: syntax_on,
-                        Row {
-                            ref: Some(body),
-                            layout: Layout { grow: 1, ..Default::default() },
-                            too_small: alone,
-                            ..,
-                            { panes }
-                        }
-                        // The status line counts the document, not the
-                        // window onto it.
-                        ViewLinesContext {
-                            value: 0..rows,
-                            CursorContext {
-                                value: cursor,
-                                // Two things the store cannot answer.
-                                LayoutContext {
-                                    value: effective_layout,
-                                    ExhaustedContext {
-                                        value: exhausted,
-                                        StatusLine {}
-                                    }
-                                }
-                            }
-                        }
-                    }
+            Ui {
+                value: base.clone(),
+                Row {
+                    ref: Some(body),
+                    layout: Layout { grow: 1, ..Default::default() },
+                    too_small: alone,
+                    ..,
+                    { panes }
                 }
+                // Everything it needs is in the context and the store.
+                StatusLine {}
             }
         }
+    }
+}
+
+/// Asks the loop to do what only it can. With nothing there — a tree built
+/// without a session — the key does nothing.
+fn ask(flow: &Option<Rc<dyn Fn(Flow)>>, what: Flow) {
+    if let Some(flow) = flow {
+        flow(what);
     }
 }
 

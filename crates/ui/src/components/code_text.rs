@@ -7,7 +7,7 @@ use line_index::DEFAULT_TAB_WIDTH;
 use loom::{Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
 use ratatui::style::Style;
 
-use super::context::{FirstCellContext, ThemeContext};
+use super::context::Ui;
 use crate::cells::{self, Ink};
 
 /// One line of a file, with the bytes that differ picked out and the
@@ -22,8 +22,9 @@ pub fn CodeText(
     changed_style: Style,
     selection: Option<Range<u32>>,
 ) -> Node {
-    let theme = use_context::<ThemeContext>(scope);
-    let first_cell = use_context::<FirstCellContext>(scope);
+    let ctx = use_context::<Ui>(scope);
+    let theme = Rc::clone(&ctx.theme);
+    let first_cell = ctx.first_cell;
 
     let text = Rc::clone(text);
     let diff = Rc::clone(diff);

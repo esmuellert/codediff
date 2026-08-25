@@ -16,7 +16,7 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
 use channel::Worker;
-use crate::components::{DiffStore, FileListStore, Root, RootProps};
+use crate::components::{DiffStore, FileListStore, Observed, Root, RootProps};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 
@@ -48,11 +48,9 @@ pub struct Session {
     /// so it names the file here and the session sends it.
     to_compare: Rc<RefCell<Option<file_types::File>>>,
     last_area: Rect,
-    cursor_cell: Rc<Cell<u32>>,
-    view_lines_cell: Rc<Cell<u32>>,
-    layout_cell: Rc<Cell<file_types::DiffType>>,
-    selection_cell: Rc<RefCell<Option<crate::components::selection::Selection>>>,
-    screen_map_cell: Rc<RefCell<crate::screen_map::ScreenMap>>,
+    /// What the last frame decided. A key only marks state dirty, so a caller
+    /// that asks a question draws first and reads the answer here.
+    observed: Rc<Observed>,
 }
 
 impl Session {
@@ -73,11 +71,13 @@ impl Session {
                 as Rc<dyn Fn(file_types::File)>
         };
 
-        let cursor_cell = Rc::new(Cell::new(0u32));
-        let view_lines_cell = Rc::new(Cell::new(0u32));
-        let layout_cell = Rc::new(Cell::new(file_types::DiffType::SideBySide));
-        let selection_cell = Rc::new(RefCell::new(None));
-        let screen_map_cell = Rc::new(RefCell::new(crate::screen_map::ScreenMap::default()));
+        // What the frame writes down, and the two things it cannot do for
+        // itself: stop the loop, and reach a worker.
+        let observed = Rc::new(Observed {
+            on_flow: Some(flow_cb),
+            on_open: Some(open_cb),
+            ..Observed::default()
+        });
 
         let tree = loom::Tree::new::<Root>(RootProps {
             theme: Rc::new(theme),
@@ -86,18 +86,11 @@ impl Session {
             repo: None,
             diff_store: diff_store.clone(),
             file_list_store: file_list_store.clone(),
-            on_flow: flow_cb,
-            on_open: open_cb,
-            cursor_cell: Rc::clone(&cursor_cell),
-            view_lines_cell: Rc::clone(&view_lines_cell),
-            layout_cell: Rc::clone(&layout_cell),
-            selection_cell: Rc::clone(&selection_cell),
-            screen_map_cell: Rc::clone(&screen_map_cell),
+            observed: Rc::clone(&observed),
         });
 
         Self {
-            tree, diff_store, file_list_store, workers, flow, to_compare,
-            cursor_cell, view_lines_cell, layout_cell, selection_cell, screen_map_cell,
+            tree, diff_store, file_list_store, workers, flow, to_compare, observed,
             last_area: Rect::ZERO,
         }
     }
@@ -128,17 +121,17 @@ impl Session {
     /// The cursor position, after applying any pending state.
     pub fn cursor(&mut self) -> u32 {
         self.settle();
-        self.cursor_cell.get()
+        self.observed.cursor.get()
     }
 
     /// The document height in view lines, as last rendered.
     pub fn view_lines(&self) -> u32 {
-        self.view_lines_cell.get()
+        self.observed.view_lines.get()
     }
 
     /// Which way the open diff is laid out, as last rendered.
     pub fn layout(&self) -> file_types::DiffType {
-        self.layout_cell.get()
+        self.observed.layout.get()
     }
 
     /// Draws into a scratch grid, so that whatever a key changed takes effect,
@@ -174,7 +167,7 @@ impl Session {
             return;
         };
         let version = self.diff_store.version();
-        let last = self.cursor_cell.get().saturating_add(MARGIN);
+        let last = self.observed.cursor.get().saturating_add(MARGIN);
         let colours = self.diff_store.colours();
         let store = &mut *colours.borrow_mut();
         let syntax = &mut self.workers.syntax;
@@ -205,12 +198,7 @@ impl Session {
 
     /// The text selection, if any.
     pub fn selection(&self) -> Option<crate::components::selection::Selection> {
-        *self.selection_cell.borrow()
-    }
-
-    /// Where things landed on screen, for mouse hit-testing.
-    pub fn screen_map(&self) -> std::cell::Ref<'_, crate::screen_map::ScreenMap> {
-        self.screen_map_cell.borrow()
+        *self.observed.selection.borrow()
     }
 
     /// Whether anything needs drawing.

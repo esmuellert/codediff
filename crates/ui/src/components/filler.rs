@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
 
-use super::context::ThemeContext;
+use super::context::Ui;
 use crate::cells;
 
 /// The symbol repeated where a side has no line.
@@ -16,7 +16,7 @@ const HATCH: &str = "╱";
 /// One cell tall, full width, `╱` repeated.
 #[component]
 pub fn Filler(scope: &mut Scope) -> Node {
-    let theme = use_context::<ThemeContext>(scope);
+    let theme = use_context::<Ui>(scope).theme;
     let style = theme.normal.patch(theme.filler);
 
     rsx! {

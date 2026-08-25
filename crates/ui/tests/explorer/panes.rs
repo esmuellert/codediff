@@ -56,6 +56,64 @@ fn the_layout_key_does_nothing_when_there_is_no_diff_on_screen() {
     assert_eq!(drawn(&mut session, area), before);
 }
 
+#[test]
+fn the_lists_own_keys_do_nothing_while_the_diff_has_the_focus() {
+    // `h` folds a row in the list and scrolls a diff sideways, so the list
+    // has to know when a key is not its own. The failure this prevents: a
+    // directory the reader is not even looking at shutting under them.
+    let theme = Theme::named("catppuccin-mocha").unwrap();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs")]),
+        theme,
+        vec![single_file(unchanged("src/lib.rs"), "fn main() {}\n")],
+    );
+    open_selected(&mut session);
+    // Up onto the `src` directory, which is the row `h` would fold.
+    session.press(crokey::key!(k));
+    session.press(crokey::key!(right));
+    session.press(crokey::key!(h));
+
+    let rows = screen(&mut session, 80, 8);
+    // The left forty columns, and not the status line under them: the name
+    // of the open file is on that row whatever the list is doing.
+    let list: Vec<String> = rows[..7]
+        .iter()
+        .map(|row| row.chars().take(40).collect())
+        .collect();
+    assert!(
+        list.iter().any(|row| row.contains("lib.rs")),
+        "the list answered the diff's key: {rows:?}"
+    );
+}
+
+#[test]
+fn a_screen_too_narrow_for_both_panes_leaves_the_reader_where_they_were() {
+    // The fallback is a second list over the same files, built where the
+    // first one could not be drawn. The failure this prevents: that list
+    // arriving with a place of its own and taking the reader off their row.
+    let theme = Theme::named("catppuccin-mocha").unwrap();
+    let mut session = scripted(
+        only(vec![modified("a.rs"), modified("b.rs")]),
+        theme,
+        vec![single_file(unchanged("a.rs"), "fn main() {}\n")],
+    );
+    open_selected(&mut session);
+    session.press(crokey::key!(j));
+    let before = session.cursor();
+
+    let mut cells = Cells::empty(Rect::new(0, 0, 80, 10));
+    session.draw_into(&mut cells, Rect::new(0, 0, 80, 10));
+    // Into the diff, where the narrow screen draws the diff alone, and back
+    // out to the list, which is then built for the first time.
+    session.press(crokey::key!(right));
+    let narrow = Rect::new(0, 0, 28, 10);
+    let mut cells = Cells::empty(narrow);
+    session.draw_into(&mut cells, narrow);
+    session.press(crokey::key!(right));
+
+    assert_eq!(session.cursor(), before, "the narrow screen moved the reader");
+}
+
 /// The whole screen as text, for comparing one frame against another.
 fn drawn(session: &mut TestSession, area: Rect) -> Vec<String> {
     let mut cells = Cells::empty(area);

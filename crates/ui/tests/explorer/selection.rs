@@ -12,9 +12,43 @@ fn sel(session: &Session) -> Selection {
     session.selection().expect("selection should exist")
 }
 
-/// The pane the diff is drawn in, which is the second one when a list is
-/// beside it.
-const DIFF_PANE: ui::screen_map::PaneId = ui::screen_map::PaneId(1);
+/// What was drawn on one screen row, one `char` per cell.
+///
+/// Cells rather than bytes, because the divider is three bytes wide and one
+/// column wide, and what these tests want is the column.
+fn drawn_row(cells: &Cells, area: Rect, row: u16) -> Vec<char> {
+    (0..area.width)
+        .map(|x| cells[(x, row)].symbol().chars().next().unwrap_or(' '))
+        .collect()
+}
+
+/// Every column `needle` starts at on `row`, left to right.
+///
+/// The files these tests open name their own lines — `line 3 content` — so a
+/// name appears once per column and the second match is the right-hand one.
+/// Read off the screen, because where a column was drawn is not something
+/// the interface offers.
+fn matches_on(cells: &Cells, area: Rect, row: u16, needle: &str) -> Vec<u16> {
+    let drawn = drawn_row(cells, area, row);
+    let want: Vec<char> = needle.chars().collect();
+    drawn
+        .windows(want.len())
+        .enumerate()
+        .filter(|(_, run)| *run == want.as_slice())
+        .map(|(at, _)| at as u16)
+        .collect()
+}
+
+/// The column the divider between the two diff columns was drawn in.
+///
+/// The last one on the row: the first separates the list from the diff.
+fn inner_divider(cells: &Cells, area: Rect, row: u16) -> u16 {
+    let drawn = drawn_row(cells, area, row);
+    drawn
+        .iter()
+        .rposition(|&c| c == '│')
+        .unwrap_or_else(|| panic!("no divider on row {row}")) as u16
+}
 
 /// The first view line the diff pane is showing, read off the screen.
 ///
@@ -440,13 +474,11 @@ fn highlight_exact_extent() {
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
 
-    // Use screen_map to get the exact text rect.
-    let text_x = session
-        .screen_map()
-        .text_area_of(DIFF_PANE, SelectionColumn::Modified)
-        .expect("modified text area should exist")
-        .rect
-        .x;
+    // Where the modified column's text begins, read off the screen.
+    let text_x = matches_on(&cells, area, 3, "line 3 content")
+        .get(1)
+        .copied()
+        .expect("the modified column shows line 3 too");
 
     // Select from col 3 to col 8 on row 3 (relative to text area).
     let click_x_start = text_x + 3;
@@ -503,13 +535,6 @@ fn highlight_exact_extent() {
 fn selection_does_not_highlight_other_pane() {
     let mut session = setup_diff_session();
 
-    // Get the original column text area x range.
-    let orig_rect = session
-        .screen_map()
-        .text_area_of(DIFF_PANE, SelectionColumn::Original)
-        .expect("original text area")
-        .rect;
-
     // Select in the modified column.
     mouse(&mut session, MouseEventKind::Down(MouseButton::Left), 90, 3);
     mouse(
@@ -524,13 +549,16 @@ fn selection_does_not_highlight_other_pane() {
     session.draw_into(&mut cells, area);
 
     let sel_bg = ratatui::style::Color::Indexed(17);
-    // No cell in the original column should be highlighted.
-    for y in orig_rect.y..orig_rect.bottom() {
-        for x in orig_rect.x..orig_rect.right() {
+    // Nothing left of the divider between the two columns — which is the
+    // original column, and the list beyond it — may be highlighted. The
+    // status line on the last row is neither.
+    for y in 0..area.height - 1 {
+        let divider = inner_divider(&cells, area, y);
+        for x in 0..divider {
             let cell = cells.cell((x, y)).unwrap();
             assert_ne!(
                 cell.bg, sel_bg,
-                "original column cell at ({x},{y}) must not be highlighted"
+                "cell at ({x},{y}), left of the divider at {divider}, must not be highlighted"
             );
         }
     }

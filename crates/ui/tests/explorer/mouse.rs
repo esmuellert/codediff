@@ -152,6 +152,52 @@ fn a_file_a_refresh_added_can_be_clicked() {
 }
 
 #[test]
+fn a_click_in_the_list_takes_the_keys_back_from_the_diff() {
+    // A press picks a row, and the row it picks is the one the keys then
+    // move from. The failure this prevents: clicking a file while reading
+    // one, and having `j` go on scrolling the diff.
+    let theme = Theme::named("basic-dark").unwrap();
+    let long: String = (0..100).map(|n| format!("line {n}\n")).collect();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs"), modified("src/zeta.rs")]),
+        theme,
+        vec![diff(unchanged("src/lib.rs"), &long)],
+    );
+    open_selected(&mut session);
+    // Into the diff, and down it, so that the two panes are nowhere near
+    // each other.
+    session.press(crokey::key!(right));
+    for _ in 0..8 {
+        session.press(crokey::key!(j));
+    }
+    assert!(session.cursor() > 2, "precondition: the diff has the keys");
+
+    let rows = screen(&mut session, 80, 12);
+    let row = rows
+        .iter()
+        .position(|row| row.contains("zeta.rs"))
+        .expect("the second file is on screen") as u16;
+    mouse(
+        &mut session,
+        MouseEventKind::Down(MouseButton::Left),
+        4,
+        row,
+    );
+
+    assert_eq!(
+        session.cursor(),
+        u32::from(row),
+        "the click did not move the cursor into the list"
+    );
+    session.press(crokey::key!(k));
+    assert_eq!(
+        session.cursor(),
+        u32::from(row) - 1,
+        "the key still went to the diff"
+    );
+}
+
+#[test]
 fn a_click_below_a_shortened_list_lands_nowhere() {
     let theme = Theme::named("basic-dark").unwrap();
     let mut session = scripted(

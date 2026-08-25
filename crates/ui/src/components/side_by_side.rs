@@ -10,10 +10,7 @@ use loom::{
     use_layout_effect, use_ref, use_state, use_sync_external_store,
 };
 
-use super::context::{
-    CursorContext, DiffStoreContext, FirstCellContext, PaneContext, ScreenMapCellContext,
-    SelectionContext, SyntaxOnContext, ThemeContext, ViewLinesContext,
-};
+use super::context::{DiffStoreCtx, ObservedCtx, Ui};
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
     row_styles,
@@ -25,19 +22,19 @@ const MIN_TEXT: u16 = 4;
 
 /// Two columns of one file, side by side, with a divider between them.
 ///
-/// The divider's position is this component's own state. Selection is read
-/// from context and changed through `on_select`.
+/// No props: the divider's position is this component's own state, and the
+/// selection is read from context and changed through the setter `App` left
+/// in `Observed`.
 #[component]
-pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -> Node {
-    let theme = use_context::<ThemeContext>(scope);
-    let view_lines = use_context::<ViewLinesContext>(scope);
-    let cursor = use_context::<CursorContext>(scope);
-    let first_cell = use_context::<FirstCellContext>(scope);
-    let syntax_on = use_context::<SyntaxOnContext>(scope);
-    let diffs = use_context::<DiffStoreContext>(scope);
-    let selection = use_context::<SelectionContext>(scope);
-    let pane = use_context::<PaneContext>(scope);
-    let map = use_context::<ScreenMapCellContext>(scope);
+pub fn SideBySide(scope: &mut Scope) -> Node {
+    let ctx = use_context::<Ui>(scope);
+    let theme = &ctx.theme;
+    let view_lines = &ctx.view_lines;
+    let cursor = ctx.cursor;
+    let first_cell = ctx.first_cell;
+    let selection = ctx.selection;
+    let diffs = use_context::<DiffStoreCtx>(scope);
+    let observed = use_context::<ObservedCtx>(scope);
     // The workers fill the store; this subscribes rather than being handed
     // what they produced.
     let reading = use_sync_external_store(scope, &diffs);
@@ -51,47 +48,13 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
     // The divider is taken off the top before dividing, so widening the pane
     // by one column widens a column rather than the divider. That needs this
     // component's own width, which layout knows and the render body does not.
+    // The effect is declared here, before the early returns, because a hook
+    // may not run behind a condition.
     let node = use_ref(scope, || None::<loom::NodeHandle>);
-    let left_column = use_ref(scope, || None::<loom::NodeHandle>);
-    let right_column = use_ref(scope, || None::<loom::NodeHandle>);
-    // How wide each gutter turned out, written by the body below. The effect
-    // is declared here, before the early returns, because a hook may not run
-    // behind a condition — and it needs a number only the body knows.
-    let gutters = use_ref(scope, || (0u16, 0u16));
     let (width, set_width) = use_state(scope, || 0u16);
-
-    // A text area is a column with its gutter taken off the left. Recorded
-    // once layout has decided, for whoever has to say what is under the mouse.
-    let filling = Rc::clone(&map);
     use_layout_effect(scope, loom::Always, move || {
         let now = node.current().map_or(0, |node| node.area().width);
         set_width(&move |_| now);
-
-        let Some(pane) = pane else { return };
-        let (original, modified) = *gutters.current();
-        let mut map = filling.borrow_mut();
-        for (slot, column, gutter) in [
-            (left_column, SelectionColumn::Original, original),
-            (right_column, SelectionColumn::Modified, modified),
-        ] {
-            let Some(node) = *slot.current() else { continue };
-            let area = node.area();
-            // A screen too small for two panes draws one of them instead, and
-            // the one it left out has no rectangle. Nothing is under a mouse
-            // there, so nothing is recorded.
-            if area.is_empty() {
-                continue;
-            }
-            map.text_areas.push(crate::screen_map::TextArea {
-                pane,
-                column,
-                rect: ratatui::layout::Rect {
-                    x: area.x.saturating_add(gutter),
-                    width: area.width.saturating_sub(gutter),
-                    ..area
-                },
-            });
-        }
     });
 
     let Some(content) = reading.content.as_ref() else {
@@ -102,15 +65,11 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
     };
     let alignment = &diff.alignment;
 
-    // How the syntax worker has coloured the file so far, or nothing at all
-    // when the reader has turned colour off. The borrow is held for the whole
-    // body, because the spans are borrowed from it rather than copied.
+    // How the syntax worker has coloured the file so far. The borrow is held
+    // for the whole body, because the spans are borrowed from it rather than
+    // copied.
     let colours = reading.colours.borrow();
-    let spans = if syntax_on {
-        crate::components::colour::spans_for(&diff.file, &colours)
-    } else {
-        syntax::Spans::Off
-    };
+    let spans = crate::components::colour::spans_for(&diff.file, &colours);
 
     // Collected once and read by both columns, so the two cannot disagree
     // about what line they are on.
@@ -121,12 +80,8 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
 
     let original_width = gutter_width(alignment.lines(DiffVersion::Original).len() as u32);
     let modified_width = gutter_width(alignment.lines(DiffVersion::Modified).len() as u32);
-    *gutters.current() = (original_width, modified_width);
 
-    let column = |diff_version: DiffVersion,
-                  layout: Layout,
-                  slot: loom::Ref<Option<loom::NodeHandle>>|
-     -> Node {
+    let column = |diff_version: DiffVersion, layout: Layout| -> Node {
         let gutter = gutter_width(alignment.lines(diff_version).len() as u32);
         let which = match diff_version {
             DiffVersion::Original => SelectionColumn::Original,
@@ -146,16 +101,16 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
         // column keeps arriving until the button comes up. The press itself
         // is passed on, so that clicking a diff also moves the focus into it.
         let held = selection;
-        let start = Rc::clone(on_select);
-        let drag = Rc::clone(on_select);
-        let end = Rc::clone(on_select);
+        let start = Rc::clone(&observed);
+        let drag = Rc::clone(&observed);
+        let end = Rc::clone(&observed);
         let listeners = Listeners::new()
             .on_mouse_down(move |mouse| {
                 *pending.current() = at(mouse).map(|pos| (which, pos));
                 if pending.current().is_some() {
                     capture_pointer();
                 }
-                start(None);
+                start.select(None);
                 Bubble::Continue
             })
             .on_mouse_move(move |mouse| {
@@ -167,7 +122,7 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
                 {
                     let mut made = Selection::start(column, anchor);
                     made.update(pos);
-                    drag(Some(made));
+                    drag.select(Some(made));
                 }
                 Bubble::Stop
             })
@@ -176,7 +131,7 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
                 *pending.current() = None;
                 // A drag that came back to where it started selects nothing.
                 if held.is_some_and(|held| held.is_empty()) {
-                    end(None);
+                    end.select(None);
                 }
                 Bubble::Stop
             });
@@ -202,7 +157,7 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
                 };
 
                 let (unchanged, changed, numbers) = row_styles(
-                    &theme,
+                    theme,
                     line.kind,
                     diff_version,
                     alignment.moved(diff_version, number).is_some(),
@@ -243,7 +198,6 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
 
         rsx! {
             Column {
-                ref: Some(slot),
                 // Filled below the end of the document, so the two sides' ends
                 // stay visually comparable.
                 layout: Layout { fill: Some(theme.normal), ..layout },
@@ -263,14 +217,12 @@ pub fn SideBySide(scope: &mut Scope, on_select: Rc<dyn Fn(Option<Selection>)>) -
             min_width: original_width + MIN_TEXT,
             ..Default::default()
         },
-        left_column,
     );
     // The right column takes what the left one left, so the two together are
     // the pane however the arithmetic rounded.
     let right = column(
         DiffVersion::Modified,
         Layout { grow: 1, min_width: modified_width + MIN_TEXT, ..Default::default() },
-        right_column,
     );
 
     rsx! {

@@ -17,7 +17,7 @@ mod single_file;
 mod status_line;
 mod viewport;
 
-pub use app::{App, AppProps, FlowContext, FlowContextProps};
+pub use app::{App, AppProps};
 pub use code_text::{CodeText, CodeTextProps};
 pub use context::*;
 pub use entry::{Body, Entry, EntryProps, Indent, Run, Status, priority};

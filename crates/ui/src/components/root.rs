@@ -4,20 +4,20 @@ use std::rc::Rc;
 
 use loom::{Node, Scope, component, rsx};
 
-use super::app::{App, AppProps, FlowContext, FlowContextProps};
+use super::app::{App, AppProps};
 use super::context::{
-    CursorCellContext, CursorCellContextProps, DiffStore, DiffStoreContext,
-    DiffStoreContextProps, FileListStore, FileListStoreContext, FileListStoreContextProps,
-    LayoutCellContext, LayoutCellContextProps, OpenContext, OpenContextProps, RepoContext,
-    RepoContextProps, ScreenMapCellContext, ScreenMapCellContextProps, SelectionCellContext,
-    SelectionCellContextProps, ThemeContext, ThemeContextProps, ViewLinesCellContext,
-    ViewLinesCellContextProps,
+    Context, DiffStore, DiffStoreCtx, DiffStoreCtxProps, FileListStore, FileListStoreCtx,
+    FileListStoreCtxProps, Observed, ObservedCtx, ObservedCtxProps, Ui, UiProps,
 };
-use crate::app::Flow;
 use crate::theme::Theme;
 
 /// The mount point. Session provides the theme, the repository path, the two
-/// stores, the flow and open callbacks, and the observation cells for tests.
+/// stores, and the struct the frame writes to — which is also where the
+/// callbacks only the session can answer are left.
+///
+/// The theme and the repository last as long as the session, so they go into
+/// the context here with nothing else filled in. `App` reads them back and
+/// provides the whole of it, which is what everything below sees.
 #[component]
 pub fn Root(
     scope: &mut Scope,
@@ -25,47 +25,24 @@ pub fn Root(
     repo: Option<Rc<std::path::Path>>,
     diff_store: DiffStore,
     file_list_store: FileListStore,
-    on_flow: Rc<dyn Fn(Flow)>,
-    on_open: Rc<dyn Fn(file_types::File)>,
-    cursor_cell: Rc<std::cell::Cell<u32>>,
-    view_lines_cell: Rc<std::cell::Cell<u32>>,
-    layout_cell: Rc<std::cell::Cell<file_types::DiffType>>,
-    selection_cell: Rc<std::cell::RefCell<Option<crate::components::selection::Selection>>>,
-    screen_map_cell: Rc<std::cell::RefCell<crate::screen_map::ScreenMap>>,
+    observed: Rc<Observed>,
 ) -> Node {
     let _ = scope;
 
     rsx! {
-        SelectionCellContext {
-            value: Rc::clone(selection_cell),
-            ScreenMapCellContext {
-                value: Rc::clone(screen_map_cell),
-                CursorCellContext {
-                    value: Rc::clone(cursor_cell),
-                    ViewLinesCellContext {
-                        value: Rc::clone(view_lines_cell),
-                        LayoutCellContext {
-                            value: Rc::clone(layout_cell),
-                            ThemeContext {
-                                value: Rc::clone(theme),
-                                RepoContext {
-                                    value: repo.clone(),
-                                    DiffStoreContext {
-                                        value: diff_store.clone(),
-                                        FileListStoreContext {
-                                            value: file_list_store.clone(),
-                                            OpenContext {
-                                                value: Rc::clone(on_open),
-                                                FlowContext {
-                                                    value: Rc::clone(on_flow),
-                                                    App {}
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+        ObservedCtx {
+            value: Rc::clone(observed),
+            DiffStoreCtx {
+                value: diff_store.clone(),
+                FileListStoreCtx {
+                    value: file_list_store.clone(),
+                    Ui {
+                        value: Context {
+                            theme: Rc::clone(theme),
+                            repo: repo.clone(),
+                            ..Context::default()
+                        },
+                        App {}
                     }
                 }
             }

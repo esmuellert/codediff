@@ -166,29 +166,6 @@ fn the_inner_change_highlight_still_wins_over_syntax() {
 }
 
 #[test]
-fn pressing_s_takes_the_colour_away_and_gives_it_back() {
-    let mut session = rust_session(BEFORE, AFTER);
-    let coloured = settled(&mut session, 80, 10);
-
-    harness::type_keys(&mut session, "s");
-    let plain = settled(&mut session, 80, 10);
-    assert_ne!(
-        foregrounds(&coloured, 0),
-        foregrounds(&plain, 0),
-        "`s` switched the colour off"
-    );
-    assert!(!foregrounds(&plain, 0).contains(&Theme::DARK.code.keyword));
-
-    harness::type_keys(&mut session, "s");
-    let again = settled(&mut session, 80, 10);
-    assert_eq!(
-        foregrounds(&coloured, 0),
-        foregrounds(&again, 0),
-        "and back"
-    );
-}
-
-#[test]
 fn a_file_read_inline_is_coloured_the_same_way() {
     // Inline and side by side share `render::line`, so this is really asking
     // whether the spans reached the shared path rather than one of the two.

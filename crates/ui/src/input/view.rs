@@ -15,16 +15,11 @@ use crate::input::keymap::Binding;
 pub enum ViewAction {
     /// Read the focused diff the other way round: side by side, or inline.
     ToggleLayout,
-    /// Colour the code, or stop.
-    ToggleSyntax,
     /// Open what the list has selected.
     Open,
 }
 
-pub const BINDINGS: &[Binding] = &[
-    view(&[key!(t)], ViewAction::ToggleLayout),
-    view(&[key!(s)], ViewAction::ToggleSyntax),
-];
+pub const BINDINGS: &[Binding] = &[view(&[key!(t)], ViewAction::ToggleLayout)];
 
 const fn view(keys: &'static [KeyCombination], action: ViewAction) -> Binding {
     Binding {

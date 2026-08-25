@@ -5,7 +5,7 @@ use std::rc::Rc;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
 use ratatui::style::Style;
 
-use super::context::ThemeContext;
+use super::context::Ui;
 use crate::cells;
 use crate::theme::icon::Icon;
 
@@ -104,7 +104,7 @@ pub fn Entry(
     status: Option<Status>,
     selected: bool,
 ) -> Node {
-    let theme = use_context::<ThemeContext>(scope);
+    let theme = use_context::<Ui>(scope).theme;
     let base = if *selected {
         theme.normal.patch(theme.cursor_line)
     } else {

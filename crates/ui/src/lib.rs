@@ -8,10 +8,8 @@ pub use ratatui;
 
 mod app;
 mod cells;
-pub mod screen_map;
 pub mod components;
 
-pub use screen_map::ScreenMap;
 pub mod input;
 mod start;
 mod terminal;
