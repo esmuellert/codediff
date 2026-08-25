@@ -313,11 +313,8 @@ fn enter_on_a_file_row_asks_for_it() {
 
 /// The file in the pane beside the list.
 fn shown_file(session: &Session) -> File {
-    use loom::ExternalStore;
     session
-        .diff_store
-        .snapshot()
-        .content
+        .diff
         .as_ref()
         .expect("content loaded")
         .file()

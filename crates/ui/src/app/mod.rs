@@ -1,8 +1,4 @@
 //! The event loop: take worker results, wait for a key, dispatch, draw.
-//!
-//! Session owns the terminal, the workers, the two stores, and the syntax
-//! cache. Everything else — the cursor, the scroll, which file is open,
-//! the selection — lives inside the component tree.
 
 pub mod event;
 pub(crate) mod threads;
@@ -16,7 +12,7 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
 use channel::Worker;
-use crate::components::{DiffStore, FileListStore, Observed, Root, RootProps};
+use crate::components::{Observed, Root, RootProps};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 
@@ -40,23 +36,27 @@ pub enum Exit {
 /// One review session.
 pub struct Session {
     tree: loom::Tree,
-    pub diff_store: DiffStore,
-    pub file_list_store: FileListStore,
     pub workers: Workers,
+    /// The diff on screen, replaced when a new file is opened.
+    pub diff: Option<Rc<pipeline::file::DiffContent>>,
+    /// Bumped with every new diff so stale colour responses are refused.
+    pub diff_version: syntax::Version,
+    /// Syntax colours, shared with the component tree.
+    pub colours: Rc<RefCell<syntax::Store>>,
+    /// The files this review changes.
+    pub files: Rc<Vec<file_types::File>>,
     flow: Rc<Cell<Option<Flow>>>,
-    /// The file the interface last chose. A component cannot reach a worker,
-    /// so it names the file here and the session sends it.
     to_compare: Rc<RefCell<Option<file_types::File>>>,
     last_area: Rect,
-    /// What the last frame decided. A key only marks state dirty, so a caller
-    /// that asks a question draws first and reads the answer here.
     observed: Rc<Observed>,
+    theme: Rc<Theme>,
+    repo: Option<Rc<std::path::Path>>,
 }
 
 impl Session {
     pub fn new(theme: Theme, workers: Workers) -> Self {
-        let diff_store = DiffStore::new();
-        let file_list_store = FileListStore::new();
+        let colours = Rc::new(RefCell::new(syntax::Store::new()));
+        let files = Rc::new(Vec::new());
         let flow = Rc::new(Cell::new(None));
 
         let flow_cb = {
@@ -71,33 +71,47 @@ impl Session {
                 as Rc<dyn Fn(file_types::File)>
         };
 
-        // What the frame writes down, and the two things it cannot do for
-        // itself: stop the loop, and reach a worker.
         let observed = Rc::new(Observed {
             on_flow: Some(flow_cb),
             on_open: Some(open_cb),
             ..Observed::default()
         });
 
+        let theme = Rc::new(theme);
+
         let tree = loom::Tree::new::<Root>(RootProps {
-            theme: Rc::new(theme),
-            // The session is not told where the repository is yet; the caller
-            // that knows will hand it over.
+            theme: Rc::clone(&theme),
             repo: None,
-            diff_store: diff_store.clone(),
-            file_list_store: file_list_store.clone(),
+            diff: None,
+            diff_version: syntax::Version(0),
+            colours: Rc::clone(&colours),
+            files: Rc::clone(&files),
             observed: Rc::clone(&observed),
         });
 
         Self {
-            tree, diff_store, file_list_store, workers, flow, to_compare, observed,
+            tree, workers, diff: None, diff_version: syntax::Version(0),
+            colours, files, flow, to_compare, observed, theme, repo: None,
             last_area: Rect::ZERO,
         }
     }
 
-    /// Draws one frame into a cell grid (for tests, without a terminal).
+    /// Pushes the current data down to the root before drawing.
+    fn update_props(&mut self) {
+        self.tree.set_props::<Root>(RootProps {
+            theme: Rc::clone(&self.theme),
+            repo: self.repo.clone(),
+            diff: self.diff.clone(),
+            diff_version: self.diff_version,
+            colours: Rc::clone(&self.colours),
+            files: Rc::clone(&self.files),
+            observed: Rc::clone(&self.observed),
+        });
+    }
+
     pub fn draw_into(&mut self, cells: &mut ratatui::buffer::Buffer, area: Rect) {
         self.last_area = area;
+        self.update_props();
         self.tree.draw(cells, area);
         self.request_colours();
     }
@@ -106,6 +120,7 @@ impl Session {
         &mut self,
         terminal: &mut ratatui::Terminal<B>,
     ) -> Result<(), B::Error> {
+        self.update_props();
         let tree = &mut self.tree;
         let drawn = std::cell::Cell::new(Rect::ZERO);
         terminal.draw(|frame| {
@@ -118,58 +133,39 @@ impl Session {
         Ok(())
     }
 
-    /// The cursor position, after applying any pending state.
     pub fn cursor(&mut self) -> u32 {
         self.settle();
         self.observed.cursor.get()
     }
 
-    /// The document height in view lines, as last rendered.
     pub fn view_lines(&self) -> u32 {
         self.observed.view_lines.get()
     }
 
-    /// Which way the open diff is laid out, as last rendered.
     pub fn layout(&self) -> file_types::DiffType {
         self.observed.layout.get()
     }
 
-    /// Draws into a scratch grid, so that whatever a key changed takes effect,
-    /// then asks for the colour the new frame turned out to need.
-    ///
-    /// A key only marks state dirty; the frame after it is what reads it. A
-    /// caller that presses a key and then asks a question needs that frame
-    /// without wanting the pixels, and so does the read-ahead, which is a
-    /// function of where the cursor ended up.
     pub(crate) fn settle(&mut self) {
         if self.last_area.width == 0 {
             return;
         }
         let area = self.last_area;
         let mut cells = ratatui::buffer::Buffer::empty(area);
+        self.update_props();
         self.tree.draw(&mut cells, area);
         self.request_colours();
     }
 
-    /// Asks the syntax worker for what is on screen and not coloured yet,
-    /// plus a margin below it.
-    ///
-    /// After drawing rather than before, because what is worth colouring is
-    /// where the reader has just arrived. The store refuses to ask twice for
-    /// the same lines, so the ordinary frame sends nothing.
     pub(crate) fn request_colours(&mut self) {
-        // How far past the cursor to read ahead. Enough that scrolling does
-        // not outrun it, little enough that opening a very large file does
-        // not read all of it.
         const MARGIN: u32 = 2_000;
 
-        let Some(content) = self.diff_store.content() else {
+        let Some(content) = self.diff.as_ref() else {
             return;
         };
-        let version = self.diff_store.version();
+        let version = self.diff_version;
         let last = self.observed.cursor.get().saturating_add(MARGIN);
-        let colours = self.diff_store.colours();
-        let store = &mut *colours.borrow_mut();
+        let store = &mut *self.colours.borrow_mut();
         let syntax = &mut self.workers.syntax;
         match content.as_ref() {
             pipeline::file::DiffContent::Diff(diff) => {
@@ -183,12 +179,10 @@ impl Session {
         }
     }
 
-    /// Asks the file worker for a comparison of `file`.
     pub fn open_file(&mut self, file: file_types::File) {
         self.workers.files.send(file);
     }
 
-    /// Sends whatever the interface chose while it was answering an event.
     fn send_open_request(&mut self) {
         let file = self.to_compare.borrow_mut().take();
         if let Some(file) = file {
@@ -196,30 +190,20 @@ impl Session {
         }
     }
 
-    /// The text selection, if any.
     pub fn selection(&self) -> Option<crate::components::selection::Selection> {
         *self.observed.selection.borrow()
     }
 
-    /// Whether anything needs drawing.
     pub fn needs_draw(&self) -> bool {
         self.tree.needs_draw()
     }
 
-    /// Applies one terminal event — key or mouse.
-    ///
-    /// The tree must have drawn at its real size before a key can have its
-    /// intended effect, because the viewport's height (set by a layout
-    /// effect) determines what Bottom and PageDown mean. The test harness
-    /// calls handle_event before draw, so this draws first if it has to.
     pub fn handle_event(&mut self, event: &crossterm::event::Event) -> Flow {
         use crossterm::event::Event;
-        // The viewport height comes from a layout effect, so the tree needs
-        // to have drawn at the real terminal size before a key that depends
-        // on it (PageDown, G, resize) can have its intended effect.
         if self.last_area.width > 0 && self.last_area.height > 0 {
             let area = self.last_area;
             let mut cells = ratatui::buffer::Buffer::empty(area);
+            self.update_props();
             self.tree.draw(&mut cells, area);
         }
         match event {
@@ -234,18 +218,16 @@ impl Session {
             }
             _ => {}
         }
-        // Where the key left the cursor decides what is worth colouring, and
-        // only a frame knows that.
         self.settle();
         self.send_open_request();
         self.flow.take().unwrap_or(Flow::Continue)
     }
 
-    /// A key, for tests.
     pub fn press(&mut self, key: crokey::KeyCombination) -> Flow {
         if self.last_area.width > 0 && self.last_area.height > 0 {
             let area = self.last_area;
             let mut cells = ratatui::buffer::Buffer::empty(area);
+            self.update_props();
             self.tree.draw(&mut cells, area);
         }
         self.tree.press(key);

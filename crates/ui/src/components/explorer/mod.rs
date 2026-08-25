@@ -8,12 +8,12 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{
     Column, ColumnProps, Layout, Node as LoomNode, Scope, component, rsx, use_context,
-    use_layout_effect, use_sync_external_store,
+    use_layout_effect,
 };
 
 use self::entry::{Entry, EntryProps};
 use self::build::tree;
-use super::context::{FileListStoreCtx, ObservedCtx, Ui};
+use super::context::{ObservedCtx, Ui};
 
 #[component]
 pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
@@ -21,15 +21,14 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let theme = &ctx.theme;
     let view_lines = &ctx.view_lines;
     let cursor = ctx.cursor;
-    let store = use_context::<FileListStoreCtx>(scope);
     let observed = use_context::<ObservedCtx>(scope);
-    let files = use_sync_external_store(scope, &store);
+    let files = &ctx.files;
     let _ = on_open;
 
     let base = theme.normal;
 
-    let files: Vec<File> = files.to_vec();
-    let nodes = tree(&files);
+    let files: &[File] = files;
+    let nodes = tree(files);
 
     let rows = nodes.len() as u32;
     let observed = Rc::clone(&observed);

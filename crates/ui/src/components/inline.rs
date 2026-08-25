@@ -7,10 +7,9 @@ use file_types::DiffType;
 use loom::{
     Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Layout, Listeners, Mouse, Node, Row,
     RowProps, Scope, capture_pointer, component, release_pointer, rsx, use_context, use_ref,
-    use_sync_external_store,
 };
 
-use super::context::{DiffStoreCtx, ObservedCtx, Ui};
+use super::context::{ObservedCtx, Ui};
 use super::{CodeText, CodeTextProps, Gutter, GutterProps, clip_to_line, gutter_width, row_styles};
 use crate::cells;
 use crate::components::selection::{Pos, Selection, SelectionColumn};
@@ -33,17 +32,13 @@ pub fn Inline(scope: &mut Scope) -> Node {
     let cursor = ctx.cursor;
     let first_cell = ctx.first_cell;
     let selection = ctx.selection;
-    let diffs = use_context::<DiffStoreCtx>(scope);
     let observed = use_context::<ObservedCtx>(scope);
-    // The workers fill the store; this subscribes rather than being handed
-    // what they produced.
-    let reading = use_sync_external_store(scope, &diffs);
 
     // Where a press landed, kept until a drag makes a selection of it. A
     // click that never drags selects nothing, so this is not a selection.
     let pending = use_ref(scope, || None::<Pos>);
 
-    let Some(content) = reading.content.as_ref() else {
+    let Some(content) = ctx.diff.as_ref() else {
         return Node::Empty;
     };
     let pipeline::file::DiffContent::Diff(diff) = content.as_ref() else {
@@ -54,7 +49,7 @@ pub fn Inline(scope: &mut Scope) -> Node {
     // How the syntax worker has coloured the file so far. The borrow is held
     // for the whole body, because the spans are borrowed from it rather than
     // copied.
-    let colours = reading.colours.borrow();
+    let colours = ctx.colours.borrow();
     let spans = crate::components::colour::spans_for(&diff.file, &colours);
 
     let original_width = gutter_width(alignment.lines(DiffVersion::Original).len() as u32);

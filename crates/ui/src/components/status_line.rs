@@ -6,11 +6,11 @@ use std::rc::Rc;
 
 use loom::{
     Basis, Canvas, CanvasProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
-    use_memo, use_sync_external_store,
+    use_memo,
 };
 use ratatui::style::Style;
 
-use super::context::{DiffStoreCtx, ObservedCtx, Ui};
+use super::context::{ObservedCtx, Ui};
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
@@ -53,18 +53,14 @@ pub fn StatusLine(scope: &mut Scope) -> Node {
     let diff_view_type = ctx.diff_view_type;
     let observed = use_context::<ObservedCtx>(scope);
     let exhausted = observed.exhausted.get();
-    let store = use_context::<DiffStoreCtx>(scope);
-    // The diff worker fills the store; the row subscribes rather than being
-    // handed what it produced.
-    let reading = use_sync_external_store(scope, &store);
 
     let base = theme.status;
     let total = view_lines.end;
 
-    let alignment = reading.content.as_ref().and_then(|c| c.alignment());
+    let alignment = ctx.diff.as_ref().and_then(|c| c.alignment());
     // A walk of every view line, so it is done once per diff rather than once
     // per frame.
-    let blocks = use_memo(scope, (reading.clone(), diff_view_type), || {
+    let blocks = use_memo(scope, (ctx.diff_version, diff_view_type), || {
         alignment.map(|alignment| alignment.blocks(diff_view_type)).unwrap_or_default()
     });
 

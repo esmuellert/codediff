@@ -48,13 +48,14 @@ impl TestSession {
     /// A session over one comparison, as the pipeline would have delivered it.
     pub fn new_diff(content: DiffContent, theme: Theme) -> Self {
         Self::start(theme, None, |session| {
-            session.diff_store.set_content(Some(Rc::new(content)));
+            session.diff = Some(Rc::new(content));
+            session.diff_version = syntax::Version(1);
         })
     }
 
     /// A session over the list of changed files, with nothing open beside it.
     pub fn new_explorer(files: Vec<File>, theme: Theme) -> Self {
-        Self::start(theme, None, |session| session.file_list_store.fill(files))
+        Self::start(theme, None, |session| session.files = Rc::new(files))
     }
 
     /// The same, with the comparisons the test wants opened waiting in
@@ -65,7 +66,7 @@ impl TestSession {
         script: Vec<Result<DiffContent, String>>,
     ) -> Self {
         Self::start(theme, Some(script), |session| {
-            session.file_list_store.fill(files)
+            session.files = Rc::new(files)
         })
     }
 

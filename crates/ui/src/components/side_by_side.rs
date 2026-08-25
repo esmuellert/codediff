@@ -7,10 +7,10 @@ use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Mouse, Node, Row,
     RowProps, Scope, capture_pointer, component, release_pointer, rsx, use_context,
-    use_layout_effect, use_ref, use_state, use_sync_external_store,
+    use_layout_effect, use_ref, use_state,
 };
 
-use super::context::{DiffStoreCtx, ObservedCtx, Ui};
+use super::context::{ObservedCtx, Ui};
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
     row_styles,
@@ -33,11 +33,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let cursor = ctx.cursor;
     let first_cell = ctx.first_cell;
     let selection = ctx.selection;
-    let diffs = use_context::<DiffStoreCtx>(scope);
     let observed = use_context::<ObservedCtx>(scope);
-    // The workers fill the store; this subscribes rather than being handed
-    // what they produced.
-    let reading = use_sync_external_store(scope, &diffs);
 
     // Where a press landed, kept until a drag makes a selection of it. A
     // click that never drags selects nothing, so this is not a selection.
@@ -57,7 +53,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         set_width(&move |_| now);
     });
 
-    let Some(content) = reading.content.as_ref() else {
+    let Some(content) = ctx.diff.as_ref() else {
         return Node::Empty;
     };
     let pipeline::file::DiffContent::Diff(diff) = content.as_ref() else {
@@ -68,7 +64,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     // How the syntax worker has coloured the file so far. The borrow is held
     // for the whole body, because the spans are borrowed from it rather than
     // copied.
-    let colours = reading.colours.borrow();
+    let colours = ctx.colours.borrow();
     let spans = crate::components::colour::spans_for(&diff.file, &colours);
 
     // Collected once and read by both columns, so the two cannot disagree

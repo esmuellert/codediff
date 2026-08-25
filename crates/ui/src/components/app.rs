@@ -12,10 +12,10 @@ use file_types::{DiffType, File};
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node, Row,
     RowProps, Scope, Text, TextProps, component, rsx, use_context, use_layout_effect, use_memo,
-    use_ref, use_state, use_sync_external_store,
+    use_ref, use_state,
 };
 
-use super::context::{Context, DiffStoreCtx, FileListStoreCtx, ObservedCtx, Ui, UiProps};
+use super::context::{Context, ObservedCtx, Ui, UiProps};
 use super::selection::Selection;
 use super::{Direction, Viewport};
 use super::explorer::{Explorer, ExplorerProps};
@@ -51,12 +51,6 @@ pub fn App(scope: &mut Scope) -> Node {
     // the context is filled in below and provided again.
     let session = use_context::<Ui>(scope);
     let observed = use_context::<ObservedCtx>(scope);
-    let store = use_context::<DiffStoreCtx>(scope);
-    let listing = use_context::<FileListStoreCtx>(scope);
-    // The workers fill the stores; this subscribes rather than being handed
-    // what they produced.
-    let reading = use_sync_external_store(scope, &store);
-    let files = use_sync_external_store(scope, &listing);
 
     // One position per pane. The list and the diff are different documents, so
     // where the reader is in one says nothing about the other.
@@ -85,11 +79,11 @@ pub fn App(scope: &mut Scope) -> Node {
 
     let list_cursor = list.cursor();
 
-    let alignment = reading.content.as_ref().and_then(|c| c.alignment());
+    let alignment = session.diff.as_ref().and_then(|c| c.alignment());
     // What is on screen decides the layout, not the state slot: a one-sided
     // file has only the one, so the toggle has nothing to say about it. Its
     // length is its lines, since there is no pairing to lay out.
-    let (effective_layout, view_lines_count) = match reading.content.as_deref() {
+    let (effective_layout, view_lines_count) = match session.diff.as_deref() {
         Some(pipeline::file::DiffContent::Diff(diff)) => {
             (diff_view_type, diff.alignment.view_line_count(diff_view_type))
         }
@@ -100,12 +94,12 @@ pub fn App(scope: &mut Scope) -> Node {
     };
     // A walk of every view line, so it is done once per diff rather than once
     // per frame. Change navigation reads it; the status line counts its own.
-    let blocks = use_memo(scope, (reading.clone(), diff_view_type), || {
+    let blocks = use_memo(scope, (session.diff_version, diff_view_type), || {
         alignment.map(|alignment| alignment.blocks(diff_view_type)).unwrap_or_default()
     });
 
-    let has_list = !files.is_empty();
-    let has_diff = reading.content.is_some();
+    let has_list = !session.files.is_empty();
+    let has_diff = session.diff.is_some();
     // Which pane the keys and the status line mean. The list is where a
     // reader starts; with nothing beside it, or with no list at all, there is
     // no choice to make.
@@ -154,8 +148,8 @@ pub fn App(scope: &mut Scope) -> Node {
     // one re-read keeps the reader's place, clamped in case it grew shorter.
     // Told apart by the store's version rather than by the file, since
     // re-reading a file gives back the same name and the same revisions.
-    let arrived = reading.content.as_ref().map(|content| content.file().clone());
-    use_layout_effect(scope, reading.version, move || {
+    let arrived = session.diff.as_ref().map(|content| content.file().clone());
+    use_layout_effect(scope, session.diff_version, move || {
         let same = *shown.current() == arrived;
         *shown.current() = arrived;
         set_selection(&|_| None);
@@ -324,7 +318,7 @@ pub fn App(scope: &mut Scope) -> Node {
     // not a file: it has no name to show, no changes to count, and no engine
     // that could have given up on it.
     let shown_file = focus_diff
-        .then(|| reading.content.as_ref().map(|content| Rc::new(content.file().clone())))
+        .then(|| session.diff.as_ref().map(|content| Rc::new(content.file().clone())))
         .flatten();
 
     // What everything below reads. The rows and the cursor here are the
@@ -340,6 +334,10 @@ pub fn App(scope: &mut Scope) -> Node {
         selection,
         notice,
         diff_view_type: effective_layout,
+        diff: session.diff.clone(),
+        diff_version: session.diff_version,
+        colours: Rc::clone(&session.colours),
+        files: Rc::clone(&session.files),
     };
 
     // One pane's context: each is looking at its own document, so each gets
