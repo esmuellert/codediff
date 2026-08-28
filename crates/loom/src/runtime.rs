@@ -44,6 +44,8 @@ pub(crate) struct Runtime {
     /// Bumped whenever any context value changes, so a memoised reader that
     /// read one knows to run again.
     pub context_version: u64,
+    /// Set by `use_exit`'s closure. The loop reads it and stops.
+    pub exit: bool,
 }
 
 /// One context value a scope offers to everything below it.
@@ -72,6 +74,7 @@ impl Runtime {
             renders_by_name: HashMap::new(),
             rounds: 0,
             context_version: 0,
+            exit: false,
         }
     }
 

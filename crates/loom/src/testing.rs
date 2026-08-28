@@ -96,6 +96,11 @@ impl Harness {
         self
     }
 
+    /// Whether a component has asked the loop to stop.
+    pub fn exiting(&self) -> bool {
+        self.tree.exiting()
+    }
+
     pub fn click(&mut self, x: u16, y: u16) -> &mut Self {
         self.mouse(x, y, crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left))
     }

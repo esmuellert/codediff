@@ -7,7 +7,7 @@ use std::rc::Rc;
 use loom::testing::Harness;
 use loom::{
     Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps,
-    Scope, Text, TextProps, component, rsx, use_effect, use_memo, use_ref, use_state,
+    Scope, Text, TextProps, component, rsx, use_effect, use_exit, use_memo, use_ref, use_state,
 };
 
 #[component]
@@ -400,4 +400,27 @@ fn too_small_climbs_until_someone_answers_for_it() {
 
     let mut narrow = Harness::new::<Cramped>(CrampedProps {}, 20, 1);
     assert_eq!(narrow.screen_row(0), "too small");
+}
+
+/// A component asks the loop to stop, and the flag the loop reads is set.
+#[component]
+fn Quits(scope: &mut Scope) -> Node {
+    let exit = use_exit(scope);
+    let keys = Listeners::new().on_key(move |_| {
+        exit();
+        Bubble::Stop
+    });
+    rsx! {
+        Column { listeners: keys, .., Text { text: "press q".into(), .. } }
+    }
+}
+
+#[test]
+fn a_component_can_stop_the_loop() {
+    let mut screen = Harness::new::<Quits>(QuitsProps {}, 20, 1);
+    screen.draw();
+    assert!(!screen.exiting(), "nothing has asked to stop yet");
+
+    screen.press(crokey::key!(q));
+    assert!(screen.exiting(), "the key handler called exit");
 }

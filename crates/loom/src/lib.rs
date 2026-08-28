@@ -9,8 +9,10 @@ mod layout;
 mod node;
 mod paint;
 mod reconcile;
+mod run;
 mod runtime;
 mod scope;
+mod screen;
 mod tree;
 pub mod testing;
 
@@ -20,7 +22,7 @@ pub use event::{
 };
 pub use hook::{
     Always, Cleanup, Context, ExternalStore, Notify, Observable, Observer, Promise, Ref, Resolver,
-    SetState, Snapshot, Subscription, observable, promise, use_context, use_effect,
+    SetState, Snapshot, Subscription, observable, promise, use_context, use_effect, use_exit,
     use_layout_effect, use_memo, use_ref, use_state, use_sync_external_store,
 };
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
@@ -33,7 +35,9 @@ pub use paint::{
     Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps, Paint, Row,
     RowProps, Stack, StackProps, Text, TextProps,
 };
+pub use run::run;
 pub use scope::{Scope, ScopeId};
+pub use screen::{Screen, restore};
 pub use tree::Tree;
 
 pub use loom_macros::{component, context, rsx};

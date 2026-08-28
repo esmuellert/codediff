@@ -94,6 +94,11 @@ impl Tree {
         crate::current::enter(&runtime, || runtime.borrow_mut().mark_all());
     }
 
+    /// Whether a component asked to stop. Set by `use_exit`.
+    pub fn exiting(&self) -> bool {
+        self.runtime.borrow().exit
+    }
+
     pub fn focused_scope(&self) -> Option<ScopeId> {
         self.runtime.borrow().focused.map(|node| node.scope)
     }
