@@ -10,7 +10,7 @@ use loom::{
 };
 use ratatui::style::Style;
 
-use super::context::{ObservedCtx, Ui};
+use super::context::Ui;
 use crate::cells;
 
 /// The left section: what is being shown. Truncates when narrow.
@@ -40,19 +40,21 @@ pub struct Sidecar {
 /// The bottom row.
 ///
 /// No props: the layout comes down as context, the counts out of the store,
-/// and the direction a jump ran out in is left in `Observed` by the component
+/// and the direction a jump ran out in is left in `context` by the component
 /// that pressed the key.
 #[component]
 pub fn StatusLine(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let file = ctx.file.clone();
-    let view_lines = &ctx.view_lines;
-    let cursor = ctx.cursor;
+    let (cursor, view_lines) = if ctx.focus_diff {
+        (ctx.diff_cursor, &ctx.diff_view_lines)
+    } else {
+        (ctx.list_cursor, &ctx.list_view_lines)
+    };
     let notice = ctx.notice.clone();
     let diff_view_type = ctx.diff_view_type;
-    let observed = use_context::<ObservedCtx>(scope);
-    let exhausted = observed.exhausted.get();
+    let exhausted = ctx.exhausted;
 
     let base = theme.status;
     let total = view_lines.end;

@@ -10,7 +10,7 @@ use loom::{
     use_layout_effect, use_ref, use_state,
 };
 
-use super::context::{ObservedCtx, Ui};
+use super::context::Ui;
 use super::{
     CodeText, CodeTextProps, Filler, FillerProps, Gutter, GutterProps, clip_to_line, gutter_width,
     row_styles,
@@ -24,16 +24,16 @@ const MIN_TEXT: u16 = 4;
 ///
 /// No props: the divider's position is this component's own state, and the
 /// selection is read from context and changed through the setter `App` left
-/// in `Observed`.
+/// in `context`.
 #[component]
 pub fn SideBySide(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
-    let view_lines = &ctx.view_lines;
-    let cursor = ctx.cursor;
+    let view_lines = &ctx.diff_view_lines;
+    let cursor = ctx.diff_cursor;
     let first_cell = ctx.first_cell;
     let selection = ctx.selection;
-    let observed = use_context::<ObservedCtx>(scope);
+    let set_sel = ctx.set_selection;
 
     // Where a press landed, kept until a drag makes a selection of it. A
     // click that never drags selects nothing, so this is not a selection.
@@ -97,16 +97,14 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         // column keeps arriving until the button comes up. The press itself
         // is passed on, so that clicking a diff also moves the focus into it.
         let held = selection;
-        let start = Rc::clone(&observed);
-        let drag = Rc::clone(&observed);
-        let end = Rc::clone(&observed);
+
         let listeners = Listeners::new()
             .on_mouse_down(move |mouse| {
                 *pending.current() = at(mouse).map(|pos| (which, pos));
                 if pending.current().is_some() {
                     capture_pointer();
                 }
-                start.select(None);
+                if let Some(s) = set_sel { s(&|_| None); }
                 Bubble::Continue
             })
             .on_mouse_move(move |mouse| {
@@ -118,7 +116,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
                 {
                     let mut made = Selection::start(column, anchor);
                     made.update(pos);
-                    drag.select(Some(made));
+                    if let Some(s) = set_sel { s(&move |_| Some(made)); }
                 }
                 Bubble::Stop
             })
@@ -127,7 +125,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
                 *pending.current() = None;
                 // A drag that came back to where it started selects nothing.
                 if held.is_some_and(|held| held.is_empty()) {
-                    end.select(None);
+                    if let Some(s) = set_sel { s(&|_| None); }
                 }
                 Bubble::Stop
             });

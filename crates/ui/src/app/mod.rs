@@ -12,7 +12,7 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 
 use channel::Worker;
-use crate::components::{Observed, Root, RootProps};
+use crate::components::{App, AppProps, ReadBack};
 use crate::terminal::Screen;
 use crate::theme::Theme;
 
@@ -37,20 +37,18 @@ pub enum Exit {
 pub struct Session {
     tree: loom::Tree,
     pub workers: Workers,
-    /// The diff on screen, replaced when a new file is opened.
     pub diff: Option<Rc<pipeline::file::DiffContent>>,
-    /// Bumped with every new diff so stale colour responses are refused.
     pub diff_version: syntax::Version,
-    /// Syntax colours, shared with the component tree.
     pub colours: Rc<RefCell<syntax::Store>>,
-    /// The files this review changes.
     pub files: Rc<Vec<file_types::File>>,
     flow: Rc<Cell<Option<Flow>>>,
     to_compare: Rc<RefCell<Option<file_types::File>>>,
     last_area: Rect,
-    observed: Rc<Observed>,
     theme: Rc<Theme>,
     repo: Option<Rc<std::path::Path>>,
+    on_open: Rc<dyn Fn(file_types::File)>,
+    on_flow: Rc<dyn Fn(Flow)>,
+    read_back: Rc<ReadBack>,
 }
 
 impl Session {
@@ -59,53 +57,52 @@ impl Session {
         let files = Rc::new(Vec::new());
         let flow = Rc::new(Cell::new(None));
 
-        let flow_cb = {
+        let flow_cb: Rc<dyn Fn(Flow)> = {
             let cell = Rc::clone(&flow);
-            Rc::new(move |f: Flow| cell.set(Some(f))) as Rc<dyn Fn(Flow)>
+            Rc::new(move |f: Flow| cell.set(Some(f)))
         };
 
         let to_compare = Rc::new(RefCell::new(None));
-        let open_cb = {
+        let open_cb: Rc<dyn Fn(file_types::File)> = {
             let cell = Rc::clone(&to_compare);
             Rc::new(move |file: file_types::File| *cell.borrow_mut() = Some(file))
-                as Rc<dyn Fn(file_types::File)>
         };
-
-        let observed = Rc::new(Observed {
-            on_flow: Some(flow_cb),
-            on_open: Some(open_cb),
-            ..Observed::default()
-        });
 
         let theme = Rc::new(theme);
 
-        let tree = loom::Tree::new::<Root>(RootProps {
+        let read_back = Rc::new(ReadBack::default());
+
+        let tree = loom::Tree::new::<App>(AppProps {
             theme: Rc::clone(&theme),
             repo: None,
             diff: None,
             diff_version: syntax::Version(0),
             colours: Rc::clone(&colours),
             files: Rc::clone(&files),
-            observed: Rc::clone(&observed),
+            on_open: Some(Rc::clone(&open_cb)),
+            on_flow: Some(Rc::clone(&flow_cb)),
+            read_back: Some(Rc::clone(&read_back)),
         });
 
         Self {
             tree, workers, diff: None, diff_version: syntax::Version(0),
-            colours, files, flow, to_compare, observed, theme, repo: None,
+            colours, files, flow, to_compare, theme, repo: None,
+            on_open: open_cb, on_flow: flow_cb, read_back,
             last_area: Rect::ZERO,
         }
     }
 
-    /// Pushes the current data down to the root before drawing.
     fn update_props(&mut self) {
-        self.tree.set_props::<Root>(RootProps {
+        self.tree.set_props::<App>(AppProps {
             theme: Rc::clone(&self.theme),
             repo: self.repo.clone(),
             diff: self.diff.clone(),
             diff_version: self.diff_version,
             colours: Rc::clone(&self.colours),
             files: Rc::clone(&self.files),
-            observed: Rc::clone(&self.observed),
+            on_open: Some(Rc::clone(&self.on_open)),
+            on_flow: Some(Rc::clone(&self.on_flow)),
+            read_back: Some(Rc::clone(&self.read_back)),
         });
     }
 
@@ -135,15 +132,15 @@ impl Session {
 
     pub fn cursor(&mut self) -> u32 {
         self.settle();
-        self.observed.cursor.get()
+        self.read_back.cursor.get()
     }
 
     pub fn view_lines(&self) -> u32 {
-        self.observed.view_lines.get()
+        self.read_back.view_lines.get()
     }
 
     pub fn layout(&self) -> file_types::DiffType {
-        self.observed.layout.get()
+        self.read_back.layout.get()
     }
 
     pub(crate) fn settle(&mut self) {
@@ -164,7 +161,7 @@ impl Session {
             return;
         };
         let version = self.diff_version;
-        let last = self.observed.cursor.get().saturating_add(MARGIN);
+        let last = self.read_back.cursor.get().saturating_add(MARGIN);
         let store = &mut *self.colours.borrow_mut();
         let syntax = &mut self.workers.syntax;
         match content.as_ref() {
@@ -191,7 +188,7 @@ impl Session {
     }
 
     pub fn selection(&self) -> Option<crate::components::selection::Selection> {
-        *self.observed.selection.borrow()
+        *self.read_back.selection.borrow()
     }
 
     pub fn needs_draw(&self) -> bool {
