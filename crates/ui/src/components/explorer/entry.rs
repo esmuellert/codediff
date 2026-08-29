@@ -6,8 +6,8 @@ use file_types::File;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Scope, component, rsx, use_context};
 use ratatui::style::Modifier;
 
+use crate::components::cells;
 use crate::components::context::Ui;
-use crate::cells;
 use crate::theme::icon;
 
 #[derive(Clone)]

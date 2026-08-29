@@ -8,7 +8,6 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{
     Column, ColumnProps, Layout, Node as LoomNode, Scope, component, rsx, use_context,
-    use_layout_effect,
 };
 
 use self::entry::{Entry, EntryProps};
@@ -19,8 +18,8 @@ use super::context::Ui;
 pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
-    let view_lines = &ctx.list_view_lines;
-    let cursor = ctx.list_cursor;
+    let view_lines = &ctx.view_lines;
+    let cursor = ctx.cursor;
     let files = &ctx.files;
     let _ = on_open;
 
@@ -28,21 +27,6 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
 
     let files: &[File] = files;
     let nodes = tree(files);
-
-    let rows = nodes.len() as u32;
-    let set_list_rows = ctx.set_list_rows;
-    let set_list_viewport = ctx.set_list_viewport;
-    use_layout_effect(scope, rows, move || {
-        if let Some(set) = set_list_rows {
-            set(&move |_| rows);
-        }
-        if let Some(set) = set_list_viewport {
-            set(&move |mut viewport: crate::components::Viewport| {
-                viewport.place(cursor.min(rows.saturating_sub(1)), rows);
-                viewport
-            });
-        }
-    });
 
     let entries: Vec<LoomNode> = view_lines
         .clone()

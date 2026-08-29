@@ -424,3 +424,34 @@ fn a_component_can_stop_the_loop() {
     screen.press(crokey::key!(q));
     assert!(screen.exiting(), "the key handler called exit");
 }
+
+/// An observer delivered from outside the tree updates state.
+#[component]
+fn ObserverReceiver(scope: &mut Scope, sender: Rc<RefCell<Option<loom::Observer<String>>>>) -> Node {
+    let (text, set_text) = use_state(scope, || "waiting".to_string());
+    let send = Rc::clone(sender);
+    use_effect(scope, (), move || {
+        let (observer, responses) = loom::observable();
+        *send.borrow_mut() = Some(observer);
+        responses.subscribe(move |msg: String| set_text(&move |_| msg.clone()));
+    });
+    rsx! { Text { text: text.into(), .. } }
+}
+
+#[test]
+fn an_observer_delivered_from_outside_updates_the_screen() {
+    let sender: Rc<RefCell<Option<loom::Observer<String>>>> = Rc::new(RefCell::new(None));
+    let mut h = Harness::new::<ObserverReceiver>(
+        ObserverReceiverProps { sender: Rc::clone(&sender) },
+        20, 1,
+    );
+    h.draw();
+    assert_eq!(h.screen_row(0), "waiting");
+
+    // Deliver from outside — simulating what the event loop does.
+    if let Some(obs) = sender.borrow().as_ref() {
+        obs.next("arrived".to_string());
+    }
+    h.draw();
+    assert_eq!(h.screen_row(0), "arrived");
+}

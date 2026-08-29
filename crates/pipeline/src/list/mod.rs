@@ -15,6 +15,7 @@ use file_types::File;
 use vcs::{DiffType, Repository};
 
 /// One request for a set of files.
+#[derive(Clone)]
 pub struct Request {
     /// Where to start looking. Not the root — the backend discovers that, and
     /// every path built afterwards is relative to what it found.

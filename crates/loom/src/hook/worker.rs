@@ -125,7 +125,7 @@ impl<T: 'static> Observer<T> {
 }
 
 /// Opens a one-shot address: the resolver the answerer keeps, and the promise
-/// the asker attaches a handler to.
+/// the requester attaches a handler to.
 ///
 /// Legal inside an effect body, where the runtime knows which slot is asking.
 pub fn promise<T: 'static>() -> (Resolver<T>, Promise<T>) {

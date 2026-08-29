@@ -184,8 +184,8 @@ fn measure(node: &Fiber, axis: Axis, room: Rect) -> u16 {
         Basis::Auto => {}
     }
 
-    if let Some(ask) = node.host_desc.measure {
-        let (across, down) = ask(&node.host_desc, room.width);
+    if let Some(measure) = node.host_desc.measure {
+        let (across, down) = measure(&node.host_desc, room.width);
         return if axis == Axis::Down { down } else { across };
     }
 

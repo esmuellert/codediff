@@ -35,7 +35,7 @@ pub use paint::{
     Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps, Paint, Row,
     RowProps, Stack, StackProps, Text, TextProps,
 };
-pub use run::run;
+pub use run::{Flow, deliver_input, run};
 pub use scope::{Scope, ScopeId};
 pub use screen::{Screen, restore};
 pub use tree::Tree;
