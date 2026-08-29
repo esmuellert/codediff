@@ -1,50 +1,23 @@
 //! One line of the file list, painted onto cells.
 //!
-//! Three sections: indent, body, status. Indent is fixed by depth. Status
-//! is fixed by content. Body absorbs the rest and truncates with `…`.
+//! Entry receives a Node and reads the theme from context. It decides
+//! the colours, builds the three sections (indent, body, status), and
+//! paints them.
 
 use std::rc::Rc;
 
 use loom::{Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Scope, component, rsx, use_context};
-use ratatui::style::{Color, Modifier};
+use ratatui::style::Color;
 
+use super::build::Node;
 use crate::components::cells;
 use crate::components::context::Ui;
-use crate::theme::icon::Icon;
+use crate::theme::icon::{self, Icon};
 
-/// The tree guides to the left of the name.
-#[derive(Clone, PartialEq)]
-pub struct Indent {
-    pub markers: Rc<str>,
-}
-
-/// The icon and name.
-#[derive(Clone, PartialEq)]
-pub struct Body {
-    pub icon: Option<Icon>,
-    pub text: Rc<str>,
-    pub text_color: Color,
-    pub bold: bool,
-    pub suffix: Vec<(Rc<str>, Color)>,
-}
-
-/// Line counts and change letter.
-#[derive(Clone, Copy, PartialEq)]
-pub struct Status {
-    pub added: u32,
-    pub removed: u32,
-    pub symbol: &'static str,
-    pub symbol_color: Color,
-    pub added_color: Color,
-    pub removed_color: Color,
-}
-
-/// Width of a string in terminal cells.
 fn cell_width(s: &str) -> u16 {
     line_index::LineIndex::new(s, 1).width().0 as u16
 }
 
-/// Truncates `s` to at most `cells` columns and appends `…`.
 fn truncate(s: &str, cells: u16) -> String {
     let line = line_index::LineIndex::new(s, 1);
     let full = line.width().0 as u16;
@@ -61,14 +34,28 @@ fn truncate(s: &str, cells: u16) -> String {
     out
 }
 
+struct Indent {
+    markers: String,
+}
+
+struct Body {
+    icon: Option<Icon>,
+    text: String,
+    text_color: Color,
+    suffix: Vec<(String, Color)>,
+}
+
+struct Status {
+    added: u32,
+    removed: u32,
+    symbol: &'static str,
+    symbol_color: Color,
+    added_color: Color,
+    removed_color: Color,
+}
+
 #[component]
-pub fn Entry(
-    scope: &mut Scope,
-    indent: Indent,
-    body: Body,
-    status: Option<Status>,
-    selected: bool,
-) -> LoomNode {
+pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
     let theme = use_context::<Ui>(scope).theme;
     let base = if *selected {
         theme.normal.patch(theme.cursor_line)
@@ -76,9 +63,7 @@ pub fn Entry(
         theme.normal
     };
 
-    let indent = indent.clone();
-    let body = body.clone();
-    let status = *status;
+    let node = node.clone();
 
     rsx! {
         Canvas {
@@ -88,12 +73,79 @@ pub fn Entry(
                 let width = area.width;
                 cells::fill(paint.cells(), area, base);
 
+                let (indent, body, status): (Indent, Body, Option<Status>) = match &node {
+                    Node::Heading { name, count, added, removed } => {
+                        let mut suffix = Vec::new();
+                        if *added == 0 && *removed == 0 {
+                            suffix.push((format!(" ({count})"), theme.tree.count));
+                        } else {
+                            suffix.push((format!(" ({count} · "), theme.tree.count));
+                            if *added > 0 {
+                                suffix.push((format!("+{added}"), theme.change.gained));
+                            }
+                            if *added > 0 && *removed > 0 {
+                                suffix.push((" ".to_string(), theme.tree.count));
+                            }
+                            if *removed > 0 {
+                                suffix.push((format!("-{removed}"), theme.change.lost));
+                            }
+                            suffix.push((")".to_string(), theme.tree.count));
+                        }
+                        (
+                            Indent { markers: String::new() },
+                            Body {
+                                icon: None,
+                                text: name.to_string(),
+                                text_color: theme.tree.heading,
+                                suffix,
+                            },
+                            None,
+                        )
+                    }
+                    Node::Directory { indent, name, open, .. } => {
+                        (
+                            Indent { markers: indent.clone() },
+                            Body {
+                                icon: Some(icon::folder(*open)),
+                                text: name.clone(),
+                                text_color: theme.tree.directory,
+                                suffix: Vec::new(),
+                            },
+                            None,
+                        )
+                    }
+                    Node::File { indent, name, file } => {
+                        let change = file.get_change_type();
+                        let stats = file.get_stats().filter(|s| !s.is_empty());
+                        let suffix = file.previous_path()
+                            .map(|p| vec![(format!(" ← {p}"), theme.tree.previous)])
+                            .unwrap_or_default();
+                        (
+                            Indent { markers: indent.clone() },
+                            Body {
+                                icon: Some(icon::file(name)),
+                                text: name.clone(),
+                                text_color: theme.tree.name,
+                                suffix,
+                            },
+                            Some(Status {
+                                added: stats.map_or(0, |s| s.added),
+                                removed: stats.map_or(0, |s| s.removed),
+                                symbol: super::letter(change),
+                                symbol_color: theme.change.of(change),
+                                added_color: theme.change.gained,
+                                removed_color: theme.change.lost,
+                            }),
+                        )
+                    }
+                };
+
                 // Section 1: indent.
                 let indent_width = cell_width(&indent.markers);
                 let mut at = cells::write(paint.cells(), area, 0, &indent.markers, base.fg(theme.tree.marker));
 
                 // Section 3: status — measure first to know how much body gets.
-                let status_width = if let Some(st) = status {
+                let status_width = if let Some(ref st) = status {
                     let mut w = cell_width(st.symbol);
                     if st.added > 0 { w += cell_width(&format!("+{}", st.added)); }
                     if st.removed > 0 {
@@ -121,10 +173,8 @@ pub fn Entry(
                 } else {
                     (0, base.fg(body.text_color))
                 };
-                let text_style = if body.bold { text_style.add_modifier(Modifier::BOLD) } else { text_style };
 
                 let name_budget = body_budget.saturating_sub(icon_width);
-
                 let suffix_width: u16 = body.suffix.iter().map(|(t, _)| cell_width(t)).sum();
                 let name_width = cell_width(&body.text);
 
