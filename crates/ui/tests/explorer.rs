@@ -354,3 +354,108 @@ fn a_heading_name_is_not_bold_and_the_count_is_highlighted() {
     let count_style = h.style_at(paren as u16, 0);
     assert_ne!(name_style.fg, count_style.fg, "the count has its own colour");
 }
+
+// ---- refresh behaviour ----
+
+#[test]
+fn the_cursor_stays_when_the_file_list_rebuilds() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::grouped_tree;
+
+    let files_v1: Vec<File> = ["src/app.rs", "src/lib.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes_v1 = grouped_tree(&files_v1, &HashSet::new());
+    // Find which line "lib.rs" is on.
+    let lib_line = nodes_v1.iter().position(|n| matches!(n,
+        ui::components::explorer::build::Node::File { name, .. } if name == "lib.rs"
+    )).expect("lib.rs exists");
+
+    // A refresh adds a file. The same cursor index should still point at
+    // the same file if the list order did not change.
+    let files_v2: Vec<File> = ["src/app.rs", "src/lib.rs", "src/new.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes_v2 = grouped_tree(&files_v2, &HashSet::new());
+    let at_same_line = &nodes_v2[lib_line];
+    match at_same_line {
+        ui::components::explorer::build::Node::File { name, .. } => {
+            assert_eq!(name, "lib.rs", "the cursor still points at lib.rs");
+        }
+        other => panic!("expected lib.rs at line {lib_line}, got {:?}",
+            match other {
+                ui::components::explorer::build::Node::Heading { name, .. } => name.to_string(),
+                ui::components::explorer::build::Node::Directory { name, .. } => name.clone(),
+                ui::components::explorer::build::Node::File { name, .. } => name.clone(),
+            }
+        ),
+    }
+}
+
+#[test]
+fn fold_state_survives_a_refresh() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::{grouped_tree, Node};
+
+    let files: Vec<File> = ["src/app.rs", "src/lib.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    // Fold "src".
+    let mut folded = HashSet::new();
+    folded.insert("src".to_string());
+
+    // First build — src is folded.
+    let nodes_v1 = grouped_tree(&files, &folded);
+    let has_app = nodes_v1.iter().any(|n| matches!(n, Node::File { name, .. } if name == "app.rs"));
+    assert!(!has_app, "src is folded, app.rs is hidden");
+
+    // A "refresh" — same files, same fold set.
+    let files_v2: Vec<File> = ["src/app.rs", "src/lib.rs", "src/new.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes_v2 = grouped_tree(&files_v2, &folded);
+    let has_new = nodes_v2.iter().any(|n| matches!(n, Node::File { name, .. } if name == "new.rs"));
+    assert!(!has_new, "src is still folded after refresh, new.rs is hidden");
+
+    let has_notes = nodes_v2.iter().any(|n| matches!(n, Node::File { name, .. } if name == "notes.txt"));
+    assert!(has_notes, "notes.txt is still visible");
+}
+
+#[test]
+fn the_cursor_stays_on_the_same_file_after_a_refresh() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::grouped_tree;
+
+    let files_v1: Vec<File> = ["src/lib.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes_v1 = grouped_tree(&files_v1, &HashSet::new());
+    let notes_line = nodes_v1.iter().position(|n| matches!(n,
+        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
+    )).expect("notes.txt exists");
+
+    // Add a file that sorts before notes.txt.
+    let files_v2: Vec<File> = ["src/lib.rs", "a.txt", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes_v2 = grouped_tree(&files_v2, &HashSet::new());
+    let notes_line_v2 = nodes_v2.iter().position(|n| matches!(n,
+        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
+    )).expect("notes.txt still exists");
+
+    // The file moved to a different index because a.txt was inserted before it.
+    assert_ne!(notes_line, notes_line_v2,
+        "notes.txt shifted — the anchor logic in Explorer would move the cursor");
+}

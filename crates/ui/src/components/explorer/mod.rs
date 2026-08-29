@@ -10,7 +10,7 @@ use crokey::key;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
-    use_context, use_exit, use_state,
+    use_context, use_exit, use_ref, use_state,
 };
 
 use self::entry::{Body, Entry, EntryProps, Indent, Status};
@@ -36,6 +36,20 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let files: &[File] = files;
     let nodes = grouped_tree(files, &folded);
     let total = nodes.len() as u32;
+
+    // After a rebuild, keep the cursor on the same item.
+    let prev_anchor = use_ref(scope, || None::<String>);
+    let current_anchor = nodes.get(cursor as usize).map(|n| anchor(n));
+    if let Some(ref saved) = *prev_anchor.current() {
+        if current_anchor.as_deref() != Some(saved.as_str()) {
+            if let Some(pos) = nodes.iter().position(|n| anchor(n) == *saved) {
+                if let Some(set) = set_cursor {
+                    set(&move |_| pos as u32);
+                }
+            }
+        }
+    }
+    *prev_anchor.current() = current_anchor;
 
     // What the cursor is on, so Enter can decide what to do.
     let cursor_node = nodes.get(cursor as usize).cloned();
@@ -210,5 +224,13 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
         file_types::ChangeType::Moved => "R",
         file_types::ChangeType::Untracked => "??",
         file_types::ChangeType::Conflicted => "!",
+    }
+}
+
+fn anchor(node: &Node) -> String {
+    match node {
+        Node::Heading { name, .. } => name.to_string(),
+        Node::Directory { path, .. } => path.clone(),
+        Node::File { file, .. } => file.path().as_str().to_string(),
     }
 }
