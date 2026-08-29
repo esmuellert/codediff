@@ -221,7 +221,7 @@ pub fn grouped_list(files: &[File]) -> Vec<Node> {
         sorted.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
         for file in sorted {
             out.push(Node::File {
-                indent: String::new(),
+                indent: "  ".to_string(),
                 name: file.path().as_str().to_string(),
                 file: file.clone(),
             });

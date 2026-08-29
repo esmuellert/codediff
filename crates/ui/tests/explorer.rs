@@ -536,7 +536,7 @@ fn list_mode_has_no_directories() {
 }
 
 #[test]
-fn list_mode_has_no_indent() {
+fn list_mode_files_are_indented_under_the_heading() {
     
     use ui::components::explorer::build::grouped_list;
 
@@ -548,7 +548,7 @@ fn list_mode_has_no_indent() {
     let nodes = grouped_list(&files);
     for node in &nodes {
         if let ui::components::explorer::build::Node::File { indent, .. } = node {
-            assert!(indent.is_empty(), "list mode has no indent: {:?}", indent);
+            assert_eq!(indent, "  ", "list mode files sit under the heading: {:?}", indent);
         }
     }
 }
