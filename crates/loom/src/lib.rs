@@ -22,9 +22,10 @@ pub use event::{
 };
 pub use hook::{
     Always, Cleanup, Context, ExternalStore, Notify, Observable, Observer, Promise, Ref, Resolver,
-    SetState, Snapshot, Subscription, observable, promise, use_context, use_effect, use_exit,
+    SetState, Snapshot, Subscription, observable, promise, use_context, use_effect,
     use_layout_effect, use_memo, use_ref, use_state, use_sync_external_store,
 };
+pub use hook::use_exit;
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
 /// value is to write the provider element.
 #[doc(hidden)]

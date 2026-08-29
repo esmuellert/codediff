@@ -22,11 +22,7 @@ pub enum Flow {
 
 /// Takes the terminal, mounts `tree`, and draws it until something stops it.
 ///
-/// Every source of events feeds one channel: the input thread this spawns,
-/// and whatever the application gave a `Sender` to. `respond` is called with
-/// each one and says what to do next.
-///
-/// The terminal is given back however this returns, including a panic.
+/// Returns the `Flow` that stopped it — `Quit` or `Rebuild`.
 pub fn run<E: Send + 'static>(
     tree: &mut Tree,
     events: Receiver<E>,
@@ -36,13 +32,10 @@ pub fn run<E: Send + 'static>(
 ) -> io::Result<()> {
     let mut screen = Screen::open()?;
 
-    // After raw mode, or the first keys are echoed to the shell.
     spawn_input(to_events, wrap_input);
 
     loop {
         screen.draw(|cells, area| tree.draw(cells, area))?;
-        // A layout effect can write state. Drawing again settles it.
-        // A bounded retry prevents an infinite loop from a bug.
         let mut extra = 0;
         while tree.needs_draw() && !tree.exiting() && extra < 4 {
             screen.draw(|cells, area| tree.draw(cells, area))?;
@@ -71,8 +64,7 @@ pub fn run<E: Send + 'static>(
     }
 }
 
-/// Routes one terminal event into the tree. What an application calls for
-/// its own `Terminal` variant.
+/// Routes one terminal event into the tree.
 pub fn deliver_input(tree: &mut Tree, event: &Event) {
     match event {
         Event::Key(_) => {
@@ -88,7 +80,6 @@ pub fn deliver_input(tree: &mut Tree, event: &Event) {
     }
 }
 
-/// The terminal reader. Blocked in `event::read()` until a key arrives.
 fn spawn_input<E: Send + 'static>(to_events: Sender<E>, wrap: fn(Event) -> E) {
     thread::Builder::new()
         .name("input".to_owned())
@@ -102,7 +93,6 @@ fn spawn_input<E: Send + 'static>(to_events: Sender<E>, wrap: fn(Event) -> E) {
         .expect("the input thread starts");
 }
 
-/// A crossterm key event as a key combination. A release is not a press.
 fn press(event: &Event) -> Option<crokey::KeyCombination> {
     use crossterm::event::KeyEventKind;
     match event {

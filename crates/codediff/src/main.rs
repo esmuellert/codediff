@@ -44,8 +44,8 @@ fn main() -> Result<ExitCode> {
         }
         None => {
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            ui::main(&cwd, cli.path.into_iter().collect())?;
-            Ok(ExitCode::SUCCESS)
+            let code = ui::main(&cwd, cli.path.into_iter().collect())?;
+            Ok(ExitCode::from(code as u8))
         }
     }
 }

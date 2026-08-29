@@ -9,7 +9,7 @@ pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 pub use crossterm;
 pub use ratatui;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Sender};
@@ -29,7 +29,7 @@ enum Event {
     ListRefreshed(Vec<File>),
 }
 
-pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<()> {
+pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     let (tx, rx) = mpsc::channel::<Event>();
 
     let list_worker = pipeline::list::ListWorker::start(
@@ -53,6 +53,11 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<()> {
     #[cfg(unix)]
     spawn_signals(tx.clone());
 
+    #[cfg(debug_assertions)]
+    let rebuild = Rc::new(Cell::new(false));
+    #[cfg(debug_assertions)]
+    let rebuild_flag = Rc::clone(&rebuild);
+
     loom::run(
         &mut tree,
         rx,
@@ -60,6 +65,11 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<()> {
         Event::Terminal,
         move |event, tree| match event {
             Event::Terminal(ref e) => {
+                #[cfg(debug_assertions)]
+                if is_f5(e) {
+                    rebuild_flag.set(true);
+                    return Flow::Quit;
+                }
                 deliver_input(tree, e);
                 Flow::Continue
             }
@@ -77,7 +87,13 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<()> {
                 Flow::Continue
             }
         },
-    )
+    )?;
+
+    #[cfg(debug_assertions)]
+    if rebuild.get() {
+        return Ok(42);
+    }
+    Ok(0)
 }
 
 #[cfg(unix)]
@@ -96,4 +112,14 @@ fn spawn_signals(tx: Sender<Event>) {
             }
         })
         .expect("the signal thread starts");
+}
+
+#[cfg(debug_assertions)]
+fn is_f5(event: &crossterm::event::Event) -> bool {
+    use crossterm::event::{Event, KeyCode, KeyEventKind};
+    matches!(
+        event,
+        Event::Key(key) if key.code == KeyCode::F(5)
+            && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+    )
 }
