@@ -10,6 +10,7 @@ use loom::{
     rsx, use_effect, use_state,
 };
 
+use super::explorer::scroll_top;
 use crate::services::file::FileService;
 use crate::theme::Theme;
 
@@ -22,6 +23,7 @@ pub struct Context {
     pub cursor: u32,
     pub view_lines: Range<u32>,
     pub set_repo: Option<SetState<Rc<Path>>>,
+    pub set_cursor: Option<SetState<u32>>,
 }
 
 impl Default for Context {
@@ -33,6 +35,7 @@ impl Default for Context {
             cursor: 0,
             view_lines: 0..0,
             set_repo: None,
+            set_cursor: None,
         }
     }
 }
@@ -45,6 +48,7 @@ impl Context {
             && self.cursor == other.cursor
             && self.view_lines == other.view_lines
             && self.set_repo == other.set_repo
+            && self.set_cursor == other.set_cursor
     }
 }
 
@@ -59,12 +63,14 @@ pub fn UiProvider(
     scope: &mut Scope,
     cwd: Rc<Path>,
     file_service: Rc<FileService>,
+    rows: u32,
     children: loom::Children,
 ) -> Node {
     let initial = Rc::clone(cwd);
     let (repo, set_repo) = use_state(scope, || initial);
     let (file_list, set_file_list) = use_state(scope, || Rc::new(Vec::<File>::new()));
-    let (cursor, _set_cursor) = use_state(scope, || 0u32);
+    let (cursor, set_cursor) = use_state(scope, || 0u32);
+    let (top, set_top) = use_state(scope, || 0u32);
     // Bumped when the filesystem changes, so the file-fetching effect re-runs.
     let (version, set_version) = use_state(scope, || 0u32);
 
@@ -89,6 +95,13 @@ pub fn UiProvider(
         });
     });
 
+    // Compute the scroll from the cursor and the height App measured.
+    let total = file_list.len() as u32;
+    let new_top = scroll_top(cursor, total, *rows, top);
+    if new_top != top {
+        set_top(&move |_| new_top);
+    }
+
     rsx! {
         Ui {
             value: Context {
@@ -96,8 +109,9 @@ pub fn UiProvider(
                 repo,
                 files: file_list,
                 cursor,
-                view_lines: 0..0,
+                view_lines: new_top..new_top + rows,
                 set_repo: Some(set_repo),
+                set_cursor: Some(set_cursor),
             },
             { children.clone() }
         }

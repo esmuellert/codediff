@@ -5,14 +5,19 @@ mod entry;
 
 use std::rc::Rc;
 
+use crokey::key;
 use file_types::File;
 use loom::{
-    Column, ColumnProps, Layout, Node as LoomNode, Scope, component, rsx, use_context,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
+    use_context, use_exit,
 };
 
 use self::entry::{Entry, EntryProps};
 use self::build::tree;
 use super::context::Ui;
+
+/// Rows kept between the cursor and the edge while scrolling.
+const SCROLLOFF: u32 = 3;
 
 #[component]
 pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
@@ -20,6 +25,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let theme = &ctx.theme;
     let view_lines = &ctx.view_lines;
     let cursor = ctx.cursor;
+    let set_cursor = ctx.set_cursor;
     let files = &ctx.files;
     let _ = on_open;
 
@@ -27,6 +33,30 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
 
     let files: &[File] = files;
     let nodes = tree(files);
+    let total = nodes.len() as u32;
+
+    let exit = use_exit(scope);
+    let keys = Listeners::new().on_key(move |k| {
+        match k {
+            k if k == key!(j) || k == key!(down) => {
+                if let Some(set) = set_cursor {
+                    set(&|c| c.saturating_add(1).min(total.saturating_sub(1)));
+                }
+                Bubble::Stop
+            }
+            k if k == key!(k) || k == key!(up) => {
+                if let Some(set) = set_cursor {
+                    set(&|c| c.saturating_sub(1));
+                }
+                Bubble::Stop
+            }
+            k if k == key!(q) => {
+                exit();
+                Bubble::Stop
+            }
+            _ => Bubble::Continue,
+        }
+    });
 
     let entries: Vec<LoomNode> = view_lines
         .clone()
@@ -46,11 +76,31 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
 
     rsx! {
         Column {
+            listeners: keys,
             layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
             ..,
             { entries }
         }
     }
+}
+
+/// Computes the scroll top given a cursor, total rows, viewport height, and
+/// the previous top. Keeps SCROLLOFF rows between the cursor and the edges.
+pub fn scroll_top(cursor: u32, total: u32, height: u32, prev_top: u32) -> u32 {
+    if height == 0 {
+        return 0;
+    }
+    let last_top = total.saturating_sub(height);
+    let margin = SCROLLOFF.min(height.saturating_sub(1) / 2);
+
+    let mut top = prev_top;
+    if cursor < top + margin {
+        top = cursor.saturating_sub(margin);
+    }
+    if cursor + margin >= top + height {
+        top = (cursor + margin + 1).saturating_sub(height);
+    }
+    top.min(last_top)
 }
 
 pub fn letter(change: file_types::ChangeType) -> &'static str {

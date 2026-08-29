@@ -7,4 +7,4 @@ pub mod explorer;
 
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
-pub use explorer::{Explorer, ExplorerProps, letter};
+pub use explorer::{Explorer, ExplorerProps, letter, scroll_top};

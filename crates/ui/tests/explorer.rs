@@ -30,6 +30,7 @@ fn screen(paths: &[&str], width: u16, height: u16) -> Vec<String> {
         cursor: 0,
         view_lines: 0..rows,
         set_repo: None,
+        set_cursor: None,
     });
     harness.screen()
 }
