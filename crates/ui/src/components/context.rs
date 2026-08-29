@@ -11,7 +11,7 @@ use loom::{
 };
 
 use super::explorer::scroll_top;
-use crate::services::file::FileService;
+use crate::services::files::FilesService;
 use crate::theme::Theme;
 
 /// Everything a component reads.
@@ -62,7 +62,7 @@ context!(
 pub fn UiProvider(
     scope: &mut Scope,
     cwd: Rc<Path>,
-    file_service: Rc<FileService>,
+    file_service: Rc<FilesService>,
     rows: u32,
     children: loom::Children,
 ) -> Node {

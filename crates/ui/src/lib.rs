@@ -19,7 +19,7 @@ use file_types::File;
 use loom::{Flow, Tree, deliver_input};
 
 use components::{App, AppProps};
-use services::file::FileService;
+use services::files::FilesService;
 
 enum Event {
     Terminal(crossterm::event::Event),
@@ -32,7 +32,7 @@ enum Event {
 pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     let (tx, rx) = mpsc::channel::<Event>();
 
-    let list_worker = pipeline::list::ListWorker::start(
+    let list_worker = pipeline::files::FilesWorker::start(
         channel::Emitter::new(tx.clone(), Event::ListRefreshed),
     );
     let _watcher = watcher::start(
@@ -40,7 +40,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
         channel::Emitter::new(tx.clone(), Event::FsChanged),
     ).ok();
 
-    let file_service = Rc::new(FileService::new(
+    let file_service = Rc::new(FilesService::new(
         Rc::new(RefCell::new(list_worker)),
         pathspec,
     ));

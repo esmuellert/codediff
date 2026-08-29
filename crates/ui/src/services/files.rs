@@ -7,22 +7,22 @@ use std::rc::Rc;
 use channel::Worker;
 use file_types::File;
 use loom::{Observable, Observer, observable};
-use pipeline::list::{ListWorker, Request};
+use pipeline::files::{FilesWorker, Request};
 
 /// A way to get the list of changed files.
 ///
 /// Created once in `lib.rs`, held by the provider. The provider subscribes
 /// to the file list and to filesystem changes; the loop relays values from
 /// the channel to the observers inside.
-pub struct FileService {
-    worker: Rc<RefCell<ListWorker>>,
+pub struct FilesService {
+    worker: Rc<RefCell<FilesWorker>>,
     pathspec: Vec<String>,
     file_observer: RefCell<Option<Observer<Vec<File>>>>,
     fs_observer: RefCell<Option<Observer<watcher::Refresh>>>,
 }
 
-impl FileService {
-    pub fn new(worker: Rc<RefCell<ListWorker>>, pathspec: Vec<String>) -> Self {
+impl FilesService {
+    pub fn new(worker: Rc<RefCell<FilesWorker>>, pathspec: Vec<String>) -> Self {
         Self {
             worker,
             pathspec,

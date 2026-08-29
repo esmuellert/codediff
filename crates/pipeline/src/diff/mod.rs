@@ -3,7 +3,7 @@
 //! All four run on a worker thread (see [`service`]).
 //!
 //! ```ignore
-//! let mut files = file::FileWorker::start();
+//! let mut files = diff::DiffWorker::start();
 //! files.want(&changed);          // returns at once
 //! let response = files.poll();   // next frame, or the one after
 //! ```
@@ -14,4 +14,4 @@ pub mod runner;
 pub mod worker;
 
 pub use runner::{Diff, DiffContent, Runner, SingleFile};
-pub use worker::{FileWorker, Response};
+pub use worker::{DiffWorker, Response};

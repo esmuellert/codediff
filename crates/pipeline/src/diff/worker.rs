@@ -13,7 +13,7 @@
 
 use std::thread;
 
-use crate::file::runner::{DiffContent, Runner};
+use crate::diff::runner::{DiffContent, Runner};
 use channel::{Emitter, Slot, Worker};
 use file_types::File;
 
@@ -25,11 +25,11 @@ pub struct Response {
 }
 
 /// The worker and the slot to it.
-pub struct FileWorker {
+pub struct DiffWorker {
     requests: Slot<File>,
 }
 
-impl FileWorker {
+impl DiffWorker {
     /// Starts the worker thread.
     pub fn start(emitter: Emitter<Response>) -> Self {
         let job = move |file: File| {
@@ -63,7 +63,7 @@ impl FileWorker {
     }
 }
 
-impl Worker for FileWorker {
+impl Worker for DiffWorker {
     type Request = File;
     type Response = Response;
 

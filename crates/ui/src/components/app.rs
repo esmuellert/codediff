@@ -10,10 +10,10 @@ use loom::{
 
 use super::context::{UiProvider, UiProviderProps};
 use super::explorer::{Explorer, ExplorerProps};
-use crate::services::file::FileService;
+use crate::services::files::FilesService;
 
 #[component]
-pub fn App(scope: &mut Scope, cwd: Rc<Path>, file_service: Rc<FileService>) -> Node {
+pub fn App(scope: &mut Scope, cwd: Rc<Path>, file_service: Rc<FilesService>) -> Node {
     let (rows, set_rows) = use_state(scope, || 0u32);
 
     let exit = use_exit(scope);

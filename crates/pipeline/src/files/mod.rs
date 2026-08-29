@@ -6,7 +6,7 @@
 
 mod worker;
 
-pub use worker::ListWorker;
+pub use worker::FilesWorker;
 
 use std::path::PathBuf;
 

@@ -6,8 +6,8 @@ use align::Alignment;
 use anyhow::Result;
 use file_types::{DiffVersion, File};
 
-use crate::file::contents::{self, Contents};
-use crate::file::diff;
+use crate::diff::contents::{self, Contents};
+use crate::diff::diff;
 
 /// What the pipeline produces for one file.
 pub enum DiffContent {

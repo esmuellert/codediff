@@ -8,11 +8,11 @@ use file_types::File;
 use super::{Request, get_files};
 
 /// The list worker — re-runs the file list in the background when asked.
-pub struct ListWorker {
+pub struct FilesWorker {
     requests: Slot<Request>,
 }
 
-impl ListWorker {
+impl FilesWorker {
     pub fn start(emitter: Emitter<Vec<File>>) -> Self {
         let job = move |request: Request| {
             let files = get_files(&request).unwrap_or_default();
@@ -27,7 +27,7 @@ impl ListWorker {
     }
 }
 
-impl channel::Worker for ListWorker {
+impl channel::Worker for FilesWorker {
     type Request = Request;
     type Response = Vec<File>;
 

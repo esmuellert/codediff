@@ -7,11 +7,11 @@
 use anyhow::Result;
 use file_types::File;
 use file_types::{DiffVersion, FileContent};
-use pipeline::file::DiffContent;
+use pipeline::diff::DiffContent;
 
 use crate::text::sanitize;
-use pipeline::file::Runner;
-use pipeline::list;
+use pipeline::diff::Runner;
+use pipeline::files;
 
 /// The file at `path`, as the list found it.
 ///
@@ -32,8 +32,8 @@ fn find(path: &str) -> Result<file_types::File> {
     // addition to spot one, and a pathspec that names only the new path hides
     // the deletion, so `R100 renamed-to.txt` comes back as `A. renamed-to.txt`
     // instead. Either of a moved file's names has to find it.
-    let request = pipeline::list::Request::worktree(root.clone());
-    let listed = list::get_files(&request)?.into_iter().find(|file| {
+    let request = pipeline::files::Request::worktree(root.clone());
+    let listed = files::get_files(&request)?.into_iter().find(|file| {
         file.path().as_str() == path || file.previous_path().is_some_and(|was| was.as_str() == path)
     });
     if let Some(file) = listed {

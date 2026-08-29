@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use file_types::Stats;
-use pipeline::list::{self, Request};
+use pipeline::files::{self as files, Request};
 
 /// A fixture repository in a temporary directory, removed on drop.
 struct Fixture {
@@ -31,7 +31,7 @@ fn a_file_staged_and_edited_again_carries_a_count_per_comparison() {
     // the working tree and swapped one in the index; both rows used to show
     // the staged pair.
     let fixture = Fixture::new("counts");
-    let files = list::get_files(&Request::worktree(&fixture.dir)).expect("listing");
+    let files = files::get_files(&Request::worktree(&fixture.dir)).expect("listing");
 
     let found: Vec<(&'static str, Option<Stats>)> = files
         .iter()
