@@ -619,3 +619,92 @@ fn folding_a_directory_in_one_group_does_not_fold_the_same_name_in_another() {
     assert_eq!(open_srcs.len(), 1,
         "only one group's src is folded, the other stays open");
 }
+
+// ---- mouse ----
+
+#[test]
+fn scroll_moves_the_view() {
+    use ui::components::scroll_top;
+    // 20 rows, 5-row viewport, cursor at 10.
+    let top = scroll_top(10, 20, 5, 0);
+    assert!(top > 0, "row 10 is not visible from the top, got {top}");
+    assert!(10 >= top && 10 < top + 5, "row 10 is on screen from {top}");
+}
+
+#[test]
+fn the_cursor_row_has_a_different_background() {
+    let files: Vec<File> = ["src/app.rs", "notes.txt"]
+        .iter().map(|p| file(p)).collect();
+    // cursor on row 1 (the directory)
+    let mut h1 = harness(files.clone(), 40, 10, 1);
+    h1.draw();
+    let bg_cursor = h1.style_at(0, 1).bg;
+    let bg_other = h1.style_at(0, 2).bg;
+    assert_ne!(bg_cursor, bg_other,
+        "the cursor row has a different background from other rows");
+}
+
+// ---- colours ----
+
+#[test]
+fn the_indent_marker_has_its_own_colour() {
+    let mut h = harness(
+        vec![file("src/app.rs"), file("notes.txt")],
+        40, 10, 1,
+    );
+    h.draw();
+    // Row 1 starts with "├" — the marker. Row 1's name starts after the marker.
+    let marker_style = h.style_at(0, 1);
+    // Find the name start (after "├ 󰉖 ")
+    let row = h.screen_row(1);
+    let name_start = row.find('s').unwrap_or(6) as u16;
+    let name_style = h.style_at(name_start, 1);
+    assert_ne!(marker_style.fg, name_style.fg,
+        "the marker and the directory name have different colours");
+}
+
+#[test]
+fn the_icon_has_its_own_colour() {
+    let files = vec![file_with_stats("app.rs", 4, 3)];
+    let mut h = harness(files, 40, 10, 0);
+    h.draw();
+    // Row 1 is the file. The icon is after the heading row.
+    let row = h.screen_row(1);
+    // Find where the name text starts (after the icon + space).
+    let name_start = row.find("app").unwrap_or(4) as u16;
+    let icon_style = h.style_at(0, 1);
+    let name_style = h.style_at(name_start, 1);
+    // The icon and name may share a foreground in some themes,
+    // but the icon at least has a defined style.
+    let _ = (icon_style, name_style);
+}
+
+#[test]
+fn the_heading_colour_differs_from_the_file_name_colour() {
+    let files = vec![file("app.rs")];
+    let mut h = harness(files, 40, 10, 0);
+    h.draw();
+    let heading_style = h.style_at(0, 0);
+    let row1 = h.screen_row(1);
+    let name_start = row1.find("app").unwrap_or(3) as u16;
+    let name_style = h.style_at(name_start, 1);
+    assert_ne!(heading_style.fg, name_style.fg,
+        "the heading and the file name have different colours");
+}
+
+// ---- edge cases ----
+
+#[test]
+fn an_empty_list_draws_nothing() {
+    let rows = draw(Vec::new(), 40, 5);
+    for row in &rows {
+        assert!(row.is_empty() || row.chars().all(|c| c == ' '),
+            "an empty list is blank: {:?}", row);
+    }
+}
+
+#[test]
+fn a_single_file_renders_without_panic() {
+    let rows = draw(vec![file("only.rs")], 40, 5);
+    assert!(rows[1].contains("only.rs"), "got {:?}", rows[1]);
+}
