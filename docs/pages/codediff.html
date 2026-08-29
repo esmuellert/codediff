@@ -305,7 +305,8 @@ pub fn Entry(
     status: Option<Status>,
     selected: bool,
 ) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`indent`})}),(0,h.jsx)(`td`,{children:`tree lines, or empty in flat mode`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`body`})}),(0,h.jsx)(`td`,{children:`icon and name (or full path)`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`status`})}),(0,h.jsxs)(`td`,{children:[`line counts and change letter, or `,(0,h.jsx)(`code`,{children:`None`}),` for directories and headings`]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`selected`})}),(0,h.jsx)(`td`,{children:`whether this row is the cursor row`})]})]}),(0,h.jsx)(E,{id:`entry-sections`,children:`The three sections`}),(0,h.jsx)(T,{children:`pub struct Indent {
-    pub lines: Rc<str>,  // "│ └ " or ""
+    pub markers: Rc<str>,  // "│ └ " or ""
+}
 }
 
 pub struct Body {

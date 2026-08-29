@@ -12,8 +12,8 @@ use loom::{
     use_context, use_exit,
 };
 
-use self::entry::{Entry, EntryProps};
-use self::build::tree;
+use self::entry::{Body, Entry, EntryProps, Indent, Status};
+use self::build::{tree, Node};
 use super::context::Ui;
 
 /// Rows kept between the cursor and the edge while scrolling.
@@ -63,10 +63,53 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
         .filter_map(|line| {
             nodes.get(line as usize).map(|node| {
                 let selected = line == cursor;
+                let (indent, body, status) = match node {
+                    Node::Directory { indent, name, open } => {
+                        let ic = crate::theme::icon::folder(*open);
+                        (
+                            Indent { markers: indent.as_str().into() },
+                            Body {
+                                icon_glyph: ic.glyph,
+                                icon_color: ic.color,
+                                text: name.as_str().into(),
+                                text_color: theme.tree.directory,
+                                previous: None,
+                                previous_color: theme.tree.previous,
+                            },
+                            None,
+                        )
+                    }
+                    Node::File { indent, name, file } => {
+                        let ic = crate::theme::icon::file(name);
+                        let change = file.get_change_type();
+                        let stats = file.get_stats().filter(|s| !s.is_empty());
+                        (
+                            Indent { markers: indent.as_str().into() },
+                            Body {
+                                icon_glyph: ic.glyph,
+                                icon_color: ic.color,
+                                text: name.as_str().into(),
+                                text_color: theme.tree.name,
+                                previous: file.previous_path().map(|p| Rc::from(format!(" ← {p}").as_str())),
+                                previous_color: theme.tree.previous,
+                            },
+                            Some(Status {
+                                added: stats.map_or(0, |s| s.added),
+                                removed: stats.map_or(0, |s| s.removed),
+                                letter: letter(change),
+                                letter_color: theme.change.of(change),
+                                gained_color: theme.change.gained,
+                                lost_color: theme.change.lost,
+                            }),
+                        )
+                    }
+                };
                 rsx! {
                     Entry {
                         key: line,
-                        node: Rc::new(node.clone()),
+                        indent: indent,
+                        body: body,
+                        status: status,
                         selected: selected,
                     }
                 }

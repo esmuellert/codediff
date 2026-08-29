@@ -2,7 +2,12 @@
 
 use file_types::File;
 
-use super::entry::Node;
+/// What one line of the explorer is. Built by `tree()`, read by Explorer.
+#[derive(Clone)]
+pub enum Node {
+    Directory { indent: String, name: String, open: bool },
+    File { indent: String, name: String, file: File },
+}
 
 pub fn tree(files: &[File]) -> Vec<Node> {
     let mut root: Vec<Item<'_>> = Vec::new();
