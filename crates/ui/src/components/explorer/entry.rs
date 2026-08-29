@@ -10,6 +10,7 @@ use ratatui::style::{Color, Modifier};
 
 use crate::components::cells;
 use crate::components::context::Ui;
+use crate::theme::icon::Icon;
 
 /// The tree guides to the left of the name.
 #[derive(Clone, PartialEq)]
@@ -20,12 +21,10 @@ pub struct Indent {
 /// The icon and name.
 #[derive(Clone, PartialEq)]
 pub struct Body {
-    pub icon_glyph: Option<char>,
-    pub icon_color: Color,
+    pub icon: Option<Icon>,
     pub text: Rc<str>,
     pub text_color: Color,
     pub bold: bool,
-    /// Styled text after the name. Each pair is (text, colour).
     pub suffix: Vec<(Rc<str>, Color)>,
 }
 
@@ -34,10 +33,10 @@ pub struct Body {
 pub struct Status {
     pub added: u32,
     pub removed: u32,
-    pub letter: &'static str,
-    pub letter_color: Color,
-    pub gained_color: Color,
-    pub lost_color: Color,
+    pub symbol: &'static str,
+    pub symbol_color: Color,
+    pub added_color: Color,
+    pub removed_color: Color,
 }
 
 /// Width of a string in terminal cells.
@@ -89,13 +88,13 @@ pub fn Entry(
                 let width = area.width;
                 cells::fill(paint.cells(), area, base);
 
-                // Section 1: indent — fixed width.
+                // Section 1: indent.
                 let indent_width = cell_width(&indent.markers);
                 let mut at = cells::write(paint.cells(), area, 0, &indent.markers, base.fg(theme.tree.marker));
 
-                // Section 3: status — measure it to know how much body gets.
+                // Section 3: status — measure first to know how much body gets.
                 let status_width = if let Some(st) = status {
-                    let mut w = cell_width(st.letter);
+                    let mut w = cell_width(st.symbol);
                     if st.added > 0 { w += cell_width(&format!("+{}", st.added)); }
                     if st.removed > 0 {
                         if st.added > 0 { w += 1; }
@@ -113,11 +112,11 @@ pub fn Entry(
                     .saturating_sub(status_width)
                     .saturating_sub(gap);
 
-                // Section 2: body — icon + name, truncated if needed.
-                let (icon_width, text_style) = if let Some(glyph) = body.icon_glyph {
-                    let icon_str = format!("{} ", glyph);
+                // Section 2: body.
+                let (icon_width, text_style) = if let Some(ref ic) = body.icon {
+                    let icon_str = format!("{} ", ic.glyph);
                     let w = cell_width(&icon_str);
-                    at = cells::write(paint.cells(), area, at, &icon_str, base.fg(body.icon_color));
+                    at = cells::write(paint.cells(), area, at, &icon_str, base.fg(ic.color));
                     (w, base.fg(body.text_color))
                 } else {
                     (0, base.fg(body.text_color))
@@ -153,21 +152,21 @@ pub fn Entry(
 
                     if st.added > 0 {
                         let added = format!("+{}", st.added);
-                        right_at = cells::write(paint.cells(), area, right_at, &added, base.fg(st.gained_color));
+                        right_at = cells::write(paint.cells(), area, right_at, &added, base.fg(st.added_color));
                         if st.removed > 0 {
                             right_at = cells::write(paint.cells(), area, right_at, " ", base);
                         }
                     }
                     if st.removed > 0 {
                         let removed = format!("-{}", st.removed);
-                        right_at = cells::write(paint.cells(), area, right_at, &removed, base.fg(st.lost_color));
+                        right_at = cells::write(paint.cells(), area, right_at, &removed, base.fg(st.removed_color));
                     }
                     if st.added > 0 || st.removed > 0 {
                         right_at = cells::write(paint.cells(), area, right_at, " ", base);
                     }
                     cells::write(
-                        paint.cells(), area, right_at, st.letter,
-                        base.fg(st.letter_color),
+                        paint.cells(), area, right_at, st.symbol,
+                        base.fg(st.symbol_color),
                     );
                 }
             }),

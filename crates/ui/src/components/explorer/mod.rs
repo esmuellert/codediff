@@ -111,8 +111,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                         (
                             Indent { markers: "".into() },
                             Body {
-                                icon_glyph: None,
-                                icon_color: ratatui::style::Color::Reset,
+                                icon: None,
                                 text: Rc::from(*name),
                                 text_color: theme.tree.heading,
                                 bold: false,
@@ -126,8 +125,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                         (
                             Indent { markers: indent.as_str().into() },
                             Body {
-                                icon_glyph: Some(ic.glyph),
-                                icon_color: ic.color,
+                                icon: Some(ic),
                                 text: name.as_str().into(),
                                 text_color: theme.tree.directory,
                                 bold: false,
@@ -143,8 +141,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                         (
                             Indent { markers: indent.as_str().into() },
                             Body {
-                                icon_glyph: Some(ic.glyph),
-                                icon_color: ic.color,
+                                icon: Some(ic),
                                 text: name.as_str().into(),
                                 text_color: theme.tree.name,
                                 bold: false,
@@ -155,10 +152,10 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                             Some(Status {
                                 added: stats.map_or(0, |s| s.added),
                                 removed: stats.map_or(0, |s| s.removed),
-                                letter: letter(change),
-                                letter_color: theme.change.of(change),
-                                gained_color: theme.change.gained,
-                                lost_color: theme.change.lost,
+                                symbol: letter(change),
+                                symbol_color: theme.change.of(change),
+                                added_color: theme.change.gained,
+                                removed_color: theme.change.lost,
                             }),
                         )
                     }
