@@ -194,22 +194,8 @@ pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
     let mut out = Vec::new();
     for (heading, members) in &groups {
         let group_files: Vec<&File> = members.iter().map(|&i| &files[i]).collect();
-        let mut added = 0u32;
-        let mut removed = 0u32;
-        for f in &group_files {
-            if let Some(stats) = f.get_stats().filter(|s| !s.is_empty()) {
-                added += stats.added;
-                removed += stats.removed;
-            }
-        }
-        out.push(Node::Heading {
-            name: heading,
-            count: members.len(),
-            added,
-            removed,
-        });
+        out.push(heading_node(heading, &group_files));
 
-        // Build a tree from this group's files.
         let mut root: Vec<Item<'_>> = Vec::new();
         for &file in &group_files {
             let path = file.path().as_str();
@@ -221,6 +207,39 @@ pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
         walk(&root, &[], "", folded, &mut out);
     }
     out
+}
+
+/// Groups files by revision pair, lists each file by its full path.
+pub fn grouped_list(files: &[File]) -> Vec<Node> {
+    let groups = group(files);
+    let mut out = Vec::new();
+    for (heading, members) in &groups {
+        let group_files: Vec<&File> = members.iter().map(|&i| &files[i]).collect();
+        out.push(heading_node(heading, &group_files));
+
+        let mut sorted = group_files;
+        sorted.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
+        for file in sorted {
+            out.push(Node::File {
+                indent: String::new(),
+                name: file.path().as_str().to_string(),
+                file: file.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn heading_node(name: &'static str, files: &[&File]) -> Node {
+    let mut added = 0u32;
+    let mut removed = 0u32;
+    for f in files {
+        if let Some(stats) = f.get_stats().filter(|s| !s.is_empty()) {
+            added += stats.added;
+            removed += stats.removed;
+        }
+    }
+    Node::Heading { name, count: files.len(), added, removed }
 }
 
 /// Groups files by revision pair, preserving the order the first file of

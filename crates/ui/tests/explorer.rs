@@ -430,32 +430,146 @@ fn fold_state_survives_a_refresh() {
 }
 
 #[test]
-fn the_cursor_stays_on_the_same_file_after_a_refresh() {
+fn the_cursor_follows_its_file_when_one_is_inserted_before_it() {
     use std::collections::HashSet;
     use ui::components::explorer::build::grouped_tree;
+    use ui::components::explorer::{identity, find_by_identity};
 
-    let files_v1: Vec<File> = ["src/lib.rs", "notes.txt"]
+    let before: Vec<File> = ["src/lib.rs", "notes.txt"].iter().map(|p| file(p)).collect();
+    let old = grouped_tree(&before, &HashSet::new());
+    let on = old.iter().position(|n| matches!(n,
+        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
+    )).expect("notes.txt is listed");
+    let saved = identity(&old[on]);
+
+    // A file arrives that sorts before it, so every row below shifts down.
+    let after: Vec<File> = ["src/lib.rs", "a.txt", "notes.txt"]
+        .iter().map(|p| file(p)).collect();
+    let new = grouped_tree(&after, &HashSet::new());
+
+    let landed = find_by_identity(Some(&saved), &new).expect("notes.txt is still listed");
+    assert_ne!(landed, on, "the row moved");
+    assert!(matches!(&new[landed],
+        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"),
+        "the cursor is on notes.txt again");
+}
+
+#[test]
+fn a_file_that_is_gone_leaves_the_cursor_where_it_was() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::grouped_tree;
+    use ui::components::explorer::find_by_identity;
+
+    let after: Vec<File> = ["a.rs"].iter().map(|p| file(p)).collect();
+    let new = grouped_tree(&after, &HashSet::new());
+
+    assert_eq!(find_by_identity(Some("gone.rs"), &new), None,
+        "nothing to move to, so the caller keeps the cursor");
+}
+
+#[test]
+fn nothing_saved_moves_nothing() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::grouped_tree;
+    use ui::components::explorer::find_by_identity;
+
+    let files: Vec<File> = ["a.rs"].iter().map(|p| file(p)).collect();
+    let nodes = grouped_tree(&files, &HashSet::new());
+    assert_eq!(find_by_identity(None, &nodes), None);
+}
+
+#[test]
+fn the_identity_tells_two_files_of_the_same_name_apart() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::grouped_tree;
+    use ui::components::explorer::{identity, find_by_identity};
+
+    let files: Vec<File> = ["src/a/mod.rs", "src/b/mod.rs"].iter().map(|p| file(p)).collect();
+    let nodes = grouped_tree(&files, &HashSet::new());
+
+    let first = nodes.iter().position(|n| matches!(n,
+        ui::components::explorer::build::Node::File { file, .. }
+        if file.path().as_str() == "src/b/mod.rs"
+    )).expect("src/b/mod.rs is listed");
+
+    let saved = identity(&nodes[first]);
+    let landed = find_by_identity(Some(&saved), &nodes).expect("found");
+    assert_eq!(landed, first, "the full path picks out the right mod.rs");
+}
+
+// ---- list mode ----
+
+#[test]
+fn list_mode_shows_full_paths() {
+    
+    use ui::components::explorer::build::grouped_list;
+
+    let files: Vec<File> = ["src/app.rs", "src/lib.rs", "notes.txt"]
         .iter()
         .map(|p| file(p))
         .collect();
 
-    let nodes_v1 = grouped_tree(&files_v1, &HashSet::new());
-    let notes_line = nodes_v1.iter().position(|n| matches!(n,
-        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
-    )).expect("notes.txt exists");
+    let nodes = grouped_list(&files);
+    let names: Vec<&str> = nodes.iter().filter_map(|n| match n {
+        ui::components::explorer::build::Node::File { name, .. } => Some(name.as_str()),
+        _ => None,
+    }).collect();
 
-    // Add a file that sorts before notes.txt.
-    let files_v2: Vec<File> = ["src/lib.rs", "a.txt", "notes.txt"]
+    assert!(names.contains(&"notes.txt"), "got {:?}", names);
+    assert!(names.contains(&"src/app.rs"), "full path: {:?}", names);
+    assert!(names.contains(&"src/lib.rs"), "full path: {:?}", names);
+}
+
+#[test]
+fn list_mode_has_no_directories() {
+    
+    use ui::components::explorer::build::grouped_list;
+
+    let files: Vec<File> = ["src/app.rs", "src/lib.rs"]
         .iter()
         .map(|p| file(p))
         .collect();
 
-    let nodes_v2 = grouped_tree(&files_v2, &HashSet::new());
-    let notes_line_v2 = nodes_v2.iter().position(|n| matches!(n,
-        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
-    )).expect("notes.txt still exists");
+    let nodes = grouped_list(&files);
+    let has_dir = nodes.iter().any(|n| matches!(n, ui::components::explorer::build::Node::Directory { .. }));
+    assert!(!has_dir, "list mode has no directories");
+}
 
-    // The file moved to a different index because a.txt was inserted before it.
-    assert_ne!(notes_line, notes_line_v2,
-        "notes.txt shifted — the anchor logic in Explorer would move the cursor");
+#[test]
+fn list_mode_has_no_indent() {
+    
+    use ui::components::explorer::build::grouped_list;
+
+    let files: Vec<File> = ["src/deep/file.rs"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes = grouped_list(&files);
+    for node in &nodes {
+        if let ui::components::explorer::build::Node::File { indent, .. } = node {
+            assert!(indent.is_empty(), "list mode has no indent: {:?}", indent);
+        }
+    }
+}
+
+#[test]
+fn list_mode_is_sorted_by_path() {
+    
+    use ui::components::explorer::build::grouped_list;
+
+    let files: Vec<File> = ["z.rs", "a/b.rs", "a.rs"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let nodes = grouped_list(&files);
+    let names: Vec<&str> = nodes.iter().filter_map(|n| match n {
+        ui::components::explorer::build::Node::File { name, .. } => Some(name.as_str()),
+        _ => None,
+    }).collect();
+
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(names, sorted, "files are sorted by full path");
 }

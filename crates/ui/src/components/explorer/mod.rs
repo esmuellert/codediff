@@ -14,7 +14,7 @@ use loom::{
 };
 
 use self::entry::{Body, Entry, EntryProps, Indent, Status};
-use self::build::{grouped_tree, Node};
+use self::build::{grouped_list, grouped_tree, Node};
 use super::context::Ui;
 
 /// Rows kept between the cursor and the edge while scrolling.
@@ -30,26 +30,32 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let files = &ctx.files;
 
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
+    let (tree_mode, set_tree_mode) = use_state(scope, || true);
 
     let base = theme.normal;
 
     let files: &[File] = files;
-    let nodes = grouped_tree(files, &folded);
+    let nodes = if tree_mode {
+        grouped_tree(files, &folded)
+    } else {
+        grouped_list(files)
+    };
     let total = nodes.len() as u32;
 
-    // After a rebuild, keep the cursor on the same item.
-    let prev_anchor = use_ref(scope, || None::<String>);
-    let current_anchor = nodes.get(cursor as usize).map(|n| anchor(n));
-    if let Some(ref saved) = *prev_anchor.current() {
-        if current_anchor.as_deref() != Some(saved.as_str()) {
-            if let Some(pos) = nodes.iter().position(|n| anchor(n) == *saved) {
-                if let Some(set) = set_cursor {
-                    set(&move |_| pos as u32);
-                }
+    // When the file list changes, keep the cursor on the same item.
+    let prev_files = use_ref(scope, || Rc::clone(&ctx.files));
+    let saved_anchor = use_ref(scope, || None::<String>);
+    let files_changed = !Rc::ptr_eq(&ctx.files, &*prev_files.current());
+    if files_changed {
+        if let Some(pos) = find_by_identity(saved_anchor.current().as_deref(), &nodes) {
+            if let Some(set) = set_cursor {
+                set(&move |_| pos as u32);
             }
         }
+        *prev_files.current() = Rc::clone(&ctx.files);
+    } else {
+        *saved_anchor.current() = nodes.get(cursor as usize).map(|n| identity(n));
     }
-    *prev_anchor.current() = current_anchor;
 
     // What the cursor is on, so Enter can decide what to do.
     let cursor_node = nodes.get(cursor as usize).cloned();
@@ -93,6 +99,10 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
             }
             k if k == key!(q) => {
                 exit();
+                Bubble::Stop
+            }
+            k if k == key!(i) => {
+                set_tree_mode(&|mode| !mode);
                 Bubble::Stop
             }
             _ => Bubble::Continue,
@@ -227,7 +237,12 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
     }
 }
 
-fn anchor(node: &Node) -> String {
+pub fn find_by_identity(saved: Option<&str>, nodes: &[Node]) -> Option<usize> {
+    let saved = saved?;
+    nodes.iter().position(|n| identity(n) == saved)
+}
+
+pub fn identity(node: &Node) -> String {
     match node {
         Node::Heading { name, .. } => name.to_string(),
         Node::Directory { path, .. } => path.clone(),
