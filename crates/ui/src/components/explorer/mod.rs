@@ -65,6 +65,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let on_open_click = Rc::clone(&on_open);
     let nodes_click = Rc::clone(&nodes);
     let view_start = view_lines.start;
+    let repo = Rc::clone(&ctx.repo);
     let exit = use_exit(scope);
     let listeners = Listeners::new()
         .on_key(move |k| {
@@ -93,6 +94,12 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                 }
                 k if k == key!(i) => {
                     set_tree_mode(&|mode| !mode);
+                    Bubble::Stop
+                }
+                k if k == key!(space) => {
+                    if let Some(ref node) = cursor_node {
+                        toggle_stage(node, &repo);
+                    }
                     Bubble::Stop
                 }
                 _ => Bubble::Continue,
@@ -175,6 +182,24 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
         file_types::ChangeType::Untracked => "??",
         file_types::ChangeType::Conflicted => "!",
     }
+}
+
+fn toggle_stage(node: &Node, repo: &std::path::Path) {
+    let file = match node {
+        Node::File { file, .. } => file,
+        _ => return,
+    };
+    let path = file.path().as_str().to_string();
+    let is_staged = file.revs().after == file_types::Rev::Index;
+    let repo = repo.to_path_buf();
+    std::thread::spawn(move || {
+        let Ok(repository) = vcs::Repository::open(&repo) else { return };
+        let _ = if is_staged {
+            repository.unstage(&path)
+        } else {
+            repository.stage(&path)
+        };
+    });
 }
 
 fn activate_node(

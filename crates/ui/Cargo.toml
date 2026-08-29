@@ -21,6 +21,7 @@ watcher.workspace = true
 syntax.workspace = true
 loom.workspace = true
 ratatui.workspace = true
+vcs.workspace = true
 crossterm.workspace = true
 crokey.workspace = true
 anyhow.workspace = true

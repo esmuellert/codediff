@@ -2740,6 +2740,7 @@ dependencies = [
  "signal-hook 0.4.4",
  "syntax",
  "tracing",
+ "vcs",
  "watcher",
 ]
 
