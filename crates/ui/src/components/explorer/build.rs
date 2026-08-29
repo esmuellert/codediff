@@ -204,7 +204,7 @@ pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
         }
         flatten(&mut root);
         sort(&mut root);
-        walk(&root, &[], "", folded, &mut out);
+        walk(&root, &[], heading, folded, &mut out);
     }
     out
 }

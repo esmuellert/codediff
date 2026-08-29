@@ -408,7 +408,7 @@ fn fold_state_survives_a_refresh() {
 
     // Fold "src".
     let mut folded = HashSet::new();
-    folded.insert("src".to_string());
+    folded.insert("Changes/src".to_string());
 
     // First build — src is folded.
     let nodes_v1 = grouped_tree(&files, &folded);
@@ -572,4 +572,50 @@ fn list_mode_is_sorted_by_path() {
     let mut sorted = names.clone();
     sorted.sort();
     assert_eq!(names, sorted, "files are sorted by full path");
+}
+
+// ---- fold isolation across groups ----
+
+#[test]
+fn folding_a_directory_in_one_group_does_not_fold_the_same_name_in_another() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::{grouped_tree, Node};
+
+    // Two groups, each with a src/ directory.
+    let staged = file_types::Revs::new(
+        file_types::Rev::Commit(file_types::Oid::new("abc")),
+        file_types::Rev::Index,
+    );
+    let unstaged = file_types::Revs::worktree_against(file_types::Oid::new("abc"));
+
+    let files = vec![
+        File::unchanged_path(
+            file_types::RepoPath::new("src/a.rs", std::path::Path::new("/repo")),
+            unstaged,
+        ),
+        File::unchanged_path(
+            file_types::RepoPath::new("src/b.rs", std::path::Path::new("/repo")),
+            staged,
+        ),
+    ];
+
+    // Fold src in the first group only.
+    let mut folded = HashSet::new();
+    let nodes = grouped_tree(&files, &HashSet::new());
+    // Find the first src directory's path key.
+    let first_src = nodes.iter().find_map(|n| match n {
+        Node::Directory { path, .. } => Some(path.clone()),
+        _ => None,
+    }).expect("a src directory");
+    folded.insert(first_src.clone());
+
+    let nodes = grouped_tree(&files, &folded);
+
+    // Count how many src directories are open.
+    let open_srcs: Vec<_> = nodes.iter().filter(|n| matches!(n,
+        Node::Directory { name, open: true, .. } if name == "src"
+    )).collect();
+
+    assert_eq!(open_srcs.len(), 1,
+        "only one group's src is folded, the other stays open");
 }
