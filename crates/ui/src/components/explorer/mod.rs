@@ -1,15 +1,16 @@
 //! The explorer.
 
-mod build;
+pub mod build;
 mod entry;
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crokey::key;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
-    use_context, use_exit,
+    use_context, use_exit, use_state,
 };
 
 use self::entry::{Body, Entry, EntryProps, Indent, Status};
@@ -27,14 +28,19 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let cursor = ctx.cursor;
     let set_cursor = ctx.set_cursor;
     let files = &ctx.files;
-    let _ = on_open;
+
+    let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
 
     let base = theme.normal;
 
     let files: &[File] = files;
-    let nodes = tree(files);
+    let nodes = tree(files, &folded);
     let total = nodes.len() as u32;
 
+    // What the cursor is on, so Enter can decide what to do.
+    let cursor_node = nodes.get(cursor as usize).cloned();
+
+    let on_open = Rc::clone(on_open);
     let exit = use_exit(scope);
     let keys = Listeners::new().on_key(move |k| {
         match k {
@@ -47,6 +53,26 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
             k if k == key!(k) || k == key!(up) => {
                 if let Some(set) = set_cursor {
                     set(&|c| c.saturating_sub(1));
+                }
+                Bubble::Stop
+            }
+            k if k == key!(enter) => {
+                match cursor_node {
+                    Some(Node::Directory { ref path, .. }) => {
+                        let path = path.clone();
+                        set_folded(&move |mut set| {
+                            if set.contains(&path) {
+                                set.remove(&path);
+                            } else {
+                                set.insert(path.clone());
+                            }
+                            set
+                        });
+                    }
+                    Some(Node::File { ref file, .. }) => {
+                        on_open(file.clone());
+                    }
+                    None => {}
                 }
                 Bubble::Stop
             }
@@ -64,7 +90,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
             nodes.get(line as usize).map(|node| {
                 let selected = line == cursor;
                 let (indent, body, status) = match node {
-                    Node::Directory { indent, name, open } => {
+                    Node::Directory { indent, name, open, .. } => {
                         let ic = crate::theme::icon::folder(*open);
                         (
                             Indent { markers: indent.as_str().into() },

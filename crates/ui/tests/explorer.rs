@@ -76,8 +76,9 @@ fn the_last_of_its_siblings_gets_a_corner() {
 
 #[test]
 fn a_deeper_file_carries_its_ancestors_line() {
-    let rows = screen(&["src/view/tab.rs", "notes.txt"], 40, 4);
-    // src is not the last of its siblings, so the line through it continues.
+    // Two files under src so the directory is not flattened.
+    let rows = screen(&["src/app.rs", "src/view/tab.rs", "notes.txt"], 40, 6);
+    // src has siblings below, so its line continues through view.
     assert!(rows[2].starts_with('│'), "tab.rs sits under src: {:?}", rows[2]);
 }
 
@@ -246,4 +247,73 @@ fn the_view_follows_the_cursor_back_up() {
     // Coming from a scrolled position, moving to row 0 brings the view home.
     let top = scroll_top(0, 20, 10, 12);
     assert_eq!(top, 0, "the view came back with the cursor, got {top}");
+}
+
+// ---- chain flattening ----
+
+#[test]
+fn a_single_child_directory_chain_is_flattened() {
+    // src/view/tab.rs with no other files under src — src/view becomes one line.
+    let rows = screen(&["src/view/tab.rs"], 40, 3);
+    assert!(rows[0].contains("src/view"), "the chain is merged: {:?}", rows[0]);
+}
+
+#[test]
+fn a_directory_with_two_children_is_not_flattened() {
+    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 4);
+    assert!(rows[0].contains("src"), "got {:?}", rows[0]);
+    assert!(!rows[0].contains('/'), "src has two children, no merge: {:?}", rows[0]);
+}
+
+#[test]
+fn a_three_level_chain_collapses_fully() {
+    let rows = screen(&["a/b/c/file.rs"], 40, 3);
+    assert!(rows[0].contains("a/b/c"), "got {:?}", rows[0]);
+}
+
+// ---- folding ----
+
+#[test]
+fn a_folded_directory_hides_its_children() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::tree;
+
+    let files: Vec<File> = ["src/app.rs", "src/lib.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let mut folded = HashSet::new();
+    folded.insert("src".to_string());
+
+    let nodes = tree(&files, &folded);
+    let names: Vec<&str> = nodes.iter().map(|n| match n {
+        ui::components::explorer::build::Node::Directory { name, .. } => name.as_str(),
+        ui::components::explorer::build::Node::File { name, .. } => name.as_str(),
+    }).collect();
+
+    assert!(names.contains(&"src"), "the directory itself is shown");
+    assert!(!names.contains(&"app.rs"), "its children are hidden");
+    assert!(!names.contains(&"lib.rs"), "its children are hidden");
+    assert!(names.contains(&"notes.txt"), "siblings are still shown");
+}
+
+#[test]
+fn unfolding_brings_the_children_back() {
+    use std::collections::HashSet;
+    use ui::components::explorer::build::tree;
+
+    let files: Vec<File> = ["src/app.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
+
+    let folded = HashSet::new();
+    let nodes = tree(&files, &folded);
+    let names: Vec<&str> = nodes.iter().map(|n| match n {
+        ui::components::explorer::build::Node::Directory { name, .. } => name.as_str(),
+        ui::components::explorer::build::Node::File { name, .. } => name.as_str(),
+    }).collect();
+
+    assert!(names.contains(&"app.rs"), "children are visible when not folded");
 }
