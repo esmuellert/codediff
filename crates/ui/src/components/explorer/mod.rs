@@ -14,7 +14,7 @@ use loom::{
 };
 
 use self::entry::{Body, Entry, EntryProps, Indent, Status};
-use self::build::{tree, Node};
+use self::build::{grouped_tree, Node};
 use super::context::Ui;
 
 /// Rows kept between the cursor and the edge while scrolling.
@@ -34,7 +34,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     let base = theme.normal;
 
     let files: &[File] = files;
-    let nodes = tree(files, &folded);
+    let nodes = grouped_tree(files, &folded);
     let total = nodes.len() as u32;
 
     // What the cursor is on, so Enter can decide what to do.
@@ -58,6 +58,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
             }
             k if k == key!(enter) => {
                 match cursor_node {
+                    Some(Node::Heading { .. }) => {}
                     Some(Node::Directory { ref path, .. }) => {
                         let path = path.clone();
                         set_folded(&move |mut set| {
@@ -90,17 +91,47 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
             nodes.get(line as usize).map(|node| {
                 let selected = line == cursor;
                 let (indent, body, status) = match node {
+                    Node::Heading { name, count, added, removed } => {
+                        let mut suffix: Vec<(Rc<str>, ratatui::style::Color)> = Vec::new();
+                        if *added == 0 && *removed == 0 {
+                            suffix.push((Rc::from(format!(" ({count})").as_str()), theme.tree.count));
+                        } else {
+                            suffix.push((Rc::from(format!(" ({count} · ").as_str()), theme.tree.count));
+                            if *added > 0 {
+                                suffix.push((Rc::from(format!("+{added}").as_str()), theme.change.gained));
+                            }
+                            if *added > 0 && *removed > 0 {
+                                suffix.push((Rc::from(" "), theme.tree.count));
+                            }
+                            if *removed > 0 {
+                                suffix.push((Rc::from(format!("-{removed}").as_str()), theme.change.lost));
+                            }
+                            suffix.push((Rc::from(")"), theme.tree.count));
+                        }
+                        (
+                            Indent { markers: "".into() },
+                            Body {
+                                icon_glyph: None,
+                                icon_color: ratatui::style::Color::Reset,
+                                text: Rc::from(*name),
+                                text_color: theme.tree.heading,
+                                bold: false,
+                                suffix,
+                            },
+                            None,
+                        )
+                    }
                     Node::Directory { indent, name, open, .. } => {
                         let ic = crate::theme::icon::folder(*open);
                         (
                             Indent { markers: indent.as_str().into() },
                             Body {
-                                icon_glyph: ic.glyph,
+                                icon_glyph: Some(ic.glyph),
                                 icon_color: ic.color,
                                 text: name.as_str().into(),
                                 text_color: theme.tree.directory,
-                                previous: None,
-                                previous_color: theme.tree.previous,
+                                bold: false,
+                                suffix: Vec::new(),
                             },
                             None,
                         )
@@ -112,12 +143,14 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                         (
                             Indent { markers: indent.as_str().into() },
                             Body {
-                                icon_glyph: ic.glyph,
+                                icon_glyph: Some(ic.glyph),
                                 icon_color: ic.color,
                                 text: name.as_str().into(),
                                 text_color: theme.tree.name,
-                                previous: file.previous_path().map(|p| Rc::from(format!(" ← {p}").as_str())),
-                                previous_color: theme.tree.previous,
+                                bold: false,
+                                suffix: file.previous_path()
+                                    .map(|p| vec![(Rc::from(format!(" ← {p}").as_str()), theme.tree.previous)])
+                                    .unwrap_or_default(),
                             },
                             Some(Status {
                                 added: stats.map_or(0, |s| s.added),

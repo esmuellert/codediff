@@ -7,6 +7,12 @@ use file_types::File;
 /// What one line of the explorer is. Built by `tree()`, read by Explorer.
 #[derive(Clone)]
 pub enum Node {
+    Heading {
+        name: &'static str,
+        count: usize,
+        added: u32,
+        removed: u32,
+    },
     Directory {
         indent: String,
         name: String,
@@ -179,4 +185,57 @@ fn split_path(path: &str) -> (Vec<&str>, &str) {
     let mut segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     let name = segments.pop().unwrap_or(path);
     (segments, name)
+}
+
+/// Groups files by revision pair, builds a tree per group, and prepends
+/// a heading node for each.
+pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
+    let groups = group(files);
+    let mut out = Vec::new();
+    for (heading, members) in &groups {
+        let group_files: Vec<&File> = members.iter().map(|&i| &files[i]).collect();
+        let mut added = 0u32;
+        let mut removed = 0u32;
+        for f in &group_files {
+            if let Some(stats) = f.get_stats().filter(|s| !s.is_empty()) {
+                added += stats.added;
+                removed += stats.removed;
+            }
+        }
+        out.push(Node::Heading {
+            name: heading,
+            count: members.len(),
+            added,
+            removed,
+        });
+
+        // Build a tree from this group's files.
+        let mut root: Vec<Item<'_>> = Vec::new();
+        for &file in &group_files {
+            let path = file.path().as_str();
+            let (dirs, name) = split_path(path);
+            insert(&mut root, &dirs, name, file);
+        }
+        flatten(&mut root);
+        sort(&mut root);
+        walk(&root, &[], "", folded, &mut out);
+    }
+    out
+}
+
+/// Groups files by revision pair, preserving the order the first file of
+/// each group arrived in.
+fn group(files: &[File]) -> Vec<(&'static str, Vec<usize>)> {
+    let mut groups: Vec<(file_types::Revs, Vec<usize>)> = Vec::new();
+    for (index, file) in files.iter().enumerate() {
+        let revs = file.revs();
+        match groups.iter_mut().find(|(seen, _)| *seen == revs) {
+            Some((_, members)) => members.push(index),
+            None => groups.push((revs, vec![index])),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(revs, members)| (revs.heading(), members))
+        .collect()
 }

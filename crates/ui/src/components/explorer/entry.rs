@@ -20,12 +20,13 @@ pub struct Indent {
 /// The icon and name.
 #[derive(Clone, PartialEq)]
 pub struct Body {
-    pub icon_glyph: char,
+    pub icon_glyph: Option<char>,
     pub icon_color: Color,
     pub text: Rc<str>,
     pub text_color: Color,
-    pub previous: Option<Rc<str>>,
-    pub previous_color: Color,
+    pub bold: bool,
+    /// Styled text after the name. Each pair is (text, colour).
+    pub suffix: Vec<(Rc<str>, Color)>,
 }
 
 /// Line counts and change letter.
@@ -113,27 +114,36 @@ pub fn Entry(
                     .saturating_sub(gap);
 
                 // Section 2: body — icon + name, truncated if needed.
-                let icon_str = format!("{} ", body.icon_glyph);
-                let icon_width = cell_width(&icon_str);
-                at = cells::write(paint.cells(), area, at, &icon_str, base.fg(body.icon_color));
+                let (icon_width, text_style) = if let Some(glyph) = body.icon_glyph {
+                    let icon_str = format!("{} ", glyph);
+                    let w = cell_width(&icon_str);
+                    at = cells::write(paint.cells(), area, at, &icon_str, base.fg(body.icon_color));
+                    (w, base.fg(body.text_color))
+                } else {
+                    (0, base.fg(body.text_color))
+                };
+                let text_style = if body.bold { text_style.add_modifier(Modifier::BOLD) } else { text_style };
 
                 let name_budget = body_budget.saturating_sub(icon_width);
 
-                if let Some(ref prev) = body.previous {
-                    let prev_width = cell_width(prev);
-                    let name_width = cell_width(&body.text);
-                    if name_width + prev_width <= name_budget {
-                        at = cells::write(paint.cells(), area, at, &body.text, base.fg(body.text_color));
-                        at = cells::write(paint.cells(), area, at, prev, base.fg(body.previous_color));
+                let suffix_width: u16 = body.suffix.iter().map(|(t, _)| cell_width(t)).sum();
+                let name_width = cell_width(&body.text);
+
+                if !body.suffix.is_empty() {
+                    if name_width + suffix_width <= name_budget {
+                        at = cells::write(paint.cells(), area, at, &body.text, text_style);
+                        for (text, color) in &body.suffix {
+                            at = cells::write(paint.cells(), area, at, text, base.fg(*color));
+                        }
                     } else if name_width <= name_budget {
-                        at = cells::write(paint.cells(), area, at, &body.text, base.fg(body.text_color));
+                        at = cells::write(paint.cells(), area, at, &body.text, text_style);
                     } else {
                         let cut = truncate(&body.text, name_budget);
-                        at = cells::write(paint.cells(), area, at, &cut, base.fg(body.text_color));
+                        at = cells::write(paint.cells(), area, at, &cut, text_style);
                     }
                 } else {
                     let cut = truncate(&body.text, name_budget);
-                    at = cells::write(paint.cells(), area, at, &cut, base.fg(body.text_color));
+                    at = cells::write(paint.cells(), area, at, &cut, text_style);
                 }
 
                 // Section 3: status — right-aligned.
@@ -157,7 +167,7 @@ pub fn Entry(
                     }
                     cells::write(
                         paint.cells(), area, right_at, st.letter,
-                        base.fg(st.letter_color).add_modifier(Modifier::BOLD),
+                        base.fg(st.letter_color),
                     );
                 }
             }),
