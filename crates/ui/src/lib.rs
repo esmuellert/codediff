@@ -19,6 +19,8 @@ use file_types::File;
 use loom::{Flow, Tree, deliver_input};
 
 use components::{App, AppProps};
+use services::diff::DiffService;
+use services::syntax::SyntaxService;
 use services::files::FilesService;
 
 enum Event {
@@ -27,6 +29,8 @@ enum Event {
     Signal(i32),
     FsChanged(watcher::Refresh),
     ListRefreshed(Vec<File>),
+    FileReady(pipeline::diff::Response),
+    Coloured(syntax::SyntaxResponse),
 }
 
 pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
@@ -34,6 +38,12 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
 
     let list_worker = pipeline::files::FilesWorker::start(
         channel::Emitter::new(tx.clone(), Event::ListRefreshed),
+    );
+    let diff_worker = pipeline::diff::DiffWorker::start(
+        channel::Emitter::new(tx.clone(), Event::FileReady),
+    );
+    let syntax_worker = syntax::Syntax::start(
+        channel::Emitter::new(tx.clone(), Event::Coloured),
     );
     let _watcher = watcher::start(
         cwd,
@@ -44,10 +54,18 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
         Rc::new(RefCell::new(list_worker)),
         pathspec,
     ));
+    let syntax_service = Rc::new(SyntaxService::new(
+        Rc::new(RefCell::new(syntax_worker)),
+    ));
+    let diff_service = Rc::new(DiffService::new(
+        Rc::new(RefCell::new(diff_worker)),
+    ));
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
         file_service: Rc::clone(&file_service),
+        diff_service: Rc::clone(&diff_service),
+        syntax_service: Rc::clone(&syntax_service),
     });
 
     #[cfg(unix)]
@@ -84,6 +102,14 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
             }
             Event::ListRefreshed(list) => {
                 file_service.deliver(list);
+                Flow::Continue
+            }
+            Event::FileReady(response) => {
+                diff_service.deliver(response);
+                Flow::Continue
+            }
+            Event::Coloured(response) => {
+                syntax_service.deliver(response);
                 Flow::Continue
             }
         },

@@ -32,7 +32,7 @@ pub fn draw(files: Vec<File>, width: u16, height: u16) -> Vec<String> {
 
 pub fn harness(files: Vec<File>, width: u16, height: u16, cursor: u32) -> Harness {
     let rows = height as u32;
-    Harness::new::<Explorer>(ExplorerProps { on_open: Rc::new(|_| {}) }, width, height)
+    Harness::new::<Explorer>(ExplorerProps {}, width, height)
         .provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             repo: Rc::from(Path::new("/repo")),
@@ -41,6 +41,10 @@ pub fn harness(files: Vec<File>, width: u16, height: u16, cursor: u32) -> Harnes
             view_lines: 0..rows,
             set_repo: None,
             set_cursor: None,
+            diff: None,
+            file: None,
+            set_file: None,
+            syntax: None,
         })
 }
 

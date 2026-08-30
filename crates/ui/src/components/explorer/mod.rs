@@ -21,13 +21,14 @@ use super::context::Ui;
 const SCROLLOFF: u32 = 3;
 
 #[component]
-pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
+pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let view_lines = &ctx.view_lines;
     let cursor = ctx.cursor;
     let set_cursor = ctx.set_cursor;
     let files = &ctx.files;
+    let set_file = ctx.set_file;
 
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
     let (tree_mode, set_tree_mode) = use_state(scope, || true);
@@ -61,8 +62,6 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
     // What the cursor is on, so Enter can decide what to do.
     let cursor_node = nodes.get(cursor as usize).cloned();
 
-    let on_open = Rc::clone(on_open);
-    let on_open_click = Rc::clone(&on_open);
     let nodes_click = Rc::clone(&nodes);
     let view_start = view_lines.start;
     let repo = Rc::clone(&ctx.repo);
@@ -84,7 +83,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                 }
                 k if k == key!(enter) => {
                     if let Some(ref node) = cursor_node {
-                        activate_node(node, set_folded, &on_open);
+                        activate_node(node, set_folded, set_file);
                     }
                     Bubble::Stop
                 }
@@ -123,7 +122,7 @@ pub fn Explorer(scope: &mut Scope, on_open: Rc<dyn Fn(File)>) -> LoomNode {
                     set(&move |_| line);
                 }
                 if let Some(node) = nodes_click.get(line as usize) {
-                    activate_node(node, set_folded, &on_open_click);
+                    activate_node(node, set_folded, set_file);
                 }
             }
             Bubble::Stop
@@ -205,7 +204,7 @@ fn toggle_stage(node: &Node, repo: &std::path::Path) {
 fn activate_node(
     node: &Node,
     set_folded: loom::SetState<HashSet<String>>,
-    on_open: &Rc<dyn Fn(File)>,
+    set_file: Option<loom::SetState<Option<Rc<File>>>>,
 ) {
     match node {
         Node::Heading { .. } => {}
@@ -221,7 +220,10 @@ fn activate_node(
             });
         }
         Node::File { file, .. } => {
-            on_open(file.clone());
+            if let Some(set) = set_file {
+                let file = Rc::new(file.clone());
+                set(&move |_| Some(Rc::clone(&file)));
+            }
         }
     }
 }

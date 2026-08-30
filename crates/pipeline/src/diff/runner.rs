@@ -15,6 +15,13 @@ pub enum DiffContent {
     Diff(Diff),
 }
 
+// A new diff response should always trigger a re-render.
+impl PartialEq for DiffContent {
+    fn eq(&self, _: &Self) -> bool {
+        false
+    }
+}
+
 /// A file with only one version (added, untracked, or deleted).
 #[derive(Debug)]
 pub struct SingleFile {

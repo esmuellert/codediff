@@ -10,12 +10,20 @@ use loom::{
 
 use super::border::{Border, BorderProps};
 use super::context::{UiProvider, UiProviderProps};
+use super::diff_viewer::{DiffViewer, DiffViewerProps};
 use super::explorer::{Explorer, ExplorerProps};
-use super::welcome::{Welcome, WelcomeProps};
+use crate::services::diff::DiffService;
 use crate::services::files::FilesService;
+use crate::services::syntax::SyntaxService;
 
 #[component]
-pub fn App(scope: &mut Scope, cwd: Rc<Path>, file_service: Rc<FilesService>) -> Node {
+pub fn App(
+    scope: &mut Scope,
+    cwd: Rc<Path>,
+    file_service: Rc<FilesService>,
+    diff_service: Rc<DiffService>,
+    syntax_service: Rc<SyntaxService>,
+) -> Node {
     let (rows, set_rows) = use_state(scope, || 0u32);
 
     let exit = use_exit(scope);
@@ -42,6 +50,8 @@ pub fn App(scope: &mut Scope, cwd: Rc<Path>, file_service: Rc<FilesService>) -> 
             UiProvider {
                 cwd: Rc::clone(cwd),
                 file_service: Rc::clone(file_service),
+                diff_service: Rc::clone(diff_service),
+                syntax_service: Rc::clone(syntax_service),
                 rows: rows,
                 Row {
                     ref: Some(body),
@@ -50,12 +60,12 @@ pub fn App(scope: &mut Scope, cwd: Rc<Path>, file_service: Rc<FilesService>) -> 
                     Border {
                         focused: true,
                         layout: Layout { basis: loom::Basis::Length(40), shrink: 1, ..Default::default() },
-                        Explorer { on_open: Rc::new(|_| {}) }
+                        Explorer {}
                     }
                     Border {
                         focused: false,
                         layout: Layout { grow: 1, ..Default::default() },
-                        Welcome {}
+                        DiffViewer {}
                     }
                 }
             }

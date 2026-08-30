@@ -4,10 +4,12 @@ mod app;
 pub mod border;
 pub mod cells;
 mod context;
+mod diff_viewer;
 pub mod explorer;
 pub mod gutter;
 pub mod filler;
 pub mod code_text;
+pub mod side_by_side;
 mod welcome;
 
 pub use app::{App, AppProps};

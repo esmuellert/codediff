@@ -49,17 +49,23 @@ pub fn run<E: Send + 'static>(
             return Ok(());
         };
 
-        match respond(event, tree) {
-            Flow::Quit => return Ok(()),
-            Flow::Suspend => {
-                #[cfg(unix)]
-                screen.suspend()?;
-                tree.redraw_all();
+        // Drain everything already waiting before the next draw. A burst
+        // of clicks costs one frame, so input cannot outrun the screen.
+        let mut next = Some(event);
+        while let Some(event) = next.take() {
+            match respond(event, tree) {
+                Flow::Quit => return Ok(()),
+                Flow::Suspend => {
+                    #[cfg(unix)]
+                    screen.suspend()?;
+                    tree.redraw_all();
+                }
+                Flow::Continue => {}
             }
-            Flow::Continue => {}
-        }
-        if tree.exiting() {
-            return Ok(());
+            if tree.exiting() {
+                return Ok(());
+            }
+            next = events.try_recv().ok();
         }
     }
 }
@@ -102,3 +108,4 @@ fn press(event: &Event) -> Option<crokey::KeyCombination> {
         _ => None,
     }
 }
+
