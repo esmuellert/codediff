@@ -7,6 +7,7 @@ mod context;
 pub mod explorer;
 pub mod gutter;
 pub mod filler;
+pub mod code_text;
 mod welcome;
 
 pub use app::{App, AppProps};
