@@ -273,12 +273,13 @@ fn clicking_explorer_opens_diff_pane() {
     let file_row = session.view().focused().viewport.cursor() as u16;
 
     // Click that row. The explorer text area in Full layout starts after a
-    // gutter. Col 10 is well within the text area.
+    // gutter. Col 10 is well within the text area, and the box's top edge is
+    // one row above the list's first.
     mouse(
         &mut session,
         MouseEventKind::Down(MouseButton::Left),
         10,
-        file_row,
+        file_row + 1,
     );
 
     // Drive the file worker to completion.

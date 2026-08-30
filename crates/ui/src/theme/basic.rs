@@ -148,6 +148,9 @@ pub const DARK: Theme = Theme {
     cursor_line: over(cube::GREY),
     divider: Style::new().fg(Color::DarkGray).bg(Color::Reset),
 
+    border: ink(Color::DarkGray),
+    border_focused: ink(Color::White),
+
     status: Style::new().fg(Color::Black).bg(Color::Gray),
     status_path: Style::new().add_modifier(Modifier::BOLD),
     warning: Style::new()
@@ -180,6 +183,9 @@ pub const LIGHT: Theme = Theme {
     line_number_current: ink(Color::Black),
     cursor_line: over(cube::LIGHT_GREY),
     divider: Style::new().fg(Color::Gray).bg(Color::Reset),
+
+    border: ink(Color::Gray),
+    border_focused: ink(Color::Black),
 
     status: Style::new().fg(Color::White).bg(Color::DarkGray),
     status_path: Style::new().add_modifier(Modifier::BOLD),

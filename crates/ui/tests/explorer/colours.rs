@@ -5,12 +5,16 @@
 
 use crate::common::*;
 
-/// The colour of the first cell of each row, as the terminal would receive it.
+/// The colour of one column of each row a pane drew.
+///
+/// The screen is four columns wider and two rows taller than the pane asked
+/// for — the box round it, and a clear column inside each side edge; both the
+/// column given and the rows returned are the pane's own.
 fn colours(session: &mut TestSession, width: u16, height: u16, column: u16) -> Vec<Color> {
-    let area = Rect::new(0, 0, width, height);
+    let area = Rect::new(0, 0, width + 4, height + 2);
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
-    (0..height).map(|y| cells[(column, y)].fg).collect()
+    (0..height).map(|y| cells[(column + 2, y + 1)].fg).collect()
 }
 
 #[test]
@@ -118,11 +122,12 @@ fn a_pane_that_does_not_have_focus_is_still_coloured() {
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
 
-    // The exact cells the comment is written in, found by its text.
-    let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
+    // The exact cells the comment is written in, found by its text. Row one,
+    // the first inside the box.
+    let row: String = (0..80).map(|x| cells[(x, 1)].symbol()).collect();
     let at = column_of(&row, "// a comment");
     assert_eq!(
-        cells[(at, 0)].fg,
+        cells[(at, 1)].fg,
         comment,
         "the unfocused pane is not coloured"
     );
@@ -158,9 +163,10 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
     open_selected(&mut session);
     session.wait_until_idle();
     session.draw_into(&mut cells, area);
-    let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
+    // Row one, the first inside the box.
+    let row: String = (0..80).map(|x| cells[(x, 1)].symbol()).collect();
     assert_eq!(
-        cells[(column_of(&row, "fn"), 0)].fg,
+        cells[(column_of(&row, "fn"), 1)].fg,
         keyword,
         "a keyword to begin with"
     );
@@ -174,9 +180,9 @@ fn re_opening_a_file_whose_bytes_changed_does_not_reuse_its_old_colours() {
     open_selected(&mut session);
     session.wait_until_idle();
     session.draw_into(&mut cells, area);
-    let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
+    let row: String = (0..80).map(|x| cells[(x, 1)].symbol()).collect();
     assert_eq!(
-        cells[(column_of(&row, "//"), 0)].fg,
+        cells[(column_of(&row, "//"), 1)].fg,
         comment,
         "the new bytes wearing the old colours"
     );
@@ -192,11 +198,12 @@ fn a_heading_and_a_status_letter_are_bold_in_every_theme() {
     for name in ["basic-dark", "catppuccin-mocha"] {
         let mut session =
             TestSession::new(Buffer::explorer(entries()), Theme::named(name).unwrap());
-        let area = Rect::new(0, 0, 44, 8);
+        let area = Rect::new(0, 0, 48, 10);
         let mut cells = Cells::empty(area);
         session.draw_into(&mut cells, area);
 
-        let bold = |x: u16, y: u16| cells[(x, y)].modifier.contains(Modifier::BOLD);
+        // The pane's own columns and rows, which the box and its padding moved.
+        let bold = |x: u16, y: u16| cells[(x + 2, y + 1)].modifier.contains(Modifier::BOLD);
         assert!(bold(0, 0), "{name}: the `C` of the section heading");
         assert!(bold(43, 3), "{name}: the status letter of a file");
         assert!(!bold(0, 1), "{name}: an indent guide is not bold");

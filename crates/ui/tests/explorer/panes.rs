@@ -1,13 +1,10 @@
-//! Two panes: the border between them, which one a key means, and what
-//! opening a file does to the one beside the list.
+//! Two panes: the box round each, which one a key means, and what opening a
+//! file does to the one beside the list.
 
 use crate::common::*;
 
 #[test]
-fn the_border_runs_the_whole_height_of_the_tab() {
-    // The failure this prevents: `cells::hatch` draws one row, so a
-    // full-height rectangle handed to it drew the border on the top line only
-    // and left a blank column down the rest of the screen.
+fn the_two_boxes_touch_with_no_gap_between_them() {
     let theme = Theme::named("catppuccin-mocha").unwrap();
     let mut session = scripted(
         only(vec![modified("src/lib.rs")]),
@@ -20,9 +17,152 @@ fn the_border_runs_the_whole_height_of_the_tab() {
     let mut cells = Cells::empty(area);
     session.draw_into(&mut cells, area);
 
-    // Every row of the body, which is everything above the status line.
-    for y in 0..9 {
-        assert_eq!(cells[(40, y)].symbol(), "│", "row {y} has no border");
+    // Left box right edge at 40, right box left edge at 41 — touching.
+    for (x, top, bottom) in [(40, "╮", "╯"), (41, "╭", "╰")] {
+        assert_eq!(cells[(x, 0)].symbol(), top);
+        for y in 1..8 {
+            assert_eq!(cells[(x, y)].symbol(), "│", "column {x} of row {y}");
+        }
+        assert_eq!(cells[(x, 8)].symbol(), bottom);
+    }
+}
+
+#[test]
+fn each_pane_is_drawn_in_a_box_and_the_focused_one_is_the_brighter() {
+    let theme = Theme::named("catppuccin-mocha").unwrap();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs")]),
+        theme,
+        vec![single_file(unchanged("src/lib.rs"), "fn main() {}\n")],
+    );
+    open_selected(&mut session);
+
+    let area = Rect::new(0, 0, 80, 10);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+
+    // The four corners of each box.
+    let symbol = |x: u16, y: u16| cells[(x, y)].symbol().to_owned();
+    assert_eq!(
+        [
+            symbol(0, 0),
+            symbol(40, 0),
+            symbol(0, 8),
+            symbol(40, 8),
+            symbol(41, 0),
+            symbol(79, 0),
+            symbol(41, 8),
+            symbol(79, 8)
+        ],
+        ["╭", "╮", "╰", "╯", "╭", "╮", "╰", "╯"]
+    );
+
+    // The list has focus, so its box is the focused colour and the diff's is
+    // not.
+    assert_eq!(cells[(0, 0)].fg, theme.border_focused.fg.unwrap());
+    assert_eq!(cells[(40, 0)].fg, theme.border_focused.fg.unwrap());
+    assert_eq!(cells[(41, 0)].fg, theme.border.fg.unwrap());
+    assert_eq!(cells[(79, 0)].fg, theme.border.fg.unwrap());
+
+    // And it moves with the focus.
+    session.press(crokey::key!(right));
+    session.draw_into(&mut cells, area);
+    assert_eq!(cells[(0, 0)].fg, theme.border.fg.unwrap());
+    assert_eq!(cells[(40, 0)].fg, theme.border.fg.unwrap());
+    assert_eq!(cells[(41, 0)].fg, theme.border_focused.fg.unwrap());
+    assert_eq!(cells[(79, 0)].fg, theme.border_focused.fg.unwrap());
+}
+
+#[test]
+fn a_column_inside_each_box_is_left_clear_of_text() {
+    // Text hard against the box is hard to read, so a column each side is
+    // kept blank — and painted, so it is not a black stripe down a themed
+    // background.
+    let theme = Theme::named("catppuccin-mocha").unwrap();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs")]),
+        theme,
+        vec![single_file(unchanged("src/lib.rs"), "fn main() {}\n")],
+    );
+    open_selected(&mut session);
+
+    let area = Rect::new(0, 0, 80, 10);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+
+    // The list's box holds columns 0 and 40, the diff's 41 and 79, so the
+    // clear columns are the ones beside those.
+    let row: String = (0..80).map(|x| cells[(x, 1)].symbol()).collect();
+    assert_eq!(column_of(&row, "Changes"), 2, "{row:?}");
+    assert_eq!(column_of(&row, "fn main"), 43 + 4, "{row:?}");
+    for x in [1, 39, 42, 78] {
+        assert_eq!(cells[(x, 1)].symbol(), " ", "column {x} of {row:?}");
+        assert_eq!(
+            cells[(x, 1)].bg,
+            theme.normal.bg.unwrap(),
+            "column {x} was left unpainted"
+        );
+    }
+}
+
+#[test]
+fn a_click_on_the_clear_column_beside_a_box_lands_nowhere() {
+    use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
+
+    let theme = Theme::named("catppuccin-mocha").unwrap();
+    let long: String = (0..100).map(|n| format!("line {n}\n")).collect();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs")]),
+        theme,
+        vec![diff(unchanged("src/lib.rs"), &long)],
+    );
+    open_selected(&mut session);
+
+    let area = Rect::new(0, 0, 80, 10);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+    let focus = session.view().tab().focus();
+
+    for col in [1, 39, 42, 78] {
+        session.handle_event(&Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row: 4,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        }));
+        assert_eq!(
+            session.view().tab().focus(),
+            focus,
+            "the click on column {col} moved the focus"
+        );
+    }
+}
+
+#[test]
+fn a_body_with_no_room_for_a_box_is_drawn_without_one() {
+    // Two columns of box and a row above and below is most of a screen this
+    // size, and a pane with nothing in it says less than a squeezed one.
+    let theme = Theme::named("catppuccin-mocha").unwrap();
+    let mut session = scripted(
+        only(vec![modified("a.rs")]),
+        theme,
+        vec![single_file(unchanged("a.rs"), "fn main() {}\n")],
+    );
+    open_selected(&mut session);
+    let area = Rect::new(0, 0, 20, 3);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+    let row: String = (0..20).map(|x| cells[(x, 0)].symbol()).collect();
+    assert!(row.starts_with("Changes"), "{row:?}");
+
+    // And every size below that draws something rather than panicking, with
+    // two panes to place as well as one.
+    for width in 1..8u16 {
+        for height in 1..8u16 {
+            let area = Rect::new(0, 0, width, height);
+            let mut cells = Cells::empty(area);
+            session.draw_into(&mut cells, area);
+        }
     }
 }
 
@@ -75,7 +215,7 @@ fn a_pane_that_will_not_fit_falls_back_to_one_rather_than_failing_the_screen() {
     let theme = Theme::named("catppuccin-mocha").unwrap();
     // Ten thousand lines, because that is where the gutter reaches six columns
     // and two of them plus a divider plus the least readable text no longer
-    // fit in the twenty the split reserves.
+    // fit in what the split reserves.
     let long: String = (0..10_000).map(|n| format!("line {n}\n")).collect();
     let mut session = scripted(
         only(vec![modified("src/lib.rs")]),
@@ -87,26 +227,24 @@ fn a_pane_that_will_not_fit_falls_back_to_one_rather_than_failing_the_screen() {
     // The diff really is beside the list, so that the narrow widths below are
     // refusing a pane that exists. Without this the test passes with an empty
     // pane, which is the case it is not about.
-    let wide = Rect::new(0, 0, 80, 6);
-    let mut cells = Cells::empty(wide);
-    session.draw_into(&mut cells, wide);
-    let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
+    let row = inside(&mut session, 80, 6)[0].clone();
     assert!(row.contains("line 0"), "no diff to squeeze: {row:?}");
 
     for width in 24..40u16 {
         let area = Rect::new(0, 0, width, 6);
         let mut cells = Cells::empty(area);
         session.draw_into(&mut cells, area);
-        let row: String = (0..width).map(|x| cells[(x, 0)].symbol()).collect();
+        let top: String = (0..width).map(|x| cells[(x, 0)].symbol()).collect();
         assert!(
-            !row.starts_with("terminal too small"),
+            !top.starts_with("terminal too small"),
             "{width} columns gave up, though the list fits"
         );
-        // The border is hatched before the panes are drawn, so a fallback that
-        // did not clear the body would leave a column of it standing in the
-        // middle of a single pane.
+        // The boxes are drawn before the panes are, so a fallback that did not
+        // cover the body would leave the column the two shared standing in the
+        // middle of the one pane that is left.
+        let row = inside(&mut session, width, 6)[0].clone();
         assert!(
-            row.starts_with("Changes"),
+            row.starts_with("Changes") && !row.contains('│'),
             "{width} columns left something behind: {row:?}"
         );
     }
@@ -155,8 +293,7 @@ fn opening_the_file_already_shown_re_reads_it_and_keeps_the_readers_place() {
     );
 
     // And the new bytes really are on screen.
-    session.draw_into(&mut cells, area);
-    let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
+    let row = inside(&mut session, 80, 8)[0].clone();
     assert!(
         row.contains("edited"),
         "the re-read did not happen: {row:?}"
@@ -250,10 +387,7 @@ fn enter_on_a_file_row_asks_for_it() {
     assert!(session.is_loading_file(), "enter asked for nothing");
 
     assert!(session.has_file_arrived(), "the answer was not installed");
-    let area = Rect::new(0, 0, 80, 6);
-    let mut cells = Cells::empty(area);
-    session.draw_into(&mut cells, area);
-    let row: String = (0..80).map(|x| cells[(x, 0)].symbol()).collect();
+    let row = inside(&mut session, 80, 6)[0].clone();
     assert!(row.contains("the second file"), "not on screen: {row:?}");
 }
 

@@ -253,6 +253,9 @@ pub const fn theme(flavour: Flavour) -> Theme {
         cursor_line: over(blend(p.surface0, base, opacity::CURSOR)),
         divider: on(p.surface0, base),
 
+        border: ink(p.surface1),
+        border_focused: ink(p.blue),
+
         status: on(p.text, p.mantle),
         status_path: Style::new().add_modifier(Modifier::BOLD),
         warning: ink(p.red).add_modifier(Modifier::BOLD),

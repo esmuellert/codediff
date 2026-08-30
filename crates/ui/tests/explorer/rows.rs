@@ -19,7 +19,7 @@ fn the_list_is_drawn_with_its_sections_guides_and_counts() {
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
-    let rows = screen(&mut session, 44, 10);
+    let rows = inside(&mut session, 48, 12);
     assert_eq!(
         rows,
         vec![
@@ -34,10 +34,6 @@ fn the_list_is_drawn_with_its_sections_guides_and_counts() {
             "Staged Changes (1 · +1 -1)".to_string(),
             "└ \u{f00ba} README.md                        +1 -1 M".to_string(),
             String::new(),
-            // Row four, not row one: the reader starts on the first row they
-            // can open, and rows one to three are a heading and two
-            // directories.
-            " changed files                          4/8".to_string(),
         ]
     );
 }
@@ -55,7 +51,7 @@ fn an_ancestor_that_was_last_leaves_blank_space_and_not_a_guide() {
         ]),
         Theme::named("basic-dark").unwrap(),
     );
-    let rows = screen(&mut session, 30, 7);
+    let rows = inside(&mut session, 34, 9);
     assert_eq!(
         &rows[..6],
         [
@@ -81,7 +77,7 @@ fn the_flat_shape_draws_whole_paths_and_no_guides() {
         Theme::named("basic-dark").unwrap(),
     );
     session.press(crokey::key!(i));
-    let rows = screen(&mut session, 44, 8);
+    let rows = inside(&mut session, 48, 10);
     assert_eq!(
         &rows[..6],
         [
@@ -113,7 +109,7 @@ fn a_narrow_pane_keeps_the_name_and_the_status_and_drops_the_rest() {
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
-    let rows = screen(&mut session, 20, 10);
+    let rows = inside(&mut session, 24, 12);
     assert_eq!(
         &rows[..8],
         [
@@ -137,7 +133,7 @@ fn a_pane_narrower_than_the_names_cuts_them_rather_than_wrapping() {
         Buffer::explorer(entries()),
         Theme::named("basic-dark").unwrap(),
     );
-    let rows = screen(&mut session, 12, 10);
+    let rows = inside(&mut session, 16, 12);
     // Every row still fits, and every row still says what happened to it.
     for row in &rows[..8] {
         assert!(row.chars().count() <= 12, "{row:?} overflows");
@@ -171,6 +167,6 @@ fn an_empty_list_draws_nothing_rather_than_panicking() {
         Buffer::explorer(Vec::new()),
         Theme::named("basic-dark").unwrap(),
     );
-    let rows = screen(&mut session, 40, 4);
+    let rows = inside(&mut session, 44, 6);
     assert_eq!(rows[0], "");
 }

@@ -147,6 +147,39 @@ fn a_file_a_refresh_added_can_be_clicked() {
 }
 
 #[test]
+fn a_click_on_the_box_round_a_pane_lands_nowhere() {
+    // The box belongs to no pane, so the reader cannot focus one by clicking
+    // its edge — which is what recording the inside of each box, rather than
+    // the whole of it, is for.
+    let theme = Theme::named("basic-dark").unwrap();
+    let long: String = (0..100).map(|n| format!("line {n}\n")).collect();
+    let mut session = scripted(
+        only(vec![modified("src/lib.rs")]),
+        theme,
+        vec![diff(unchanged("src/lib.rs"), &long)],
+    );
+    open_selected(&mut session);
+    draw(&mut session, 80, 12);
+    let focus = session.view().tab().focus();
+
+    // The top edge of the diff's box, its right edge, and the column the two
+    // boxes share.
+    for (col, row) in [(60, 0), (79, 5), (40, 5)] {
+        mouse(
+            &mut session,
+            MouseEventKind::Down(MouseButton::Left),
+            col,
+            row,
+        );
+        assert_eq!(
+            session.view().tab().focus(),
+            focus,
+            "the click at ({col}, {row}) moved the focus"
+        );
+    }
+}
+
+#[test]
 fn a_click_below_a_shortened_list_lands_nowhere() {
     let theme = Theme::named("basic-dark").unwrap();
     let mut session = scripted(
@@ -154,7 +187,7 @@ fn a_click_below_a_shortened_list_lands_nowhere() {
         theme,
         vec![],
     );
-    let rows = screen(&mut session, 80, 12);
+    let rows = inside(&mut session, 80, 12);
     let row = rows
         .iter()
         .position(|row| row.contains("zeta.rs"))
@@ -163,15 +196,16 @@ fn a_click_below_a_shortened_list_lands_nowhere() {
     session.refresh_list(vec![modified("src/lib.rs")]);
     // How many rows the shorter list draws, read off the screen rather than
     // asked of the buffer, which is the thing under test.
-    let rows = screen(&mut session, 80, 12);
+    let rows = inside(&mut session, 80, 12);
     let drawn = rows.iter().position(String::is_empty).expect("blank rows") as u32;
 
-    // That row is now past the end of the list.
+    // That row is now past the end of the list. One further down than the
+    // list says, because the box's top edge is above it.
     mouse(
         &mut session,
         MouseEventKind::Down(MouseButton::Left),
         4,
-        row,
+        row + 1,
     );
 
     assert!(

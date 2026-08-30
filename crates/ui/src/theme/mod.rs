@@ -51,6 +51,11 @@ pub struct Theme {
     pub cursor_line: Style,
     pub divider: Style,
 
+    /// The box round a pane.
+    pub border: Style,
+    /// The box round the pane the keys go to.
+    pub border_focused: Style,
+
     pub status: Style,
     /// Patched over `status` for the file name.
     pub status_path: Style,
@@ -137,7 +142,7 @@ impl Theme {
     }
 
     /// Every style, for tests that need to check all of them at once.
-    pub fn styles(&self) -> [Style; 15] {
+    pub fn styles(&self) -> [Style; 17] {
         [
             self.normal,
             self.deleted,
@@ -150,6 +155,8 @@ impl Theme {
             self.line_number_current,
             self.cursor_line,
             self.divider,
+            self.border,
+            self.border_focused,
             self.status,
             self.status_path,
             self.warning,

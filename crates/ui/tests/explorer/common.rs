@@ -58,11 +58,33 @@ pub fn entries() -> Vec<File> {
 
 /// Draws a session and returns the screen as text, one string per row.
 pub fn screen(session: &mut TestSession, width: u16, height: u16) -> Vec<String> {
-    let mut cells = Cells::empty(Rect::new(0, 0, width, height));
-    session.draw_into(&mut cells, Rect::new(0, 0, width, height));
-    (0..height)
+    let area = Rect::new(0, 0, width, height);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+    text(&cells, area)
+}
+
+/// What the panes drew, with the box round them and the padding inside it
+/// left off.
+///
+/// The box takes the first and last column of the screen and the first and
+/// last row of the body, and a clear column stands inside each side edge, so a
+/// test that is about what a row says reads it through here. The box itself is
+/// `panes.rs`'s subject.
+pub fn inside(session: &mut TestSession, width: u16, height: u16) -> Vec<String> {
+    let area = Rect::new(0, 0, width, height);
+    let mut cells = Cells::empty(area);
+    session.draw_into(&mut cells, area);
+    // Everything but the status line, the two rows around it, and the edge
+    // and the padding column beside it.
+    text(&cells, Rect::new(2, 1, width - 4, height - 3))
+}
+
+/// The cells of `rect` as text, one string per row.
+fn text(cells: &Cells, rect: Rect) -> Vec<String> {
+    (rect.y..rect.bottom())
         .map(|y| {
-            (0..width)
+            (rect.x..rect.right())
                 .map(|x| cells[(x, y)].symbol())
                 .collect::<String>()
                 .trim_end()

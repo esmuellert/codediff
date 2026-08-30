@@ -5,6 +5,7 @@
 //!
 //! ```text
 //! layout   where things go — rectangles
+//! border   the box round one of them
 //! cells    one line of text onto one row of the grid
 //! gutter   one line number
 //! column   one gutter-and-text column of a diff
@@ -15,6 +16,7 @@
 //! `render` turns values into marks; `draw` composes them into what a buffer
 //! type looks like.
 
+pub mod border;
 pub mod cells;
 pub mod column;
 pub mod gutter;

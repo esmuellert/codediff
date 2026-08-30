@@ -118,12 +118,15 @@ pub fn split(area: Rect, left: u16) -> Option<(Rect, Rect, Rect)> {
 }
 
 /// The narrowest a diff is worth drawing beside a list.
-const MIN_RIGHT: u16 = 20;
+///
+/// Two of these columns are the box and two the clear ones inside it.
+const MIN_RIGHT: u16 = 22;
 /// The narrowest a list is worth drawing beside a diff.
 ///
-/// Enough for a cut-off name and the letter beside it. Below this the screen
-/// is better used by one pane than by two useless ones.
-const MIN_LIST: u16 = 8;
+/// Enough for the box, the clear column each side of it, a cut-off name and
+/// the letter beside it. Below this the screen is better used by one pane than
+/// by two useless ones.
+const MIN_LIST: u16 = 10;
 
 /// Divides one pane into its two columns.
 ///
@@ -352,7 +355,7 @@ mod tests {
     fn a_list_wider_than_the_screen_is_pulled_back_rather_than_overflowing() {
         // Reachable by dragging a terminal narrower after widening the list.
         let (list, _, rest) = split(body(80, 24), 200).expect("room");
-        assert_eq!(list.width, 59);
+        assert_eq!(list.width, 57);
         assert_eq!(rest.width, MIN_RIGHT);
     }
 
