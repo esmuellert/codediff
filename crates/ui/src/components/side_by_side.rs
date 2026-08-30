@@ -7,16 +7,16 @@ use align::{DiffVersion, ViewLineType};
 use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node,
-    Row, RowProps, Scope, component, rsx, use_context, use_measure, use_state,
+    Row, RowProps, Scope, component, rsx, use_context,
 };
 use ratatui::style::Style;
 
 use super::context::Ui;
 use super::code_text::{CodeText, CodeTextProps};
-use super::explorer::scroll_top;
 use super::filler::{Filler, FillerProps};
 use super::gutter::{Gutter, GutterProps};
 
+use crate::hooks::use_scroll::use_scroll;
 use crate::services::syntax::SyntaxService;
 
 /// Digits + one trailing space, at least 4 columns.
@@ -73,33 +73,24 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let original_gutter = gutter_width(original_lines);
     let modified_gutter = gutter_width(modified_lines);
 
-    // Own cursor and scroll.
-    let (cursor, set_cursor) = use_state(scope, || 0u32);
-    let (top, set_top) = use_state(scope, || 0u32);
-    let (self_ref, size) = use_measure(scope);
-    let height = u32::from(size.height);
-
-    let view_lines = top..top + height;
+    let (view, handle) = use_scroll(scope);
 
     let pairs: Vec<align::ViewLine> = alignment
-        .view_lines_from(DiffType::SideBySide, view_lines.start)
-        .take(view_lines.len())
+        .view_lines_from(DiffType::SideBySide, view.view_lines.start)
+        .take(view.view_lines.len())
         .collect();
 
     let divider_style = theme.normal.patch(theme.divider);
 
-    let view_start = view_lines.start;
     let listeners = Listeners::new()
         .on_key(move |k| {
             match k {
                 k if k == crokey::key!(j) || k == crokey::key!(down) => {
-                    set_cursor(&move |c| c.saturating_add(1).min(total.saturating_sub(1)));
-                    set_top(&move |t| scroll_top(cursor.saturating_add(1).min(total.saturating_sub(1)), total, height, t));
+                    handle.down(total);
                     Bubble::Stop
                 }
                 k if k == crokey::key!(k) || k == crokey::key!(up) => {
-                    set_cursor(&|c| c.saturating_sub(1));
-                    set_top(&move |t| scroll_top(cursor.saturating_sub(1), total, height, t));
+                    handle.up(total);
                     Bubble::Stop
                 }
                 k if k == crokey::key!(left) => {
@@ -110,24 +101,18 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
             }
         })
         .on_wheel(move |delta| {
-            let step = (delta.abs() * 3) as u32;
-            if delta > 0 {
-                set_top(&move |t| t.saturating_add(step).min(total.saturating_sub(height)));
-            } else {
-                set_top(&move |t| t.saturating_sub(step));
-            }
+            handle.wheel(delta, total);
             Bubble::Stop
         })
         .on_mouse_down(move |mouse| {
-            let line = view_start + mouse.local.y as u32;
-            set_cursor(&move |_| line.min(total.saturating_sub(1)));
+            handle.click(mouse.local.y as u32, total);
             Bubble::Stop
         });
 
     let mut rows: Vec<Node> = Vec::with_capacity(pairs.len());
     for (offset, pair) in pairs.iter().enumerate() {
-        let view_line = view_lines.start + offset as u32;
-        let is_cursor = view_line == cursor;
+        let view_line = view.view_lines.start + offset as u32;
+        let is_cursor = view_line == view.cursor;
 
         let make_side = |version: DiffVersion, slot: align::Slot, gw: u16| -> Vec<Node> {
             match slot.line() {
@@ -219,7 +204,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
 
     rsx! {
         Column {
-            ref: Some(self_ref),
+            ref: Some(view.node_ref),
             focusable: true,
             listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },

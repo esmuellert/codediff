@@ -14,4 +14,4 @@ mod welcome;
 
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
-pub use explorer::{Explorer, ExplorerProps, letter, scroll_top};
+pub use explorer::{Explorer, ExplorerProps, letter};

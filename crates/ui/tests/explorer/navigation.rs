@@ -12,7 +12,7 @@ use super::common::*;
 
 #[test]
 fn j_and_k_move_the_cursor() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     let total = 5;
     assert_eq!(1u32.saturating_add(1).min(total - 1), 2, "j goes down");
     assert_eq!(2u32.saturating_sub(1), 1, "k goes up");
@@ -23,7 +23,7 @@ fn j_and_k_move_the_cursor() {
 
 #[test]
 fn the_view_follows_the_cursor_down() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     let top = scroll_top(15, 20, 10, 0);
     assert!(top > 0, "the view moved to show row 15, got top {top}");
     assert!(15 >= top && 15 < top + 10, "row 15 is on screen from {top}");
@@ -31,35 +31,35 @@ fn the_view_follows_the_cursor_down() {
 
 #[test]
 fn the_view_keeps_a_margin_below_the_cursor() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     let top = scroll_top(7, 20, 10, 0);
     assert_eq!(top, 1, "three rows are kept past the cursor, got {top}");
 }
 
 #[test]
 fn the_view_never_scrolls_past_the_end() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     let top = scroll_top(11, 12, 10, 0);
     assert_eq!(top, 2, "the last row sits at the bottom, got {top}");
 }
 
 #[test]
 fn a_document_shorter_than_the_pane_never_scrolls() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     assert_eq!(scroll_top(2, 3, 10, 0), 0);
     assert_eq!(scroll_top(0, 1, 10, 0), 0);
 }
 
 #[test]
 fn the_view_follows_the_cursor_back_up() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     let top = scroll_top(0, 20, 10, 12);
     assert_eq!(top, 0, "the view came back with the cursor, got {top}");
 }
 
 #[test]
 fn scroll_moves_the_view() {
-    use ui::components::scroll_top;
+    use ui::hooks::use_scroll::scroll_top;
     let top = scroll_top(10, 20, 5, 0);
     assert!(top > 0, "row 10 is not visible from the top, got {top}");
     assert!(10 >= top && 10 < top + 5, "row 10 is on screen from {top}");

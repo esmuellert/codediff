@@ -10,15 +10,13 @@ use crokey::key;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope,
-    component, rsx, use_context, use_exit, use_measure, use_ref, use_state,
+    component, rsx, use_context, use_exit, use_ref, use_state,
 };
 
 use self::entry::{Entry, EntryProps};
 use self::build::{grouped_list, grouped_tree, Node};
 use super::context::Ui;
-
-/// Rows kept between the cursor and the edge while scrolling.
-const SCROLLOFF: u32 = 3;
+use crate::hooks::use_scroll::use_scroll;
 
 #[component]
 pub fn Explorer(scope: &mut Scope) -> LoomNode {
@@ -27,10 +25,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let files = &ctx.files;
     let set_file = ctx.set_file;
 
-    let (cursor, set_cursor) = use_state(scope, || 0u32);
-    let (top, set_top) = use_state(scope, || 0u32);
-    let (self_ref, size) = use_measure(scope);
-    let height = u32::from(size.height);
+    let (view, handle) = use_scroll(scope);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
     let (tree_mode, set_tree_mode) = use_state(scope, || true);
 
@@ -45,41 +40,33 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
 
-    // view_lines is computed from top directly. j/k adjust top
-    // to keep the cursor visible. Wheel changes top independently.
-    let view_lines = top..top + height;
-
     // When the file list changes, keep the cursor on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&ctx.files));
     let saved_anchor = use_ref(scope, || None::<String>);
     let files_changed = !Rc::ptr_eq(&ctx.files, &*prev_files.current());
     if files_changed {
         if let Some(pos) = find_by_identity(saved_anchor.current().as_deref(), &nodes) {
-            set_cursor(&move |_| pos as u32);
+            handle.set(pos as u32);
         }
         *prev_files.current() = Rc::clone(&ctx.files);
     } else {
-        *saved_anchor.current() = nodes.get(cursor as usize).map(|n| identity(n));
+        *saved_anchor.current() = nodes.get(view.cursor as usize).map(|n| identity(n));
     }
 
-    // What the cursor is on, so Enter can decide what to do.
-    let cursor_node = nodes.get(cursor as usize).cloned();
-
+    let cursor_node = nodes.get(view.cursor as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
-    let view_start = view_lines.start;
     let repo = Rc::clone(&ctx.repo);
     let exit = use_exit(scope);
+
     let listeners = Listeners::new()
         .on_key(move |k| {
             match k {
                 k if k == key!(j) || k == key!(down) => {
-                    set_cursor(&|c| c.saturating_add(1).min(total.saturating_sub(1)));
-                    set_top(&move |t| scroll_top(cursor.saturating_add(1).min(total.saturating_sub(1)), total, height, t));
+                    handle.down(total);
                     Bubble::Stop
                 }
                 k if k == key!(k) || k == key!(up) => {
-                    set_cursor(&|c| c.saturating_sub(1));
-                    set_top(&move |t| scroll_top(cursor.saturating_sub(1), total, height, t));
+                    handle.up(total);
                     Bubble::Stop
                 }
                 k if k == key!(enter) => {
@@ -110,26 +97,18 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
         })
         .on_wheel(move |delta| {
-            let step = (delta.abs() * 3) as u32;
-            if delta > 0 {
-                set_top(&move |t| t.saturating_add(step).min(total.saturating_sub(height)));
-            } else {
-                set_top(&move |t| t.saturating_sub(step));
-            }
+            handle.wheel(delta, total);
             Bubble::Stop
         })
         .on_mouse_down(move |mouse| {
-            let line = view_start + mouse.local.y as u32;
-            if line < total {
-                set_cursor(&move |_| line);
-                if let Some(node) = nodes_click.get(line as usize) {
-                    activate_node(node, set_folded, set_file);
-                }
+            let line = handle.click(mouse.local.y as u32, total);
+            if let Some(node) = nodes_click.get(line as usize) {
+                activate_node(node, set_folded, set_file);
             }
             Bubble::Stop
         });
 
-    let entries: Vec<LoomNode> = view_lines
+    let entries: Vec<LoomNode> = view.view_lines
         .clone()
         .filter_map(|line| {
             nodes.get(line as usize).map(|node| {
@@ -137,7 +116,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                     Entry {
                         key: line,
                         node: node.clone(),
-                        selected: line == cursor,
+                        selected: line == view.cursor,
                     }
                 }
             })
@@ -146,7 +125,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     rsx! {
         Column {
-            ref: Some(self_ref),
+            ref: Some(view.node_ref),
             focusable: true,
             auto_focus: true,
             listeners: listeners,
@@ -155,25 +134,6 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             { entries }
         }
     }
-}
-
-/// Computes the scroll top given a cursor, total rows, viewport height, and
-/// the previous top. Keeps SCROLLOFF rows between the cursor and the edges.
-pub fn scroll_top(cursor: u32, total: u32, height: u32, prev_top: u32) -> u32 {
-    if height == 0 {
-        return 0;
-    }
-    let last_top = total.saturating_sub(height);
-    let margin = SCROLLOFF.min(height.saturating_sub(1) / 2);
-
-    let mut top = prev_top;
-    if cursor < top + margin {
-        top = cursor.saturating_sub(margin);
-    }
-    if cursor + margin >= top + height {
-        top = (cursor + margin + 1).saturating_sub(height);
-    }
-    top.min(last_top)
 }
 
 pub fn letter(change: file_types::ChangeType) -> &'static str {
