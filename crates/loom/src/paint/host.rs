@@ -23,6 +23,7 @@ macro_rules! container {
             pub layout: Layout,
             pub listeners: Listeners,
             pub focusable: bool,
+            pub auto_focus: bool,
             pub too_small: Option<Node>,
             pub node_ref: NodeRef,
             pub children: Children,
@@ -37,6 +38,7 @@ macro_rules! container {
                     layout: props.layout,
                     listeners: props.listeners,
                     focusable: props.focusable,
+                    auto_focus: props.auto_focus,
                     node_ref: props.node_ref,
                     too_small: props.too_small.map(Box::new),
                     children: props.children,
@@ -149,6 +151,7 @@ pub struct CanvasProps {
     pub layout: Layout,
     pub listeners: Listeners,
     pub focusable: bool,
+    pub auto_focus: bool,
     pub node_ref: NodeRef,
     pub paint: Rc<dyn Fn(&mut Paint<'_>)>,
 }
@@ -160,6 +163,7 @@ impl Default for CanvasProps {
             layout: Layout { clip: true, ..Layout::default() },
             listeners: Listeners::default(),
             focusable: false,
+            auto_focus: false,
             node_ref: None,
             paint: Rc::new(|_| {}),
         }
@@ -175,6 +179,7 @@ impl Element for Canvas {
             layout: props.layout,
             listeners: props.listeners,
             focusable: props.focusable,
+            auto_focus: props.auto_focus,
             node_ref: props.node_ref,
             paint: Some(props.paint),
             ..Host::default()

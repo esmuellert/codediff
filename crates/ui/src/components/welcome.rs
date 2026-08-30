@@ -29,6 +29,7 @@ pub fn Welcome(scope: &mut Scope) -> Node {
 
     rsx! {
         Canvas {
+            focusable: true,
             layout: Layout { grow: 1, fill: Some(base), ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();

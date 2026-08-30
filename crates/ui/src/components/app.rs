@@ -58,12 +58,10 @@ pub fn App(
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,
                     Border {
-                        focused: true,
                         layout: Layout { basis: loom::Basis::Length(40), shrink: 1, ..Default::default() },
                         Explorer {}
                     }
                     Border {
-                        focused: false,
                         layout: Layout { grow: 1, ..Default::default() },
                         DiffViewer {}
                     }

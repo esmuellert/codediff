@@ -117,16 +117,10 @@ pub fn UiProvider(
     // When the filesystem changes, re-fetch the file list.
     let svc_fs = Rc::clone(file_service);
     let repo_for_fs = Rc::clone(&repo);
-    let set_files_for_fs = set_file_list.clone();
     use_effect(scope, (), move || {
         svc_fs.on_fs_changed().subscribe(move |what: watcher::Refresh| {
             if what.worktree || what.index {
-                svc_fs.get(&repo_for_fs).subscribe({
-                    let set = set_files_for_fs;
-                    move |list: Vec<File>| {
-                        set(&move |_| Rc::new(list.clone()));
-                    }
-                });
+                svc_fs.refresh(&repo_for_fs);
             }
         });
     });

@@ -9,8 +9,8 @@ use std::rc::Rc;
 use crokey::key;
 use file_types::File;
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
-    use_context, use_exit, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope,
+    component, rsx, use_context, use_exit, use_ref, use_state,
 };
 
 use self::entry::{Entry, EntryProps};
@@ -101,6 +101,10 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                     }
                     Bubble::Stop
                 }
+                k if k == key!(right) => {
+                    loom::focus_next();
+                    Bubble::Stop
+                }
                 _ => Bubble::Continue,
             }
         })
@@ -145,6 +149,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     rsx! {
         Column {
+            focusable: true,
+            auto_focus: true,
             listeners: listeners,
             layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
             ..,

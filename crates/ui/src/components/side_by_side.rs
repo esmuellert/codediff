@@ -6,8 +6,8 @@ use std::rc::Rc;
 use align::{DiffVersion, ViewLineType};
 use file_types::DiffType;
 use loom::{
-    Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope,
-    component, rsx, use_context,
+    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node, Row,
+    RowProps, Scope, component, rsx, use_context,
 };
 use ratatui::style::Style;
 
@@ -171,8 +171,20 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         });
     }
 
+    let listeners = Listeners::new()
+        .on_key(move |k| {
+            if k == crokey::key!(left) {
+                loom::focus_previous();
+                Bubble::Stop
+            } else {
+                Bubble::Continue
+            }
+        });
+
     rsx! {
         Column {
+            focusable: true,
+            listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
             { rows }

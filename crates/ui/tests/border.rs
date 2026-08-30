@@ -3,7 +3,10 @@
 use std::rc::Rc;
 
 use loom::testing::Harness;
-use loom::{Layout, Node, Scope, Text, TextProps, component, rsx};
+use loom::{
+    Column, ColumnProps, Layout, Node, NodeHandle, Scope, Text, TextProps, component, rsx,
+    use_layout_effect, use_ref,
+};
 use ui::Theme;
 use ui::components::border::{Border, BorderProps};
 use ui::components::{Context, Ui};
@@ -12,6 +15,26 @@ use ui::components::{Context, Ui};
 fn Inner(scope: &mut Scope) -> Node {
     let _ = scope;
     rsx! { Text { text: "hi".into(), .. } }
+}
+
+/// A child that takes focus on mount.
+#[component]
+fn Focusable(scope: &mut Scope) -> Node {
+    let self_ref = use_ref(scope, || None::<NodeHandle>);
+    use_layout_effect(scope, (), move || {
+        if let Some(node) = self_ref.current().as_ref() {
+            node.focus();
+        }
+    });
+    rsx! {
+        Column {
+            ref: Some(self_ref),
+            focusable: true,
+            layout: Layout { grow: 1, ..Default::default() },
+            ..,
+            Text { text: "hi".into(), .. }
+        }
+    }
 }
 
 fn ctx() -> Context {
@@ -25,7 +48,6 @@ fn ctx() -> Context {
 fn a_border_draws_rounded_corners() {
     let mut h = Harness::new::<Border>(
         BorderProps {
-            focused: false,
             layout: Layout { grow: 1, ..Default::default() },
             children: vec![rsx! { Inner {} }],
         },
@@ -42,19 +64,19 @@ fn a_border_draws_rounded_corners() {
 
 #[test]
 fn a_focused_border_has_a_different_colour() {
+    // A border with a focusable child that takes focus on mount.
     let mut focused = Harness::new::<Border>(
         BorderProps {
-            focused: true,
             layout: Layout { grow: 1, ..Default::default() },
-            children: vec![rsx! { Inner {} }],
+            children: vec![rsx! { Focusable {} }],
         },
         10, 5,
     ).provide::<Ui>(ctx());
-    focused.draw();
+    for _ in 0..4 { focused.force_draw(); }
 
+    // A border with no focusable child.
     let mut unfocused = Harness::new::<Border>(
         BorderProps {
-            focused: false,
             layout: Layout { grow: 1, ..Default::default() },
             children: vec![rsx! { Inner {} }],
         },

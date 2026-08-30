@@ -53,6 +53,13 @@ impl FilesService {
         responses
     }
 
+    /// Re-sends the request for the same repo. The existing subscriber
+    /// receives the new result — no new observable needed.
+    pub fn refresh(&self, repo: &Path) {
+        let request = Request::worktree(repo).with_pathspec(self.pathspec.clone());
+        self.worker.borrow_mut().send(request);
+    }
+
     /// The loop calls this when the worker answered.
     pub fn deliver(&self, files: Vec<File>) {
         self.worker.borrow_mut().received(&files);

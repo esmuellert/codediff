@@ -143,25 +143,31 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
 }
 
 /// R8.2 — the blur fires before the focus, each with the other node.
+///
+/// Both events bubble to ancestors, like React's `onFocus` / `onBlur`.
 pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
     let from = held.borrow().focused;
     if from == to {
         return;
     }
 
-    if let Some(node) = from {
+    for node in ancestry(held, from) {
         let listen = held.borrow().listeners_of(node).and_then(|l| l.blur.clone());
-        if let Some(listen) = listen {
-            fire(held, node, &*listen, Focus { related: to });
+        if let Some(listen) = listen
+            && fire(held, node, &*listen, Focus { related: to }) == Bubble::Stop
+        {
+            break;
         }
     }
 
     held.borrow_mut().focused = to;
 
-    if let Some(node) = to {
+    for node in ancestry(held, to) {
         let listen = held.borrow().listeners_of(node).and_then(|l| l.focus.clone());
-        if let Some(listen) = listen {
-            fire(held, node, &*listen, Focus { related: from });
+        if let Some(listen) = listen
+            && fire(held, node, &*listen, Focus { related: from }) == Bubble::Stop
+        {
+            break;
         }
     }
 
@@ -169,6 +175,21 @@ pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
     if let Some(root) = root {
         held.borrow_mut().mark(root);
     }
+}
+
+/// A node and every ancestor above it, nearest first.
+fn ancestry(held: &RuntimeRef, node: Option<NodeHandle>) -> Vec<NodeHandle> {
+    let Some(node) = node else { return Vec::new() };
+    let rt = held.borrow();
+    let Some(start) =
+        rt.placed.iter().position(|p| p.scope == node.scope && p.nth == node.nth)
+    else {
+        return Vec::new();
+    };
+    hit::upward(&rt, start)
+        .into_iter()
+        .map(|i| NodeHandle { scope: rt.placed[i].scope, nth: rt.placed[i].nth })
+        .collect()
 }
 
 /// Focus order is paint order, and it wraps.

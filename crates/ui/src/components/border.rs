@@ -1,12 +1,13 @@
 //! A rounded box around its children.
 //!
-//! Each pane sits inside one. The focused pane's box is brighter.
+//! Detects focus through loom's bubbling `on_focus` / `on_blur` — when
+//! anything inside the box takes focus, the border brightens.
 
 use std::rc::Rc;
 
 use loom::{
-    Canvas, CanvasProps, Column, ColumnProps, Edges, Layout, Node, Scope, Stack, StackProps,
-    component, rsx, use_context,
+    Bubble, Canvas, CanvasProps, Column, ColumnProps, Edges, Layout, Listeners, Node, Scope,
+    Stack, StackProps, component, rsx, use_context, use_state,
 };
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -41,9 +42,22 @@ fn set_cell(buf: &mut ratatui::buffer::Buffer, x: u16, y: u16, symbol: &str, sty
 }
 
 #[component]
-pub fn Border(scope: &mut Scope, focused: bool, layout: Layout, children: loom::Children) -> Node {
+pub fn Border(scope: &mut Scope, layout: Layout, children: loom::Children) -> Node {
     let theme = use_context::<Ui>(scope).theme;
-    let focused = *focused;
+
+    let (focused, set_focused) = use_state(scope, || false);
+    let on = set_focused;
+    let off = on;
+    let listeners = Listeners::new()
+        .on_focus(move |_| {
+            on(&|_| true);
+            Bubble::Continue
+        })
+        .on_blur(move |_| {
+            off(&|_| false);
+            Bubble::Continue
+        });
+
     let border_style = if focused {
         theme.normal.patch(theme.border_focused)
     } else {
@@ -52,8 +66,6 @@ pub fn Border(scope: &mut Scope, focused: bool, layout: Layout, children: loom::
     let fill = theme.normal;
 
     let mut outer = layout.clone();
-    // Add the border and padding to whatever size the caller asked for.
-    // Edges: 1 cell border + 1 cell padding on each side = 4 columns, 2 rows.
     if let loom::Basis::Length(w) = outer.basis {
         outer.basis = loom::Basis::Length(w + 4);
     }
@@ -66,6 +78,7 @@ pub fn Border(scope: &mut Scope, focused: bool, layout: Layout, children: loom::
     rsx! {
         Stack {
             layout: outer,
+            listeners: listeners,
             ..,
             Canvas {
                 layout: Layout { grow: 1, ..Default::default() },

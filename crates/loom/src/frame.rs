@@ -29,6 +29,7 @@ pub(crate) struct FrameNode {
     pub host_desc: std::rc::Rc<HostDesc>,
     pub listeners: Listeners,
     pub focusable: bool,
+    pub auto_focus: bool,
 }
 
 /// R5.8.2 — a layout effect may write state, which re-renders and re-lays
@@ -59,6 +60,7 @@ pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
 
         // R5.8 — every `ref` holds its node before a layout effect runs.
         write_refs(held);
+        auto_focus(held);
         run_effects(held, true);
 
         // A layout effect that wrote state gets another round before anything
@@ -119,6 +121,7 @@ fn lay_out(
         host_desc: std::rc::Rc::clone(&node.host_desc),
         listeners: node.host_desc.listeners.clone(),
         focusable: node.host_desc.focusable,
+        auto_focus: node.host_desc.auto_focus,
     });
 
     // R5.5.2 — padding comes off before the children.
@@ -330,5 +333,25 @@ fn inset(area: Rect, pad: crate::layout::Edges) -> Rect {
         y: area.y.saturating_add(pad.top),
         width: area.width.saturating_sub(pad.across()),
         height: area.height.saturating_sub(pad.down()),
+    }
+}
+
+/// Focuses the first node with `auto_focus: true`, once. After that first
+/// focus, `auto_focus` on the same node is inert — loom does not steal focus
+/// back on every render.
+fn auto_focus(held: &RuntimeRef) {
+    if held.borrow().focused.is_some() {
+        return;
+    }
+    let target = {
+        let rt = held.borrow();
+        rt.placed
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.auto_focus && p.focusable)
+            .map(|(i, p)| (i, NodeHandle { scope: p.scope, nth: p.nth }))
+    };
+    if let Some((_index, node)) = target {
+        crate::event::move_focus(held, Some(node));
     }
 }

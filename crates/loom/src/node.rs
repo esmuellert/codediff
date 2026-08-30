@@ -41,6 +41,7 @@ pub struct Host {
     pub measure: Option<fn(&Host, u16) -> (u16, u16)>,
     pub listeners: Listeners,
     pub focusable: bool,
+    pub auto_focus: bool,
     /// Where to write this node's handle once it has a rectangle.
     pub node_ref: Option<Ref<Option<NodeHandle>>>,
     /// Painted instead of the children when they cannot meet their minimums.
@@ -63,6 +64,7 @@ impl Default for Host {
             measure: None,
             listeners: Listeners::default(),
             focusable: false,
+            auto_focus: false,
             node_ref: None,
             too_small: None,
             children: Vec::new(),

@@ -187,6 +187,9 @@ pub struct Host {
     pub measure: Option<fn(&Host, u16) -> (u16, u16)>,
     pub listeners: Listeners,
     pub focusable: bool,
+    /// Focus this node on the first frame, if nothing else is focused.
+    /// The terminal equivalent of React's `autoFocus`.
+    pub auto_focus: bool,
     /// Where to write this node's handle once it has a rectangle. React's
     /// `ref`, and `rsx!` spells it `ref` too.
     pub node_ref: Option<Ref<Option<NodeHandle>>>,
@@ -534,7 +537,8 @@ spells `ref`; it is left out of the listings below to keep them readable.
 ```rust
 // paint/host.rs
 pub struct Row;      pub struct RowProps      { pub layout: Layout, pub listeners: Listeners,
-                                                pub focusable: bool, pub too_small: Option<Node>,
+                                                pub focusable: bool, pub auto_focus: bool,
+                                                pub too_small: Option<Node>,
                                                 pub children: Children }
 pub struct Column;   pub struct ColumnProps   { /* the same fields */ }
 /// Children painted over one another, in declaration order.
@@ -552,7 +556,7 @@ pub struct Text;     pub struct TextProps     { pub layout: Layout,
                                                 pub style: ratatui::style::Style }
 /// The escape hatch: a rectangle handed to a painting function.
 pub struct Canvas;   pub struct CanvasProps   { pub layout: Layout, pub listeners: Listeners,
-                                                pub focusable: bool,
+                                                pub focusable: bool, pub auto_focus: bool,
                                                 pub paint: std::rc::Rc<dyn Fn(&mut Paint<'_>)> }
 
 // … and so on; every host's props derive or implement `Default`.
@@ -1786,10 +1790,17 @@ terminal has no such convention, so a key listener calls them.
 target, unless a listener between them returned `Bubble::Stop` first.
 *test: `clicking_a_pane_focuses_it`*
 
-**R8.2.4** `on_blur` is called on the scope losing focus and `on_focus` on the
-scope gaining it, during the dispatch that moved focus — not on the next frame.
+**R8.2.4** `on_blur` fires on the scope losing focus and then climbs to its
+ancestors; `on_focus` fires on the scope gaining focus and climbs the same way.
+Both run during the dispatch that moved focus, not on the next frame.
 Blur runs first, as in a browser.
 *test: `losing_focus_is_reported_before_the_next_frame`*
+
+**R8.2.5** A node with `auto_focus: true` and `focusable: true` receives focus
+on the first frame if nothing else is already focused. The terminal equivalent
+of React's `autoFocus` prop. After that first focus, the flag is inert — loom
+does not steal focus back on every render.
+*test: `auto_focus_gives_the_first_node_focus_on_mount`*
 
 ### 8.3 Bubbling
 
