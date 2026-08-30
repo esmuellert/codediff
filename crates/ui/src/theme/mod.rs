@@ -1,8 +1,4 @@
 //! Colours.
-//!
-//! A [`Theme`] is a table of `Style`s. Styles compose by [`Style::patch`]
-//! (override only the fields that are set), so a row is `normal` patched with
-//! its role, and a gutter is that patched with `line_number`.
 
 pub mod basic;
 pub mod catppuccin;
@@ -37,8 +33,6 @@ pub struct Theme {
     /// A line only on the modified side, or differing there.
     pub inserted: Style,
     /// The characters within such a line that actually differ.
-    ///
-    /// Drawn over the line's own style, so it must be visibly stronger.
     pub deleted_text: Style,
     pub inserted_text: Style,
     /// A block the engine judged to have moved rather than been rewritten.
@@ -60,29 +54,19 @@ pub struct Theme {
     /// Mouse text selection highlight.
     pub selection: Style,
 
-    /// The colour of each kind of code.
-    ///
-    /// Apart from the rest because it is the only table indexed by something
-    /// the reader's *file* decides rather than something the diff decides, and
-    /// because it holds colours where everything above holds styles — syntax
-    /// may only tint letters, never repaint a line. See [`code`].
+    /// The colour of each kind of code. See [`code`].
     pub code: Code,
 
-    /// The colour of each part of a tree drawn in rows.
-    ///
-    /// Apart from the rest for the same reason as [`code`](Self::code): it is
-    /// indexed by something the *tree* decides rather than something the diff
-    /// decides, and it holds colours where everything above holds styles — a
-    /// row may only tint its letters, because the background says which row
-    /// the reader is on. See [`tree`].
+    /// The colour of each part of a tree drawn in rows. See [`tree`].
     pub tree: Tree,
 
-    /// The colour of each way a file can have changed.
-    ///
-    /// Its own table rather than part of [`tree`](Self::tree), because a
-    /// change is a fact about a file and means the same wherever a file is
-    /// named — the tree is only what draws them today. See [`change`].
+    /// The colour of each way a file can have changed. See [`change`].
     pub change: Change,
+
+    /// The border of a pane.
+    pub border: Style,
+    /// The border of the focused pane.
+    pub border_focused: Style,
 }
 
 impl Theme {
@@ -117,8 +101,6 @@ impl Theme {
 
     /// Picks a theme based on the terminal's colour support.
     ///
-    /// Uses Catppuccin if `COLORTERM` says 24-bit is available, otherwise
-    /// falls back to [`basic`] which uses only indexed colours.
     pub fn detect(environment: impl Fn(&str) -> Option<String>) -> Self {
         let truecolor = environment("COLORTERM")
             .is_some_and(|value| value.eq_ignore_ascii_case("truecolor") || value == "24bit");
@@ -158,12 +140,6 @@ impl Theme {
     }
 }
 
-/// Whether the terminal is likely to have a light background.
-///
-/// There is a real way to ask — an OSC 11 query — but it needs a round trip
-/// the terminal may never answer, and a reviewer waiting on a timeout before
-/// the first frame is worse than a wrong guess they can override. So: only
-/// what is already known for free.
 fn prefers_light(environment: &impl Fn(&str) -> Option<String>) -> bool {
     // The convention several terminals and `vim` itself use.
     environment("COLORFGBG").is_some_and(|value| {
@@ -226,8 +202,6 @@ mod tests {
 
     #[test]
     fn a_terminal_that_says_nothing_gets_the_theme_that_cannot_fail() {
-        // Catppuccin's diff backgrounds are a few points of lightness over the
-        // base; quantised to 256 colours they vanish entirely.
         assert_eq!(Theme::detect(environment(&[])).name, "basic-dark");
         assert_eq!(
             Theme::detect(environment(&[("COLORTERM", "")])).name,
@@ -288,9 +262,6 @@ mod tests {
 
     #[test]
     fn patching_a_role_over_normal_keeps_what_the_role_does_not_set() {
-        // How every row is built: the role supplies a background and inherits
-        // the foreground, so text stays readable without each role having to
-        // repeat it.
         let theme = Theme::DARK;
         let row = theme.normal.patch(theme.inserted);
         assert_eq!(row.fg, theme.normal.fg, "the role did not set a foreground");

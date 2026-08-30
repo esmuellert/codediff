@@ -8,8 +8,10 @@ use loom::{
     component, rsx, use_exit, use_layout_effect, use_ref, use_state,
 };
 
+use super::border::{Border, BorderProps};
 use super::context::{UiProvider, UiProviderProps};
 use super::explorer::{Explorer, ExplorerProps};
+use super::welcome::{Welcome, WelcomeProps};
 use crate::services::files::FilesService;
 
 #[component]
@@ -45,7 +47,16 @@ pub fn App(scope: &mut Scope, cwd: Rc<Path>, file_service: Rc<FilesService>) -> 
                     ref: Some(body),
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,
-                    Explorer { on_open: Rc::new(|_| {}) }
+                    Border {
+                        focused: true,
+                        layout: Layout { basis: loom::Basis::Length(40), shrink: 1, ..Default::default() },
+                        Explorer { on_open: Rc::new(|_| {}) }
+                    }
+                    Border {
+                        focused: false,
+                        layout: Layout { grow: 1, ..Default::default() },
+                        Welcome {}
+                    }
                 }
             }
         }

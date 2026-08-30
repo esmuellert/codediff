@@ -262,6 +262,9 @@ pub const fn theme(flavour: Flavour) -> Theme {
         tree: crate::theme::Tree::catppuccin(&p),
         change: crate::theme::Change::catppuccin(&p),
         code: crate::theme::code::catppuccin(p),
+
+        border: ink(p.surface1),
+        border_focused: ink(p.blue),
     }
 }
 

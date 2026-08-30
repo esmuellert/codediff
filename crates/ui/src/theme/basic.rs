@@ -160,6 +160,9 @@ pub const DARK: Theme = Theme {
     code: DARK_CODE,
     tree: super::tree::BASIC_DARK,
     change: super::change::BASIC_DARK,
+
+    border: ink(Color::DarkGray),
+    border_focused: ink(Color::White),
 };
 
 /// For a terminal with a light background.
@@ -193,6 +196,9 @@ pub const LIGHT: Theme = Theme {
     code: LIGHT_CODE,
     tree: super::tree::BASIC_LIGHT,
     change: super::change::BASIC_LIGHT,
+
+    border: ink(Color::Gray),
+    border_focused: ink(Color::Black),
 };
 
 #[cfg(test)]

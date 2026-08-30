@@ -153,3 +153,4 @@ fn the_heading_colour_differs_from_the_file_name_colour() {
     assert_ne!(heading_style.fg, name_style.fg,
         "the heading and the file name have different colours");
 }
+

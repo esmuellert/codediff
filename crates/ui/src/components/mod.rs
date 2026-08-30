@@ -1,9 +1,11 @@
 //! The components the interface is built from.
 
 mod app;
+pub mod border;
 pub mod cells;
 mod context;
 pub mod explorer;
+mod welcome;
 
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
