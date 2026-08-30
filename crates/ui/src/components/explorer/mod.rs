@@ -9,8 +9,8 @@ use std::rc::Rc;
 use crokey::key;
 use file_types::File;
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope,
-    component, rsx, use_context, use_exit, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, NodeHandle, Scope,
+    component, rsx, use_context, use_exit, use_layout_effect, use_ref, use_state,
 };
 
 use self::entry::{Entry, EntryProps};
@@ -24,14 +24,21 @@ const SCROLLOFF: u32 = 3;
 pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
-    let view_lines = &ctx.view_lines;
-    let cursor = ctx.cursor;
-    let set_cursor = ctx.set_cursor;
     let files = &ctx.files;
     let set_file = ctx.set_file;
 
+    let (cursor, set_cursor) = use_state(scope, || 0u32);
+    let (top, set_top) = use_state(scope, || 0u32);
+    let (height, set_height) = use_state(scope, || 0u32);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
     let (tree_mode, set_tree_mode) = use_state(scope, || true);
+
+    // Measure our own height after layout.
+    let self_ref = use_ref(scope, || None::<NodeHandle>);
+    use_layout_effect(scope, loom::Always, move || {
+        let h = self_ref.current().map_or(0, |n| u32::from(n.area().height));
+        set_height(&move |_| h);
+    });
 
     let base = theme.normal;
 
@@ -44,15 +51,20 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
 
+    // Scroll.
+    let view_top = scroll_top(cursor, total, height, top);
+    if view_top != top {
+        set_top(&move |_| view_top);
+    }
+    let view_lines = view_top..view_top + height;
+
     // When the file list changes, keep the cursor on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&ctx.files));
     let saved_anchor = use_ref(scope, || None::<String>);
     let files_changed = !Rc::ptr_eq(&ctx.files, &*prev_files.current());
     if files_changed {
         if let Some(pos) = find_by_identity(saved_anchor.current().as_deref(), &nodes) {
-            if let Some(set) = set_cursor {
-                set(&move |_| pos as u32);
-            }
+            set_cursor(&move |_| pos as u32);
         }
         *prev_files.current() = Rc::clone(&ctx.files);
     } else {
@@ -70,15 +82,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         .on_key(move |k| {
             match k {
                 k if k == key!(j) || k == key!(down) => {
-                    if let Some(set) = set_cursor {
-                        set(&|c| c.saturating_add(1).min(total.saturating_sub(1)));
-                    }
+                    set_cursor(&|c| c.saturating_add(1).min(total.saturating_sub(1)));
                     Bubble::Stop
                 }
                 k if k == key!(k) || k == key!(up) => {
-                    if let Some(set) = set_cursor {
-                        set(&|c| c.saturating_sub(1));
-                    }
+                    set_cursor(&|c| c.saturating_sub(1));
                     Bubble::Stop
                 }
                 k if k == key!(enter) => {
@@ -109,22 +117,18 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
         })
         .on_wheel(move |delta| {
-            if let Some(set) = set_cursor {
-                let step = (delta.abs() * 3) as u32;
-                if delta > 0 {
-                    set(&move |c| c.saturating_add(step).min(total.saturating_sub(1)));
-                } else {
-                    set(&move |c| c.saturating_sub(step));
-                }
+            let step = (delta.abs() * 3) as u32;
+            if delta > 0 {
+                set_cursor(&move |c| c.saturating_add(step).min(total.saturating_sub(1)));
+            } else {
+                set_cursor(&move |c| c.saturating_sub(step));
             }
             Bubble::Stop
         })
         .on_mouse_down(move |mouse| {
             let line = view_start + mouse.local.y as u32;
             if line < total {
-                if let Some(set) = set_cursor {
-                    set(&move |_| line);
-                }
+                set_cursor(&move |_| line);
                 if let Some(node) = nodes_click.get(line as usize) {
                     activate_node(node, set_folded, set_file);
                 }
@@ -149,6 +153,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     rsx! {
         Column {
+            ref: Some(self_ref),
             focusable: true,
             auto_focus: true,
             listeners: listeners,

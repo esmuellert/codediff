@@ -6,15 +6,19 @@ use std::rc::Rc;
 use align::{DiffVersion, ViewLineType};
 use file_types::DiffType;
 use loom::{
-    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node, Row,
-    RowProps, Scope, component, rsx, use_context,
+    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node,
+    NodeHandle, Row, RowProps, Scope, component, rsx, use_context, use_layout_effect, use_ref,
+    use_state,
 };
 use ratatui::style::Style;
 
-use super::code_text::{CodeText, CodeTextProps};
 use super::context::Ui;
+use super::code_text::{CodeText, CodeTextProps};
+use super::explorer::scroll_top;
 use super::filler::{Filler, FillerProps};
 use super::gutter::{Gutter, GutterProps};
+
+use crate::services::syntax::SyntaxService;
 
 /// Digits + one trailing space, at least 4 columns.
 fn gutter_width(max_line: u32) -> u16 {
@@ -56,8 +60,6 @@ fn row_styles(
 pub fn SideBySide(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
-    let view_lines = &ctx.view_lines;
-    let cursor = ctx.cursor;
     let syntax = ctx.syntax.as_deref();
 
     let diff = match ctx.diff.as_deref() {
@@ -66,10 +68,28 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     };
 
     let alignment = &diff.alignment;
+    let total = alignment.view_lines(DiffType::SideBySide).count() as u32;
     let original_lines = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_lines = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter = gutter_width(original_lines);
     let modified_gutter = gutter_width(modified_lines);
+
+    // Own cursor and scroll.
+    let (cursor, set_cursor) = use_state(scope, || 0u32);
+    let (top, set_top) = use_state(scope, || 0u32);
+    let (height, set_height) = use_state(scope, || 0u32);
+
+    let self_ref = use_ref(scope, || None::<NodeHandle>);
+    use_layout_effect(scope, loom::Always, move || {
+        let h = self_ref.current().map_or(0, |n| u32::from(n.area().height));
+        set_height(&move |_| h);
+    });
+
+    let view_top = scroll_top(cursor, total, height, top);
+    if view_top != top {
+        set_top(&move |_| view_top);
+    }
+    let view_lines = view_top..view_top + height;
 
     let pairs: Vec<align::ViewLine> = alignment
         .view_lines_from(DiffType::SideBySide, view_lines.start)
@@ -77,6 +97,40 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         .collect();
 
     let divider_style = theme.normal.patch(theme.divider);
+
+    let view_start = view_lines.start;
+    let listeners = Listeners::new()
+        .on_key(move |k| {
+            match k {
+                k if k == crokey::key!(j) || k == crokey::key!(down) => {
+                    set_cursor(&move |c| c.saturating_add(1).min(total.saturating_sub(1)));
+                    Bubble::Stop
+                }
+                k if k == crokey::key!(k) || k == crokey::key!(up) => {
+                    set_cursor(&|c| c.saturating_sub(1));
+                    Bubble::Stop
+                }
+                k if k == crokey::key!(left) => {
+                    loom::focus_previous();
+                    Bubble::Stop
+                }
+                _ => Bubble::Continue,
+            }
+        })
+        .on_wheel(move |delta| {
+            let step = (delta.abs() * 3) as u32;
+            if delta > 0 {
+                set_cursor(&move |c| c.saturating_add(step).min(total.saturating_sub(1)));
+            } else {
+                set_cursor(&move |c| c.saturating_sub(step));
+            }
+            Bubble::Stop
+        })
+        .on_mouse_down(move |mouse| {
+            let line = view_start + mouse.local.y as u32;
+            set_cursor(&move |_| line.min(total.saturating_sub(1)));
+            Bubble::Stop
+        });
 
     let mut rows: Vec<Node> = Vec::with_capacity(pairs.len());
     for (offset, pair) in pairs.iter().enumerate() {
@@ -111,7 +165,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
                                 diff: Rc::from(diff_spans.as_slice()),
                                 syntax: Rc::from(
                                     syntax
-                                        .map(|store| crate::services::syntax::SyntaxService::line_spans(store, &diff.file, version, number))
+                                        .map(|store| SyntaxService::line_spans(store, &diff.file, version, number))
                                         .unwrap_or_default()
                                         .as_slice()
                                 ),
@@ -171,18 +225,9 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         });
     }
 
-    let listeners = Listeners::new()
-        .on_key(move |k| {
-            if k == crokey::key!(left) {
-                loom::focus_previous();
-                Bubble::Stop
-            } else {
-                Bubble::Continue
-            }
-        });
-
     rsx! {
         Column {
+            ref: Some(self_ref),
             focusable: true,
             listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },

@@ -9,11 +9,9 @@ use ui::components::diff_viewer::{DiffViewer, DiffViewerProps};
 use ui::components::{Context, Ui};
 
 fn with_diff(diff: Option<Rc<pipeline::diff::DiffContent>>) -> Harness {
-    let rows = 10u32;
-    Harness::new::<DiffViewer>(DiffViewerProps {}, 60, rows as u16)
+    Harness::new::<DiffViewer>(DiffViewerProps {}, 60, 10)
         .provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
-            view_lines: 0..rows,
             diff,
             ..Context::default()
         })

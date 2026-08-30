@@ -4,8 +4,8 @@ use std::path::Path;
 use std::rc::Rc;
 
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, NodeHandle, Row, RowProps, Scope,
-    component, rsx, use_exit, use_layout_effect, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope,
+    component, rsx, use_exit,
 };
 
 use super::border::{Border, BorderProps};
@@ -24,8 +24,6 @@ pub fn App(
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
 ) -> Node {
-    let (rows, set_rows) = use_state(scope, || 0u32);
-
     let exit = use_exit(scope);
     let keys = Listeners::new().on_key(move |k| {
         if k == crokey::key!(q) {
@@ -34,12 +32,6 @@ pub fn App(
         } else {
             Bubble::Continue
         }
-    });
-
-    let body = use_ref(scope, || None::<NodeHandle>);
-    use_layout_effect(scope, loom::Always, move || {
-        let area = body.current().map_or(ratatui::layout::Rect::ZERO, |node| node.area());
-        set_rows(&move |_| u32::from(area.height));
     });
 
     rsx! {
@@ -52,9 +44,7 @@ pub fn App(
                 file_service: Rc::clone(file_service),
                 diff_service: Rc::clone(diff_service),
                 syntax_service: Rc::clone(syntax_service),
-                rows: rows,
                 Row {
-                    ref: Some(body),
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,
                     Border {

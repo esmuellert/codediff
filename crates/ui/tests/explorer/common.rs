@@ -27,27 +27,23 @@ pub fn moved(from: &str, to: &str) -> File {
 }
 
 pub fn draw(files: Vec<File>, width: u16, height: u16) -> Vec<String> {
-    harness(files, width, height, 0).screen()
+    let mut h = harness(files, width, height);
+    for _ in 0..5 {
+        h.force_draw();
+    }
+    (0..height).map(|y| h.screen_row(y)).collect()
 }
 
-pub fn harness(files: Vec<File>, width: u16, height: u16, cursor: u32) -> Harness {
-    let rows = height as u32;
+pub fn harness(files: Vec<File>, width: u16, height: u16) -> Harness {
     Harness::new::<Explorer>(ExplorerProps {}, width, height)
         .provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             repo: Rc::from(Path::new("/repo")),
             files: Rc::new(files),
-            cursor,
-            view_lines: 0..rows,
-            set_repo: None,
-            set_cursor: None,
-            diff: None,
-            file: None,
-            set_file: None,
-            syntax: None,
+            ..Default::default()
         })
 }
 
 pub fn screen(paths: &[&str], width: u16, height: u16) -> Vec<String> {
-    draw(paths.iter().map(|p| file(p)).collect(), width, height + 1)
+    draw(paths.iter().map(|p| file(p)).collect(), width, height)
 }

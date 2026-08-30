@@ -157,8 +157,10 @@ fn the_identity_tells_two_files_of_the_same_name_apart() {
 fn the_cursor_row_has_a_different_background() {
     let files: Vec<File> = ["src/app.rs", "notes.txt"]
         .iter().map(|p| file(p)).collect();
-    let mut h1 = harness(files.clone(), 40, 10, 1);
-    h1.draw();
+    let mut h1 = harness(files.clone(), 40, 10);
+    h1.force_draw();
+    h1.press(crokey::key!(j));
+    h1.force_draw();
     let bg_cursor = h1.style_at(0, 1).bg;
     let bg_other = h1.style_at(0, 2).bg;
     assert_ne!(bg_cursor, bg_other,
@@ -187,45 +189,30 @@ fn a_single_file_renders_without_panic() {
 #[test]
 fn enter_on_a_file_sets_the_focused_file() {
     use std::cell::Cell;
-    use std::path::Path;
     use std::rc::Rc;
 
-    use file_types::File;
     use loom::{Node, Scope, component, rsx, use_state};
     use loom::testing::Harness;
     use ui::Theme;
-    use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps, scroll_top};
+    use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps};
 
-    /// A provider that owns cursor and file state.
+    /// Provides context with a set_file that records calls.
     #[component]
-    fn WithState(
+    fn WithFile(
         scope: &mut Scope,
-        list: Rc<Vec<File>>,
-        rows: u32,
+        list: Rc<Vec<file_types::File>>,
         file_set: Rc<Cell<bool>>,
     ) -> Node {
-        let (cursor, set_cursor) = use_state(scope, || 0u32);
-        let (file, set_file) = use_state(scope, || None::<Rc<File>>);
-        let (top, set_top) = use_state(scope, || 0u32);
-
+        let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
         if file.is_some() {
             file_set.set(true);
         }
-
-        let new_top = scroll_top(cursor, list.len() as u32, *rows, top);
-        if new_top != top {
-            set_top(&move |_| new_top);
-        }
-
         rsx! {
             Ui {
                 value: Context {
                     theme: Rc::new(Theme::DARK),
-                    repo: Rc::from(Path::new("/repo")),
+                    repo: Rc::from(std::path::Path::new("/repo")),
                     files: Rc::clone(list),
-                    cursor,
-                    view_lines: new_top..new_top + rows,
-                    set_cursor: Some(set_cursor),
                     set_file: Some(set_file),
                     file: file.as_ref().map(Rc::clone),
                     ..Default::default()
@@ -237,10 +224,9 @@ fn enter_on_a_file_sets_the_focused_file() {
 
     let files = vec![file("src/app.rs"), file("src/lib.rs")];
     let file_set = Rc::new(Cell::new(false));
-    let mut h = Harness::new::<WithState>(
-        WithStateProps {
+    let mut h = Harness::new::<WithFile>(
+        WithFileProps {
             list: Rc::new(files),
-            rows: 10,
             file_set: Rc::clone(&file_set),
         },
         40,
@@ -248,10 +234,9 @@ fn enter_on_a_file_sets_the_focused_file() {
     );
 
     h.force_draw();
-    // Cursor starts on heading "Changes". Move down to a file.
-    h.press(crokey::key!(j));  // directory "src"
+    h.press(crokey::key!(j));
     h.force_draw();
-    h.press(crokey::key!(j));  // file "app.rs"
+    h.press(crokey::key!(j));
     h.force_draw();
     h.press(crokey::key!(enter));
     h.force_draw();

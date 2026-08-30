@@ -20,14 +20,11 @@ fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
 fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<String> {
     let diff = make_diff(original, modified);
     let content = pipeline::diff::DiffContent::Diff(diff);
-    let rows = height as u32;
     let mut h = Harness::new::<SideBySide>(
         SideBySideProps {},
         width, height,
     ).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
-        view_lines: 0..rows,
-        cursor: 0,
         diff: Some(Rc::new(content)),
         ..Context::default()
     });

@@ -9,13 +9,13 @@ use super::common::*;
 
 #[test]
 fn a_file_at_the_root_is_one_row() {
-    let rows = screen(&["README.md"], 40, 2);
+    let rows = screen(&["README.md"], 40, 3);
     assert!(rows[1].contains("README.md"), "got {:?}", rows[1]);
 }
 
 #[test]
 fn files_in_a_directory_hang_below_it() {
-    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 4);
+    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
     assert!(rows[1].contains("src"), "got {:?}", rows[1]);
     assert!(rows[2].contains("app.rs"), "got {:?}", rows[2]);
     assert!(rows[3].contains("lib.rs"), "got {:?}", rows[3]);
@@ -23,7 +23,7 @@ fn files_in_a_directory_hang_below_it() {
 
 #[test]
 fn the_last_of_its_siblings_gets_a_corner() {
-    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 4);
+    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
     assert!(rows[2].contains('├'), "app.rs has a sibling below: {:?}", rows[2]);
     assert!(rows[3].contains('└'), "lib.rs is the last: {:?}", rows[3]);
 }
@@ -31,7 +31,7 @@ fn the_last_of_its_siblings_gets_a_corner() {
 #[test]
 fn a_deeper_file_carries_its_ancestors_line() {
     // Two files under src so the directory is not flattened.
-    let rows = screen(&["src/app.rs", "src/view/tab.rs", "notes.txt"], 40, 6);
+    let rows = screen(&["src/app.rs", "src/view/tab.rs", "notes.txt"], 40, 7);
     // src has siblings below, so its line continues through view.
     assert!(rows[3].starts_with('│'), "tab.rs sits under src: {:?}", rows[3]);
 }
@@ -40,20 +40,20 @@ fn a_deeper_file_carries_its_ancestors_line() {
 
 #[test]
 fn a_single_child_directory_chain_is_flattened() {
-    let rows = screen(&["src/view/tab.rs"], 40, 3);
+    let rows = screen(&["src/view/tab.rs"], 40, 4);
     assert!(rows[1].contains("src/view"), "the chain is merged: {:?}", rows[1]);
 }
 
 #[test]
 fn a_directory_with_two_children_is_not_flattened() {
-    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 4);
+    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
     assert!(rows[1].contains("src"), "got {:?}", rows[1]);
     assert!(!rows[1].contains('/'), "src has two children, no merge: {:?}", rows[1]);
 }
 
 #[test]
 fn a_three_level_chain_collapses_fully() {
-    let rows = screen(&["a/b/c/file.rs"], 40, 3);
+    let rows = screen(&["a/b/c/file.rs"], 40, 4);
     assert!(rows[1].contains("a/b/c"), "got {:?}", rows[1]);
 }
 

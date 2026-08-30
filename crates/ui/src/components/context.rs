@@ -1,6 +1,5 @@
 //! Shared state, and the one provider that owns it.
 
-use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -11,7 +10,6 @@ use loom::{
 };
 use syntax::Store;
 
-use super::explorer::scroll_top;
 use crate::services::diff::DiffService;
 use crate::services::syntax::SyntaxService;
 use crate::services::files::FilesService;
@@ -23,14 +21,11 @@ pub struct Context {
     pub theme: Rc<Theme>,
     pub repo: Rc<Path>,
     pub files: Rc<Vec<File>>,
-    pub cursor: u32,
-    pub view_lines: Range<u32>,
-    pub set_repo: Option<SetState<Rc<Path>>>,
-    pub set_cursor: Option<SetState<u32>>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub diff: Option<Rc<pipeline::diff::DiffContent>>,
     pub syntax: Option<Rc<Store>>,
+    pub set_repo: Option<SetState<Rc<Path>>>,
 }
 
 impl Default for Context {
@@ -39,14 +34,11 @@ impl Default for Context {
             theme: Rc::new(Theme::DARK),
             repo: Rc::from(Path::new("")),
             files: Rc::new(Vec::new()),
-            cursor: 0,
-            view_lines: 0..0,
-            set_repo: None,
-            set_cursor: None,
             file: None,
             set_file: None,
             diff: None,
             syntax: None,
+            set_repo: None,
         }
     }
 }
@@ -56,14 +48,11 @@ impl Context {
         Rc::ptr_eq(&self.theme, &other.theme)
             && Rc::ptr_eq(&self.repo, &other.repo)
             && Rc::ptr_eq(&self.files, &other.files)
-            && self.cursor == other.cursor
-            && self.view_lines == other.view_lines
-            && self.set_repo == other.set_repo
-            && self.set_cursor == other.set_cursor
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
             && same_rc(&self.diff, &other.diff)
             && same_rc(&self.syntax, &other.syntax)
+            && self.set_repo == other.set_repo
     }
 }
 
@@ -88,20 +77,15 @@ pub fn UiProvider(
     file_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
-    rows: u32,
     children: loom::Children,
 ) -> Node {
     let initial = Rc::clone(cwd);
     let (repo, set_repo) = use_state(scope, || initial);
     let (file_list, set_file_list) = use_state(scope, || Rc::new(Vec::<File>::new()));
-    let (cursor, set_cursor) = use_state(scope, || 0u32);
-    let (top, set_top) = use_state(scope, || 0u32);
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
     let (diff, set_diff) = use_state(scope, || None::<Rc<pipeline::diff::DiffContent>>);
     let (syntax, set_syntax) = use_state(scope, || None::<Rc<Store>>);
 
-    // Read once. A new Rc each render would tell every reader the
-    // context changed, and the tree would never settle.
     let theme = use_memo(scope, (), Theme::from_environment);
 
     // Get the file list.
@@ -125,7 +109,7 @@ pub fn UiProvider(
         });
     });
 
-    // Subscribe to syntax updates — each chunk delivers a new store snapshot.
+    // Subscribe to syntax updates.
     let ssvc = Rc::clone(syntax_service);
     use_effect(scope, (), move || {
         ssvc.subscribe().subscribe(move |store: Rc<Store>| {
@@ -155,18 +139,11 @@ pub fn UiProvider(
     // Request syntax colours for whatever diff is showing.
     if let Some(ref content) = diff.as_deref() {
         if let pipeline::diff::DiffContent::Diff(d) = content {
-            let last = cursor.saturating_add(2000);
+            let last = 2000u32;
             for version in [file_types::DiffVersion::Original, file_types::DiffVersion::Modified] {
                 syntax_service.request(&d.file, version, d.alignment.text(version), last);
             }
         }
-    }
-
-    // Compute the scroll.
-    let total = file_list.len() as u32;
-    let new_top = scroll_top(cursor, total, *rows, top);
-    if new_top != top {
-        set_top(&move |_| new_top);
     }
 
     rsx! {
@@ -175,14 +152,11 @@ pub fn UiProvider(
                 theme,
                 repo,
                 files: file_list,
-                cursor,
-                view_lines: new_top..new_top + rows,
-                set_repo: Some(set_repo),
-                set_cursor: Some(set_cursor),
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
                 diff: diff.clone(),
                 syntax: syntax.clone(),
+                set_repo: Some(set_repo),
             },
             { children.clone() }
         }

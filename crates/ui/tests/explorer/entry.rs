@@ -32,7 +32,7 @@ fn a_directory_has_no_status() {
 
 #[test]
 fn the_counts_are_green_and_red() {
-    let mut h = harness(vec![file_with_stats("a.rs", 4, 3)], 30, 3, 0);
+    let mut h = harness(vec![file_with_stats("a.rs", 4, 3)], 30, 3);
     let row = h.screen_row(1);
     let end = row.chars().count() as u16;
 
@@ -102,7 +102,7 @@ fn a_narrow_row_drops_where_it_came_from_before_the_name() {
 #[test]
 fn a_heading_name_is_not_bold_and_the_count_is_highlighted() {
     use ratatui::style::Modifier;
-    let mut h = harness(vec![file("a.rs")], 30, 3, 0);
+    let mut h = harness(vec![file("a.rs")], 30, 3);
     let name_style = h.style_at(0, 0);
     assert!(
         !name_style.add_modifier.contains(Modifier::BOLD),
@@ -118,7 +118,7 @@ fn a_heading_name_is_not_bold_and_the_count_is_highlighted() {
 fn the_indent_marker_has_its_own_colour() {
     let mut h = harness(
         vec![file("src/app.rs"), file("notes.txt")],
-        40, 10, 1,
+        40, 10,
     );
     h.draw();
     let marker_style = h.style_at(0, 1);
@@ -132,7 +132,7 @@ fn the_indent_marker_has_its_own_colour() {
 #[test]
 fn the_icon_has_its_own_colour() {
     let files = vec![file_with_stats("app.rs", 4, 3)];
-    let mut h = harness(files, 40, 10, 0);
+    let mut h = harness(files, 40, 10);
     h.draw();
     let icon_style = h.style_at(0, 1);
     let row = h.screen_row(1);
@@ -144,7 +144,7 @@ fn the_icon_has_its_own_colour() {
 #[test]
 fn the_heading_colour_differs_from_the_file_name_colour() {
     let files = vec![file("app.rs")];
-    let mut h = harness(files, 40, 10, 0);
+    let mut h = harness(files, 40, 10);
     h.draw();
     let heading_style = h.style_at(0, 0);
     let row1 = h.screen_row(1);
