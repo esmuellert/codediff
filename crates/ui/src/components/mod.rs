@@ -5,6 +5,7 @@ pub mod border;
 pub mod cells;
 mod context;
 pub mod explorer;
+pub mod gutter;
 mod welcome;
 
 pub use app::{App, AppProps};
