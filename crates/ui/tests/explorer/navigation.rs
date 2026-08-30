@@ -181,3 +181,80 @@ fn a_single_file_renders_without_panic() {
     let rows = draw(vec![file("only.rs")], 40, 5);
     assert!(rows[1].contains("only.rs"), "got {:?}", rows[1]);
 }
+
+// ---- enter opens a file ----
+
+#[test]
+fn enter_on_a_file_sets_the_focused_file() {
+    use std::cell::Cell;
+    use std::path::Path;
+    use std::rc::Rc;
+
+    use file_types::File;
+    use loom::{Node, Scope, component, rsx, use_state};
+    use loom::testing::Harness;
+    use ui::Theme;
+    use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps, scroll_top};
+
+    /// A provider that owns cursor and file state.
+    #[component]
+    fn WithState(
+        scope: &mut Scope,
+        list: Rc<Vec<File>>,
+        rows: u32,
+        file_set: Rc<Cell<bool>>,
+    ) -> Node {
+        let (cursor, set_cursor) = use_state(scope, || 0u32);
+        let (file, set_file) = use_state(scope, || None::<Rc<File>>);
+        let (top, set_top) = use_state(scope, || 0u32);
+
+        if file.is_some() {
+            file_set.set(true);
+        }
+
+        let new_top = scroll_top(cursor, list.len() as u32, *rows, top);
+        if new_top != top {
+            set_top(&move |_| new_top);
+        }
+
+        rsx! {
+            Ui {
+                value: Context {
+                    theme: Rc::new(Theme::DARK),
+                    repo: Rc::from(Path::new("/repo")),
+                    files: Rc::clone(list),
+                    cursor,
+                    view_lines: new_top..new_top + rows,
+                    set_cursor: Some(set_cursor),
+                    set_file: Some(set_file),
+                    file: file.as_ref().map(Rc::clone),
+                    ..Default::default()
+                },
+                Explorer {}
+            }
+        }
+    }
+
+    let files = vec![file("src/app.rs"), file("src/lib.rs")];
+    let file_set = Rc::new(Cell::new(false));
+    let mut h = Harness::new::<WithState>(
+        WithStateProps {
+            list: Rc::new(files),
+            rows: 10,
+            file_set: Rc::clone(&file_set),
+        },
+        40,
+        10,
+    );
+
+    h.force_draw();
+    // Cursor starts on heading "Changes". Move down to a file.
+    h.press(crokey::key!(j));  // directory "src"
+    h.force_draw();
+    h.press(crokey::key!(j));  // file "app.rs"
+    h.force_draw();
+    h.press(crokey::key!(enter));
+    h.force_draw();
+
+    assert!(file_set.get(), "pressing Enter on a file should set the focused file");
+}

@@ -4,7 +4,7 @@ mod app;
 pub mod border;
 pub mod cells;
 mod context;
-mod diff_viewer;
+pub mod diff_viewer;
 pub mod explorer;
 pub mod gutter;
 pub mod filler;
