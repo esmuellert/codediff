@@ -7,8 +7,7 @@ use align::{DiffVersion, ViewLineType};
 use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node,
-    NodeHandle, Row, RowProps, Scope, component, rsx, use_context, use_layout_effect, use_ref,
-    use_state,
+    Row, RowProps, Scope, component, rsx, use_context, use_measure, use_state,
 };
 use ratatui::style::Style;
 
@@ -77,13 +76,8 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     // Own cursor and scroll.
     let (cursor, set_cursor) = use_state(scope, || 0u32);
     let (top, set_top) = use_state(scope, || 0u32);
-    let (height, set_height) = use_state(scope, || 0u32);
-
-    let self_ref = use_ref(scope, || None::<NodeHandle>);
-    use_layout_effect(scope, loom::Always, move || {
-        let h = self_ref.current().map_or(0, |n| u32::from(n.area().height));
-        set_height(&move |_| h);
-    });
+    let (self_ref, size) = use_measure(scope);
+    let height = u32::from(size.height);
 
     let view_top = scroll_top(cursor, total, height, top);
     if view_top != top {

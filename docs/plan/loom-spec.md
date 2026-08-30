@@ -18,7 +18,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | element tree | a value describing one frame, built by `rsx!`, thrown away after reconciliation |
 | reconciliation | matching this frame's description against the live instance tree, so state has an owner |
 | function components | `#[component] fn Name(scope: &mut Scope, …) -> Node` |
-| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context`, `use_sync_external_store` |
+| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context`, `use_measure`, `use_sync_external_store` |
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
@@ -131,8 +131,8 @@ pub use event::{
 };
 pub use hook::{
     Always, Cleanup, Context, ExternalStore, Notify, Observable, Observer, Promise, Ref,
-    Resolver, SetState, Snapshot, Subscription, observable, promise, use_context, use_effect,
-    use_layout_effect, use_memo, use_ref, use_state, use_sync_external_store,
+    Resolver, SetState, Size, Snapshot, Subscription, observable, promise, use_context, use_effect,
+    use_layout_effect, use_measure, use_memo, use_ref, use_state, use_sync_external_store,
 };
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
 /// value is to write the provider element.
@@ -936,6 +936,17 @@ pub fn use_memo<D, T>(scope: &mut Scope, deps: D, compute: impl FnOnce() -> T) -
 where
     D: PartialEq + 'static,
     T: 'static;
+```
+
+```rust
+// hook/measure.rs
+/// The size of a laid-out node. Updated after each layout pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Size { pub width: u16, pub height: u16 }
+
+/// Returns a ref to put on a host element and its measured size.
+/// The terminal equivalent of React's `useMeasure` / `useElementSize`.
+pub fn use_measure(scope: &mut Scope) -> (Ref<Option<NodeHandle>>, Size);
 ```
 
 ```rust

@@ -3,6 +3,7 @@
 mod context;
 mod effect;
 mod exit;
+mod measure;
 mod memo;
 mod reference;
 mod state;
@@ -14,6 +15,7 @@ use std::any::Any;
 pub use context::{Context, offer, use_context};
 pub use effect::{Always, Cleanup, use_effect, use_layout_effect};
 pub use exit::use_exit;
+pub use measure::{Size, use_measure};
 pub use memo::use_memo;
 pub use reference::{Ref, use_ref};
 pub use state::{SetState, use_state};

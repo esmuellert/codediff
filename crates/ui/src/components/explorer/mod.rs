@@ -9,8 +9,8 @@ use std::rc::Rc;
 use crokey::key;
 use file_types::File;
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, NodeHandle, Scope,
-    component, rsx, use_context, use_exit, use_layout_effect, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope,
+    component, rsx, use_context, use_exit, use_measure, use_ref, use_state,
 };
 
 use self::entry::{Entry, EntryProps};
@@ -29,16 +29,10 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     let (cursor, set_cursor) = use_state(scope, || 0u32);
     let (top, set_top) = use_state(scope, || 0u32);
-    let (height, set_height) = use_state(scope, || 0u32);
+    let (self_ref, size) = use_measure(scope);
+    let height = u32::from(size.height);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
     let (tree_mode, set_tree_mode) = use_state(scope, || true);
-
-    // Measure our own height after layout.
-    let self_ref = use_ref(scope, || None::<NodeHandle>);
-    use_layout_effect(scope, loom::Always, move || {
-        let h = self_ref.current().map_or(0, |n| u32::from(n.area().height));
-        set_height(&move |_| h);
-    });
 
     let base = theme.normal;
 
