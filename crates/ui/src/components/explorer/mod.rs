@@ -45,12 +45,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
 
-    // Scroll.
-    let view_top = scroll_top(cursor, total, height, top);
-    if view_top != top {
-        set_top(&move |_| view_top);
-    }
-    let view_lines = view_top..view_top + height;
+    // view_lines is computed from top directly. j/k adjust top
+    // to keep the cursor visible. Wheel changes top independently.
+    let view_lines = top..top + height;
 
     // When the file list changes, keep the cursor on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&ctx.files));
@@ -77,10 +74,12 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             match k {
                 k if k == key!(j) || k == key!(down) => {
                     set_cursor(&|c| c.saturating_add(1).min(total.saturating_sub(1)));
+                    set_top(&move |t| scroll_top(cursor.saturating_add(1).min(total.saturating_sub(1)), total, height, t));
                     Bubble::Stop
                 }
                 k if k == key!(k) || k == key!(up) => {
                     set_cursor(&|c| c.saturating_sub(1));
+                    set_top(&move |t| scroll_top(cursor.saturating_sub(1), total, height, t));
                     Bubble::Stop
                 }
                 k if k == key!(enter) => {
@@ -113,9 +112,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         .on_wheel(move |delta| {
             let step = (delta.abs() * 3) as u32;
             if delta > 0 {
-                set_cursor(&move |c| c.saturating_add(step).min(total.saturating_sub(1)));
+                set_top(&move |t| t.saturating_add(step).min(total.saturating_sub(1)));
             } else {
-                set_cursor(&move |c| c.saturating_sub(step));
+                set_top(&move |t| t.saturating_sub(step));
             }
             Bubble::Stop
         })

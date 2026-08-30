@@ -243,3 +243,68 @@ fn enter_on_a_file_sets_the_focused_file() {
 
     assert!(file_set.get(), "pressing Enter on a file should set the focused file");
 }
+
+// ---- scroll vs cursor ----
+
+#[test]
+fn wheel_scrolls_the_view_without_moving_the_cursor() {
+    // A list taller than the viewport. Cursor starts at 0 (the heading).
+    let files: Vec<File> = (0..20)
+        .map(|i| file(&format!("file{i}.rs")))
+        .collect();
+    let mut h = harness(files, 40, 6);
+    for _ in 0..5 { h.force_draw(); }
+
+    let before = h.screen();
+
+    // Scroll down by wheeling.
+    h.wheel(10, 3, 3);
+    for _ in 0..3 { h.force_draw(); }
+
+    let after = h.screen();
+
+    // The view should have changed (different rows visible).
+    assert_ne!(before, after, "wheel should scroll the view");
+
+    // The cursor row (0) should NOT have moved — it may now be off screen,
+    // so the heading row that was at screen row 0 should no longer be there.
+    // Press j once — cursor goes to 1, not to wherever the scroll landed + 1.
+    h.press(crokey::key!(j));
+    for _ in 0..3 { h.force_draw(); }
+
+    // Now press k — cursor goes back to 0.
+    h.press(crokey::key!(k));
+    for _ in 0..3 { h.force_draw(); }
+
+    // The heading "Changes" should be visible again because j/k brought
+    // the view back to show the cursor at row 0.
+    let final_screen = h.screen();
+    let has_heading = final_screen.iter().any(|r| r.contains("Changes"));
+    assert!(has_heading,
+        "after j then k, the cursor is at 0 and the heading is visible: {:?}",
+        final_screen);
+}
+
+#[test]
+fn j_moves_the_cursor_and_the_view_follows() {
+    let files: Vec<File> = (0..20)
+        .map(|i| file(&format!("file{i}.rs")))
+        .collect();
+    let mut h = harness(files, 40, 6);
+    for _ in 0..5 { h.force_draw(); }
+
+    // Press j enough times to go past the viewport.
+    for _ in 0..10 {
+        h.press(crokey::key!(j));
+        h.force_draw();
+    }
+
+    let screen = h.screen();
+    // The cursor row should be highlighted — the view followed the cursor.
+    // We can check that the screen shows rows that were not initially visible.
+    let has_heading = screen.iter().any(|r| r.contains("Changes"));
+    // The heading at row 0 should have scrolled off.
+    assert!(!has_heading,
+        "after pressing j 10 times in a 6-row viewport, the heading should be off screen: {:?}",
+        screen);
+}

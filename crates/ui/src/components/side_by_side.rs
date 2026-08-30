@@ -79,11 +79,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let (self_ref, size) = use_measure(scope);
     let height = u32::from(size.height);
 
-    let view_top = scroll_top(cursor, total, height, top);
-    if view_top != top {
-        set_top(&move |_| view_top);
-    }
-    let view_lines = view_top..view_top + height;
+    let view_lines = top..top + height;
 
     let pairs: Vec<align::ViewLine> = alignment
         .view_lines_from(DiffType::SideBySide, view_lines.start)
@@ -98,10 +94,12 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
             match k {
                 k if k == crokey::key!(j) || k == crokey::key!(down) => {
                     set_cursor(&move |c| c.saturating_add(1).min(total.saturating_sub(1)));
+                    set_top(&move |t| scroll_top(cursor.saturating_add(1).min(total.saturating_sub(1)), total, height, t));
                     Bubble::Stop
                 }
                 k if k == crokey::key!(k) || k == crokey::key!(up) => {
                     set_cursor(&|c| c.saturating_sub(1));
+                    set_top(&move |t| scroll_top(cursor.saturating_sub(1), total, height, t));
                     Bubble::Stop
                 }
                 k if k == crokey::key!(left) => {
@@ -114,9 +112,9 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         .on_wheel(move |delta| {
             let step = (delta.abs() * 3) as u32;
             if delta > 0 {
-                set_cursor(&move |c| c.saturating_add(step).min(total.saturating_sub(1)));
+                set_top(&move |t| t.saturating_add(step).min(total.saturating_sub(1)));
             } else {
-                set_cursor(&move |c| c.saturating_sub(step));
+                set_top(&move |t| t.saturating_sub(step));
             }
             Bubble::Stop
         })
