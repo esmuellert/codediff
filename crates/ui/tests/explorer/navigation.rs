@@ -308,3 +308,47 @@ fn j_moves_the_cursor_and_the_view_follows() {
         "after pressing j 10 times in a 6-row viewport, the heading should be off screen: {:?}",
         screen);
 }
+
+#[test]
+fn wheel_cannot_scroll_past_the_last_line() {
+    let files: Vec<File> = (0..10)
+        .map(|i| file(&format!("file{i}.rs")))
+        .collect();
+    // 6-row viewport, ~11 nodes (heading + 10 files).
+    let mut h = harness(files, 40, 6);
+    for _ in 0..5 { h.force_draw(); }
+
+    // Scroll way past the end.
+    for _ in 0..20 {
+        h.wheel(10, 3, 3);
+        h.force_draw();
+    }
+
+    let screen = h.screen();
+    // The last file should be visible at the bottom, not at the top
+    // with empty rows below.
+    let non_empty: Vec<&String> = screen.iter().filter(|r| !r.trim().is_empty()).collect();
+    assert_eq!(
+        non_empty.len(), 6,
+        "every row should have content — no empty space below the last line: {:?}",
+        screen
+    );
+}
+
+#[test]
+fn short_content_does_not_scroll() {
+    // Only 2 files — heading + 2 = 3 nodes, viewport is 6.
+    let files = vec![file("a.rs"), file("b.rs")];
+    let mut h = harness(files, 40, 6);
+    for _ in 0..5 { h.force_draw(); }
+
+    let before = h.screen();
+
+    // Try to scroll down.
+    h.wheel(10, 3, 3);
+    for _ in 0..3 { h.force_draw(); }
+
+    let after = h.screen();
+    assert_eq!(before, after,
+        "content shorter than the viewport should not scroll");
+}

@@ -112,7 +112,7 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         .on_wheel(move |delta| {
             let step = (delta.abs() * 3) as u32;
             if delta > 0 {
-                set_top(&move |t| t.saturating_add(step).min(total.saturating_sub(1)));
+                set_top(&move |t| t.saturating_add(step).min(total.saturating_sub(height)));
             } else {
                 set_top(&move |t| t.saturating_sub(step));
             }
