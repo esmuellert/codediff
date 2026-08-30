@@ -29,7 +29,6 @@ fn row_styles(
     theme: &crate::theme::Theme,
     kind: ViewLineType,
     version: DiffVersion,
-    is_cursor: bool,
 ) -> (Style, Style, Style) {
     let base = theme.normal;
     let role = match (kind, version) {
@@ -47,11 +46,7 @@ fn row_styles(
         (ViewLineType::Modified, DiffVersion::Modified) => base.patch(theme.inserted_text),
         _ => line_bg,
     };
-    let number_style = if is_cursor {
-        line_bg.patch(theme.line_number_current)
-    } else {
-        line_bg.patch(theme.line_number)
-    };
+    let number_style = line_bg.patch(theme.line_number);
     (line_bg, changed_bg, number_style)
 }
 
@@ -112,13 +107,11 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let mut rows: Vec<Node> = Vec::with_capacity(pairs.len());
     for (offset, pair) in pairs.iter().enumerate() {
         let view_line = view.view_lines.start + offset as u32;
-        let is_cursor = view_line == view.cursor;
-
         let make_side = |version: DiffVersion, slot: align::Slot, gw: u16| -> Vec<Node> {
             match slot.line() {
                 Some(number) => {
                     let (unchanged, changed, number_style) =
-                        row_styles(theme, pair.kind, version, is_cursor);
+                        row_styles(theme, pair.kind, version);
                     let text = alignment.line(version, number).unwrap_or("");
                     let diff_spans: Vec<Range<u32>> = alignment
                         .spans(version, number)
