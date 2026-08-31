@@ -9,8 +9,8 @@ use crate::Refresh;
 
 pub struct Context {
     pub repo_root: std::path::PathBuf,
-    pub git_dir: std::path::PathBuf,
-    pub common_dir: std::path::PathBuf,
+    pub worktree_git_dir: std::path::PathBuf,
+    pub common_git_dir: std::path::PathBuf,
     pub ignorer: Gitignore,
 }
 
@@ -43,12 +43,12 @@ fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
         return Refresh::default();
     }
 
-    // Path inside a git dir? The private one is asked first: in a worktree it
-    // sits inside the common one, at .git/worktrees/<name>.
-    if let Ok(rel) = path.strip_prefix(&ctx.git_dir) {
+    // Ask the worktree-specific Git dir first: for a linked worktree it sits
+    // inside the common one, at .git/worktrees/<name>.
+    if let Ok(rel) = path.strip_prefix(&ctx.worktree_git_dir) {
         return refresh_for_git_path(rel, path);
     }
-    if let Ok(rel) = path.strip_prefix(&ctx.common_dir) {
+    if let Ok(rel) = path.strip_prefix(&ctx.common_git_dir) {
         return refresh_for_git_path(rel, path);
     }
 
@@ -147,12 +147,12 @@ mod tests {
 
     fn ctx(root: &str) -> Context {
         let repo_root = PathBuf::from(root);
-        let git_dir = repo_root.join(".git");
+        let worktree_git_dir = repo_root.join(".git");
         let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
         Context {
             repo_root,
-            common_dir: git_dir.clone(),
-            git_dir,
+            common_git_dir: worktree_git_dir.clone(),
+            worktree_git_dir,
             ignorer,
         }
     }
@@ -160,19 +160,19 @@ mod tests {
     /// A linked worktree at /wt, whose main repository is /repo.
     fn worktree_ctx() -> Context {
         let repo_root = PathBuf::from("/wt");
-        let common_dir = PathBuf::from("/repo/.git");
+        let common_git_dir = PathBuf::from("/repo/.git");
         let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
         Context {
             repo_root,
-            git_dir: common_dir.join("worktrees/wt"),
-            common_dir,
+            worktree_git_dir: common_git_dir.join("worktrees/wt"),
+            common_git_dir,
             ignorer,
         }
     }
 
     fn ctx_with_ignore(root: &str, patterns: &[&str]) -> Context {
         let repo_root = PathBuf::from(root);
-        let git_dir = repo_root.join(".git");
+        let worktree_git_dir = repo_root.join(".git");
         let mut builder = ignore::gitignore::GitignoreBuilder::new(&repo_root);
         for p in patterns {
             builder.add_line(None, p).unwrap();
@@ -180,8 +180,8 @@ mod tests {
         let ignorer = builder.build().unwrap();
         Context {
             repo_root,
-            common_dir: git_dir.clone(),
-            git_dir,
+            common_git_dir: worktree_git_dir.clone(),
+            worktree_git_dir,
             ignorer,
         }
     }
@@ -405,7 +405,7 @@ mod tests {
     // === Linked worktrees ===
 
     #[test]
-    fn worktree_private_index_sets_index() {
+    fn worktree_git_dir_index_sets_index() {
         let c = worktree_ctx();
         let r = get_refresh(
             &[event(
@@ -414,12 +414,12 @@ mod tests {
             )],
             &c,
         );
-        assert!(r.index, "the private index is this worktree's, got {r}");
+        assert!(r.index, "the index belongs to this worktree, got {r}");
         assert!(!r.worktree);
     }
 
     #[test]
-    fn worktree_private_head_sets_head() {
+    fn worktree_git_dir_head_sets_head() {
         let c = worktree_ctx();
         let r = get_refresh(
             &[event(
@@ -428,7 +428,7 @@ mod tests {
             )],
             &c,
         );
-        assert!(r.head, "the private HEAD is this worktree's, got {r}");
+        assert!(r.head, "HEAD belongs to this worktree, got {r}");
     }
 
     #[test]

@@ -76,23 +76,27 @@ impl WatchScope {
 
 /// Computes the current watch scope for a repository.
 ///
-/// `git_dir` is this worktree's own — `index` and `HEAD`. `common_dir` is the
-/// one it shares with every other worktree — `refs/` and `packed-refs`. In a
-/// plain repository the two are the same directory.
-pub(super) fn compute(repo_root: &Path, git_dir: &Path, common_dir: &Path) -> WatchScope {
+/// `worktree_git_dir` holds this worktree's `index` and `HEAD`. `common_git_dir`
+/// holds the `refs/` and `packed-refs` shared by every worktree. In a plain
+/// repository the two are the same directory.
+pub(super) fn compute(
+    repo_root: &Path,
+    worktree_git_dir: &Path,
+    common_git_dir: &Path,
+) -> WatchScope {
     let mut paths = worktree_paths(repo_root);
-    paths.insert(git_dir.to_owned(), RecursiveMode::NonRecursive);
+    paths.insert(worktree_git_dir.to_owned(), RecursiveMode::NonRecursive);
 
-    // packed-refs lives beside refs/, in the shared dir.
-    if common_dir != git_dir {
-        paths.insert(common_dir.to_owned(), RecursiveMode::NonRecursive);
+    // packed-refs lives beside refs/, in the common dir.
+    if common_git_dir != worktree_git_dir {
+        paths.insert(common_git_dir.to_owned(), RecursiveMode::NonRecursive);
     }
-    let info_dir = common_dir.join("info");
+    let info_dir = common_git_dir.join("info");
     if info_dir.is_dir() {
         paths.insert(info_dir, RecursiveMode::NonRecursive);
     }
     // refs/ can have subdirectories (refs/heads/, refs/remotes/, refs/tags/).
-    let refs_dir = common_dir.join("refs");
+    let refs_dir = common_git_dir.join("refs");
     if refs_dir.is_dir() {
         paths.insert(refs_dir, RecursiveMode::Recursive);
     }
@@ -166,45 +170,45 @@ mod tests {
     }
 
     /// Lays out a main repository with one linked worktree, and answers
-    /// (worktree root, private git dir, common dir).
+    /// (worktree root, worktree git dir, common git dir).
     fn linked_worktree(tmp: &tempfile::TempDir) -> (PathBuf, PathBuf, PathBuf) {
         let root = tmp.path();
-        let common = root.join("main/.git");
-        let private = common.join("worktrees/wt");
+        let common_git_dir = root.join("main/.git");
+        let worktree_git_dir = common_git_dir.join("worktrees/wt");
         let wt = root.join("wt");
-        std::fs::create_dir_all(common.join("refs/heads")).unwrap();
-        std::fs::create_dir_all(&private).unwrap();
+        std::fs::create_dir_all(common_git_dir.join("refs/heads")).unwrap();
+        std::fs::create_dir_all(&worktree_git_dir).unwrap();
         std::fs::create_dir_all(&wt).unwrap();
-        (wt, private, common)
+        (wt, worktree_git_dir, common_git_dir)
     }
 
     #[test]
     fn worktree_watches_both_git_dirs() {
         let tmp = tempfile::tempdir().unwrap();
-        let (wt, private, common) = linked_worktree(&tmp);
-        let scope = compute(&wt, &private, &common);
+        let (wt, worktree_git_dir, common_git_dir) = linked_worktree(&tmp);
+        let scope = compute(&wt, &worktree_git_dir, &common_git_dir);
 
         assert_eq!(
-            scope.paths.get(&private),
+            scope.paths.get(&worktree_git_dir),
             Some(&RecursiveMode::NonRecursive),
-            "the private git dir must be watched"
+            "the worktree git dir must be watched"
         );
         assert_eq!(
-            scope.paths.get(&common),
+            scope.paths.get(&common_git_dir),
             Some(&RecursiveMode::NonRecursive),
-            "the common dir must be watched"
+            "the common git dir must be watched"
         );
     }
 
     #[test]
-    fn worktree_watches_the_shared_refs() {
+    fn worktree_watches_the_common_refs() {
         let tmp = tempfile::tempdir().unwrap();
-        let (wt, private, common) = linked_worktree(&tmp);
-        let scope = compute(&wt, &private, &common);
+        let (wt, worktree_git_dir, common_git_dir) = linked_worktree(&tmp);
+        let scope = compute(&wt, &worktree_git_dir, &common_git_dir);
         assert_eq!(
-            scope.paths.get(&common.join("refs")),
+            scope.paths.get(&common_git_dir.join("refs")),
             Some(&RecursiveMode::Recursive),
-            "refs/ is shared, not private"
+            "refs/ lives in the common git dir"
         );
     }
 

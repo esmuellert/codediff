@@ -5,11 +5,13 @@ Watches a git repository for changes and reports what needs refreshing.
 ## What is here
 
 ```text
-lib.rs       re-exports: Refresh, Subscription, subscribe
-refresh.rs   Refresh — a bitset of what changed (worktree | index | head | refs)
-filter.rs    path → Refresh — pure logic, all filtering decisions
-scope.rs     computes and maintains the paths handed to notify
-watch.rs     the bounded debouncer, the callback, the handle
+lib.rs            re-exports: Refresh, Subscription, subscribe
+refresh.rs        Refresh — a bitset of what changed (worktree | index | head | refs)
+filter.rs         path → Refresh — pure logic, all filtering decisions
+git_dirs.rs       resolves worktree-specific and common Git directories
+ignore_rules.rs   loads and detects changes to ignore rules
+scope.rs          computes and maintains the paths handed to notify
+watch.rs          the bounded debouncer, the callback, the handle
 ```
 
 ## How it works
