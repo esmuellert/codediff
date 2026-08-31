@@ -1,50 +1,115 @@
-//! Determines which directories to hand to notify.
+//! Computes the complete set of paths that notify should watch.
 //!
 //! On Linux: one NonRecursive watch per non-ignored directory (so target/ is
 //! never watched). On macOS/Windows: one Recursive watch on the root (native
 //! backends don't cost per-directory handles) and filtering happens later.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use notify::RecursiveMode;
+#[cfg(target_os = "linux")]
+use notify::EventKind;
+#[cfg(target_os = "linux")]
+use notify::event::{CreateKind, ModifyKind, RemoveKind};
+use notify::{Event, RecursiveMode, Watcher};
 
-/// A directory to watch and how deep.
-pub struct WatchRoot {
-    pub path: PathBuf,
-    pub mode: RecursiveMode,
+/// The paths and recursion modes currently registered with notify.
+#[derive(Default)]
+pub(super) struct WatchScope {
+    paths: HashMap<PathBuf, RecursiveMode>,
 }
 
-/// Returns the directories to watch for a given repo.
+impl WatchScope {
+    pub fn install(watcher: &mut impl Watcher, desired: Self) -> notify::Result<Self> {
+        let mut installed = Self::default();
+        for (path, mode) in desired.paths {
+            watcher
+                .watch(&path, mode)
+                .map_err(|error| error.add_path(path.clone()))?;
+            installed.paths.insert(path, mode);
+        }
+        Ok(installed)
+    }
+
+    pub fn update(&mut self, watcher: &mut impl Watcher, desired: Self) {
+        for (path, mode) in &desired.paths {
+            if !self.paths.contains_key(path) {
+                match watcher.watch(path, *mode) {
+                    Ok(()) => {
+                        self.paths.insert(path.clone(), *mode);
+                    }
+                    Err(e) => tracing::warn!(?path, ?e, "failed to watch directory"),
+                }
+            }
+        }
+
+        let stale_paths: Vec<_> = self
+            .paths
+            .keys()
+            .filter(|path| !desired.paths.contains_key(*path))
+            .cloned()
+            .collect();
+        for path in stale_paths {
+            let _ = watcher.unwatch(&path);
+            self.paths.remove(&path);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn directory_tree_changed(&self, event: &Event) -> bool {
+        match event.kind {
+            EventKind::Create(CreateKind::Folder) | EventKind::Remove(RemoveKind::Folder) => true,
+            EventKind::Create(_)
+            | EventKind::Modify(ModifyKind::Name(_))
+            | EventKind::Remove(_) => event
+                .paths
+                .iter()
+                .any(|path| path.is_dir() || self.paths.contains_key(path)),
+            _ => false,
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn directory_tree_changed(&self, _event: &Event) -> bool {
+        false
+    }
+
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
+}
+
+/// Computes the current watch scope for a repository.
 ///
-/// `git_dir` is this worktree's own — `index` and `HEAD`. `common_dir` is the
-/// one it shares with every other worktree — `refs/` and `packed-refs`. In a
-/// plain repository the two are the same directory.
-pub fn get_scope(repo_root: &Path, git_dir: &Path, common_dir: &Path) -> Vec<WatchRoot> {
-    let mut roots = worktree_roots(repo_root);
-    roots.push(WatchRoot {
-        path: git_dir.to_owned(),
-        mode: RecursiveMode::NonRecursive,
-    });
-    // packed-refs lives beside refs/, in the shared dir.
-    if common_dir != git_dir {
-        roots.push(WatchRoot {
-            path: common_dir.to_owned(),
-            mode: RecursiveMode::NonRecursive,
-        });
+/// `worktree_git_dir` holds this worktree's `index` and `HEAD`. `common_git_dir`
+/// holds the `refs/` and `packed-refs` shared by every worktree. In a plain
+/// repository the two are the same directory.
+pub(super) fn compute(
+    repo_root: &Path,
+    worktree_git_dir: &Path,
+    common_git_dir: &Path,
+) -> WatchScope {
+    let mut paths = worktree_paths(repo_root);
+    paths.insert(worktree_git_dir.to_owned(), RecursiveMode::NonRecursive);
+
+    // packed-refs lives beside refs/, in the common dir.
+    if common_git_dir != worktree_git_dir {
+        paths.insert(common_git_dir.to_owned(), RecursiveMode::NonRecursive);
+    }
+    let info_dir = common_git_dir.join("info");
+    if info_dir.is_dir() {
+        paths.insert(info_dir, RecursiveMode::NonRecursive);
     }
     // refs/ can have subdirectories (refs/heads/, refs/remotes/, refs/tags/).
-    let refs_dir = common_dir.join("refs");
+    let refs_dir = common_git_dir.join("refs");
     if refs_dir.is_dir() {
-        roots.push(WatchRoot {
-            path: refs_dir,
-            mode: RecursiveMode::Recursive,
-        });
+        paths.insert(refs_dir, RecursiveMode::Recursive);
     }
-    roots
+    WatchScope { paths }
 }
 
 #[cfg(target_os = "linux")]
-fn worktree_roots(repo_root: &Path) -> Vec<WatchRoot> {
+fn worktree_paths(repo_root: &Path) -> HashMap<PathBuf, RecursiveMode> {
     use ignore::WalkBuilder;
 
     WalkBuilder::new(repo_root)
@@ -53,28 +118,64 @@ fn worktree_roots(repo_root: &Path) -> Vec<WatchRoot> {
         .git_global(true)
         .git_exclude(true)
         .parents(true)
-        .filter_entry(|e| e.file_name() != ".git")
+        .filter_entry(|entry| entry.file_name() != ".git")
         .build()
         .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_some_and(|t| t.is_dir()))
-        .map(|e| WatchRoot {
-            path: e.into_path(),
-            mode: RecursiveMode::NonRecursive,
-        })
+        .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_dir()))
+        .map(|entry| (entry.into_path(), RecursiveMode::NonRecursive))
         .collect()
 }
 
 #[cfg(not(target_os = "linux"))]
-fn worktree_roots(repo_root: &Path) -> Vec<WatchRoot> {
-    vec![WatchRoot {
-        path: repo_root.to_owned(),
-        mode: RecursiveMode::Recursive,
-    }]
+fn worktree_paths(repo_root: &Path) -> HashMap<PathBuf, RecursiveMode> {
+    HashMap::from([(repo_root.to_owned(), RecursiveMode::Recursive)])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FailingWatcher {
+        failed_path: PathBuf,
+    }
+
+    impl Watcher for FailingWatcher {
+        fn new<F: notify::EventHandler>(
+            _event_handler: F,
+            _config: notify::Config,
+        ) -> notify::Result<Self> {
+            Ok(Self {
+                failed_path: PathBuf::new(),
+            })
+        }
+
+        fn watch(&mut self, path: &Path, _mode: RecursiveMode) -> notify::Result<()> {
+            if path == self.failed_path {
+                Err(notify::Error::generic("deliberate watch failure"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn unwatch(&mut self, _path: &Path) -> notify::Result<()> {
+            Ok(())
+        }
+
+        fn kind() -> notify::WatcherKind {
+            notify::WatcherKind::NullWatcher
+        }
+    }
+
+    #[test]
+    fn initial_watch_failure_is_returned() {
+        let failed_path = PathBuf::from("/cannot-watch");
+        let desired = WatchScope {
+            paths: HashMap::from([(failed_path.clone(), RecursiveMode::NonRecursive)]),
+        };
+        let mut watcher = FailingWatcher { failed_path };
+
+        assert!(WatchScope::install(&mut watcher, desired).is_err());
+    }
 
     #[test]
     fn git_dir_is_always_included() {
@@ -82,8 +183,24 @@ mod tests {
         let root = tmp.path();
         std::fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
         let git_dir = root.join(".git");
-        let roots = get_scope(root, &git_dir, &git_dir);
-        assert!(roots.iter().any(|r| r.path == git_dir));
+        let scope = compute(root, &git_dir, &git_dir);
+        assert_eq!(
+            scope.paths.get(&git_dir),
+            Some(&RecursiveMode::NonRecursive)
+        );
+    }
+
+    #[test]
+    fn info_subdir_is_watched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".git/info")).unwrap();
+        let git_dir = root.join(".git");
+        let scope = compute(root, &git_dir, &git_dir);
+        assert_eq!(
+            scope.paths.get(&root.join(".git/info")),
+            Some(&RecursiveMode::NonRecursive)
+        );
     }
 
     #[test]
@@ -92,61 +209,96 @@ mod tests {
         let root = tmp.path();
         std::fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
         let git_dir = root.join(".git");
-        let roots = get_scope(root, &git_dir, &git_dir);
-        let refs_root = roots.iter().find(|r| r.path == root.join(".git/refs"));
-        assert!(refs_root.is_some());
-        assert_eq!(refs_root.unwrap().mode, RecursiveMode::Recursive);
-    }
-
-    #[test]
-    fn plain_repo_watches_its_git_dir_once() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
-        let git_dir = root.join(".git");
-        let roots = get_scope(root, &git_dir, &git_dir);
-        let times = roots.iter().filter(|r| r.path == git_dir).count();
-        assert_eq!(times, 1, "the one git dir should be watched once");
+        let scope = compute(root, &git_dir, &git_dir);
+        assert_eq!(
+            scope.paths.get(&root.join(".git/refs")),
+            Some(&RecursiveMode::Recursive)
+        );
     }
 
     /// Lays out a main repository with one linked worktree, and answers
-    /// (worktree root, private git dir, common dir).
+    /// (worktree root, worktree git dir, common git dir).
     fn linked_worktree(tmp: &tempfile::TempDir) -> (PathBuf, PathBuf, PathBuf) {
         let root = tmp.path();
-        let common = root.join("main/.git");
-        let private = common.join("worktrees/wt");
+        let common_git_dir = root.join("main/.git");
+        let worktree_git_dir = common_git_dir.join("worktrees/wt");
         let wt = root.join("wt");
-        std::fs::create_dir_all(common.join("refs/heads")).unwrap();
-        std::fs::create_dir_all(&private).unwrap();
+        std::fs::create_dir_all(common_git_dir.join("refs/heads")).unwrap();
+        std::fs::create_dir_all(&worktree_git_dir).unwrap();
         std::fs::create_dir_all(&wt).unwrap();
-        (wt, private, common)
+        (wt, worktree_git_dir, common_git_dir)
     }
 
     #[test]
     fn worktree_watches_both_git_dirs() {
         let tmp = tempfile::tempdir().unwrap();
-        let (wt, private, common) = linked_worktree(&tmp);
-        let roots = get_scope(&wt, &private, &common);
+        let (wt, worktree_git_dir, common_git_dir) = linked_worktree(&tmp);
+        let scope = compute(&wt, &worktree_git_dir, &common_git_dir);
 
-        let private_root = roots.iter().find(|r| r.path == private);
-        assert!(
-            private_root.is_some(),
-            "the private git dir must be watched"
+        assert_eq!(
+            scope.paths.get(&worktree_git_dir),
+            Some(&RecursiveMode::NonRecursive),
+            "the worktree git dir must be watched"
         );
-        assert_eq!(private_root.unwrap().mode, RecursiveMode::NonRecursive);
-
-        let common_root = roots.iter().find(|r| r.path == common);
-        assert!(common_root.is_some(), "the common dir must be watched");
-        assert_eq!(common_root.unwrap().mode, RecursiveMode::NonRecursive);
+        assert_eq!(
+            scope.paths.get(&common_git_dir),
+            Some(&RecursiveMode::NonRecursive),
+            "the common git dir must be watched"
+        );
     }
 
     #[test]
-    fn worktree_watches_the_shared_refs() {
+    fn worktree_watches_the_common_refs() {
         let tmp = tempfile::tempdir().unwrap();
-        let (wt, private, common) = linked_worktree(&tmp);
-        let roots = get_scope(&wt, &private, &common);
-        let refs_root = roots.iter().find(|r| r.path == common.join("refs"));
-        assert!(refs_root.is_some(), "refs/ is shared, not private");
-        assert_eq!(refs_root.unwrap().mode, RecursiveMode::Recursive);
+        let (wt, worktree_git_dir, common_git_dir) = linked_worktree(&tmp);
+        let scope = compute(&wt, &worktree_git_dir, &common_git_dir);
+        assert_eq!(
+            scope.paths.get(&common_git_dir.join("refs")),
+            Some(&RecursiveMode::Recursive),
+            "refs/ lives in the common git dir"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_file_edit_does_not_change_the_directory_tree() {
+        let scope = WatchScope::default();
+        let event = Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("/repo/file.txt")],
+            attrs: Default::default(),
+        };
+        assert!(!scope.directory_tree_changed(&event));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn renaming_a_file_does_not_change_the_directory_tree() {
+        let scope = WatchScope::default();
+        let event = Event {
+            kind: EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::Both)),
+            paths: vec![
+                PathBuf::from("/repo/old.txt"),
+                PathBuf::from("/repo/new.txt"),
+            ],
+            attrs: Default::default(),
+        };
+        assert!(!scope.directory_tree_changed(&event));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn moving_a_watched_directory_changes_the_directory_tree() {
+        let old = PathBuf::from("/repo/old-dir");
+        let scope = WatchScope {
+            paths: HashMap::from([(old.clone(), RecursiveMode::NonRecursive)]),
+        };
+        let event = Event {
+            kind: EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::From)),
+            paths: vec![old],
+            attrs: Default::default(),
+        };
+        assert!(scope.directory_tree_changed(&event));
     }
 }

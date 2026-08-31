@@ -5,20 +5,22 @@ Watches a git repository for changes and reports what needs refreshing.
 ## What is here
 
 ```text
-lib.rs       re-exports: Refresh, Watcher, start
-refresh.rs   Refresh — a bitset of what changed (worktree | index | head | refs)
-filter.rs    path → Refresh — pure logic, all filtering decisions
-scope.rs     which directories to hand notify (platform-aware)
-watch.rs     the debouncer, the callback, the handle
+lib.rs            re-exports: Refresh, Subscription, subscribe
+refresh.rs        Refresh — a bitset of what changed (worktree | index | head | refs)
+filter.rs         path → Refresh — pure logic, all filtering decisions
+git_dirs.rs       resolves worktree-specific and common Git directories
+ignore_rules.rs   loads and detects changes to ignore rules
+scope.rs          computes and maintains the paths handed to notify
+watch.rs          the bounded debouncer, the callback, the handle
 ```
 
 ## How it works
 
-Two watch scopes feed one debouncer:
+Two groups of watched paths feed one event worker:
 
 1. **Worktree** — every non-ignored directory (Linux: one `NonRecursive` watch each;
-   macOS/Windows: one `Recursive` on the root). Enumerated with the `ignore` crate so
-   `target/`, `node_modules/`, and anything in `.gitignore` is never watched at all.
+   macOS/Windows: one `Recursive` on the root). The `ignore` crate keeps build output
+   out; directory and ignore-rule changes update the watch scope while it is running.
 
 2. **The git dirs** — `NonRecursive` on the worktree's own git dir (catches `index`, `HEAD`),
    plus `Recursive` on `refs/` in the shared one (catches branch moves, tags, stash), plus
@@ -28,8 +30,13 @@ Two watch scopes feed one debouncer:
    that directory's `commondir` file names the original `.git`. A plain repository has
    neither file, and both are `.git` itself.
 
-The `notify-debouncer-full` collapses kernel-level bursts into one batch per 50 ms. The
-batch is handed to `filter::get_refresh`, which:
+`subscribe` succeeds only after resolving the Git directories and registering every
+initial watch. Invalid repositories and partial watch installation are returned as errors.
+
+The notify callback forwards raw events through a bounded queue. A worker emits one
+`Refresh` after 50 ms of quiet, or after 250 ms under continuous activity. If the queue
+fills, or the filesystem backend reports missed events, the worker conservatively refreshes
+all state instead of trusting an incomplete event history.
 
 - Skips `.lock` files (git renames them atomically to the real path)
 - Skips git internals (`objects/`, `logs/`, `hooks/`, `lfs/`)
@@ -48,7 +55,7 @@ and how often to act on it.
 
 ## Performance
 
-The filter runs on `notify`'s internal thread. Each event costs a few string prefix
-comparisons — microseconds. The 50 ms debounce means at most 20 batches per second under
-sustained activity. On Linux, ignored directories are never handed to inotify, so build
-output generates zero kernel events regardless of how many files it writes.
+The notify callback only sends events through a bounded channel; filtering and scope
+maintenance run on the worker. Each batch has fixed size, and both threads block
+while idle. On Linux, ignored directories are never handed to inotify, so build output
+generates zero kernel events regardless of how many files it writes.

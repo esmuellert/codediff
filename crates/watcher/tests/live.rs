@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use watcher::{Refresh, Watcher};
+use watcher::{Refresh, Subscription};
 
 /// How long to wait for a refresh event.
 const TIMEOUT: Duration = Duration::from_secs(3);
@@ -46,7 +46,7 @@ impl Repo {
     }
 }
 
-fn setup() -> (Repo, Watcher, Receiver<Refresh>) {
+fn setup() -> (Repo, Subscription, Receiver<Refresh>) {
     let dir = tempfile::tempdir().unwrap();
     let repo = Repo { dir };
 
@@ -63,7 +63,7 @@ fn setup() -> (Repo, Watcher, Receiver<Refresh>) {
 
     let (tx, rx) = std::sync::mpsc::channel();
     let emitter = channel::Emitter::new(tx, std::convert::identity);
-    let watcher = watcher::start(repo.path(), emitter).unwrap();
+    let watcher = watcher::subscribe(repo.path(), emitter).unwrap();
     std::thread::sleep(Duration::from_millis(500));
     // Drain any events from the setup operations that arrived after start.
     while rx.try_recv().is_ok() {}
@@ -348,7 +348,7 @@ fn rapid_edits_coalesce() {
     for i in 0..100 {
         fs::write(repo.path().join("file.txt"), format!("edit {i}")).unwrap();
     }
-    // Wait for all debounce windows to close.
+    // Wait for pending batches to flush.
     std::thread::sleep(Duration::from_secs(1));
     let mut count = 0;
     while rx.try_recv().is_ok() {
@@ -407,7 +407,7 @@ fn heavy_non_ignored_writes_stay_responsive() {
     }
     let write_time = start.elapsed();
 
-    // Wait for all debounce windows to close.
+    // Wait for pending batches to flush.
     std::thread::sleep(Duration::from_secs(2));
     let mut count = 0;
     while rx.try_recv().is_ok() {
