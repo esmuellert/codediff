@@ -2942,6 +2942,8 @@ dependencies = [
  "channel",
  "ignore",
  "notify",
+ "serde",
+ "serde_json",
  "tempfile",
  "tracing",
 ]

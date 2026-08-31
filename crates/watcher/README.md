@@ -5,14 +5,41 @@ Watches a git repository for changes and reports what needs refreshing.
 ## What is here
 
 ```text
-lib.rs            re-exports: Refresh, Subscription, subscribe
-refresh.rs        Refresh — a bitset of what changed (worktree | index | head | refs)
-filter.rs         path → Refresh — pure logic, all filtering decisions
-git_dirs.rs       resolves worktree-specific and common Git directories
-ignore_rules.rs   loads and detects changes to ignore rules
-scope.rs          computes and maintains the paths handed to notify
-watch.rs          the bounded debouncer, the callback, the handle
+lib.rs                         re-exports: Refresh, Subscription, subscribe
+refresh.rs                     Refresh — worktree | index | head | refs
+filter.rs                      path → Refresh; pure filtering logic
+git_dirs.rs                    resolves worktree-specific and common Git directories
+ignore_rules.rs                loads and detects changes to ignore rules
+scope.rs                       computes and maintains the paths handed to notify
+watch.rs                       the bounded debouncer, callback, and handle
+src/bin/codediff-watcher.rs    JSONL helper process for editor integrations
 ```
+
+## Helper protocol
+
+Start one process per repository:
+
+```text
+codediff-watcher /absolute/path/to/repository
+```
+
+Stdout is UTF-8 JSON Lines. The first line is emitted only after every initial watch is
+installed:
+
+```json
+{"type":"ready","protocol":1,"binary_version":"0.17.0"}
+```
+
+Each later line is one coalesced invalidation:
+
+```json
+{"type":"refresh","worktree":true,"index":false,"head":false,"refs":false}
+```
+
+Every line is flushed immediately. Stdout contains only protocol messages; process errors
+are written to stderr. Startup failure produces no `ready` line and exits non-zero. A failed
+stdout write also stops the process with a non-zero status. `codediff-watcher --version` prints the binary
+version without starting a watcher.
 
 ## How it works
 
