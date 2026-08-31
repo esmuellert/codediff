@@ -20,10 +20,15 @@ pub(super) struct WatchScope {
 }
 
 impl WatchScope {
-    pub fn install(watcher: &mut impl Watcher, desired: Self) -> Self {
+    pub fn install(watcher: &mut impl Watcher, desired: Self) -> notify::Result<Self> {
         let mut installed = Self::default();
-        installed.update(watcher, desired);
-        installed
+        for (path, mode) in desired.paths {
+            watcher
+                .watch(&path, mode)
+                .map_err(|error| error.add_path(path.clone()))?;
+            installed.paths.insert(path, mode);
+        }
+        Ok(installed)
     }
 
     pub fn update(&mut self, watcher: &mut impl Watcher, desired: Self) {
@@ -129,6 +134,48 @@ fn worktree_paths(repo_root: &Path) -> HashMap<PathBuf, RecursiveMode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FailingWatcher {
+        failed_path: PathBuf,
+    }
+
+    impl Watcher for FailingWatcher {
+        fn new<F: notify::EventHandler>(
+            _event_handler: F,
+            _config: notify::Config,
+        ) -> notify::Result<Self> {
+            Ok(Self {
+                failed_path: PathBuf::new(),
+            })
+        }
+
+        fn watch(&mut self, path: &Path, _mode: RecursiveMode) -> notify::Result<()> {
+            if path == self.failed_path {
+                Err(notify::Error::generic("deliberate watch failure"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn unwatch(&mut self, _path: &Path) -> notify::Result<()> {
+            Ok(())
+        }
+
+        fn kind() -> notify::WatcherKind {
+            notify::WatcherKind::NullWatcher
+        }
+    }
+
+    #[test]
+    fn initial_watch_failure_is_returned() {
+        let failed_path = PathBuf::from("/cannot-watch");
+        let desired = WatchScope {
+            paths: HashMap::from([(failed_path.clone(), RecursiveMode::NonRecursive)]),
+        };
+        let mut watcher = FailingWatcher { failed_path };
+
+        assert!(WatchScope::install(&mut watcher, desired).is_err());
+    }
 
     #[test]
     fn git_dir_is_always_included() {

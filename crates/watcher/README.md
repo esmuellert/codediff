@@ -30,6 +30,9 @@ Two groups of watched paths feed one event worker:
    that directory's `commondir` file names the original `.git`. A plain repository has
    neither file, and both are `.git` itself.
 
+`subscribe` succeeds only after resolving the Git directories and registering every
+initial watch. Invalid repositories and partial watch installation are returned as errors.
+
 The notify callback forwards raw events through a bounded queue. A worker emits one
 `Refresh` after 50 ms of quiet, or after 250 ms under continuous activity. If the queue
 fills, or the filesystem backend reports missed events, the worker conservatively refreshes

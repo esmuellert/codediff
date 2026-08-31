@@ -96,10 +96,12 @@ pub struct Subscription {
 }
 
 /// Subscribes to repository changes and sends them through `emitter`.
+///
+/// Returns an error unless the Git directories and every initial watch are ready.
 pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<Subscription> {
     let repo_root = repo_root.canonicalize()?;
-    let worktree_git_dir = git_dirs::worktree_git_dir(&repo_root);
-    let common_git_dir = git_dirs::common_git_dir(&worktree_git_dir);
+    let worktree_git_dir = git_dirs::worktree_git_dir(&repo_root)?;
+    let common_git_dir = git_dirs::common_git_dir(&worktree_git_dir)?;
     let (event_sender, event_receiver) = mpsc::sync_channel::<notify::Event>(EVENT_QUEUE_CAPACITY);
     let queue_overflow_flag = Arc::new(AtomicBool::new(false));
     let callback_overflow_flag = Arc::clone(&queue_overflow_flag);
@@ -110,7 +112,7 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
     })?;
     let desired_scope = scope::compute(&repo_root, &worktree_git_dir, &common_git_dir);
     let watch_count = desired_scope.len();
-    let mut watch_scope = WatchScope::install(&mut watcher, desired_scope);
+    let mut watch_scope = WatchScope::install(&mut watcher, desired_scope)?;
     let watcher = Arc::new(Mutex::new(watcher));
     let worker_watcher = Arc::downgrade(&watcher);
 
@@ -121,7 +123,7 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
         ignorer: ignore_rules::build_matcher(&repo_root, &common_git_dir),
     };
 
-    thread::Builder::new()
+    let _worker = thread::Builder::new()
         .name("watcher-events".to_owned())
         .spawn(move || {
             while let Ok(first_event) = event_receiver.recv() {
@@ -178,8 +180,7 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
                     break;
                 }
             }
-        })
-        .expect("the watcher event thread starts");
+        })?;
 
     tracing::info!(count = watch_count, "watcher started");
     Ok(Subscription { _watcher: watcher })
