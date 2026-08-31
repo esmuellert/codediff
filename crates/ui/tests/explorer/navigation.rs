@@ -352,3 +352,87 @@ fn short_content_does_not_scroll() {
     assert_eq!(before, after,
         "content shorter than the viewport should not scroll");
 }
+
+#[test]
+fn moving_to_a_file_opens_it() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use loom::{Node, Scope, component, rsx, use_state};
+    use loom::testing::Harness;
+    use ui::Theme;
+    use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps};
+
+    /// Records every file the explorer opens.
+    #[component]
+    fn Recorder(
+        scope: &mut Scope,
+        list: Rc<Vec<file_types::File>>,
+        opened: Rc<RefCell<Vec<String>>>,
+    ) -> Node {
+        let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
+        if let Some(ref f) = file {
+            let path = f.path().as_str().to_string();
+            let mut log = opened.borrow_mut();
+            if log.last() != Some(&path) {
+                log.push(path);
+            }
+        }
+        rsx! {
+            Ui {
+                value: Context {
+                    theme: Rc::new(Theme::DARK),
+                    repo: Rc::from(std::path::Path::new("/repo")),
+                    files: Rc::clone(list),
+                    set_file: Some(set_file),
+                    file: file.as_ref().map(Rc::clone),
+                    ..Default::default()
+                },
+                Explorer {}
+            }
+        }
+    }
+
+    // Two files at the root: heading, a.rs, b.rs.
+    let files = vec![file("a.rs"), file("b.rs")];
+    let opened = Rc::new(RefCell::new(Vec::new()));
+    let mut h = Harness::new::<Recorder>(
+        RecorderProps {
+            list: Rc::new(files),
+            opened: Rc::clone(&opened),
+        },
+        40,
+        10,
+    );
+    for _ in 0..4 { h.force_draw(); }
+
+    // Cursor starts on the heading. Move down to a.rs.
+    h.press(crokey::key!(j));
+    for _ in 0..3 { h.force_draw(); }
+    assert_eq!(
+        opened.borrow().last().map(String::as_str),
+        Some("a.rs"),
+        "moving onto a.rs should open it: {:?}",
+        opened.borrow()
+    );
+
+    // Move down to b.rs.
+    h.press(crokey::key!(j));
+    for _ in 0..3 { h.force_draw(); }
+    assert_eq!(
+        opened.borrow().last().map(String::as_str),
+        Some("b.rs"),
+        "moving onto b.rs should open it: {:?}",
+        opened.borrow()
+    );
+
+    // Move back up to a.rs.
+    h.press(crokey::key!(k));
+    for _ in 0..3 { h.force_draw(); }
+    assert_eq!(
+        opened.borrow().last().map(String::as_str),
+        Some("a.rs"),
+        "moving back up to a.rs should open it: {:?}",
+        opened.borrow()
+    );
+}

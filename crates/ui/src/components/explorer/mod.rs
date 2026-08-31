@@ -55,6 +55,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     let cursor_node = nodes.get(view.cursor as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
+    let nodes_keys = Rc::clone(&nodes);
     let repo = Rc::clone(&ctx.repo);
     let exit = use_exit(scope);
 
@@ -63,10 +64,18 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             match k {
                 k if k == key!(j) || k == key!(down) => {
                     handle.down(total);
+                    let next = (view.cursor + 1).min(total.saturating_sub(1));
+                    if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
+                        open_file(file, set_file);
+                    }
                     Bubble::Stop
                 }
                 k if k == key!(k) || k == key!(up) => {
                     handle.up(total);
+                    let next = view.cursor.saturating_sub(1);
+                    if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
+                        open_file(file, set_file);
+                    }
                     Bubble::Stop
                 }
                 k if k == key!(enter) => {
@@ -183,12 +192,15 @@ fn activate_node(
                 set
             });
         }
-        Node::File { file, .. } => {
-            if let Some(set) = set_file {
-                let file = Rc::new(file.clone());
-                set(&move |_| Some(Rc::clone(&file)));
-            }
-        }
+        Node::File { file, .. } => open_file(file, set_file),
+    }
+}
+
+/// Puts a file in the context, so the diff viewer shows it.
+fn open_file(file: &File, set_file: Option<loom::SetState<Option<Rc<File>>>>) {
+    if let Some(set) = set_file {
+        let file = Rc::new(file.clone());
+        set(&move |_| Some(Rc::clone(&file)));
     }
 }
 

@@ -40,14 +40,20 @@ fn row_styles(
         (ViewLineType::Deleted, _) => theme.deleted,
         (ViewLineType::Inserted, _) => theme.inserted,
     };
-    let line_bg = base.patch(role);
-    let changed_bg = match (kind, version) {
-        (ViewLineType::Modified, DiffVersion::Original) => base.patch(theme.deleted_text),
-        (ViewLineType::Modified, DiffVersion::Modified) => base.patch(theme.inserted_text),
-        _ => line_bg,
+    let gutter_bg = base.patch(role);
+    let changed_bg = match version {
+        DiffVersion::Original => base.patch(theme.deleted_text),
+        DiffVersion::Modified => base.patch(theme.inserted_text),
     };
-    let number_style = line_bg.patch(theme.line_number);
-    (line_bg, changed_bg, number_style)
+    // Pure insertions/deletions fill the whole row with the darker colour,
+    // matching VS Code's diffWholeLineAddDecoration. Modifications keep the
+    // lighter line background so only the inner-change spans stand out.
+    let fill = match kind {
+        ViewLineType::Inserted | ViewLineType::Deleted => changed_bg,
+        _ => gutter_bg,
+    };
+    let number_style = gutter_bg.patch(theme.line_number);
+    (fill, changed_bg, number_style)
 }
 
 #[component]
