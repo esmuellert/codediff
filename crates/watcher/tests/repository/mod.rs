@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use watcher::{Refresh, Watcher};
+use watcher::{Refresh, Subscription};
 
 pub const EVENT_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -49,18 +49,18 @@ pub fn committed() -> Repo {
     repo
 }
 
-pub fn start(repo: &Repo) -> (Watcher, Receiver<Refresh>) {
+pub fn subscribe(repo: &Repo) -> (Subscription, Receiver<Refresh>) {
     let (tx, rx) = std::sync::mpsc::channel();
     let emitter = channel::Emitter::new(tx, std::convert::identity);
-    let watcher = watcher::start(repo.path(), emitter).unwrap();
+    let watcher = watcher::subscribe(repo.path(), emitter).unwrap();
     std::thread::sleep(Duration::from_millis(500));
     drain_events(&rx);
     (watcher, rx)
 }
 
-pub fn watched() -> (Repo, Watcher, Receiver<Refresh>) {
+pub fn watched() -> (Repo, Subscription, Receiver<Refresh>) {
     let repo = committed();
-    let (watcher, rx) = start(&repo);
+    let (watcher, rx) = subscribe(&repo);
     (repo, watcher, rx)
 }
 

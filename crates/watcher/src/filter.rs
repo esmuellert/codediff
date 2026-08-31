@@ -78,9 +78,15 @@ fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
 }
 
 fn refresh_for_git_path(rel: &Path, full: &Path) -> Refresh {
-    let first = rel.components().next().map(|c| c.as_os_str());
+    let rel_str = rel.to_string_lossy();
+    if rel_str == "info/exclude" {
+        return Refresh {
+            worktree: true,
+            ..Default::default()
+        };
+    }
 
-    // Skip internals that don't affect status.
+    let first = rel.components().next().map(|c| c.as_os_str());
     if matches!(
         first.and_then(|s| s.to_str()),
         Some("objects" | "logs" | "hooks" | "lfs" | "fsmonitor--daemon" | "info")
@@ -88,8 +94,6 @@ fn refresh_for_git_path(rel: &Path, full: &Path) -> Refresh {
         tracing::trace!(?full, "skipped: git internal");
         return Refresh::default();
     }
-
-    let rel_str = rel.to_string_lossy();
 
     if rel_str == "index" {
         tracing::debug!("git index changed");
@@ -266,6 +270,19 @@ mod tests {
             &c,
         );
         assert!(r.refs);
+    }
+
+    #[test]
+    fn info_exclude_sets_worktree() {
+        let c = ctx("/repo");
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/repo/.git/info/exclude",
+            )],
+            &c,
+        );
+        assert!(r.worktree);
     }
 
     #[test]

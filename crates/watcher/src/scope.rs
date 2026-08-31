@@ -4,14 +4,112 @@
 //! never watched). On macOS/Windows: one Recursive watch on the root (native
 //! backends don't cost per-directory handles) and filtering happens later.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use notify::RecursiveMode;
+#[cfg(target_os = "linux")]
+use notify::EventKind;
+#[cfg(target_os = "linux")]
+use notify::event::{CreateKind, ModifyKind, RemoveKind};
+use notify::{Event, RecursiveMode, Watcher};
 
 /// A directory to watch and how deep.
 pub struct WatchRoot {
     pub path: PathBuf,
     pub mode: RecursiveMode,
+}
+
+/// The roots currently registered with notify.
+pub struct WatchScope {
+    roots: HashMap<PathBuf, RecursiveMode>,
+}
+
+#[derive(Default)]
+pub struct ScopeChange {
+    pub directories: bool,
+    pub ignore_rules: bool,
+}
+
+impl ScopeChange {
+    pub fn requires_reconcile(&self) -> bool {
+        self.directories || self.ignore_rules
+    }
+}
+
+impl WatchScope {
+    pub fn install(watcher: &mut impl Watcher, roots: Vec<WatchRoot>) -> Self {
+        let mut installed = HashMap::new();
+        for root in roots {
+            match watcher.watch(&root.path, root.mode) {
+                Ok(()) => {
+                    installed.insert(root.path, root.mode);
+                }
+                Err(e) => tracing::warn!(path = ?root.path, ?e, "failed to watch directory"),
+            }
+        }
+        Self { roots: installed }
+    }
+
+    pub fn reconcile(&mut self, watcher: &mut impl Watcher, roots: Vec<WatchRoot>) {
+        let next_roots: HashMap<_, _> = roots
+            .into_iter()
+            .map(|root| (root.path, root.mode))
+            .collect();
+
+        for (path, mode) in &next_roots {
+            if !self.roots.contains_key(path) {
+                match watcher.watch(path, *mode) {
+                    Ok(()) => {
+                        self.roots.insert(path.clone(), *mode);
+                    }
+                    Err(e) => tracing::warn!(?path, ?e, "failed to watch new directory"),
+                }
+            }
+        }
+
+        let removed: Vec<_> = self
+            .roots
+            .keys()
+            .filter(|path| !next_roots.contains_key(*path))
+            .cloned()
+            .collect();
+        for path in removed {
+            let _ = watcher.unwatch(&path);
+            self.roots.remove(&path);
+        }
+    }
+
+    pub fn changes(&self, events: &[Event], repo_root: &Path, common_dir: &Path) -> ScopeChange {
+        let mut change = ScopeChange::default();
+        for event in events {
+            change.directories |= self.directory_set_changed(event);
+            change.ignore_rules |= event.paths.iter().any(|path| {
+                path.strip_prefix(repo_root)
+                    .is_ok_and(|rel| rel.file_name().is_some_and(|name| name == ".gitignore"))
+                    || path == &common_dir.join("info/exclude")
+            });
+        }
+        change
+    }
+
+    #[cfg(target_os = "linux")]
+    fn directory_set_changed(&self, event: &Event) -> bool {
+        match event.kind {
+            EventKind::Create(CreateKind::Folder) | EventKind::Remove(RemoveKind::Folder) => true,
+            EventKind::Create(_)
+            | EventKind::Modify(ModifyKind::Name(_))
+            | EventKind::Remove(_) => event
+                .paths
+                .iter()
+                .any(|path| path.is_dir() || self.roots.contains_key(path)),
+            _ => false,
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn directory_set_changed(&self, _event: &Event) -> bool {
+        false
+    }
 }
 
 /// Returns the directories to watch for a given repo.
@@ -29,6 +127,13 @@ pub fn get_scope(repo_root: &Path, git_dir: &Path, common_dir: &Path) -> Vec<Wat
     if common_dir != git_dir {
         roots.push(WatchRoot {
             path: common_dir.to_owned(),
+            mode: RecursiveMode::NonRecursive,
+        });
+    }
+    let info_dir = common_dir.join("info");
+    if info_dir.is_dir() {
+        roots.push(WatchRoot {
+            path: info_dir,
             mode: RecursiveMode::NonRecursive,
         });
     }
@@ -84,6 +189,18 @@ mod tests {
         let git_dir = root.join(".git");
         let roots = get_scope(root, &git_dir, &git_dir);
         assert!(roots.iter().any(|r| r.path == git_dir));
+    }
+
+    #[test]
+    fn info_subdir_is_watched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".git/info")).unwrap();
+        let git_dir = root.join(".git");
+        let roots = get_scope(root, &git_dir, &git_dir);
+        let info_root = roots.iter().find(|r| r.path == root.join(".git/info"));
+        assert!(info_root.is_some());
+        assert_eq!(info_root.unwrap().mode, RecursiveMode::NonRecursive);
     }
 
     #[test]
@@ -148,5 +265,78 @@ mod tests {
         let refs_root = roots.iter().find(|r| r.path == common.join("refs"));
         assert!(refs_root.is_some(), "refs/ is shared, not private");
         assert_eq!(refs_root.unwrap().mode, RecursiveMode::Recursive);
+    }
+
+    #[test]
+    fn ignore_rule_changes_do_not_look_like_directory_changes() {
+        let scope = WatchScope {
+            roots: HashMap::new(),
+        };
+        let event = Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("/repo/nested/.gitignore")],
+            attrs: Default::default(),
+        };
+        let change = scope.changes(&[event], Path::new("/repo"), Path::new("/repo/.git"));
+        assert!(change.ignore_rules);
+        assert!(!change.directories);
+    }
+
+    #[test]
+    fn an_ordinary_file_edit_does_not_rebuild_the_scope() {
+        let scope = WatchScope {
+            roots: HashMap::new(),
+        };
+        let event = Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("/repo/file.txt")],
+            attrs: Default::default(),
+        };
+        let change = scope.changes(&[event], Path::new("/repo"), Path::new("/repo/.git"));
+        assert!(!change.requires_reconcile());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn renaming_a_file_does_not_rebuild_the_directory_scope() {
+        let scope = WatchScope {
+            roots: HashMap::new(),
+        };
+        let event = Event {
+            kind: EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::Both)),
+            paths: vec![
+                PathBuf::from("/repo/old.txt"),
+                PathBuf::from("/repo/new.txt"),
+            ],
+            attrs: Default::default(),
+        };
+        assert!(
+            !scope
+                .changes(&[event], Path::new("/repo"), Path::new("/repo/.git"))
+                .requires_reconcile()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn moving_a_watched_directory_rebuilds_the_scope() {
+        let old = PathBuf::from("/repo/old-dir");
+        let scope = WatchScope {
+            roots: HashMap::from([(old.clone(), RecursiveMode::NonRecursive)]),
+        };
+        let event = Event {
+            kind: EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::From)),
+            paths: vec![old],
+            attrs: Default::default(),
+        };
+        assert!(
+            scope
+                .changes(&[event], Path::new("/repo"), Path::new("/repo/.git"))
+                .requires_reconcile()
+        );
     }
 }

@@ -11,7 +11,7 @@ fn a_non_repository_is_rejected_instead_of_starting_partially() {
     let emitter = channel::Emitter::new(tx, std::convert::identity);
 
     assert!(
-        watcher::start(dir.path(), emitter).is_err(),
+        watcher::subscribe(dir.path(), emitter).is_err(),
         "missing git roots must make startup fail"
     );
 }
@@ -25,14 +25,14 @@ fn one_hundred_start_stop_cycles_leave_a_usable_watcher() {
     for _ in 0..100 {
         let (tx, rx) = std::sync::mpsc::channel();
         let emitter = channel::Emitter::new(tx, std::convert::identity);
-        let watcher = watcher::start(repo.path(), emitter).unwrap();
+        let watcher = watcher::subscribe(repo.path(), emitter).unwrap();
         drop(watcher);
         drop(rx);
     }
 
     let (tx, rx) = std::sync::mpsc::channel();
     let emitter = channel::Emitter::new(tx, std::convert::identity);
-    let final_watcher = watcher::start(repo.path(), emitter).unwrap();
+    let final_watcher = watcher::subscribe(repo.path(), emitter).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(300));
     drain_events(&rx);
 

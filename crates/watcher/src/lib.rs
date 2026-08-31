@@ -14,4 +14,4 @@ mod watch;
 
 mod refresh;
 pub use refresh::Refresh;
-pub use watch::{Watcher, start};
+pub use watch::{Subscription, subscribe};

@@ -46,7 +46,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     let syntax_worker = syntax::Syntax::start(
         channel::Emitter::new(tx.clone(), Event::Coloured),
     );
-    let _watcher = watcher::start(
+    let _subscription = watcher::subscribe(
         cwd,
         channel::Emitter::new(tx.clone(), Event::FsChanged),
     ).ok();

@@ -5,13 +5,14 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
 use channel::Emitter;
+use ignore::WalkBuilder;
 use ignore::gitignore::GitignoreBuilder;
-use notify::{RecommendedWatcher, Watcher as NotifyWatcher};
+use notify::RecommendedWatcher;
 
 use crate::Refresh;
 use crate::filter::{self, Context};
@@ -20,40 +21,62 @@ use crate::scope;
 /// How long to wait after the first event before flushing the batch.
 const DEBOUNCE: Duration = Duration::from_millis(50);
 
-/// A running watcher. Dropping it stops the watcher (notify cleans up on drop).
-pub struct Watcher {
-    _watcher: RecommendedWatcher,
+/// A live subscription. Dropping it stops the underlying notify watcher.
+pub struct Subscription {
+    _watcher: Arc<Mutex<RecommendedWatcher>>,
 }
 
-/// Starts watching the repo. Sends Refresh via the emitter when changes occur.
-pub fn start(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<Watcher> {
+/// Subscribes to repository changes and sends them through `emitter`.
+pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<Subscription> {
     let repo_root = repo_root.canonicalize()?;
     let git_dir = private_git_dir(&repo_root);
     let common_dir = common_git_dir(&git_dir);
-
-    // Internal channel: raw notify events → debounce thread.
     let (tx_raw, rx_raw) = mpsc::channel::<notify::Event>();
 
-    // Build the gitignore matcher.
-    let ignorer = build_ignorer(&repo_root, &common_dir);
+    let mut watcher =
+        notify::recommended_watcher(move |result: notify::Result<notify::Event>| match result {
+            Ok(event) => {
+                let _ = tx_raw.send(event);
+            }
+            Err(e) => tracing::warn!(?e, "watcher error"),
+        })?;
+    let watch_roots = scope::get_scope(&repo_root, &git_dir, &common_dir);
+    let watch_count = watch_roots.len();
+    let mut watch_scope = scope::WatchScope::install(&mut watcher, watch_roots);
+    let watcher = Arc::new(Mutex::new(watcher));
+    let worker_watcher = Arc::downgrade(&watcher);
 
-    let ctx = Context {
+    let mut ctx = Context {
         repo_root: repo_root.clone(),
         git_dir: git_dir.clone(),
         common_dir: common_dir.clone(),
-        ignorer,
+        ignorer: build_ignorer(&repo_root, &common_dir),
     };
 
-    // Debounce thread: blocks until an event arrives, drains for 50ms, then
-    // classifies and sends one Refresh. Zero CPU while idle.
     thread::Builder::new()
         .name("watcher-debounce".to_owned())
         .spawn(move || {
             while let Ok(first) = rx_raw.recv() {
                 let mut batch = vec![first];
-                while let Ok(ev) = rx_raw.recv_timeout(DEBOUNCE) {
-                    batch.push(ev);
+                while let Ok(event) = rx_raw.recv_timeout(DEBOUNCE) {
+                    batch.push(event);
                 }
+
+                let scope_change = watch_scope.changes(&batch, &repo_root, &common_dir);
+                if scope_change.ignore_rules {
+                    ctx.ignorer = build_ignorer(&repo_root, &common_dir);
+                }
+                if scope_change.requires_reconcile() {
+                    let roots = scope::get_scope(&repo_root, &git_dir, &common_dir);
+                    let Some(watcher) = worker_watcher.upgrade() else {
+                        break;
+                    };
+                    let Ok(mut watcher) = watcher.lock() else {
+                        break;
+                    };
+                    watch_scope.reconcile(&mut *watcher, roots);
+                }
+
                 let refresh = filter::get_refresh(&batch, &ctx);
                 if !refresh.is_empty() {
                     tracing::info!(%refresh, events = batch.len(), "refresh triggered");
@@ -65,41 +88,39 @@ pub fn start(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<Watc
         })
         .expect("the watcher-debounce thread starts");
 
-    // Raw watcher: sends events to the debounce thread.
-    let mut watcher =
-        notify::recommended_watcher(move |result: notify::Result<notify::Event>| match result {
-            Ok(event) => {
-                let _ = tx_raw.send(event);
-            }
-            Err(e) => {
-                tracing::warn!(?e, "watcher error");
-            }
-        })?;
-
-    // Register all watch roots.
-    let watch_roots = scope::get_scope(&repo_root, &git_dir, &common_dir);
-    for root in &watch_roots {
-        if let Err(e) = watcher.watch(&root.path, root.mode) {
-            tracing::warn!(path = ?root.path, ?e, "failed to watch directory");
-        }
-    }
-    tracing::info!(count = watch_roots.len(), "watcher started");
-
-    Ok(Watcher { _watcher: watcher })
+    tracing::info!(count = watch_count, "watcher started");
+    Ok(Subscription { _watcher: watcher })
 }
 
 fn build_ignorer(repo_root: &Path, common_dir: &Path) -> ignore::gitignore::Gitignore {
     let mut builder = GitignoreBuilder::new(repo_root);
-    let gitignore_path = repo_root.join(".gitignore");
-    if gitignore_path.exists() {
-        let _ = builder.add(&gitignore_path);
+    let root_rules = repo_root.join(".gitignore");
+    if root_rules.exists() {
+        let _ = builder.add(&root_rules);
     }
+
+    for entry in WalkBuilder::new(repo_root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .parents(true)
+        .filter_entry(|entry| entry.file_name() != ".git")
+        .build()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if path != root_rules && path.file_name().is_some_and(|name| name == ".gitignore") {
+            let _ = builder.add(path);
+        }
+    }
+
     let exclude_path = common_dir.join("info/exclude");
     if exclude_path.exists() {
         let _ = builder.add(&exclude_path);
     }
     builder.build().unwrap_or_else(|_| {
-        let (gi, _) = ignore::gitignore::Gitignore::new(repo_root.join(".gitignore"));
+        let (gi, _) = ignore::gitignore::Gitignore::new(root_rules);
         gi
     })
 }

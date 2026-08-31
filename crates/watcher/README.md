@@ -5,7 +5,7 @@ Watches a git repository for changes and reports what needs refreshing.
 ## What is here
 
 ```text
-lib.rs       re-exports: Refresh, Watcher, start
+lib.rs       re-exports: Refresh, Subscription, subscribe
 refresh.rs   Refresh — a bitset of what changed (worktree | index | head | refs)
 filter.rs    path → Refresh — pure logic, all filtering decisions
 scope.rs     which directories to hand notify (platform-aware)
@@ -17,8 +17,8 @@ watch.rs     the debouncer, the callback, the handle
 Two watch scopes feed one debouncer:
 
 1. **Worktree** — every non-ignored directory (Linux: one `NonRecursive` watch each;
-   macOS/Windows: one `Recursive` on the root). Enumerated with the `ignore` crate so
-   `target/`, `node_modules/`, and anything in `.gitignore` is never watched at all.
+   macOS/Windows: one `Recursive` on the root). The `ignore` crate keeps build output
+   out; directory and ignore-rule changes reconcile the set while it is running.
 
 2. **The git dirs** — `NonRecursive` on the worktree's own git dir (catches `index`, `HEAD`),
    plus `Recursive` on `refs/` in the shared one (catches branch moves, tags, stash), plus
