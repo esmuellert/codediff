@@ -27,11 +27,18 @@ fn two_thousand_rapid_overwrites_coalesce() {
     }
     std::thread::sleep(Duration::from_secs(1));
 
-    let count = rx.try_iter().count();
-    assert!(count >= 1, "the writes must produce a refresh");
+    let refreshes: Vec<_> = rx.try_iter().collect();
+    let refresh_count = refreshes.len();
+    assert!(refresh_count >= 1, "the writes must produce a refresh");
     assert!(
-        count <= 10,
-        "2,000 rapid writes should coalesce to at most 10 refreshes, got {count}"
+        refresh_count <= 10,
+        "2,000 rapid writes should coalesce to at most 10 refreshes, got {refresh_count}"
+    );
+    assert!(
+        refreshes
+            .iter()
+            .all(|refresh| refresh.worktree && !refresh.index && !refresh.head && !refresh.refs),
+        "ordinary worktree writes must not require overflow recovery"
     );
 }
 

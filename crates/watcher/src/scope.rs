@@ -50,14 +50,8 @@ impl WatchScope {
         }
     }
 
-    pub fn directory_tree_changed(&self, events: &[Event]) -> bool {
-        events
-            .iter()
-            .any(|event| self.event_changes_directory_tree(event))
-    }
-
     #[cfg(target_os = "linux")]
-    fn event_changes_directory_tree(&self, event: &Event) -> bool {
+    pub fn directory_tree_changed(&self, event: &Event) -> bool {
         match event.kind {
             EventKind::Create(CreateKind::Folder) | EventKind::Remove(RemoveKind::Folder) => true,
             EventKind::Create(_)
@@ -71,7 +65,7 @@ impl WatchScope {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn event_changes_directory_tree(&self, _event: &Event) -> bool {
+    pub fn directory_tree_changed(&self, _event: &Event) -> bool {
         false
     }
 
@@ -224,7 +218,7 @@ mod tests {
             paths: vec![PathBuf::from("/repo/file.txt")],
             attrs: Default::default(),
         };
-        assert!(!scope.directory_tree_changed(&[event]));
+        assert!(!scope.directory_tree_changed(&event));
     }
 
     #[cfg(target_os = "linux")]
@@ -239,7 +233,7 @@ mod tests {
             ],
             attrs: Default::default(),
         };
-        assert!(!scope.directory_tree_changed(&[event]));
+        assert!(!scope.directory_tree_changed(&event));
     }
 
     #[cfg(target_os = "linux")]
@@ -254,6 +248,6 @@ mod tests {
             paths: vec![old],
             attrs: Default::default(),
         };
-        assert!(scope.directory_tree_changed(&[event]));
+        assert!(scope.directory_tree_changed(&event));
     }
 }

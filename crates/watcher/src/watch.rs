@@ -1,13 +1,14 @@
-//! The watcher thread: raw notify + manual debounce → one Refresh per window.
+//! The watcher thread: raw notify + bounded debounce → one Refresh per batch.
 //!
 //! Uses `notify::RecommendedWatcher` directly (pure epoll, zero idle CPU).
 //! Results are sent via an Emitter — no forwarding thread needed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use channel::Emitter;
 use ignore::WalkBuilder;
@@ -18,8 +19,77 @@ use crate::Refresh;
 use crate::filter::{self, Context};
 use crate::scope::{self, WatchScope};
 
-/// How long to wait after the first event before flushing the batch.
-const DEBOUNCE: Duration = Duration::from_millis(50);
+/// Flushes an ordinary burst after this long without another event.
+const QUIET_PERIOD: Duration = Duration::from_millis(50);
+
+/// Prevents continuous events from postponing a refresh indefinitely.
+const MAX_BATCH_DURATION: Duration = Duration::from_millis(250);
+
+/// Bounds memory while absorbing normal kernel event bursts.
+const EVENT_QUEUE_CAPACITY: usize = 1_024;
+
+/// Summarizes a burst without retaining every raw event.
+#[derive(Default)]
+struct Batch {
+    refresh: Refresh,
+    reload_ignore_rules: bool,
+    recompute_scope: bool,
+    processed_event_count: usize,
+    events_lost: bool,
+}
+
+impl Batch {
+    fn add_event(
+        &mut self,
+        event: &notify::Event,
+        filter_context: &Context,
+        watch_scope: &WatchScope,
+    ) {
+        self.processed_event_count += 1;
+        if event.need_rescan() {
+            self.invalidate_all();
+            return;
+        }
+
+        self.refresh = self
+            .refresh
+            .union(filter::refresh_for_event(event, filter_context));
+        let reload_ignore_rules = event_requires_ignore_reload(
+            event,
+            &filter_context.repo_root,
+            &filter_context.common_dir,
+        );
+        self.reload_ignore_rules |= reload_ignore_rules;
+        // Rule changes can add or remove visible worktree files by themselves.
+        self.refresh.worktree |= reload_ignore_rules;
+        self.recompute_scope |= reload_ignore_rules || watch_scope.directory_tree_changed(event);
+    }
+
+    fn invalidate_all(&mut self) {
+        // A dropped event may have affected any refresh bit or watch root.
+        self.refresh = Refresh {
+            worktree: true,
+            index: true,
+            head: true,
+            refs: true,
+        };
+        self.reload_ignore_rules = true;
+        self.recompute_scope = true;
+        self.events_lost = true;
+    }
+}
+
+fn try_queue_event(
+    sender: &mpsc::SyncSender<notify::Event>,
+    queue_overflow_flag: &AtomicBool,
+    event: notify::Event,
+) {
+    match sender.try_send(event) {
+        Ok(()) => {}
+        Err(mpsc::TrySendError::Full(_)) => queue_overflow_flag.store(true, Ordering::Relaxed),
+        Err(mpsc::TrySendError::Disconnected(_)) => {}
+    }
+}
 
 /// A live subscription. Dropping it stops the underlying notify watcher.
 pub struct Subscription {
@@ -31,22 +101,21 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
     let repo_root = repo_root.canonicalize()?;
     let git_dir = private_git_dir(&repo_root);
     let common_dir = common_git_dir(&git_dir);
-    let (tx_raw, rx_raw) = mpsc::channel::<notify::Event>();
+    let (event_sender, event_receiver) = mpsc::sync_channel::<notify::Event>(EVENT_QUEUE_CAPACITY);
+    let queue_overflow_flag = Arc::new(AtomicBool::new(false));
+    let callback_overflow_flag = Arc::clone(&queue_overflow_flag);
 
-    let mut watcher =
-        notify::recommended_watcher(move |result: notify::Result<notify::Event>| match result {
-            Ok(event) => {
-                let _ = tx_raw.send(event);
-            }
-            Err(e) => tracing::warn!(?e, "watcher error"),
-        })?;
+    let mut watcher = notify::recommended_watcher(move |result| match result {
+        Ok(event) => try_queue_event(&event_sender, &callback_overflow_flag, event),
+        Err(error) => tracing::warn!(?error, "watcher error"),
+    })?;
     let desired_scope = scope::compute(&repo_root, &git_dir, &common_dir);
     let watch_count = desired_scope.len();
     let mut watch_scope = WatchScope::install(&mut watcher, desired_scope);
     let watcher = Arc::new(Mutex::new(watcher));
     let worker_watcher = Arc::downgrade(&watcher);
 
-    let mut ctx = Context {
+    let mut filter_context = Context {
         repo_root: repo_root.clone(),
         git_dir: git_dir.clone(),
         common_dir: common_dir.clone(),
@@ -54,20 +123,36 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
     };
 
     thread::Builder::new()
-        .name("watcher-debounce".to_owned())
+        .name("watcher-events".to_owned())
         .spawn(move || {
-            while let Ok(first) = rx_raw.recv() {
-                let mut batch = vec![first];
-                while let Ok(event) = rx_raw.recv_timeout(DEBOUNCE) {
-                    batch.push(event);
-                }
+            while let Ok(first_event) = event_receiver.recv() {
+                let batch_deadline = Instant::now() + MAX_BATCH_DURATION;
+                let mut batch = Batch::default();
+                batch.add_event(&first_event, &filter_context, &watch_scope);
 
-                let rules_changed = ignore_rules_changed(&batch, &repo_root, &common_dir);
-                let directories_changed = watch_scope.directory_tree_changed(&batch);
-                if rules_changed {
-                    ctx.ignorer = build_ignorer(&repo_root, &common_dir);
+                let queue_disconnected = loop {
+                    let remaining_batch_time =
+                        batch_deadline.saturating_duration_since(Instant::now());
+                    if remaining_batch_time.is_zero() {
+                        break false;
+                    }
+                    match event_receiver.recv_timeout(QUIET_PERIOD.min(remaining_batch_time)) {
+                        Ok(event) => {
+                            batch.add_event(&event, &filter_context, &watch_scope);
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => break false,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break true,
+                    }
+                };
+
+                if queue_overflow_flag.swap(false, Ordering::Relaxed) {
+                    tracing::warn!("filesystem event queue overflowed; refreshing all state");
+                    batch.invalidate_all();
                 }
-                if rules_changed || directories_changed {
+                if batch.reload_ignore_rules {
+                    filter_context.ignorer = build_ignorer(&repo_root, &common_dir);
+                }
+                if batch.recompute_scope {
                     let next_scope = scope::compute(&repo_root, &git_dir, &common_dir);
                     let Some(watcher) = worker_watcher.upgrade() else {
                         break;
@@ -78,24 +163,38 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
                     watch_scope.update(&mut *watcher, next_scope);
                 }
 
-                let refresh = filter::get_refresh(&batch, &ctx);
-                if !refresh.is_empty() {
-                    tracing::info!(%refresh, events = batch.len(), "refresh triggered");
-                    if !emitter.send(refresh) {
+                if !batch.refresh.is_empty() {
+                    tracing::info!(
+                        refresh = %batch.refresh,
+                        processed_events = batch.processed_event_count,
+                        events_lost = batch.events_lost,
+                        "refresh triggered"
+                    );
+                    if !emitter.send(batch.refresh) {
                         break;
                     }
                 }
+                if queue_disconnected {
+                    break;
+                }
             }
         })
-        .expect("the watcher-debounce thread starts");
+        .expect("the watcher event thread starts");
 
     tracing::info!(count = watch_count, "watcher started");
     Ok(Subscription { _watcher: watcher })
 }
 
-fn ignore_rules_changed(events: &[notify::Event], repo_root: &Path, common_dir: &Path) -> bool {
+fn event_requires_ignore_reload(
+    event: &notify::Event,
+    repo_root: &Path,
+    common_dir: &Path,
+) -> bool {
+    if matches!(event.kind, notify::EventKind::Access(_)) {
+        return false;
+    }
     let exclude_path = common_dir.join("info/exclude");
-    events.iter().flat_map(|event| &event.paths).any(|path| {
+    event.paths.iter().any(|path| {
         path.strip_prefix(repo_root).is_ok_and(|relative| {
             relative
                 .file_name()
@@ -213,28 +312,109 @@ mod tests {
     }
 
     #[test]
-    fn nested_gitignore_is_an_ignore_rule() {
+    fn event_queue_overflow_invalidates_all_derived_state() {
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        let overflow_flag = AtomicBool::new(false);
+        sender
+            .try_send(notify::Event {
+                kind: notify::EventKind::Any,
+                paths: vec![PathBuf::from("/repo/first.txt")],
+                attrs: Default::default(),
+            })
+            .unwrap();
+
+        try_queue_event(
+            &sender,
+            &overflow_flag,
+            notify::Event {
+                kind: notify::EventKind::Any,
+                paths: vec![PathBuf::from("/repo/dropped.txt")],
+                attrs: Default::default(),
+            },
+        );
+
+        let mut batch = Batch::default();
+        if overflow_flag.swap(false, Ordering::Relaxed) {
+            batch.invalidate_all();
+        }
+        assert_eq!(
+            batch.refresh,
+            Refresh {
+                worktree: true,
+                index: true,
+                head: true,
+                refs: true,
+            }
+        );
+        assert!(batch.reload_ignore_rules && batch.recompute_scope && batch.events_lost);
+    }
+
+    #[test]
+    fn backend_rescan_invalidates_all_derived_state() {
+        let event =
+            notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan);
+        let mut batch = Batch::default();
+        let (ignorer, _) = ignore::gitignore::Gitignore::new("/repo/.gitignore");
+        let filter_context = Context {
+            repo_root: PathBuf::from("/repo"),
+            git_dir: PathBuf::from("/repo/.git"),
+            common_dir: PathBuf::from("/repo/.git"),
+            ignorer,
+        };
+
+        batch.add_event(&event, &filter_context, &WatchScope::default());
+
+        assert_eq!(
+            batch.refresh,
+            Refresh {
+                worktree: true,
+                index: true,
+                head: true,
+                refs: true,
+            }
+        );
+        assert!(batch.reload_ignore_rules && batch.recompute_scope && batch.events_lost);
+    }
+
+    #[test]
+    fn nested_gitignore_change_requires_reload() {
         let event = notify::Event {
             kind: notify::EventKind::Any,
             paths: vec![PathBuf::from("/repo/nested/.gitignore")],
             attrs: Default::default(),
         };
-        assert!(ignore_rules_changed(
-            &[event],
+        assert!(event_requires_ignore_reload(
+            &event,
             Path::new("/repo"),
             Path::new("/repo/.git")
         ));
     }
 
     #[test]
-    fn an_ordinary_file_is_not_an_ignore_rule() {
+    fn reading_gitignore_does_not_require_reload() {
+        let event = notify::Event {
+            kind: notify::EventKind::Access(notify::event::AccessKind::Open(
+                notify::event::AccessMode::Any,
+            )),
+            paths: vec![PathBuf::from("/repo/.gitignore")],
+            attrs: Default::default(),
+        };
+        assert!(!event_requires_ignore_reload(
+            &event,
+            Path::new("/repo"),
+            Path::new("/repo/.git")
+        ));
+    }
+
+    #[test]
+    fn ordinary_file_change_does_not_require_ignore_reload() {
         let event = notify::Event {
             kind: notify::EventKind::Any,
             paths: vec![PathBuf::from("/repo/file.txt")],
             attrs: Default::default(),
         };
-        assert!(!ignore_rules_changed(
-            &[event],
+        assert!(!event_requires_ignore_reload(
+            &event,
             Path::new("/repo"),
             Path::new("/repo/.git")
         ));

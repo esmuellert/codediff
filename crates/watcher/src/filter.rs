@@ -14,16 +14,20 @@ pub struct Context {
     pub ignorer: Gitignore,
 }
 
-/// Given a batch of debounced events, returns what needs refreshing.
+/// Given a batch of filesystem events, returns what needs refreshing.
 pub fn get_refresh(events: &[notify::Event], ctx: &Context) -> Refresh {
-    let mut out = Refresh::default();
-    for event in events {
-        for path in &event.paths {
-            let r = refresh_for_path(path, event.kind, ctx);
-            out = out.union(r);
-        }
-    }
-    out
+    events.iter().fold(Refresh::default(), |refresh, event| {
+        refresh.union(refresh_for_event(event, ctx))
+    })
+}
+
+pub(crate) fn refresh_for_event(event: &notify::Event, context: &Context) -> Refresh {
+    event
+        .paths
+        .iter()
+        .fold(Refresh::default(), |refresh, path| {
+            refresh.union(refresh_for_path(path, event.kind, context))
+        })
 }
 
 fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {

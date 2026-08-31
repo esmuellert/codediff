@@ -348,7 +348,7 @@ fn rapid_edits_coalesce() {
     for i in 0..100 {
         fs::write(repo.path().join("file.txt"), format!("edit {i}")).unwrap();
     }
-    // Wait for all debounce windows to close.
+    // Wait for pending batches to flush.
     std::thread::sleep(Duration::from_secs(1));
     let mut count = 0;
     while rx.try_recv().is_ok() {
@@ -407,7 +407,7 @@ fn heavy_non_ignored_writes_stay_responsive() {
     }
     let write_time = start.elapsed();
 
-    // Wait for all debounce windows to close.
+    // Wait for pending batches to flush.
     std::thread::sleep(Duration::from_secs(2));
     let mut count = 0;
     while rx.try_recv().is_ok() {
