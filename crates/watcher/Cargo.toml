@@ -9,6 +9,10 @@ repository.workspace = true
 authors.workspace = true
 publish = false
 
+[[test]]
+name = "binary"
+path = "tests/binary/mod.rs"
+
 [dependencies]
 notify = { workspace = true }
 ignore = { workspace = true }
