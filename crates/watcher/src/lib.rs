@@ -4,7 +4,7 @@
 //! lib.rs       re-exports
 //! refresh.rs   Refresh — the bitset of what changed
 //! filter.rs    path → Refresh (pure logic, all filtering)
-//! scope.rs     which directories to hand notify
+//! scope.rs     computes and maintains the paths handed to notify
 //! watch.rs     the debouncer, the thread, the handle
 //! ```
 

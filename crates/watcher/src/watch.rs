@@ -16,7 +16,7 @@ use notify::RecommendedWatcher;
 
 use crate::Refresh;
 use crate::filter::{self, Context};
-use crate::scope;
+use crate::scope::{self, WatchScope};
 
 /// How long to wait after the first event before flushing the batch.
 const DEBOUNCE: Duration = Duration::from_millis(50);
@@ -40,9 +40,9 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
             }
             Err(e) => tracing::warn!(?e, "watcher error"),
         })?;
-    let watch_roots = scope::get_scope(&repo_root, &git_dir, &common_dir);
-    let watch_count = watch_roots.len();
-    let mut watch_scope = scope::WatchScope::install(&mut watcher, watch_roots);
+    let desired_scope = scope::compute(&repo_root, &git_dir, &common_dir);
+    let watch_count = desired_scope.len();
+    let mut watch_scope = WatchScope::install(&mut watcher, desired_scope);
     let watcher = Arc::new(Mutex::new(watcher));
     let worker_watcher = Arc::downgrade(&watcher);
 
@@ -62,19 +62,20 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
                     batch.push(event);
                 }
 
-                let scope_change = watch_scope.changes(&batch, &repo_root, &common_dir);
-                if scope_change.ignore_rules {
+                let rules_changed = ignore_rules_changed(&batch, &repo_root, &common_dir);
+                let directories_changed = watch_scope.directory_tree_changed(&batch);
+                if rules_changed {
                     ctx.ignorer = build_ignorer(&repo_root, &common_dir);
                 }
-                if scope_change.requires_reconcile() {
-                    let roots = scope::get_scope(&repo_root, &git_dir, &common_dir);
+                if rules_changed || directories_changed {
+                    let next_scope = scope::compute(&repo_root, &git_dir, &common_dir);
                     let Some(watcher) = worker_watcher.upgrade() else {
                         break;
                     };
                     let Ok(mut watcher) = watcher.lock() else {
                         break;
                     };
-                    watch_scope.reconcile(&mut *watcher, roots);
+                    watch_scope.update(&mut *watcher, next_scope);
                 }
 
                 let refresh = filter::get_refresh(&batch, &ctx);
@@ -90,6 +91,17 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
 
     tracing::info!(count = watch_count, "watcher started");
     Ok(Subscription { _watcher: watcher })
+}
+
+fn ignore_rules_changed(events: &[notify::Event], repo_root: &Path, common_dir: &Path) -> bool {
+    let exclude_path = common_dir.join("info/exclude");
+    events.iter().flat_map(|event| &event.paths).any(|path| {
+        path.strip_prefix(repo_root).is_ok_and(|relative| {
+            relative
+                .file_name()
+                .is_some_and(|name| name == ".gitignore")
+        }) || path == &exclude_path
+    })
 }
 
 fn build_ignorer(repo_root: &Path, common_dir: &Path) -> ignore::gitignore::Gitignore {
@@ -198,6 +210,34 @@ mod tests {
         fs::create_dir_all(&wt).unwrap();
         fs::write(wt.join(".git"), gitdir_line(&private)).unwrap();
         (tmp, wt)
+    }
+
+    #[test]
+    fn nested_gitignore_is_an_ignore_rule() {
+        let event = notify::Event {
+            kind: notify::EventKind::Any,
+            paths: vec![PathBuf::from("/repo/nested/.gitignore")],
+            attrs: Default::default(),
+        };
+        assert!(ignore_rules_changed(
+            &[event],
+            Path::new("/repo"),
+            Path::new("/repo/.git")
+        ));
+    }
+
+    #[test]
+    fn an_ordinary_file_is_not_an_ignore_rule() {
+        let event = notify::Event {
+            kind: notify::EventKind::Any,
+            paths: vec![PathBuf::from("/repo/file.txt")],
+            attrs: Default::default(),
+        };
+        assert!(!ignore_rules_changed(
+            &[event],
+            Path::new("/repo"),
+            Path::new("/repo/.git")
+        ));
     }
 
     #[test]

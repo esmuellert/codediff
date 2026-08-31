@@ -8,7 +8,7 @@ Watches a git repository for changes and reports what needs refreshing.
 lib.rs       re-exports: Refresh, Subscription, subscribe
 refresh.rs   Refresh — a bitset of what changed (worktree | index | head | refs)
 filter.rs    path → Refresh — pure logic, all filtering decisions
-scope.rs     which directories to hand notify (platform-aware)
+scope.rs     computes and maintains the paths handed to notify
 watch.rs     the debouncer, the callback, the handle
 ```
 
@@ -18,7 +18,7 @@ Two watch scopes feed one debouncer:
 
 1. **Worktree** — every non-ignored directory (Linux: one `NonRecursive` watch each;
    macOS/Windows: one `Recursive` on the root). The `ignore` crate keeps build output
-   out; directory and ignore-rule changes reconcile the set while it is running.
+   out; directory and ignore-rule changes update the watch scope while it is running.
 
 2. **The git dirs** — `NonRecursive` on the worktree's own git dir (catches `index`, `HEAD`),
    plus `Recursive` on `refs/` in the shared one (catches branch moves, tags, stash), plus
@@ -28,8 +28,8 @@ Two watch scopes feed one debouncer:
    that directory's `commondir` file names the original `.git`. A plain repository has
    neither file, and both are `.git` itself.
 
-The `notify-debouncer-full` collapses kernel-level bursts into one batch per 50 ms. The
-batch is handed to `filter::get_refresh`, which:
+The notify callback forwards raw events to a worker. After 50 ms without another event,
+the worker hands the batch to `filter::get_refresh`, which:
 
 - Skips `.lock` files (git renames them atomically to the real path)
 - Skips git internals (`objects/`, `logs/`, `hooks/`, `lfs/`)
@@ -48,7 +48,7 @@ and how often to act on it.
 
 ## Performance
 
-The filter runs on `notify`'s internal thread. Each event costs a few string prefix
-comparisons — microseconds. The 50 ms debounce means at most 20 batches per second under
-sustained activity. On Linux, ignored directories are never handed to inotify, so build
-output generates zero kernel events regardless of how many files it writes.
+The notify callback only sends events through a channel; filtering and scope maintenance
+run on the worker. Both threads block while idle. On Linux, ignored directories are never
+handed to inotify, so build output generates zero kernel events regardless of how many
+files it writes.
