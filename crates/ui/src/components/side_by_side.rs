@@ -62,9 +62,15 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let theme = &ctx.theme;
     let syntax = ctx.syntax.as_deref();
 
+    // All hooks must run before any early return.
+    let file_path = ctx.file.as_ref().map(|f| f.path().as_str().to_string());
+    let (view, handle) = use_scroll(scope, file_path.as_deref());
+
     let diff = match ctx.diff.as_deref() {
         Some(pipeline::diff::DiffContent::Diff(d)) => d,
-        _ => return rsx! { Column { layout: Layout { grow: 1, ..Default::default() }, .. } },
+        _ => {
+            return rsx! { Column { layout: Layout { grow: 1, ..Default::default() }, .. } };
+        }
     };
 
     let alignment = &diff.alignment;
@@ -73,8 +79,6 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let modified_lines = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter = gutter_width(original_lines);
     let modified_gutter = gutter_width(modified_lines);
-
-    let (view, handle) = use_scroll(scope);
 
     let pairs: Vec<align::ViewLine> = alignment
         .view_lines_from(DiffType::SideBySide, view.view_lines.start)

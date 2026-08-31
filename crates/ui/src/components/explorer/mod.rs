@@ -25,7 +25,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let files = &ctx.files;
     let set_file = ctx.set_file;
 
-    let (view, handle) = use_scroll(scope);
+    let (view, handle) = use_scroll(scope, None);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
     let (tree_mode, set_tree_mode) = use_state(scope, || true);
 

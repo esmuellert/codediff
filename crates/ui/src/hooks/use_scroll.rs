@@ -4,9 +4,10 @@
 //! returned handle for every movement. The handle is `Copy`, so
 //! closures capture it without cloning.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
-use loom::{NodeHandle, Ref, Scope, SetState, use_measure, use_state};
+use loom::{NodeHandle, Ref, Scope, SetState, use_measure, use_ref, use_state};
 
 /// Rows kept between the cursor and the edge while scrolling.
 const SCROLLOFF: u32 = 3;
@@ -15,6 +16,7 @@ const SCROLLOFF: u32 = 3;
 /// what to attach to its host element.
 pub struct ScrollView {
     pub cursor: u32,
+    pub top: u32,
     pub view_lines: Range<u32>,
     pub node_ref: Ref<Option<NodeHandle>>,
 }
@@ -26,7 +28,7 @@ pub struct ScrollHandle {
     top: u32,
     height: u32,
     set_cursor: SetState<u32>,
-    set_top: SetState<u32>,
+    pub set_top: SetState<u32>,
 }
 
 impl ScrollHandle {
@@ -69,18 +71,48 @@ impl ScrollHandle {
     }
 }
 
-/// Creates the scroll state for one pane.
-///
-/// Returns a view (for render) and a handle (for closures). Put
-/// `view.node_ref` on the pane's outermost host element.
-pub fn use_scroll(scope: &mut Scope) -> (ScrollView, ScrollHandle) {
+/// Saved scroll position for one file.
+#[derive(Clone, Copy, Default)]
+struct SavedPosition {
+    cursor: u32,
+    top: u32,
+}
+
+/// Creates the scroll state for one pane. When `key` changes, the old
+/// position is saved and the new one is restored.
+pub fn use_scroll(scope: &mut Scope, key: Option<&str>) -> (ScrollView, ScrollHandle) {
     let (cursor, set_cursor) = use_state(scope, || 0u32);
     let (top, set_top) = use_state(scope, || 0u32);
     let (node_ref, size) = use_measure(scope);
     let height = u32::from(size.height);
 
+    let positions = use_ref(scope, HashMap::<String, SavedPosition>::new);
+    let prev_key = use_ref(scope, || None::<String>);
+
+    if let Some(current_key) = key {
+        let changed = prev_key.current().as_deref() != Some(current_key);
+        if changed {
+            // Save the old position.
+            if let Some(old_key) = prev_key.current().as_ref() {
+                positions.current().insert(old_key.clone(), SavedPosition {
+                    cursor,
+                    top,
+                });
+            }
+            // Restore or start at zero.
+            let restored = positions.current()
+                .get(current_key)
+                .copied()
+                .unwrap_or_default();
+            set_cursor(&move |_| restored.cursor);
+            set_top(&move |_| restored.top);
+            *prev_key.current() = Some(current_key.to_string());
+        }
+    }
+
     let view = ScrollView {
         cursor,
+        top,
         view_lines: top..top + height,
         node_ref,
     };
