@@ -1,0 +1,10 @@
+packages:
+  - runner
+  - extension
+
+catalog:
+  '@vscode/test-web': 0.0.81
+  playwright: 1.62.1
+
+allowBuilds:
+  '@playwright/browser-chromium': true

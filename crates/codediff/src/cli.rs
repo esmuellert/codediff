@@ -57,10 +57,7 @@ pub enum Debug {
         verbose: bool,
     },
 
-    /// Print everything drawn, in a form a machine can diff
-    ///
-    /// For the harness that checks this against `codediff.nvim`; the other
-    /// commands here are for a reader.
+    /// Print side-by-side rows and highlight roles for VS Code comparison
     Parity { original: String, modified: String },
 
     /// Print where each character of a line sits

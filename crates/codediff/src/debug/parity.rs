@@ -1,94 +1,228 @@
-//! `codediff debug parity` — everything drawn, in a form a machine can diff.
-//!
-//! The other debug commands are for a reader. This one is for the harness that
-//! checks us against `codediff.nvim`: the same records in the same order, so a
-//! disagreement is a line of text rather than two screenshots.
-//!
-//! ```text
-//! lines   <original count> <modified count>
-//! filler  <side> <before this 1-based line> <count>
-//! line    <side> <1-based line>                  a whole line marked changed
-//! char    <side> <line> <start byte> <end byte>  a run of characters marked
-//! ```
+//! `codediff debug parity` — final SideBySide cells as JSONL records.
 
+use std::collections::BTreeMap;
 use std::path::Path;
+use std::rc::Rc;
 
-use align::{Alignment, ViewLineType};
 use anyhow::{Context, Result};
-use file_types::DiffType;
-use file_types::DiffVersion;
+use file_types::{DiffType, File, Oid, RepoPath, Revs};
+use loom::testing::Harness;
+use serde::Serialize;
+use ui::Theme;
+use ui::components::side_by_side::{SideBySide, SideBySideProps};
+use ui::components::{Context as UiContext, Ui};
+
+const WIDTH: u16 = 200;
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Side {
+    Original,
+    Modified,
+}
+
+impl Side {
+    fn role(self) -> Role {
+        match self {
+            Self::Original => Role::Delete,
+            Self::Modified => Role::Insert,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Role {
+    Insert,
+    Delete,
+}
+
+#[derive(Serialize)]
+struct Character {
+    start: u32,
+    end: Option<u32>,
+    fill_to_edge: bool,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Record {
+    Row {
+        index: u32,
+        original: Option<u32>,
+        modified: Option<u32>,
+    },
+    Highlight {
+        side: Side,
+        line: u32,
+        line_background: Option<Role>,
+        gutter_background: Option<Role>,
+        characters: Vec<Character>,
+        empty_markers: Vec<u32>,
+    },
+}
 
 pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
     let original = vscode_diff::lines(&original_text);
     let modified = vscode_diff::lines(&modified_text);
+    let diff = pipeline::diff::diff::compute(&original, &modified)?;
+    let alignment = pipeline::diff::diff::align(diff, &original, &modified)?;
+    let height = u16::try_from(alignment.view_line_count(DiffType::SideBySide).max(1))?;
+    let root = std::env::current_dir()?;
+    let file = File::unchanged_path(
+        RepoPath::new("parity.txt", &root),
+        Revs::worktree_against(Oid::new("parity")),
+    );
+    let content = pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
+        file: file.clone(),
+        alignment,
+    });
+    let theme = Theme::DARK;
+    let mut harness = Harness::new::<SideBySide>(SideBySideProps {}, WIDTH, height)
+        .provide::<Ui>(UiContext {
+            theme: Rc::new(theme),
+            file: Some(Rc::new(file)),
+            diff: Some(Rc::new(content)),
+            ..UiContext::default()
+        });
+    for _ in 0..4 {
+        harness.force_draw();
+    }
+    records(&mut harness, original.len() as u32, modified.len() as u32, theme, height)
+}
 
-    let options = vscode_diff::Options::default().with_moves();
-    let diff =
-        vscode_diff::compute(&original, &modified, &options).context("computing the diff")?;
-    let alignment = Alignment::new(diff, &original, &modified);
+fn records(
+    harness: &mut Harness,
+    original_lines: u32,
+    modified_lines: u32,
+    theme: Theme,
+    height: u16,
+) -> Result<()> {
+    let original_gutter = gutter_width(original_lines);
+    let modified_gutter = gutter_width(modified_lines);
+    let mut original = BTreeMap::new();
+    let mut modified = BTreeMap::new();
+    let mut rows = Vec::new();
+    let cells = harness.cells();
 
-    println!("lines {} {}", original.len(), modified.len());
-    fillers(&alignment);
-    marked(&alignment);
+    for y in 0..height {
+        let divider = (0..WIDTH)
+            .find(|&x| cells.cell((x, y)).is_some_and(|cell| cell.symbol() == "│"))
+            .expect("SideBySide has a divider");
+        let original_line = number(cells, 0, original_gutter, y);
+        let modified_start = divider + 1;
+        let modified_line = number(cells, modified_start, modified_gutter, y);
+        rows.push(Record::Row {
+            index: u32::from(y),
+            original: original_line,
+            modified: modified_line,
+        });
+        if let Some(line) = original_line
+            && let Some(record) = highlight(
+                cells,
+                y,
+                0,
+                original_gutter,
+                divider,
+                line,
+                Side::Original,
+                theme.normal.patch(theme.deleted).bg,
+                theme.normal.patch(theme.deleted_text).bg,
+            )
+        {
+            original.insert(line, record);
+        }
+        if let Some(line) = modified_line
+            && let Some(record) = highlight(
+                cells,
+                y,
+                modified_start,
+                modified_gutter,
+                WIDTH,
+                line,
+                Side::Modified,
+                theme.normal.patch(theme.inserted).bg,
+                theme.normal.patch(theme.inserted_text).bg,
+            )
+        {
+            modified.insert(line, record);
+        }
+    }
+
+    for record in rows
+        .into_iter()
+        .chain(original.into_values())
+        .chain(modified.into_values())
+    {
+        println!("{}", serde_json::to_string(&record)?);
+    }
     Ok(())
 }
 
-/// Where the fillers go, as "before this line, this many".
-fn fillers(alignment: &Alignment) {
-    for (side, version) in [
-        ("original", DiffVersion::Original),
-        ("modified", DiffVersion::Modified),
-    ] {
-        let mut run = 0;
-        let mut last = 0;
-        for line in alignment.view_lines(DiffType::SideBySide) {
-            let slot = match version {
-                DiffVersion::Original => line.original,
-                DiffVersion::Modified => line.modified,
-            };
-            match slot.line() {
-                Some(number) => {
-                    if run > 0 {
-                        println!("filler {side} {number} {run}");
-                        run = 0;
-                    }
-                    last = number;
-                }
-                None => run += 1,
-            }
+#[allow(clippy::too_many_arguments)]
+fn highlight(
+    cells: &ui::ratatui::buffer::Buffer,
+    y: u16,
+    start: u16,
+    gutter: u16,
+    end: u16,
+    line: u32,
+    side: Side,
+    line_bg: Option<ui::ratatui::style::Color>,
+    char_bg: Option<ui::ratatui::style::Color>,
+) -> Option<Record> {
+    let line_background = (cells.cell((start, y)).and_then(|cell| cell.style().bg) == line_bg)
+        .then(|| side.role());
+    let gutter_background = line_background;
+    let code_start = start + gutter;
+    let mut characters = Vec::new();
+    let mut x = code_start;
+    while x < end {
+        if cells.cell((x, y)).and_then(|cell| cell.style().bg) != char_bg {
+            x += 1;
+            continue;
         }
-        if run > 0 {
-            println!("filler {side} {} {run}", last + 1);
+        let first = x;
+        while x < end && cells.cell((x, y)).and_then(|cell| cell.style().bg) == char_bg {
+            x += 1;
         }
+        characters.push(Character {
+            start: u32::from(first - code_start),
+            end: (x < end).then(|| u32::from(x - code_start)),
+            fill_to_edge: x == end,
+        });
     }
+    if line_background.is_none() && characters.is_empty() {
+        return None;
+    }
+    Some(Record::Highlight {
+        side,
+        line,
+        line_background,
+        gutter_background,
+        characters,
+        empty_markers: Vec::new(),
+    })
 }
 
-/// Which lines and which characters are marked as changed.
-fn marked(alignment: &Alignment) {
-    for (side, version) in [
-        ("original", DiffVersion::Original),
-        ("modified", DiffVersion::Modified),
-    ] {
-        for view_line in alignment.view_lines(DiffType::SideBySide) {
-            if view_line.kind == ViewLineType::Unchanged {
-                continue;
-            }
-            let slot = match version {
-                DiffVersion::Original => view_line.original,
-                DiffVersion::Modified => view_line.modified,
-            };
-            let Some(number) = slot.line() else { continue };
-            println!("line {side} {number}");
-            for span in alignment.spans(version, number) {
-                println!(
-                    "char {side} {number} {} {}",
-                    span.bytes.start, span.bytes.end
-                );
-            }
-        }
-    }
+fn number(
+    cells: &ui::ratatui::buffer::Buffer,
+    start: u16,
+    width: u16,
+    y: u16,
+) -> Option<u32> {
+    let text: String = (start..start + width)
+        .filter_map(|x| cells.cell((x, y)))
+        .map(|cell| cell.symbol())
+        .collect();
+    text.trim().parse().ok()
+}
+
+fn gutter_width(lines: u32) -> u16 {
+    let digits = lines.max(1).ilog10() + 1;
+    (digits as u16).max(3) + 1
 }
 
 fn read(path: &str) -> Result<String> {

@@ -156,9 +156,21 @@ human-readable artifact and the regression fixture are the same file.
 | `cargo xtask lint-size` | no file exceeds the hard cap, counting non-test lines only | S1 |
 | `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies; `forbid(unsafe_code)` present where required | S1 |
 | `cargo xtask verify-oracle` | our diff output matches upstream `diff_tool` on every fixture | S2 |
+| `cargo xtask verify-vscode [repo]` | VS Code and codediff render the same rows and highlight roles over real Git history | S2 |
 | `cargo xtask fixture-repo <dir>` | builds the fixture repository, prints the manifest | S5 |
 | `cargo xtask dev [dir] [args...]` | runs `codediff`, rebuilding and starting it again each time F5 exits it | S13 |
 | `cargo xtask drift` | lines and `pub` counts per crate, for trend tracking | later |
+
+`verify-vscode` selects highly revised files from real Git history. A pinned
+`@vscode/test-web` build renders every pair in headless Playwright Chromium;
+`codediff debug parity` renders the same pair through `SideBySide`. Row pairing,
+fillers, line and gutter roles, character ranges, line-break fill and empty
+markers are compared exactly. The web tools form a pnpm workspace: its catalog
+pins `@vscode/test-web` and Playwright, while the extension package owns both
+`engines.vscode` and the commit downloaded by the runner. Both renderers emit
+the JSONL records defined by `xtask/src/verify_vscode/schema.json`. The command
+stores `vscode.jsonl`, `codediff.jsonl`, and `difference.jsonl` under
+`target/vscode-parity/mismatches/`.
 
 `drift` is named for what it measures. It is not `health`, which would collide with
 `codediff doctor` — that reports on the *user's environment*, while this reports on the

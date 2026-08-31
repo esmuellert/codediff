@@ -1,0 +1,13 @@
+{
+  "name": "@codediff/vscode-runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "node runner.mjs"
+  },
+  "dependencies": {
+    "@codediff/vscode-extension": "workspace:*",
+    "@vscode/test-web": "catalog:",
+    "playwright": "catalog:"
+  }
+}

@@ -16,6 +16,7 @@ mod oracle_output;
 mod sync_c;
 mod verify_c;
 mod verify_oracle;
+mod verify_vscode;
 
 use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
@@ -28,6 +29,7 @@ fn main() -> Result<()> {
         Some("sync-c") => sync_c::run(&args[1..]),
         Some("verify-c") => verify_c::run(),
         Some("verify-oracle") => verify_oracle::run(),
+        Some("verify-vscode") => verify_vscode::run(&args[1..]),
         Some("lint-size") => lint_size::run(),
         Some("lint-arch") => lint_arch::run(),
         Some("dev") => dev::run(&args[1..]),
@@ -55,6 +57,8 @@ Vendored C engine
   sync-c --tag <tag> [--from <path>]   refresh vendor/ from an upstream tag
   verify-c                             fail if vendor/ drifted from UPSTREAM.lock
   verify-oracle                        compare our binding against upstream diff_tool
+  verify-vscode [repo] [--files N --versions N --max-lines N]
+                                       compare VS Code Web highlighting on Git history
 
 Architecture enforcement
   lint-size                            fail if a file exceeds the line cap

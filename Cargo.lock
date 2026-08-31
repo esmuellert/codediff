@@ -311,6 +311,8 @@ dependencies = [
  "loom",
  "pipeline",
  "portable-pty",
+ "serde",
+ "serde_json",
  "syntax",
  "tracing-subscriber",
  "ui",
@@ -3153,6 +3155,8 @@ version = "0.17.0"
 dependencies = [
  "anyhow",
  "fixtures",
+ "serde",
+ "serde_json",
  "sha2 0.11.0",
  "toml",
  "vscode-diff",

@@ -106,6 +106,8 @@ tree-sitter-yaml = "0.7"
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 ratatui = "0.30"
 crossterm = "0.29"
 # Key *vocabulary* only: compile-time key literals for the binding table, and

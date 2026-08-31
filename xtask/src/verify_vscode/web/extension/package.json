@@ -1,0 +1,32 @@
+{
+  "name": "@codediff/vscode-extension",
+  "displayName": "codediff parity driver",
+  "publisher": "codediff",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.135.0"
+  },
+  "vscodeCommit": "08d4889f9ec4a1685d257b9b95de036c8e1ce1e5",
+  "browser": "./extension.js",
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codediffParity.next",
+        "title": "codediff parity: next pair"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "codediffParity.next",
+        "key": "ctrl+alt+n"
+      }
+    ]
+  }
+}
