@@ -21,3 +21,4 @@ all = { level = "deny", priority = -1 }
 
 [build-dependencies]
 cc = "1"
+diffy.workspace = true

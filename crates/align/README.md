@@ -29,8 +29,10 @@ disagree with the diff it came from. It grows with edits, not with file size: th
 `comprehensive_move` fixture is 404 lines and 7 changes.
 
 This is VSCode's design. Its `DiffState` is a thin wrapper over the engine result, and its
-alignment entries are line-range pairs. Ours drops the two pixel fields it carries for line
-wrapping and plugin-inserted boxes, neither of which a terminal has.
+alignment entries are line-range pairs. Before answering queries, `Alignment` applies
+VSCode's `normalizeRangeMapping`, which turns paired ranges reaching both line ends into
+line-break ranges. Ours drops the two pixel fields it carries for line wrapping and
+plugin-inserted boxes, neither of which a terminal has.
 
 ## What it answers
 
@@ -42,6 +44,7 @@ wrapping and plugin-inserted boxes, neither of which a terminal has.
 | which file line is view line *n* | `line_at(space, view_line)` |
 | which view line is this file line on | `view_line_at(space, version, line)` |
 | which characters changed on this line | `spans(version, line)` |
+| which VS Code backgrounds, ranges and empty markers apply | `decorations(version, line)` |
 | which hunk is this line in | `hunk_at(version, line)` |
 | did this line move | `moved(version, line)` |
 | what can be collapsed | `unchanged()` |

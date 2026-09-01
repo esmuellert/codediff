@@ -39,7 +39,7 @@ const server = await open({
 });
 
 const browser = await chromium.launch({ headless: true });
-const height = Math.min(100000, Math.max(...pairs.map(p => Math.max(p.originalLines, p.modifiedLines))) * 18 + 500);
+const height = Math.min(100000, Math.max(...pairs.map(p => p.originalLines + p.modifiedLines)) * 18 + 500);
 const page = await browser.newPage({ viewport: { width: 1600, height } });
 
 try {
@@ -50,7 +50,8 @@ try {
     await page.getByText(`PARITY:${pair.id}`, { exact: true }).waitFor({ timeout: 60_000 });
     await page.locator('.monaco-diff-editor.side-by-side').waitFor({ timeout: 60_000 });
     const modified = page.locator('.modified-in-monaco-diff-editor');
-    await modified.click({ position: { x: 100, y: 40 } });
+    await modified.waitFor({ state: 'visible', timeout: 60_000 });
+    await modified.click({ position: { x: 100, y: 40 }, timeout: 60_000 });
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
 
     await page.waitForFunction(

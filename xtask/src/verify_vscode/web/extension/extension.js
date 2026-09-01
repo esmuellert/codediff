@@ -18,8 +18,6 @@ async function open(index) {
   if (index >= pairs.length) return;
   current = index;
   const pair = pairs[current];
-  status.text = `PARITY:${pair.id}`;
-  status.show();
   await vscode.commands.executeCommand(
     'vscode.diff',
     vscode.Uri.joinPath(pair.root, pair.original),
@@ -27,6 +25,8 @@ async function open(index) {
     pair.id,
     { preview: true },
   );
+  status.text = `PARITY:${pair.id}`;
+  status.show();
 }
 
 async function activate(context) {
@@ -37,9 +37,11 @@ async function activate(context) {
   await vscode.workspace.getConfiguration('diffEditor').update('renderSideBySide', true, global);
   await vscode.workspace.getConfiguration('diffEditor').update('useInlineViewWhenSpaceIsLimited', false, global);
   await vscode.workspace.getConfiguration('diffEditor').update('ignoreTrimWhitespace', true, global);
+  await vscode.workspace.getConfiguration('diffEditor').update('maxComputationTime', 0, global);
   await vscode.workspace.getConfiguration('diffEditor').update('experimental.showMoves', false, global);
   await vscode.workspace.getConfiguration('diffEditor').update('hideUnchangedRegions.enabled', false, global);
   await vscode.workspace.getConfiguration('editor').update('wordWrap', 'off', global);
+  await vscode.workspace.getConfiguration('editor').update('colorDecorators', false, global);
   await vscode.workspace.getConfiguration('editor').update('minimap.enabled', false, global);
   await readPairs();
   await open(0);

@@ -1,5 +1,5 @@
-//! Compiles the vendored libvscode-diff C sources into a static archive and
-//! links it into this crate.
+//! Applies the pinned VS Code parity patches to the vendored C sources,
+//! compiles them into a static archive, and links it into this crate.
 //!
 //! OpenMP is disabled. Measured reasons:
 //! with upstream's libgomp packaging troubles — those were a *runtime dynamic
@@ -52,6 +52,11 @@ const SOURCES: &[&str] = &[
     "vendor/utf8proc.c",
 ];
 
+const PATCHES: &[(&str, &str)] = &[
+    ("src/char_level.c", "char-level-text.patch"),
+    ("src/myers.c", "myers-typed-array.patch"),
+];
+
 fn main() {
     let vendor = workspace_root().join("vendor");
     let engine = vendor.join("libvscode-diff");
@@ -88,17 +93,32 @@ fn main() {
         build.define("BUILDING_DLL", None);
     }
 
+    let patches = Path::new(env!("CARGO_MANIFEST_DIR")).join("patches");
     for source in SOURCES {
-        build.file(engine.join(source));
+        build.file(patched_source(&engine, &patches, &out_dir, source));
     }
 
     build.compile("vscode_diff");
 
     println!("cargo:rerun-if-changed={}", engine.display());
+    println!("cargo:rerun-if-changed={}", patches.display());
     println!(
         "cargo:rerun-if-changed={}",
         vendor.join("VERSION").display()
     );
+}
+
+fn patched_source(engine: &Path, patches: &Path, out_dir: &Path, source: &str) -> PathBuf {
+    let Some((_, patch_name)) = PATCHES.iter().find(|(path, _)| *path == source) else {
+        return engine.join(source);
+    };
+    let base = std::fs::read_to_string(engine.join(source)).expect("reading C source to patch");
+    let text = std::fs::read_to_string(patches.join(patch_name)).expect("reading C parity patch");
+    let patch = diffy::Patch::from_str(&text).expect("parsing C parity patch");
+    let patched = diffy::apply(&base, &patch).expect("C parity patch no longer applies");
+    let destination = out_dir.join(source.replace('/', "-"));
+    std::fs::write(&destination, patched).expect("writing patched C source");
+    destination
 }
 
 /// CMake generates `version.h` from `version.h.in`, substituting the version

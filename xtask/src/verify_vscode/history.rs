@@ -86,7 +86,7 @@ fn base_ref(repo: &Path) -> Result<String> {
 }
 
 fn unsuitable(text: &str, max_lines: usize) -> bool {
-    text.as_bytes().contains(&0) || text.split('\n').count() > max_lines
+    text.as_bytes().contains(&0) || vscode_diff::editor_lines(text).len() > max_lines
 }
 
 fn show(repo: &Path, commit: &str, path: &str) -> Result<Option<String>> {

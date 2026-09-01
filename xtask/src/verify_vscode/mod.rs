@@ -49,8 +49,8 @@ pub fn run(args: &[String]) -> Result<()> {
             pair.id,
             original,
             modified,
-            vscode_diff::lines(&pair.original).len(),
-            vscode_diff::lines(&pair.modified).len(),
+            vscode_diff::editor_lines(&pair.original).len(),
+            vscode_diff::editor_lines(&pair.modified).len(),
         ));
         materialised.push(files);
     }

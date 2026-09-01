@@ -7,7 +7,7 @@
 //! layout, which is always exactly one column, rather than by drawing half of
 //! something.
 
-use line_index::{CellCol, LineIndex};
+use line_index::{ByteOff, CellCol, LineIndex};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -28,6 +28,10 @@ pub struct Ink<'a> {
     /// The parts named by `spans`.
     pub emphasis: Style,
     pub spans: &'a [Emphasis],
+    /// Byte position where a range begins and continues through the line break.
+    pub fill_from: Option<u32>,
+    /// Byte positions carrying VS Code's empty-range marker.
+    pub empty_markers: &'a [u32],
     /// What the language says each run of the line is, in byte order.
     ///
     /// Empty when the language is unknown, when the reader has switched syntax
@@ -50,6 +54,8 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
         base,
         emphasis,
         spans,
+        fill_from,
+        empty_markers,
         syntax,
         code,
     } = ink;
@@ -61,10 +67,27 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
     let index = LineIndex::new(line, tab_width);
     let right = left + u32::from(row.width);
 
+    if let Some(byte) = fill_from {
+        let from = index
+            .byte_to_cell(ByteOff(byte))
+            .get()
+            .saturating_sub(left)
+            .min(u32::from(row.width));
+        for offset in from..u32::from(row.width) {
+            if let Some(cell) = buf.cell_mut((row.x + offset as u16, row.y)) {
+                cell.set_style(emphasis);
+            }
+        }
+    }
+
     for g in index.graphemes_in_cells(CellCol(left)..CellCol(right)) {
         let cells = g.cells();
         let byte = g.byte.get();
-        let under = if in_any(spans, byte) { emphasis } else { base };
+        let under = if in_any(spans, byte) || fill_from.is_some_and(|start| byte >= start) {
+            emphasis
+        } else {
+            base
+        };
         let style = under.patch(written(syntax, code, byte));
 
         // A cluster the left edge cuts through, or one the right edge would:
@@ -89,6 +112,20 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
         // terminal draw one column too many.
         for cell in (from + 1)..to {
             put(buf, row, cell - left, "", style);
+        }
+    }
+
+    for byte in empty_markers {
+        let column = index.byte_to_cell(ByteOff(*byte)).get();
+        if column < left || column >= right {
+            continue;
+        }
+        if let Some(cell) = buf.cell_mut((row.x + (column - left) as u16, row.y)) {
+            let mut style = cell.style().add_modifier(Modifier::UNDERLINED);
+            if let Some(colour) = emphasis.bg {
+                style = style.underline_color(colour);
+            }
+            cell.set_style(style);
         }
     }
 }
@@ -216,6 +253,8 @@ mod tests {
             base: PLAIN,
             emphasis: PLAIN,
             spans: &[],
+            fill_from: None,
+            empty_markers: &[],
             syntax: &[],
             code: &Theme::DARK.code,
         }
@@ -228,6 +267,8 @@ mod tests {
             base: Style::new().bg(Color::Blue),
             emphasis: Style::new().bg(Color::Red),
             spans: &[span],
+            fill_from: None,
+            empty_markers: &[],
             syntax: &[],
             code: &Theme::DARK.code,
         };
@@ -301,6 +342,8 @@ mod tests {
             base: Style::new().bg(Color::Blue),
             emphasis: Style::new().bg(Color::Red),
             spans: &[1..2, 3..5],
+            fill_from: None,
+            empty_markers: &[],
             syntax: &[],
             code: &Theme::DARK.code,
         };
@@ -348,6 +391,8 @@ mod tests {
             base: marked,
             emphasis: marked,
             spans: &[],
+            fill_from: None,
+            empty_markers: &[],
             syntax: &[],
             code: &Theme::DARK.code,
         };
@@ -363,6 +408,8 @@ mod tests {
             base: marked,
             emphasis: marked,
             spans: &[],
+            fill_from: None,
+            empty_markers: &[],
             syntax: &[],
             code: &Theme::DARK.code,
         };

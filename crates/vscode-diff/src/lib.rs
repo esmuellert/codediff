@@ -66,6 +66,38 @@ pub fn lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
 }
 
+/// Splits text into lines as VS Code's text model presents them.
+///
+/// CRLF and bare CR are line endings rather than characters in the model.
+/// The empty line after a trailing line ending remains present.
+///
+/// ```
+/// assert_eq!(vscode_diff::editor_lines("a\r\nb\rc\n"), ["a", "b", "c", ""]);
+/// ```
+pub fn editor_lines(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\r' => {
+                lines.push(&text[start..at]);
+                at += usize::from(bytes.get(at + 1) == Some(&b'\n')) + 1;
+                start = at;
+            }
+            b'\n' => {
+                lines.push(&text[start..at]);
+                at += 1;
+                start = at;
+            }
+            _ => at += 1,
+        }
+    }
+    lines.push(&text[start..]);
+    lines
+}
+
 /// Computes the difference between two texts, given as lines.
 ///
 /// Results use 1-based line numbers, end-exclusive ranges, and UTF-16 columns.

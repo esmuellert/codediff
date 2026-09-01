@@ -16,6 +16,8 @@ pub fn CodeText(
     scope: &mut Scope,
     text: Rc<str>,
     diff: Rc<[Range<u32>]>,
+    fill_from: Option<u32>,
+    empty_markers: Rc<[u32]>,
     syntax: Rc<[syntax::Span]>,
     unchanged_style: Style,
     changed_style: Style,
@@ -25,6 +27,8 @@ pub fn CodeText(
 
     let text = Rc::clone(text);
     let diff = Rc::clone(diff);
+    let fill_from = *fill_from;
+    let empty_markers = Rc::clone(empty_markers);
     let syntax = Rc::clone(syntax);
     let unchanged_style = *unchanged_style;
     let changed_style = *changed_style;
@@ -43,6 +47,8 @@ pub fn CodeText(
                         base: unchanged_style,
                         emphasis: changed_style,
                         spans: &diff,
+                        fill_from,
+                        empty_markers: &empty_markers,
                         syntax: &syntax,
                         code: &theme.code,
                     },

@@ -170,7 +170,12 @@ pins `@vscode/test-web` and Playwright, while the extension package owns both
 `engines.vscode` and the commit downloaded by the runner. Both renderers emit
 the JSONL records defined by `xtask/src/verify_vscode/schema.json`. The command
 stores `vscode.jsonl`, `codediff.jsonl`, and `difference.jsonl` under
-`target/vscode-parity/mismatches/`.
+`target/vscode-parity/mismatches/`. The verifier disables the computation
+budget on both sides: a wall-clock cutoff is deliberately timing-dependent,
+whereas the completed mappings and their rendering are deterministic. Word
+wrapping and color decorators are disabled so unrelated editor widgets cannot
+change diff coordinates. External pressure-test clones live in the ignored
+`target/vscode-parity-repos/`; only their committed history is read.
 
 `drift` is named for what it measures. It is not `health`, which would collide with
 `codediff doctor` — that reports on the *user's environment*, while this reports on the

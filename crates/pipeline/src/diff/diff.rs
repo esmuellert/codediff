@@ -4,9 +4,9 @@ use align::Alignment;
 use anyhow::{Context, Result};
 use vscode_diff::LinesDiff;
 
-/// Calls the C engine. Only for files with two sides.
+/// Calls the C engine with VS Code's diff-editor defaults. Only for files with two sides.
 pub fn compute(before: &[&str], after: &[&str]) -> Result<LinesDiff> {
-    let options = vscode_diff::Options::default().with_moves();
+    let options = vscode_diff::Options::default().ignoring_trim_whitespace();
     vscode_diff::compute(before, after, &options).context("computing the diff")
 }
 

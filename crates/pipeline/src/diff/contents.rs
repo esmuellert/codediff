@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use file_types::{DiffVersion, File, FileContent};
 use vcs::Repository;
 
-use vscode_diff::lines;
+use vscode_diff::editor_lines;
 
 /// One file, with both versions read.
 pub struct Contents {
@@ -49,6 +49,6 @@ impl Contents {
             DiffVersion::Original => &self.original,
             DiffVersion::Modified => &self.modified,
         };
-        content.text().map(lines).unwrap_or_default()
+        content.text().map(editor_lines).unwrap_or_default()
     }
 }

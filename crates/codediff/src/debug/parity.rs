@@ -12,7 +12,7 @@ use ui::Theme;
 use ui::components::side_by_side::{SideBySide, SideBySideProps};
 use ui::components::{Context as UiContext, Ui};
 
-const WIDTH: u16 = 200;
+const MIN_WIDTH: u16 = 200;
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -65,9 +65,12 @@ enum Record {
 pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
-    let original = vscode_diff::lines(&original_text);
-    let modified = vscode_diff::lines(&modified_text);
-    let diff = pipeline::diff::diff::compute(&original, &modified)?;
+    let original = vscode_diff::editor_lines(&original_text);
+    let modified = vscode_diff::editor_lines(&modified_text);
+    let options = vscode_diff::Options::default()
+        .ignoring_trim_whitespace()
+        .with_time_budget_ms(0);
+    let diff = vscode_diff::compute(&original, &modified, &options)?;
     let alignment = pipeline::diff::diff::align(diff, &original, &modified)?;
     let height = u16::try_from(alignment.view_line_count(DiffType::SideBySide).max(1))?;
     let root = std::env::current_dir()?;
@@ -80,8 +83,9 @@ pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
         alignment,
     });
     let theme = Theme::DARK;
-    let mut harness = Harness::new::<SideBySide>(SideBySideProps {}, WIDTH, height)
-        .provide::<Ui>(UiContext {
+    let width = parity_width(&original, &modified)?;
+    let mut harness =
+        Harness::new::<SideBySide>(SideBySideProps {}, width, height).provide::<Ui>(UiContext {
             theme: Rc::new(theme),
             file: Some(Rc::new(file)),
             diff: Some(Rc::new(content)),
@@ -90,7 +94,14 @@ pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     for _ in 0..4 {
         harness.force_draw();
     }
-    records(&mut harness, original.len() as u32, modified.len() as u32, theme, height)
+    records(
+        &mut harness,
+        original.len() as u32,
+        modified.len() as u32,
+        theme,
+        width,
+        height,
+    )
 }
 
 fn records(
@@ -98,6 +109,7 @@ fn records(
     original_lines: u32,
     modified_lines: u32,
     theme: Theme,
+    width: u16,
     height: u16,
 ) -> Result<()> {
     let original_gutter = gutter_width(original_lines);
@@ -108,9 +120,7 @@ fn records(
     let cells = harness.cells();
 
     for y in 0..height {
-        let divider = (0..WIDTH)
-            .find(|&x| cells.cell((x, y)).is_some_and(|cell| cell.symbol() == "│"))
-            .expect("SideBySide has a divider");
+        let divider = divider_at(cells, width, y).expect("SideBySide has a divider");
         let original_line = number(cells, 0, original_gutter, y);
         let modified_start = divider + 1;
         let modified_line = number(cells, modified_start, modified_gutter, y);
@@ -140,7 +150,7 @@ fn records(
                 y,
                 modified_start,
                 modified_gutter,
-                WIDTH,
+                width,
                 line,
                 Side::Modified,
                 theme.normal.patch(theme.inserted).bg,
@@ -173,10 +183,18 @@ fn highlight(
     line_bg: Option<ui::ratatui::style::Color>,
     char_bg: Option<ui::ratatui::style::Color>,
 ) -> Option<Record> {
-    let line_background = (cells.cell((start, y)).and_then(|cell| cell.style().bg) == line_bg)
-        .then(|| side.role());
+    let line_background =
+        (cells.cell((start, y)).and_then(|cell| cell.style().bg) == line_bg).then(|| side.role());
     let gutter_background = line_background;
     let code_start = start + gutter;
+    let empty_markers = (code_start..end)
+        .filter(|&x| {
+            cells
+                .cell((x, y))
+                .is_some_and(|cell| cell.style().underline_color == char_bg)
+        })
+        .map(|x| u32::from(x - code_start))
+        .collect::<Vec<_>>();
     let mut characters = Vec::new();
     let mut x = code_start;
     while x < end {
@@ -194,7 +212,7 @@ fn highlight(
             fill_to_edge: x == end,
         });
     }
-    if line_background.is_none() && characters.is_empty() {
+    if line_background.is_none() && characters.is_empty() && empty_markers.is_empty() {
         return None;
     }
     Some(Record::Highlight {
@@ -203,16 +221,11 @@ fn highlight(
         line_background,
         gutter_background,
         characters,
-        empty_markers: Vec::new(),
+        empty_markers,
     })
 }
 
-fn number(
-    cells: &ui::ratatui::buffer::Buffer,
-    start: u16,
-    width: u16,
-    y: u16,
-) -> Option<u32> {
+fn number(cells: &ui::ratatui::buffer::Buffer, start: u16, width: u16, y: u16) -> Option<u32> {
     let text: String = (start..start + width)
         .filter_map(|x| cells.cell((x, y)))
         .map(|cell| cell.symbol())
@@ -220,11 +233,62 @@ fn number(
     text.trim().parse().ok()
 }
 
+fn divider_at(cells: &ui::ratatui::buffer::Buffer, width: u16, y: u16) -> Option<u16> {
+    (0..width)
+        .filter(|&x| cells.cell((x, y)).is_some_and(|cell| cell.symbol() == "│"))
+        .min_by_key(|&x| x.abs_diff(width / 2))
+}
+
 fn gutter_width(lines: u32) -> u16 {
     let digits = lines.max(1).ilog10() + 1;
     (digits as u16).max(3) + 1
 }
 
+fn parity_width(original: &[&str], modified: &[&str]) -> Result<u16> {
+    let content = original
+        .iter()
+        .chain(modified)
+        .map(|line| {
+            line_index::LineIndex::new(line, line_index::DEFAULT_TAB_WIDTH)
+                .width()
+                .get()
+        })
+        .max()
+        .unwrap_or(0);
+    let gutters = gutter_width(original.len() as u32).max(gutter_width(modified.len() as u32));
+    let width = (content + u32::from(gutters) + 1)
+        .checked_mul(2)
+        .and_then(|width| width.checked_add(1))
+        .context("parity render width overflowed")?;
+    Ok(u16::try_from(width)?.max(MIN_WIDTH))
+}
+
 fn read(path: &str) -> Result<String> {
     std::fs::read_to_string(Path::new(path)).with_context(|| format!("reading {path}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ui::ratatui::buffer::Buffer;
+    use ui::ratatui::layout::Rect;
+
+    #[test]
+    fn a_vertical_bar_in_code_is_not_mistaken_for_the_pane_divider() {
+        let mut cells = Buffer::empty(Rect::new(0, 0, 200, 1));
+        cells[(20, 0)].set_symbol("│");
+        cells[(99, 0)].set_symbol("│");
+
+        assert_eq!(divider_at(&cells, 200, 0), Some(99));
+    }
+
+    #[test]
+    fn parity_width_contains_the_longest_line_on_both_sides() {
+        let original = ["short"];
+        let modified = [
+            "a line which is longer than one hundred terminal cells ....................................................................",
+        ];
+
+        assert!(parity_width(&original, &modified).unwrap() > 200);
+    }
 }

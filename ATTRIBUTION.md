@@ -8,7 +8,8 @@ dependencies, vendored Neovim internals and documentation assets — none of whi
 present here.
 
 Everything below is compiled by `crates/vscode-diff-sys/build.rs` from
-`vendor/libvscode-diff/`, except the icon table, which is Rust source in
+`vendor/libvscode-diff/` plus the source patches beside that build script,
+except the icon table, which is Rust source in
 `crates/ui/src/theme/icon/table.rs`.
 
 ---

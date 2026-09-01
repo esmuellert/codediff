@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use align::{DiffVersion, ViewLineType};
+use align::{DiffVersion, LineDecorations};
 use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node,
@@ -27,33 +27,29 @@ fn gutter_width(max_line: u32) -> u16 {
 
 fn row_styles(
     theme: &crate::theme::Theme,
-    kind: ViewLineType,
     version: DiffVersion,
+    decorations: &LineDecorations,
 ) -> (Style, Style, Style) {
     let base = theme.normal;
-    let role = match (kind, version) {
-        (ViewLineType::Unchanged, _) => Style::default(),
-        (ViewLineType::Modified, _) => match version {
-            DiffVersion::Original => theme.deleted,
-            DiffVersion::Modified => theme.inserted,
-        },
-        (ViewLineType::Deleted, _) => theme.deleted,
-        (ViewLineType::Inserted, _) => theme.inserted,
+    let role = match version {
+        DiffVersion::Original => theme.deleted,
+        DiffVersion::Modified => theme.inserted,
     };
-    let gutter_bg = base.patch(role);
-    let changed_bg = match version {
+    let line = if decorations.line_background {
+        base.patch(role)
+    } else {
+        base
+    };
+    let gutter = if decorations.gutter_background {
+        base.patch(role)
+    } else {
+        base
+    };
+    let characters = match version {
         DiffVersion::Original => base.patch(theme.deleted_text),
         DiffVersion::Modified => base.patch(theme.inserted_text),
     };
-    // Pure insertions/deletions fill the whole row with the darker colour,
-    // matching VS Code's diffWholeLineAddDecoration. Modifications keep the
-    // lighter line background so only the inner-change spans stand out.
-    let fill = match kind {
-        ViewLineType::Inserted | ViewLineType::Deleted => changed_bg,
-        _ => gutter_bg,
-    };
-    let number_style = gutter_bg.patch(theme.line_number);
-    (fill, changed_bg, number_style)
+    (line, characters, gutter.patch(theme.line_number))
 }
 
 #[component]
@@ -120,14 +116,21 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         let make_side = |version: DiffVersion, slot: align::Slot, gw: u16| -> Vec<Node> {
             match slot.line() {
                 Some(number) => {
+                    let decorations = alignment.decorations(version, number);
                     let (unchanged, changed, number_style) =
-                        row_styles(theme, pair.kind, version);
+                        row_styles(theme, version, &decorations);
                     let text = alignment.line(version, number).unwrap_or("");
-                    let diff_spans: Vec<Range<u32>> = alignment
-                        .spans(version, number)
-                        .into_iter()
-                        .map(|s| s.bytes)
+                    let diff_spans: Vec<Range<u32>> = decorations
+                        .characters
+                        .iter()
+                        .map(|character| character.bytes.clone())
                         .collect();
+                    let fill_from = decorations
+                        .characters
+                        .iter()
+                        .filter(|character| character.fill_to_edge)
+                        .map(|character| character.bytes.start)
+                        .min();
                     vec![
                         rsx! {
                             Gutter {
@@ -143,6 +146,8 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
                                 key: 1u32,
                                 text: Rc::from(text),
                                 diff: Rc::from(diff_spans.as_slice()),
+                                fill_from: fill_from,
+                                empty_markers: Rc::from(decorations.empty_markers.as_slice()),
                                 syntax: Rc::from(
                                     syntax
                                         .map(|store| SyntaxService::line_spans(store, &diff.file, version, number))
