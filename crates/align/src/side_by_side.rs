@@ -54,35 +54,59 @@ fn height(change: &DetailedLineRangeMapping, original: &[String]) -> u32 {
 
 /// Exclusive line ends where corresponding text realigns the two sides.
 fn cuts(change: &DetailedLineRangeMapping, original: &[String]) -> Vec<(u32, u32)> {
-    let mut candidates = Vec::new();
+    let mut out = Vec::new();
+    let mut last = (change.original.start_line, change.modified.start_line);
+    let mut first = true;
     for inner in &change.inner_changes {
         if inner.original.start_col > 1 && inner.modified.start_col > 1 {
-            candidates.push((inner.original.start_line, inner.modified.start_line));
+            emit_alignment(
+                &mut out,
+                &mut last,
+                &mut first,
+                (inner.original.start_line, inner.modified.start_line),
+                false,
+            );
         }
         if ends_within_its_line(inner.original.end_line, inner.original.end_col, original) {
-            candidates.push((inner.original.end_line, inner.modified.end_line));
+            emit_alignment(
+                &mut out,
+                &mut last,
+                &mut first,
+                (inner.original.end_line, inner.modified.end_line),
+                false,
+            );
         }
     }
-    candidates.push((change.original.end_line, change.modified.end_line));
-
-    let mut out = Vec::new();
-    let (mut last_o, mut last_m) = (change.original.start_line, change.modified.start_line);
-    let mut first = true;
-    for (o, m) in candidates {
-        if o < last_o || m < last_m {
-            continue;
-        }
-        if first {
-            first = false;
-        } else if o == last_o || m == last_m {
-            continue;
-        }
-        if o > last_o || m > last_m {
-            out.push((o, m));
-        }
-        (last_o, last_m) = (o, m);
-    }
+    emit_alignment(
+        &mut out,
+        &mut last,
+        &mut first,
+        (change.original.end_line, change.modified.end_line),
+        true,
+    );
     out
+}
+
+fn emit_alignment(
+    alignments: &mut Vec<(u32, u32)>,
+    last: &mut (u32, u32),
+    first: &mut bool,
+    next: (u32, u32),
+    force: bool,
+) {
+    if next.0 < last.0 || next.1 < last.1 {
+        return;
+    }
+    if *first {
+        *first = false;
+    } else if !force && (next.0 == last.0 || next.1 == last.1) {
+        return;
+    }
+    if next == *last {
+        return;
+    }
+    alignments.push(next);
+    *last = next;
 }
 
 /// Whether an inner change ends before its line does.
