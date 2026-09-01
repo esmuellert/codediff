@@ -20,7 +20,7 @@ struct Address {
 
 impl Address {
     /// Whether the effect that opened this address is still the current one.
-    fn wanted(self, runtime: &Weak<RefCell<Runtime>>) -> bool {
+    fn matches_current_effect(self, runtime: &Weak<RefCell<Runtime>>) -> bool {
         let Some(runtime) = runtime.upgrade() else {
             return false;
         };
@@ -80,7 +80,7 @@ impl<T: 'static> Resolver<T> {
     }
 
     pub fn is_wanted(&self) -> bool {
-        self.address.wanted(&self.runtime)
+        self.address.matches_current_effect(&self.runtime)
     }
 }
 
@@ -132,7 +132,7 @@ impl<T: 'static> Observer<T> {
     }
 
     pub fn is_wanted(&self) -> bool {
-        self.address.wanted(&self.runtime)
+        self.address.matches_current_effect(&self.runtime)
     }
 
     /// No more pieces, for every clone of this observer.

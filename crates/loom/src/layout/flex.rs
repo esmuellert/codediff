@@ -122,13 +122,17 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
     // R5.4.1 — the hypothetical size, clamped to the child's own bounds.
     for &i in shown {
         let layout = children[i].layout;
-        let want = match layout.basis {
+        let hypothetical_size = match layout.basis {
             Basis::Auto => children[i].measured,
             Basis::Length(n) => n,
             // What a percentage is a share of is the inner main size.
             Basis::Percent(n) => (u32::from(room) * u32::from(n) / 100) as u16,
         };
-        size[i] = clamp(want, min_on(layout, axis), max_on(layout, axis));
+        size[i] = clamp(
+            hypothetical_size,
+            min_on(layout, axis),
+            max_on(layout, axis),
+        );
     }
 
     // R5.4.5 — each round freezes at least one child, so this ends.
@@ -206,14 +210,14 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
         let mut froze = false;
         for (n, &i) in movable.iter().enumerate() {
             let layout = children[i].layout;
-            let want = if free > 0 {
+            let unclamped_size = if free > 0 {
                 u32::from(size[i]).saturating_add(given[n])
             } else {
                 u32::from(size[i]).saturating_sub(given[n])
             };
-            let want = want.min(u32::from(u16::MAX)) as u16;
-            let clamped = clamp(want, min_on(layout, axis), max_on(layout, axis));
-            if clamped != want {
+            let unclamped_size = unclamped_size.min(u32::from(u16::MAX)) as u16;
+            let clamped = clamp(unclamped_size, min_on(layout, axis), max_on(layout, axis));
+            if clamped != unclamped_size {
                 frozen[i] = true;
                 froze = true;
             }

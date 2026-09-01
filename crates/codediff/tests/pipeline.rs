@@ -87,18 +87,29 @@ fn a_modified_file_reports_the_same_changed_lines_as_git() {
 
 #[test]
 fn crlf_produces_no_phantom_diff() {
-    // Mishandled line endings make every line look changed, which would bury
-    // the one real edit.
+    // The committed side uses CRLF. Changing the worktree to LF while adding
+    // one line must not turn the unchanged lines into modifications.
     let fixture = Fixture::new("crlf");
-    let out = fixture.run(&["debug", "diff-file", "crlf.txt"]);
+    std::fs::write(fixture.dir.join("crlf.txt"), "one\ntwo\nthree\n").expect("writing the LF side");
+    let output = fixture.run(&["debug", "diff-file", "crlf.txt"]);
+    let view_rows: Vec<&str> = output.lines().filter(|line| line.contains(" │ ")).collect();
 
-    assert!(
-        out.contains("1 change(s)"),
-        "only the added line changed:\n{out}"
+    assert_eq!(view_rows.len(), 4, "one line was added:\n{output}");
+    assert_eq!(
+        view_rows.iter().filter(|line| line.contains(" + ")).count(),
+        1,
+        "only the added line is marked:\n{output}"
     );
-    // Carriage returns are shown, not silently eaten: a file that gains CRLF
-    // endings must not look unchanged.
-    assert!(out.contains('\u{240d}'), "the CR should be visible:\n{out}");
+    assert!(
+        view_rows
+            .iter()
+            .all(|line| !line.contains(" ~ ") && !line.contains(" - ")),
+        "line-ending changes must not mark text:\n{output}"
+    );
+    assert!(
+        !output.contains('\u{240d}'),
+        "a line terminator is not display text:\n{output}"
+    );
 }
 
 #[test]

@@ -4,11 +4,6 @@
 pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
     (
         "ui",
-        "vcs",
-        "git is reached through `pipeline`, which owns the thread it runs on",
-    ),
-    (
-        "ui",
         "vscode-diff",
         "rendering consumes model types, it does not compute diffs",
     ),
@@ -16,6 +11,26 @@ pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
         "ui",
         "vscode-diff-sys",
         "rendering must never touch the FFI layer",
+    ),
+    (
+        "loom",
+        "ui",
+        "a rendering framework must not depend on its application",
+    ),
+    (
+        "loom",
+        "pipeline",
+        "the framework paints cells; application pipelines stay above it",
+    ),
+    (
+        "loom",
+        "align",
+        "the framework lays out nodes without knowing the diff model",
+    ),
+    (
+        "loom",
+        "syntax",
+        "styles arrive as props; the framework does not compute them",
     ),
     (
         "align",
@@ -71,8 +86,8 @@ pub const IO_MARKERS: &[&str] = &["std::fs", "std::process", "std::net", "std::e
 
 /// Directories that must remain independent of clocks.
 pub const CLOCK_FREE_DIRS: &[(&str, &str)] = &[(
-    "crates/ui/src/input",
-    "the key resolver is a pure function of its own state and one key",
+    "crates/loom/src/event",
+    "event routing is a pure function of tree state and one event",
 )];
 
 pub const CLOCK_MARKERS: &[&str] = &["std::time", "Instant", "SystemTime", "Duration"];
@@ -131,26 +146,37 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 
 /// Files allowed to start threads.
 pub const THREAD_FILES: &[&str] = &[
+    "crates/loom/src/run.rs",
+    "crates/pipeline/src/diff/worker.rs",
+    "crates/pipeline/src/files/worker.rs",
     "crates/syntax/src/worker/mod.rs",
-    "crates/pipeline/src/file/worker.rs",
-    "crates/pipeline/src/list/worker.rs",
-    "crates/ui/src/app/threads.rs",
-    "crates/ui/src/app/mod.rs",
+    "crates/ui/src/components/explorer/mod.rs",
+    "crates/ui/src/lib.rs",
     "crates/watcher/src/watch.rs",
 ];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
 
 /// Hot-path directories that must not block.
 pub const NON_BLOCKING_DIRS: &[&str] = &[
-    "crates/ui/src/input",
-    "crates/ui/src/draw",
-    "crates/ui/src/render",
-    "crates/ui/src/view",
+    "crates/loom/src/event",
+    "crates/loom/src/hook",
+    "crates/loom/src/layout",
+    "crates/loom/src/paint",
+    "crates/ui/src/components",
+    "crates/ui/src/hooks",
 ];
 
 /// Hot-path files checked like [`NON_BLOCKING_DIRS`].
-pub const NON_BLOCKING_FILES: &[&str] =
-    &["crates/ui/src/app/keys.rs", "crates/ui/src/app/mouse.rs"];
+pub const NON_BLOCKING_FILES: &[&str] = &[
+    "crates/loom/src/component.rs",
+    "crates/loom/src/current.rs",
+    "crates/loom/src/frame.rs",
+    "crates/loom/src/node.rs",
+    "crates/loom/src/reconcile.rs",
+    "crates/loom/src/runtime.rs",
+    "crates/loom/src/scope.rs",
+    "crates/loom/src/tree.rs",
+];
 
 /// Blocking operations forbidden on hot paths.
 pub const BLOCKING_MARKERS: &[&str] = &[
@@ -165,11 +191,6 @@ pub const BLOCKING_MARKERS: &[&str] = &[
 
 /// Intra-crate module edges forbidden by architectural boundaries.
 pub const BLIND_DIRS: &[(&str, &str, &str)] = &[
-    (
-        "crates/ui/src/render",
-        "crate::view",
-        "a brick is handed what it draws; `ui/src/draw` is what knows the model",
-    ),
     // Engine vocabulary stays inside `syntax`.
     (
         "crates/ui/src",

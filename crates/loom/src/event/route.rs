@@ -46,9 +46,9 @@ fn chain(held: &RuntimeRef, start: usize, at: Position) -> Vec<Step> {
 /// `capture_pointer` knows what to capture.
 fn fire<T>(held: &RuntimeRef, node: NodeHandle, listen: &dyn Fn(T) -> Bubble, event: T) -> Bubble {
     held.borrow_mut().handling = Some(node);
-    let answer = listen(event);
+    let bubble = listen(event);
     held.borrow_mut().handling = None;
-    answer
+    bubble
 }
 
 /// R8.3 — a key goes to the focused node, then upward.
@@ -126,7 +126,7 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
 
     let mut stopped = false;
     for step in chain(held, start, at) {
-        let answer = match event.kind {
+        let bubble = match event.kind {
             MouseEventKind::Down(button) => step.listeners.mouse_down.clone().map(|listen| {
                 fire(
                     held,
@@ -188,7 +188,7 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
             _ => None,
         };
 
-        if answer == Some(Bubble::Stop) {
+        if bubble == Some(Bubble::Stop) {
             stopped = true;
             break;
         }
