@@ -10,6 +10,7 @@ use syntax::Store;
 use crate::services::diff::DiffService;
 use crate::services::files::FilesService;
 use crate::services::syntax::SyntaxService;
+use crate::services::version_control::VersionControlService;
 use crate::theme::Theme;
 
 /// Everything a component reads.
@@ -22,6 +23,7 @@ pub struct Context {
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub diff: Option<Rc<pipeline::diff::DiffContent>>,
     pub syntax: Option<Rc<Store>>,
+    pub version_control: Option<Rc<VersionControlService>>,
     pub set_repo: Option<SetState<Rc<Path>>>,
 }
 
@@ -35,6 +37,7 @@ impl Default for Context {
             set_file: None,
             diff: None,
             syntax: None,
+            version_control: None,
             set_repo: None,
         }
     }
@@ -49,6 +52,7 @@ impl Context {
             && self.set_file == other.set_file
             && same_rc(&self.diff, &other.diff)
             && same_rc(&self.syntax, &other.syntax)
+            && same_rc(&self.version_control, &other.version_control)
             && self.set_repo == other.set_repo
     }
 }
@@ -74,6 +78,7 @@ pub fn UiProvider(
     file_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
+    version_control_service: Rc<VersionControlService>,
     children: loom::Children,
 ) -> Node {
     let initial = Rc::clone(cwd);
@@ -162,6 +167,7 @@ pub fn UiProvider(
                 set_file: Some(set_file),
                 diff: diff.clone(),
                 syntax: syntax.clone(),
+                version_control: Some(Rc::clone(version_control_service)),
                 set_repo: Some(set_repo),
             },
             { children.clone() }

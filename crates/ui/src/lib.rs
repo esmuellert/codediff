@@ -23,6 +23,7 @@ use components::{App, AppProps};
 use services::diff::DiffService;
 use services::files::FilesService;
 use services::syntax::SyntaxService;
+use services::version_control::VersionControlService;
 
 enum Event {
     Terminal(crossterm::event::Event),
@@ -55,12 +56,14 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     ));
     let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
     let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
+    let version_control_service = Rc::new(VersionControlService::new());
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
         file_service: Rc::clone(&file_service),
         diff_service: Rc::clone(&diff_service),
         syntax_service: Rc::clone(&syntax_service),
+        version_control_service,
     });
 
     #[cfg(unix)]

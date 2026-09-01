@@ -17,6 +17,7 @@ use self::build::{Node, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
 use super::context::Ui;
 use crate::hooks::use_scroll::use_scroll;
+use crate::services::version_control::VersionControlService;
 
 #[component]
 pub fn Explorer(scope: &mut Scope) -> LoomNode {
@@ -56,7 +57,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let cursor_node = nodes.get(view.cursor as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
     let nodes_keys = Rc::clone(&nodes);
-    let repo = Rc::clone(&ctx.repo);
+    let version_control = ctx.version_control.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
@@ -93,7 +94,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             k if k == key!(space) => {
                 if let Some(ref node) = cursor_node {
-                    toggle_stage(node, &repo);
+                    toggle_stage(node, version_control.as_deref());
                 }
                 Bubble::Stop
             }
@@ -155,24 +156,11 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
     }
 }
 
-fn toggle_stage(node: &Node, repo: &std::path::Path) {
-    let file = match node {
-        Node::File { file, .. } => file,
-        _ => return,
+fn toggle_stage(node: &Node, version_control: Option<&VersionControlService>) {
+    let (Node::File { file, .. }, Some(version_control)) = (node, version_control) else {
+        return;
     };
-    let path = file.path().as_str().to_string();
-    let is_staged = file.revs().after == file_types::Rev::Index;
-    let repo = repo.to_path_buf();
-    std::thread::spawn(move || {
-        let Ok(repository) = vcs::Repository::open(&repo) else {
-            return;
-        };
-        let _ = if is_staged {
-            repository.unstage(&path)
-        } else {
-            repository.stage(&path)
-        };
-    });
+    version_control.toggle_stage(file);
 }
 
 fn activate_node(

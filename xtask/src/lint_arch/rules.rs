@@ -150,8 +150,8 @@ pub const THREAD_FILES: &[&str] = &[
     "crates/pipeline/src/diff/worker.rs",
     "crates/pipeline/src/files/worker.rs",
     "crates/syntax/src/worker/mod.rs",
-    "crates/ui/src/components/explorer/mod.rs",
     "crates/ui/src/lib.rs",
+    "crates/ui/src/services/version_control.rs",
     "crates/watcher/src/watch.rs",
 ];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];
