@@ -2,10 +2,7 @@
 
 use crate::{DiffVersion, RepoPath, Rev, Stats};
 
-/// What happened to a file between the two versions being compared.
-///
-/// `Added`, `Deleted`, `Moved`, `Modified` are derived from the paths — never
-/// stored. `Untracked` and `Conflicted` can only come from a VCS backend.
+/// What happened between two versions of a file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeType {
     /// Exists only as the modified version.
@@ -18,8 +15,7 @@ pub enum ChangeType {
     Moved,
     /// Not under version control at all, so there is no original.
     Untracked,
-    /// Left unresolved by a merge. Reported so it is not silently missing;
-    /// resolving one means editing the file, which this tool does not do.
+    /// Left unresolved by a merge.
     Conflicted,
 }
 
@@ -32,51 +28,26 @@ impl ChangeType {
         )
     }
 
-    /// True when a version control system had to say so.
-    ///
-    /// The two [`File::change`] can never return.
+    /// Whether this type cannot be inferred from paths.
     pub fn needs_a_backend(self) -> bool {
         matches!(self, ChangeType::Untracked | ChangeType::Conflicted)
     }
 }
 
-/// A file under review: where it is on each side of the comparison.
-///
-/// `None` on a side means the file does not exist there (added/deleted).
-/// Two `Some` with different paths means a rename. Change type, labels, etc.
-/// are all derived from the paths — never stored separately.
+/// A file's paths and revisions on both sides of a review.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
     original: Option<RepoPath>,
     modified: Option<RepoPath>,
-    /// Which version each side was read from. Beside the paths rather than
-    /// inside them, because an added file has no original path and was still
-    /// looked for at a commit.
     before: Rev,
     after: Rev,
-    /// What the backend said happened, when the paths cannot say it.
-    ///
-    /// `Some` only for [`ChangeType::Untracked`] and
-    /// [`ChangeType::Conflicted`]: an untracked file's paths look exactly like
-    /// an added one's, and a conflicted file's look like an ordinary
-    /// modification. Everything else is read from the paths by
-    /// [`change`](Self::change), so no field here can contradict them.
+    /// Backend-only change information.
     changed_type: Option<ChangeType>,
-    /// Lines gained and lost, or `None` when nothing counted them — a binary
-    /// file, or a backend that was not asked.
-    ///
-    /// Counting is a second question from listing, and a backend that will not
-    /// answer it loses the numbers rather than the whole list. So this arrives
-    /// after the file does, through [`with_stats`](Self::with_stats).
+    /// Lines gained and lost, when counted.
     stats: Option<Stats>,
 }
 
-/// What a file's two sides were read from.
-///
-/// One value rather than two arguments, because every file of one review
-/// shares it: a `:CodeDiff` compares the working tree against one commit, and
-/// each file is another row of that same comparison. Two arguments of one type
-/// would also be two arguments nothing could check the order of.
+/// Revisions read for both sides of a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Revs {
     pub before: Rev,
@@ -88,11 +59,7 @@ impl Revs {
         Self { before, after }
     }
 
-    /// The comparison `:CodeDiff` makes with no arguments: a commit against
-    /// the file on disk.
-    ///
-    /// The commit is an id rather than `HEAD`, because a name that moves
-    /// cannot say which bytes were read — see [`Rev::Commit`].
+    /// A commit compared with the working tree.
     pub fn worktree_against(commit: crate::Oid) -> Self {
         Self::new(Rev::Commit(commit), Rev::Worktree)
     }
@@ -168,10 +135,7 @@ impl File {
         }
     }
 
-    /// From a pair, refusing the one combination that is not a file.
-    ///
-    /// The named constructors above are clearer at a call site that knows
-    /// which case it has; this is for one that does not.
+    /// Builds a file that exists on at least one side.
     pub fn new(
         original: Option<RepoPath>,
         modified: Option<RepoPath>,
@@ -198,10 +162,7 @@ impl File {
         }
     }
 
-    /// Which version one side was read from.
-    ///
-    /// Answered even for a side the file is not on, because "we looked at
-    /// `HEAD` and it was not there" is what an added file is.
+    /// The revision inspected for one side.
     pub fn rev(&self, version: DiffVersion) -> &Rev {
         match version {
             DiffVersion::Original => &self.before,
@@ -209,11 +170,7 @@ impl File {
         }
     }
 
-    /// How git names one side's content, if the file is on that side.
-    ///
-    /// Git's own spelling, except for the working tree, which git cannot name.
-    /// An identity and not a path: nothing can read the file name back out of
-    /// it, so whatever needs the language asks [`on`](Self::on) instead.
+    /// A stable name for one side's content, when it exists.
     pub fn name(&self, version: DiffVersion) -> Option<String> {
         let path = self.path_of_version(version)?;
         Some(match self.rev(version).stored() {
@@ -222,10 +179,7 @@ impl File {
         })
     }
 
-    /// The one side this file exists on, or `None` when it exists on both.
-    ///
-    /// What decides whether there is anything to compare. `Some` means the
-    /// reader gets one column, because a second could hold nothing.
+    /// The only side present, or `None` when both exist.
     pub fn is_one_sided(&self) -> Option<DiffVersion> {
         match (&self.original, &self.modified) {
             (None, Some(_)) => Some(DiffVersion::Modified),
@@ -234,10 +188,7 @@ impl File {
         }
     }
 
-    /// Which two versions this file compares.
-    ///
-    /// What a heading is derived from: a comparison against the index is what
-    /// "Staged Changes" means, so a file already carries which group it is in.
+    /// Both revisions as one value.
     pub fn revs(&self) -> Revs {
         Revs::new(self.before.clone(), self.after.clone())
     }
@@ -250,11 +201,7 @@ impl File {
         }
     }
 
-    /// The path to lead with: where the file is now, or where it was if it is
-    /// gone.
-    ///
-    /// Never `None` — a file exists on at least one side, which the
-    /// constructors enforce.
+    /// The current path, or the previous path for a deletion.
     pub fn path(&self) -> &RepoPath {
         self.modified
             .as_ref()
@@ -262,20 +209,13 @@ impl File {
             .expect("a file exists on at least one side")
     }
 
-    /// What happened to this file.
-    ///
-    /// The backend's word where it has one, and otherwise what the paths say.
-    /// `Added`, `Deleted`, `Moved` and `Modified` are always read from the
-    /// paths, so nothing stored can disagree with them; only `Untracked` and
-    /// `Conflicted` are invisible in a path pair and have to be told.
+    /// The backend's change type, or the type inferred from paths.
     pub fn get_change_type(&self) -> ChangeType {
         self.changed_type
             .unwrap_or_else(|| self.change_type_of_paths())
     }
 
-    /// What the paths alone say happened.
-    ///
-    /// Never `Untracked` or `Conflicted`, which a path pair cannot show.
+    /// The change type inferred only from paths.
     pub fn change_type_of_paths(&self) -> ChangeType {
         match (self.is_one_sided(), self.is_renamed()) {
             (Some(crate::DiffVersion::Modified), _) => ChangeType::Added,
@@ -285,12 +225,9 @@ impl File {
         }
     }
 
-    /// The same file, with what the backend alone knows happened to it.
+    /// Sets a backend-only change type.
     ///
-    /// # Panics
-    ///
-    /// If `changed_type` is one the paths could have said. Passing `Added`
-    /// here would create exactly the disagreement this type exists to prevent.
+    /// Panics if paths can already determine the type.
     pub fn set_change_type(mut self, changed_type: ChangeType) -> Self {
         assert!(
             changed_type.needs_a_backend(),
@@ -321,10 +258,7 @@ impl File {
         self.get_change_type() == ChangeType::Moved
     }
 
-    /// Where the file was, when that differs from where it is.
-    ///
-    /// `Some` exactly when [`is_renamed`](Self::is_renamed), so a caller that
-    /// wants to show `old → new` needs one lookup rather than two.
+    /// The previous path of a renamed file.
     pub fn previous_path(&self) -> Option<&RepoPath> {
         match (&self.original, &self.modified) {
             (Some(before), Some(after)) if before != after => Some(before),
@@ -338,8 +272,6 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    /// The ordinary comparison. Which revisions these are is not what any test
-    /// below is about, so it is said once.
     fn a_comparison() -> Revs {
         Revs::worktree_against(crate::Oid::new("b87b24c"))
     }
@@ -371,8 +303,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "readable from the paths")]
     fn storing_a_derivable_change_is_refused() {
-        // The whole point: a stored `Added` could disagree with a file that
-        // has both versions, and nothing would catch it.
         File::added(at("new.rs"), a_comparison()).set_change_type(ChangeType::Added);
     }
 
@@ -380,8 +310,6 @@ mod tests {
         RepoPath::new(relative, Path::new("/repo"))
     }
 
-    /// The ordinary comparison. Which revisions these are is not what any
-    /// test below is about, so it is said once.
     fn revs() -> Revs {
         Revs::worktree_against(crate::Oid::new("b87b24c"))
     }
@@ -404,8 +332,6 @@ mod tests {
 
     #[test]
     fn a_rename_is_read_from_the_paths_rather_than_stored() {
-        // No `kind` field to disagree with the paths. VSCode's multi-diff
-        // renderer derives the same fact the same way, at paint time.
         let file = File::renamed(at("old.rs"), at("new.rs"), revs());
         assert!(file.is_renamed());
         assert_eq!(file.path().as_str(), "new.rs");
@@ -422,8 +348,6 @@ mod tests {
 
     #[test]
     fn a_one_sided_file_is_not_a_rename() {
-        // The trap: `previous_path` reading `original` unconditionally would
-        // make every deleted file look renamed from itself.
         assert!(!File::added(at("new.rs"), revs()).is_renamed());
         assert!(!File::deleted(at("gone.rs"), revs()).is_renamed());
         assert_eq!(File::deleted(at("gone.rs"), revs()).previous_path(), None);
@@ -451,9 +375,6 @@ mod tests {
 
     #[test]
     fn the_paths_cannot_say_the_other_two() {
-        // An untracked file's paths are indistinguishable from an added one's,
-        // which is why a backend has to supply the distinction and why these
-        // four can be derived rather than stored.
         for file in [
             File::added(at("a.rs"), revs()),
             File::deleted(at("d.rs"), revs()),
@@ -478,8 +399,6 @@ mod tests {
 
     #[test]
     fn a_side_is_named_the_way_git_names_it() {
-        // These strings are what tells one version of a file from another, so
-        // they have to be git's spelling rather than one of ours.
         let file = File::unchanged_path(at("src/main.rs"), revs());
         assert_eq!(
             file.name(DiffVersion::Original).as_deref(),
@@ -493,9 +412,6 @@ mod tests {
 
     #[test]
     fn two_versions_of_one_path_are_named_differently() {
-        // The whole point. Reviewing the staged copy and the working copy of
-        // one file must not land on one name, or whatever caches by it hands
-        // back the wrong answer.
         let staged = File::unchanged_path(
             at("src/main.rs"),
             Revs::new(Rev::Commit(crate::Oid::new("b87b24c")), Rev::Index),
@@ -535,9 +451,6 @@ mod tests {
 
     #[test]
     fn a_missing_side_still_says_where_it_looked() {
-        // "We read HEAD and the file was not there" is what an added file is,
-        // and it is two facts rather than one. Folding the revision into the
-        // path would lose the half that says where.
         let added = File::added(at("new.rs"), revs());
         assert_eq!(added.path_of_version(DiffVersion::Original), None);
         assert_eq!(
@@ -548,8 +461,6 @@ mod tests {
 
     #[test]
     fn a_rename_is_named_under_each_side_own_path() {
-        // Which is also what decides the language of each side: a `.py`
-        // renamed to a `.rs` is Python on the left and Rust on the right.
         let moved = File::renamed(at("old.py"), at("new.rs"), revs());
         assert_eq!(
             moved.name(DiffVersion::Original).as_deref(),

@@ -1,58 +1,33 @@
-//! Which version of a file's content.
-//!
-//! ```text
-//! <rev>:<path>    a blob in a commit
-//! :0:<path>       the index
-//! :1:<path>       merge stage 1, ancestor
-//! :2:<path>       merge stage 2, ours
-//! :3:<path>       merge stage 3, theirs
-//! (the file)      on disk — git has no name for this
-//! ```
-//!
-//! This is a name, not a hash. Only `Commit` is stable — the others can
-//! change while the review is open. Whether bytes have changed since they
-//! were read is answered by [`Rev::can_change`].
+//! Versions from which file content can be read.
 
 use crate::Oid;
 
 /// Which version of a file's content.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Rev {
-    /// The file on disk — what an editor would open.
-    ///
-    /// The default after side, and the only version git does not store.
+    /// The file on disk.
     Worktree,
-    /// The index: what `git add` put there. Git's stage 0.
-    ///
-    /// Cannot coexist with [`Conflict`](Rev::Conflict): a path has stage 0, or
-    /// stages 1 to 3, never both.
+    /// Git's stage 0 index.
     Index,
     /// One side of an unresolved merge. Git's stages 1 to 3.
     Conflict(Stage),
-    /// A commit, by its id.
-    ///
-    /// An id rather than `HEAD`, because `HEAD` moves — a name that moves
-    /// cannot say which bytes were read.
+    /// A commit identified by its immutable id.
     Commit(Oid),
 }
 
 /// Which side of an unresolved merge, by git's stage numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Stage {
-    /// Stage 1 — the common ancestor, before either side touched it.
+    /// Stage 1, the common ancestor.
     Base,
-    /// Stage 2 — the branch being merged into. Usually yours.
+    /// Stage 2, the branch being merged into.
     Ours,
-    /// Stage 3 — the branch being merged in.
+    /// Stage 3, the branch being merged.
     Theirs,
 }
 
 impl Rev {
-    /// How git names this revision, before the `:path`.
-    ///
-    /// `None` for the working tree, which is not in the object store at all
-    /// and is read from disk instead — so one call answers both "where does
-    /// this come from" and "what do I pass to git".
+    /// Git's revision prefix, or `None` for the working tree.
     pub fn stored(&self) -> Option<&str> {
         Some(match self {
             Rev::Worktree => return None,
@@ -64,17 +39,13 @@ impl Rev {
         })
     }
 
-    /// Whether these bytes can change while a reader is looking at them.
-    ///
-    /// False only for a commit. What a file watcher acts on, and what decides
-    /// whether anything read from here may be kept for good.
+    /// Whether this revision can change during a review.
     pub fn can_change(&self) -> bool {
         !matches!(self, Rev::Commit(_))
     }
 }
 
 impl std::fmt::Display for Rev {
-    /// For a reader, not for git. See [`stored`](Rev::stored) for that.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Rev::Worktree => f.write_str("working tree"),
@@ -93,9 +64,6 @@ mod tests {
 
     #[test]
     fn each_stored_revision_spells_itself_the_way_git_does() {
-        // These strings go straight to `git cat-file`, which reads
-        // `<rev>:<path>`. A wrong one is a file that silently reads as
-        // another version of itself.
         assert_eq!(Rev::Index.stored(), Some(":0"));
         assert_eq!(Rev::Conflict(Stage::Base).stored(), Some(":1"));
         assert_eq!(Rev::Conflict(Stage::Ours).stored(), Some(":2"));
@@ -110,8 +78,6 @@ mod tests {
 
     #[test]
     fn only_a_commit_cannot_change() {
-        // The index changes on `git add`, a conflict stage when the merge is
-        // resolved, and the working tree when a file is saved.
         assert!(Rev::Worktree.can_change());
         assert!(Rev::Index.can_change());
         assert!(Rev::Conflict(Stage::Ours).can_change());
@@ -120,9 +86,6 @@ mod tests {
 
     #[test]
     fn revisions_of_one_path_are_told_apart() {
-        // The whole reason this exists: the staged and the on-disk version of
-        // one file are different bytes, and a cache that mixed them would
-        // colour one with the other's answer.
         assert_ne!(Rev::Worktree, Rev::Index);
         assert_ne!(Rev::Conflict(Stage::Ours), Rev::Conflict(Stage::Theirs));
         assert_ne!(

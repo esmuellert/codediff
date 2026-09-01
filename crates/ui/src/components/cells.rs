@@ -1,11 +1,4 @@
-//! Putting one line of a file onto one row of the grid.
-//!
-//! Everything awkward about a terminal lives here: a double-width character
-//! that straddles the left edge, a tab whose width depends on what precedes
-//! it, an escape sequence the file would like the terminal to obey, and a
-//! cluster that would hang off the right edge. Each is answered by drawing a
-//! layout, which is always exactly one column, rather than by drawing half of
-//! something.
+//! Paints text safely onto terminal cells.
 
 use line_index::{ByteOff, CellCol, LineIndex};
 use ratatui::buffer::Buffer;
@@ -17,10 +10,7 @@ use crate::theme::Code;
 /// A byte range of the line to draw in the emphasis style.
 pub type Emphasis = std::ops::Range<u32>;
 
-/// How a line is coloured: diff background + syntax foreground.
-///
-/// The diff owns the background (`base` for the row, `emphasis` for inner
-/// changes). Syntax is patched on top as foreground only.
+/// Diff backgrounds and syntax foregrounds for one line.
 #[derive(Debug, Clone, Copy)]
 pub struct Ink<'a> {
     /// The whole row, including past the end of the text.
@@ -32,23 +22,13 @@ pub struct Ink<'a> {
     pub fill_from: Option<u32>,
     /// Byte positions carrying VS Code's empty-range marker.
     pub empty_markers: &'a [u32],
-    /// What the language says each run of the line is, in byte order.
-    ///
-    /// Empty when the language is unknown, when the reader has switched syntax
-    /// off, or when this line has not been coloured yet — all three draw the
-    /// same, which is why none of them is a special case here.
+    /// Syntax spans in byte order.
     pub syntax: &'a [syntax::Span],
     /// Which colour each of those runs names.
     pub code: &'a Code,
 }
 
-/// Draws `line` into a single row.
-///
-/// `left` is the horizontal scroll in cells. `base` is painted across the
-/// whole row first — including past the end of the text — because a diff
-/// background that stopped at the last character would make a short changed
-/// line look like a ragged stripe rather than a highlighted row. Neovim calls
-/// this `hl_eol`, and the plugin sets it.
+/// Draws one horizontally scrolled line.
 pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, ink: Ink<'_>) {
     let Ink {
         base,
@@ -90,9 +70,7 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
         };
         let style = under.patch(written(syntax, code, byte));
 
-        // A cluster the left edge cuts through, or one the right edge would:
-        // its columns are on screen but the character is not drawable there,
-        // so the columns get spaces in the right style.
+        // A clipped cluster becomes styled spaces.
         let clipped_left = cells.start < left;
         let clipped_right = cells.end > right;
         let from = cells.start.max(left);
@@ -107,9 +85,7 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
 
         let symbol = line_index::sanitize(g.text);
         put(buf, row, from - left, &symbol, style);
-        // A wide character owns the columns after it. Ratatui expects those to
-        // hold an empty symbol; leaving the fill's space there would make the
-        // terminal draw one column too many.
+        // Ratatui requires empty continuation cells for wide characters.
         for cell in (from + 1)..to {
             put(buf, row, cell - left, "", style);
         }
@@ -130,20 +106,14 @@ pub fn paint(buf: &mut Buffer, row: Rect, line: &str, tab_width: u8, left: u32, 
     }
 }
 
-/// What the language says about the byte at `byte`, as a style to patch on.
-///
-/// A foreground and modifiers only. `Style::new()` — which changes nothing —
-/// is the answer for an uncoloured byte, so a line with no spans at all costs
-/// one comparison per character and paints exactly as it did before syntax
-/// existed.
+/// Syntax foreground and modifiers at one byte.
 fn written(spans: &[syntax::Span], code: &Code, byte: u32) -> Style {
     let Some(span) = spans.iter().find(|span| span.bytes.contains(&byte)) else {
         return Style::new();
     };
     let mut style = match code.pen(span.style.pen) {
         Some(colour) => Style::new().fg(colour),
-        // A rule that sets only `markup.bold` has no colour of its own, and
-        // must keep the one underneath rather than fall back to a default.
+        // A modifier-only rule keeps the existing colour.
         None => Style::new(),
     };
     for (on, modifier) in [
@@ -170,8 +140,6 @@ pub fn fill(buf: &mut Buffer, row: Rect, style: Style) {
 }
 
 /// Repeats one character across a row.
-///
-/// Fills a row with a repeated symbol. Used where a side has no line at all.
 pub fn fill_repeat_pattern(buf: &mut Buffer, row: Rect, symbol: &str, style: Style) {
     for x in row.x..row.right() {
         if let Some(cell) = buf.cell_mut((x, row.y)) {
@@ -181,11 +149,7 @@ pub fn fill_repeat_pattern(buf: &mut Buffer, row: Rect, symbol: &str, style: Sty
     }
 }
 
-/// Draws text at a fixed offset, clipped to the row, with no scrolling.
-///
-/// For interface text — line numbers, the status line — which we generate and
-/// therefore need not neutralise, but which still has to respect wide
-/// characters in a path.
+/// Draws unscrolled interface text at a fixed offset.
 pub fn write(buf: &mut Buffer, row: Rect, offset: u16, text: &str, style: Style) -> u16 {
     let index = LineIndex::new(text, 1);
     let mut used = 0;
@@ -260,7 +224,6 @@ mod tests {
         }
     }
 
-    /// Which columns came out emphasised, as a mask to read under the text.
     fn marks(width: u16, line: &str, left: u32, span: Emphasis) -> String {
         let (mut buf, area) = row(width);
         let ink = Ink {
@@ -318,8 +281,6 @@ mod tests {
 
     #[test]
     fn a_wide_character_cut_by_the_left_edge_becomes_a_space() {
-        // Scrolling one column into a two-column character: the second half
-        // cannot be drawn, and drawing the whole thing would shift the line.
         assert_eq!(draw(4, "日本", 1), " 本 ");
     }
 
@@ -359,32 +320,27 @@ mod tests {
 
     #[test]
     fn emphasis_stays_on_its_characters_when_the_line_is_scrolled() {
-        // Only the `3` changed, which the engine reports as bytes 20..21.
         let line = "let total = price * 3;";
         assert_eq!(draw(22, line, 0), "let total = price * 3;");
         assert_eq!(marks(22, line, 0, 20..21), "....................^.");
-        // Scrolled eight columns: the same byte is now screen column 12.
         assert_eq!(draw(14, line, 8), "l = price * 3;");
         assert_eq!(marks(14, line, 8, 20..21), "............^.");
     }
 
     #[test]
     fn a_tab_before_the_span_moves_the_columns_but_not_the_bytes() {
-        // The tab is one byte and four cells, so byte 3 sits at cell 6.
         assert_eq!(marks(10, "\tabc", 0, 3..4), "......^...");
         assert_eq!(marks(10, "\tabc", 2, 3..4), "....^.....");
     }
 
     #[test]
     fn a_wide_character_before_the_span_moves_the_columns_but_not_the_bytes() {
-        // Each kanji is three bytes and two cells, so byte 6 sits at cell 4.
         assert_eq!(marks(8, "日本x", 0, 6..7), "....^...");
         assert_eq!(marks(8, "日本x", 3, 6..7), ".^......");
     }
 
     #[test]
     fn the_background_runs_past_the_end_of_a_short_line() {
-        // A changed line shorter than the pane must still read as a full row.
         let (mut buf, area) = row(10);
         let marked = Style::new().bg(Color::Green);
         let ink = Ink {

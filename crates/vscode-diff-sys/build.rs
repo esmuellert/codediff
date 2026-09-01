@@ -1,41 +1,8 @@
-//! Applies the pinned VS Code parity patches to the vendored C sources,
-//! compiles them into a static archive, and links it into this crate.
-//!
-//! OpenMP is disabled. Measured reasons:
-//! with upstream's libgomp packaging troubles — those were a *runtime dynamic
-//! linking* failure of a prebuilt `.so`, which does not apply to a build from
-//! source.
-//!
-//! Measured on this engine (aarch64, gcc 15.2, best of several runs):
-//!
-//! | input                        | sequential | OpenMP  |
-//! |------------------------------|------------|---------|
-//! | 500 lines, 20 changed        | 5.00 ms    | 4.93 ms |
-//! | 2,000 lines, 50 changed      | 2.59 ms    | 2.43 ms |
-//! | 20,000 lines, 2,858 changed  | 264 ms     | 208 ms  |
-//!
-//! On realistic files the difference is noise. On a deliberately pathological
-//! file it is ~21% wall clock at 1.31x parallelism — Amdahl's law, since only
-//! character-level refinement is parallel while Myers, line-level optimisation
-//! and move detection stay sequential — and it costs ~5% more total CPU.
-//!
-//! Against that: `-fopenmp` re-appends `-lgomp` at link time, so a static
-//! OpenMP build means hand-rolling link lines; Apple clang ships no OpenMP at
-//! all, so macOS would require `brew install libomp` for every contributor and
-//! CI runner; and MSVC's runtime is the `vcomp140.dll` redistributable with no
-//! static option.
-//!
-//! The decisive argument is placement, not portability: diffs are computed
-//! concurrently *across files*, which scales with core count and beats 1.31x
-//! inside a single file. Enabling both would oversubscribe, with each worker
-//! spawning its own uncoordinated OpenMP team.
+//! Builds the patched, static C diff engine.
 
 use std::path::{Path, PathBuf};
 
-/// Mirrors DIFF_CORE_SOURCES in vendor/libvscode-diff/CMakeLists.txt.
-///
-/// `vendor/utf8proc_data.c` is absent on purpose: `utf8proc.c` `#include`s it,
-/// so compiling it separately would define every symbol twice.
+/// Mirrors `DIFF_CORE_SOURCES`; `utf8proc_data.c` is included by `utf8proc.c`.
 const SOURCES: &[&str] = &[
     "default_lines_diff_computer.c",
     "src/char_level.c",
@@ -79,16 +46,10 @@ fn main() {
         .include(engine.join("include"))
         .include(engine.join("vendor"))
         .include(&generated)
-        // Bundled utf8proc, so no dllimport/dllexport decoration.
         .define("UTF8PROC_STATIC", None)
         .warnings(false);
 
-    // On Windows the public header decorates its exports with
-    // `__declspec(dllimport)` unless BUILDING_DLL is set, because upstream only
-    // ever ships a DLL there. We link statically, and dllimport would make the
-    // linker look for symbols in a DLL that does not exist. Defining
-    // BUILDING_DLL selects dllexport instead, which is inert when the object
-    // ends up in an executable.
+    // Avoid `dllimport` declarations while linking the engine statically.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         build.define("BUILDING_DLL", None);
     }
@@ -121,15 +82,12 @@ fn patched_source(engine: &Path, patches: &Path, out_dir: &Path, source: &str) -
     destination
 }
 
-/// CMake generates `version.h` from `version.h.in`, substituting the version
-/// read from the repository's VERSION file. `sync-c` copies that file to
-/// `vendor/VERSION`; this reproduces the substitution.
+/// Generates the version header normally written by CMake.
 fn write_version_header(vendor: &Path, engine: &Path, generated: &Path) {
     let raw = std::fs::read_to_string(vendor.join("VERSION"))
         .expect("vendor/VERSION is written by `cargo xtask sync-c`");
     let full = raw.trim();
 
-    // CMake reduces the version to MAJOR.MINOR.PATCH before substituting.
     let base: String = full
         .split('.')
         .take(3)
