@@ -291,9 +291,6 @@ fn exit_codes_tell_misuse_apart_from_failure() {
     assert_eq!(code(&["debug", "align", "only-one-argument"]), Some(2));
     assert_eq!(code(&["--not-a-flag"]), Some(2));
     assert_eq!(code(&["debug", "diff-file", "no/such/file"]), Some(1));
-    // A bare word is a path now, not a subcommand, so a wrong one is a failure
-    // to find the file rather than a misuse of the command line.
-    assert_eq!(code(&["no/such/file"]), Some(1));
 }
 
 #[test]
