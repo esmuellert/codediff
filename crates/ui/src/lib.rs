@@ -13,7 +13,10 @@ pub use ratatui;
 use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
+#[cfg(unix)]
+use std::sync::mpsc::Sender;
+#[cfg(unix)]
 use std::thread;
 
 use file_types::File;
