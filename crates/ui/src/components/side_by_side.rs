@@ -13,7 +13,7 @@ use ratatui::style::Style;
 
 use super::code_text::{CodeText, CodeTextProps};
 use super::context::Ui;
-use super::filler::{Filler, FillerProps};
+use super::filler::Filler;
 use super::gutter::{Gutter, GutterProps};
 
 use crate::hooks::use_scroll::use_scroll;

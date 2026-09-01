@@ -30,7 +30,7 @@ enum Event {
     Signal(i32),
     FsChanged(watcher::Refresh),
     ListRefreshed(Vec<File>),
-    FileReady(pipeline::diff::Response),
+    FileReady(Box<pipeline::diff::Response>),
     Coloured(syntax::SyntaxResponse),
 }
 
@@ -42,7 +42,9 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
         Event::ListRefreshed,
     ));
     let diff_worker =
-        pipeline::diff::DiffWorker::start(channel::Emitter::new(tx.clone(), Event::FileReady));
+        pipeline::diff::DiffWorker::start(channel::Emitter::new(tx.clone(), |response| {
+            Event::FileReady(Box::new(response))
+        }));
     let syntax_worker = syntax::Syntax::start(channel::Emitter::new(tx.clone(), Event::Coloured));
     let _subscription =
         watcher::subscribe(cwd, channel::Emitter::new(tx.clone(), Event::FsChanged)).ok();
@@ -98,7 +100,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
                 Flow::Continue
             }
             Event::FileReady(response) => {
-                diff_service.deliver(response);
+                diff_service.deliver(*response);
                 Flow::Continue
             }
             Event::Coloured(response) => {

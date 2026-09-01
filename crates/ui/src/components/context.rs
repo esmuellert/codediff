@@ -88,7 +88,7 @@ pub fn UiProvider(
     // Get the file list.
     let svc = Rc::clone(file_service);
     let repo_path = Rc::clone(&repo);
-    let set_files_for_fetch = set_file_list.clone();
+    let set_files_for_fetch = set_file_list;
     use_effect(scope, Rc::clone(&repo), move || {
         svc.get(&repo_path).subscribe(move |list: Vec<File>| {
             set_files_for_fetch(&move |_| Rc::new(list.clone()));
@@ -137,15 +137,18 @@ pub fn UiProvider(
     });
 
     // Request syntax colours for whatever diff is showing.
-    if let Some(ref content) = diff.as_deref() {
-        if let pipeline::diff::DiffContent::Diff(d) = content {
-            let last = 2000u32;
-            for version in [
-                file_types::DiffVersion::Original,
-                file_types::DiffVersion::Modified,
-            ] {
-                syntax_service.request(&d.file, version, d.alignment.text(version), last);
-            }
+    if let Some(pipeline::diff::DiffContent::Diff(content)) = diff.as_deref() {
+        let last = 2000u32;
+        for version in [
+            file_types::DiffVersion::Original,
+            file_types::DiffVersion::Modified,
+        ] {
+            syntax_service.request(
+                &content.file,
+                version,
+                content.alignment.text(version),
+                last,
+            );
         }
     }
 

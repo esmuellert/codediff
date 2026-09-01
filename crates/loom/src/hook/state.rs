@@ -6,6 +6,9 @@ use std::ops::Deref;
 use super::{Slot, use_hook};
 use crate::scope::{Scope, ScopeId};
 
+pub type StateUpdate<T> = dyn Fn(T) -> T;
+pub type StateWriter<T> = dyn Fn(&StateUpdate<T>);
+
 /// A state slot the runtime can move forward without knowing its type.
 pub(crate) trait PendingState {
     /// Moves the pending value into the committed one. Whether anything moved.
@@ -18,7 +21,7 @@ pub(crate) struct StateSlot<T: 'static> {
     pub pending: Option<T>,
     /// Made once, when the component mounts, and held for the run of the
     /// program. Paying it once per slot is what keeps `SetState<T>` `Copy`.
-    pub write: &'static dyn Fn(&dyn Fn(T) -> T),
+    pub write: &'static StateWriter<T>,
 }
 
 impl<T: Clone + PartialEq + 'static> PendingState for StateSlot<T> {
@@ -48,7 +51,7 @@ impl<T: Clone + PartialEq + 'static> PendingState for StateSlot<T> {
 pub struct SetState<T: 'static> {
     scope: ScopeId,
     slot: u16,
-    write: &'static dyn Fn(&dyn Fn(T) -> T),
+    write: &'static StateWriter<T>,
 }
 
 impl<T> Clone for SetState<T> {
@@ -79,7 +82,7 @@ impl<T: 'static> SetState<T> {
 /// Taking the closure by reference is what lets a write borrow whatever is in
 /// scope; nothing is boxed and nothing needs `'static`.
 impl<T: 'static> Deref for SetState<T> {
-    type Target = dyn Fn(&dyn Fn(T) -> T);
+    type Target = StateWriter<T>;
     fn deref(&self) -> &Self::Target {
         self.write
     }
@@ -90,7 +93,7 @@ fn write_slot<T: Clone + PartialEq + 'static>(
     scope: ScopeId,
     slot: usize,
     name: &'static str,
-    next: &dyn Fn(T) -> T,
+    next: &StateUpdate<T>,
 ) {
     super::require_runtime();
 
@@ -152,8 +155,8 @@ pub fn use_state<T: Clone + PartialEq + 'static>(
             let start = first
                 .take()
                 .expect("the first render builds the value once")();
-            let write: &'static dyn Fn(&dyn Fn(T) -> T) =
-                Box::leak(Box::new(move |next: &dyn Fn(T) -> T| {
+            let write: &'static StateWriter<T> =
+                Box::leak(Box::new(move |next: &StateUpdate<T>| {
                     write_slot::<T>(id, index, name, next)
                 }));
             Slot::State(Box::new(StateSlot {

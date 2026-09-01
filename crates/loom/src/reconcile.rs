@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::node::{Host, Key, Node, NodeHandle};
+use crate::node::{Host, Key, MeasureFn, Node, NodeHandle, PaintFn};
 use crate::runtime::Runtime;
 use crate::scope::{Scope, ScopeId};
 
@@ -30,8 +30,8 @@ pub(crate) struct Fiber {
 pub struct HostDesc {
     pub name: &'static str,
     pub layout: crate::layout::Layout,
-    pub paint: Option<Rc<dyn Fn(&mut crate::paint::Paint<'_>)>>,
-    pub measure: Option<fn(&HostDesc, u16) -> (u16, u16)>,
+    pub paint: Option<Rc<PaintFn>>,
+    pub measure: Option<MeasureFn<HostDesc>>,
     pub listeners: crate::event::Listeners,
     pub focusable: bool,
     pub auto_focus: bool,
@@ -161,15 +161,7 @@ fn expand(held: &RuntimeRef, node: Node, owner: ScopeId, cursor: &mut Cursor) ->
                             }
                             scope
                         }
-                        None => rt.mount(
-                            part.name,
-                            part.type_id,
-                            part.key.clone(),
-                            Some(owner),
-                            Rc::clone(&part.props),
-                            part.render,
-                            part.props_equal,
-                        ),
+                        None => rt.mount(*part, Some(owner)),
                     }
                 };
 
@@ -199,9 +191,7 @@ fn host_into(held: &RuntimeRef, mut host: Host, owner: ScopeId, cursor: &mut Cur
             name: host.name,
             layout: host.layout,
             paint: host.paint,
-            measure: host
-                .measure
-                .map(|_| measure_text as fn(&HostDesc, u16) -> (u16, u16)),
+            measure: host.measure.map(|_| measure_text as MeasureFn<HostDesc>),
             listeners: host.listeners,
             focusable: host.focusable,
             auto_focus: host.auto_focus,

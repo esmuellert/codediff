@@ -17,8 +17,8 @@ fn with_diff(diff: Option<Rc<pipeline::diff::DiffContent>>) -> Harness {
 }
 
 fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::DiffContent {
-    let diff = pipeline::diff::diff::compute(original, modified).expect("a diff");
-    let alignment = pipeline::diff::diff::align(diff, original, modified).expect("alignment");
+    let diff = pipeline::diff::compute(original, modified).expect("a diff");
+    let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("test.rs", Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::Oid::new("abc")),

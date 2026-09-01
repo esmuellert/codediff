@@ -110,10 +110,10 @@ pub fn use_sync_external_store<S: ExternalStore>(
         "Store",
         || {
             let notify = Notify(Rc::new(move || {
-                if let Some(runtime) = runtime.as_ref().and_then(std::rc::Weak::upgrade) {
-                    if let Ok(mut rt) = runtime.try_borrow_mut() {
-                        rt.mark(id);
-                    }
+                if let Some(runtime) = runtime.as_ref().and_then(std::rc::Weak::upgrade)
+                    && let Ok(mut rt) = runtime.try_borrow_mut()
+                {
+                    rt.mark(id);
                 }
             }));
             Slot::Store(StoreSlot {

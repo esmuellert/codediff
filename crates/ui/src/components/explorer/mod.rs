@@ -50,7 +50,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         }
         *prev_files.current() = Rc::clone(&ctx.files);
     } else {
-        *saved_anchor.current() = nodes.get(view.cursor as usize).map(|n| identity(n));
+        *saved_anchor.current() = nodes.get(view.cursor as usize).map(identity);
     }
 
     let cursor_node = nodes.get(view.cursor as usize).cloned();

@@ -10,7 +10,7 @@ use ratatui::layout::Rect;
 use crate::event::Listeners;
 use crate::frame::FrameNode;
 use crate::hook::{EffectRun, Hooks};
-use crate::node::{Key, NodeHandle};
+use crate::node::{NodeHandle, Part};
 use crate::scope::{Mounted, ScopeId, Scopes};
 
 pub(crate) struct Runtime {
@@ -78,25 +78,16 @@ impl Runtime {
         }
     }
 
-    pub fn mount(
-        &mut self,
-        name: &'static str,
-        type_id: TypeId,
-        key: Option<Key>,
-        parent: Option<ScopeId>,
-        props: Rc<dyn std::any::Any>,
-        render: fn(&dyn std::any::Any, &mut crate::scope::Scope) -> crate::node::Node,
-        props_equal: Option<fn(&dyn std::any::Any, &dyn std::any::Any) -> bool>,
-    ) -> ScopeId {
+    pub fn mount(&mut self, part: Part, parent: Option<ScopeId>) -> ScopeId {
         let id = self.scopes.insert(Mounted {
-            name,
-            type_id,
-            key,
+            name: part.name,
+            type_id: part.type_id,
+            key: part.key,
             parent,
             children: Vec::new(),
-            props,
-            render,
-            props_equal,
+            props: part.props,
+            render: part.render,
+            props_equal: part.props_equal,
             produced: Vec::new(),
             dirty: true,
             renders: 0,

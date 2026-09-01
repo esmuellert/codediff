@@ -8,8 +8,8 @@ use ui::components::side_by_side::{SideBySide, SideBySideProps};
 use ui::components::{Context, Ui};
 
 fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
-    let diff = pipeline::diff::diff::compute(original, modified).expect("a diff");
-    let alignment = pipeline::diff::diff::align(diff, original, modified).expect("alignment");
+    let diff = pipeline::diff::compute(original, modified).expect("a diff");
+    let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("test.rs", std::path::Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::Oid::new("abc")),

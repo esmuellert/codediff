@@ -5,9 +5,12 @@ use std::any::Any;
 use super::{Slot, use_hook};
 use crate::scope::{Scope, ScopeId};
 
+type CleanupFn = Box<dyn FnOnce()>;
+type EffectFn = Box<dyn FnOnce() -> Option<CleanupFn>>;
+
 pub(crate) struct EffectSlot {
     pub deps: Box<dyn Any>,
-    pub cleanup: Option<Box<dyn FnOnce()>>,
+    pub cleanup: Option<CleanupFn>,
     /// Bumped each time the effect runs, so a reply from the previous run is
     /// refused.
     pub generation: u64,
@@ -18,7 +21,7 @@ pub(crate) struct EffectRun {
     pub scope: ScopeId,
     pub slot: u16,
     pub generation: u64,
-    pub run: Box<dyn FnOnce() -> Option<Box<dyn FnOnce()>>>,
+    pub run: EffectFn,
 }
 
 /// What `run` may return: a function that undoes the work, or `()` for

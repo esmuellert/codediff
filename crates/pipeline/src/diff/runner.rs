@@ -7,7 +7,7 @@ use anyhow::Result;
 use file_types::{DiffVersion, File};
 
 use crate::diff::contents::{self, Contents};
-use crate::diff::diff;
+use crate::diff::{align, compute};
 
 /// What the pipeline produces for one file.
 pub enum DiffContent {
@@ -103,8 +103,8 @@ impl Runner {
                 let original = self.contents.version(DiffVersion::Original);
                 let modified = self.contents.version(DiffVersion::Modified);
                 tracing::info!(path = %file.path(), lines = modified.len(), "computing diff");
-                let changed = diff::compute(&original, &modified)?;
-                let alignment = diff::align(changed, &original, &modified)?;
+                let changed = compute(&original, &modified)?;
+                let alignment = align(changed, &original, &modified)?;
                 Ok(DiffContent::Diff(Diff { file, alignment }))
             }
         }

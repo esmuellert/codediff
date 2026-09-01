@@ -9,6 +9,10 @@ use ui::Theme;
 use ui::components::code_text::{CodeText, CodeTextProps};
 use ui::components::{Context, Ui};
 
+fn one_range(range: Range<u32>) -> Vec<Range<u32>> {
+    std::iter::once(range).collect()
+}
+
 fn code_text(
     text: &str,
     diff: Vec<Range<u32>>,
@@ -77,7 +81,7 @@ fn changed_bytes_get_the_changed_background() {
     let unchanged = Style::default().bg(Color::Blue);
     let changed = Style::default().bg(Color::Red);
     // Bytes 0..5 are changed (the whole word "hello").
-    let mut h = code_text("hello", vec![0..5], 10, unchanged, changed);
+    let mut h = code_text("hello", one_range(0..5), 10, unchanged, changed);
     let bg = h.style_at(0, 0).bg;
     assert_eq!(bg, Some(Color::Red), "changed background");
 }
@@ -87,7 +91,7 @@ fn a_partial_diff_colours_only_the_changed_range() {
     let unchanged = Style::default().bg(Color::Blue);
     let changed = Style::default().bg(Color::Red);
     // "hello world" — bytes 6..11 ("world") are changed.
-    let mut h = code_text("hello world", vec![6..11], 20, unchanged, changed);
+    let mut h = code_text("hello world", one_range(6..11), 20, unchanged, changed);
     let hello_bg = h.style_at(0, 0).bg;
     let world_bg = h.style_at(6, 0).bg;
     assert_eq!(hello_bg, Some(Color::Blue), "unchanged part");
@@ -112,7 +116,7 @@ fn a_range_crossing_the_line_break_fills_to_the_row_edge() {
     let changed = Style::default().bg(Color::Red);
     let mut h = decorated_code_text(
         "hi",
-        vec![0..2],
+        one_range(0..2),
         Some(0),
         Vec::new(),
         10,
@@ -129,7 +133,7 @@ fn a_whole_line_range_starts_before_a_zero_width_control_character() {
     let changed = Style::default().bg(Color::Red);
     let mut h = decorated_code_text(
         "\r",
-        vec![1..1],
+        one_range(1..1),
         Some(0),
         Vec::new(),
         10,

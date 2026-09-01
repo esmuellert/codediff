@@ -57,10 +57,10 @@ pub fn CodeText(
                 if let Some(ref selected) = selection {
                     for x in area.x..area.right() {
                         let col = first_cell + u32::from(x - area.x);
-                        if selected.contains(&col) {
-                            if let Some(cell) = paint.cells().cell_mut((x, area.y)) {
-                                cell.set_style(theme.selection);
-                            }
+                        if selected.contains(&col)
+                            && let Some(cell) = paint.cells().cell_mut((x, area.y))
+                        {
+                            cell.set_style(theme.selection);
                         }
                     }
                 }

@@ -297,17 +297,12 @@ fn run_effects(held: &RuntimeRef, before_paint: bool) {
         held.borrow_mut().running_effect = None;
 
         let mut rt = held.borrow_mut();
-        if let Some(slot) = rt
+        if let Some(crate::hook::Slot::Effect(slot) | crate::hook::Slot::LayoutEffect(slot)) = rt
             .hooks
             .get_mut(&effect.scope)
-            .and_then(|h| h.slots.get_mut(effect.slot as usize))
+            .and_then(|hooks| hooks.slots.get_mut(effect.slot as usize))
         {
-            match slot {
-                crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => {
-                    e.cleanup = cleanup;
-                }
-                _ => {}
-            }
+            slot.cleanup = cleanup;
         }
     }
 }

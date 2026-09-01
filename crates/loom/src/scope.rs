@@ -1,5 +1,7 @@
 //! Names one live component, and the token it holds while it runs.
 
+use crate::node::{PropsEqualFn, RenderFn};
+
 /// Names one live component. The generation is bumped when a slab entry is
 /// reused, so a stale handle fails a check instead of reading a stranger.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -35,8 +37,8 @@ pub(crate) struct Mounted {
     pub children: Vec<ScopeId>,
     /// The props this scope last rendered with.
     pub props: std::rc::Rc<dyn std::any::Any>,
-    pub render: fn(&dyn std::any::Any, &mut Scope) -> crate::node::Node,
-    pub props_equal: Option<fn(&dyn std::any::Any, &dyn std::any::Any) -> bool>,
+    pub render: RenderFn,
+    pub props_equal: Option<PropsEqualFn>,
     /// The hosts this scope produced last frame, handed back when it is clean.
     pub produced: Vec<crate::reconcile::Fiber>,
     /// Set when something asked for this scope to run again.

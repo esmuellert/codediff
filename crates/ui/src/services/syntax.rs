@@ -74,10 +74,9 @@ impl SyntaxService {
     /// The loop calls this when the worker answered.
     pub fn deliver(&self, response: syntax::SyntaxResponse) {
         self.worker.borrow_mut().received(&response);
-        if self.store.borrow_mut().install(response) {
-            if let Some(observer) = self.observer.borrow().as_ref() {
-                observer.next(Rc::new(self.store.borrow().clone()));
-            }
+        let changed = self.store.borrow_mut().install(response);
+        if changed && let Some(observer) = self.observer.borrow().as_ref() {
+            observer.next(Rc::new(self.store.borrow().clone()));
         }
     }
 

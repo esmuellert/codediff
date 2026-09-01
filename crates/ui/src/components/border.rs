@@ -65,7 +65,7 @@ pub fn Border(scope: &mut Scope, layout: Layout, children: loom::Children) -> No
     };
     let fill = theme.normal;
 
-    let mut outer = layout.clone();
+    let mut outer = *layout;
     if let loom::Basis::Length(w) = outer.basis {
         outer.basis = loom::Basis::Length(w + 4);
     }

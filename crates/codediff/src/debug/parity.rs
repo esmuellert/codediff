@@ -72,7 +72,7 @@ pub fn run(original_path: &str, modified_path: &str, ignore_trim_whitespace: boo
         options = options.ignoring_trim_whitespace();
     }
     let diff = vscode_diff::compute(&original, &modified, &options)?;
-    let alignment = pipeline::diff::diff::align(diff, &original, &modified)?;
+    let alignment = pipeline::diff::align(diff, &original, &modified)?;
     let height = u16::try_from(alignment.view_line_count(DiffType::SideBySide).max(1))?;
     let root = std::env::current_dir()?;
     let file = File::unchanged_path(

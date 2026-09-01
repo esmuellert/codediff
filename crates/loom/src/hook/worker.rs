@@ -6,6 +6,9 @@ use std::rc::{Rc, Weak};
 use crate::runtime::Runtime;
 use crate::scope::ScopeId;
 
+type PromiseSlot<T> = Rc<RefCell<Option<Box<dyn FnOnce(T)>>>>;
+type ObservableSlot<T> = Rc<RefCell<Option<Box<dyn FnMut(T)>>>>;
+
 /// The address an answer is delivered to: which scope, which effect slot, and
 /// which run of that effect.
 #[derive(Clone, Copy)]
@@ -39,7 +42,7 @@ impl Address {
 /// The answer to one request, arriving later.
 #[must_use = "a promise with no `then` throws its answer away"]
 pub struct Promise<T: 'static> {
-    shared: Rc<RefCell<Option<Box<dyn FnOnce(T)>>>>,
+    shared: PromiseSlot<T>,
 }
 
 impl<T: 'static> Promise<T> {
@@ -57,7 +60,7 @@ impl<T: 'static> Promise<T> {
 pub struct Resolver<T: 'static> {
     address: Address,
     runtime: Weak<RefCell<Runtime>>,
-    shared: Rc<RefCell<Option<Box<dyn FnOnce(T)>>>>,
+    shared: PromiseSlot<T>,
 }
 
 impl<T: 'static> Resolver<T> {
@@ -84,7 +87,7 @@ impl<T: 'static> Resolver<T> {
 /// Answers that keep coming, for a worker that replies in pieces.
 #[must_use = "an observable with no `subscribe` throws its answers away"]
 pub struct Observable<T: 'static> {
-    shared: Rc<RefCell<Option<Box<dyn FnMut(T)>>>>,
+    shared: ObservableSlot<T>,
 }
 
 impl<T: 'static> Observable<T> {
@@ -98,7 +101,7 @@ impl<T: 'static> Observable<T> {
 pub struct Observer<T: 'static> {
     address: Address,
     runtime: Weak<RefCell<Runtime>>,
-    shared: Rc<RefCell<Option<Box<dyn FnMut(T)>>>>,
+    shared: ObservableSlot<T>,
 }
 
 impl<T: 'static> Clone for Observer<T> {

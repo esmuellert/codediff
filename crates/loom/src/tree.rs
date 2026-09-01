@@ -7,6 +7,7 @@ use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
 
 use crate::component::Component;
+use crate::node::Part;
 use crate::runtime::Runtime;
 use crate::scope::ScopeId;
 
@@ -23,16 +24,18 @@ impl Tree {
         let root = crate::current::enter(&runtime, || {
             let mut rt = runtime.borrow_mut();
             let id = rt.mount(
-                C::NAME,
-                std::any::TypeId::of::<C>(),
-                None,
-                None,
-                Rc::new(props),
-                |props, scope| {
-                    let props = props
-                        .downcast_ref::<C::Props>()
-                        .expect("props of the declared type");
-                    C::render(props, scope)
+                Part {
+                    key: None,
+                    name: C::NAME,
+                    type_id: std::any::TypeId::of::<C>(),
+                    props: Rc::new(props),
+                    render: |props, scope| {
+                        let props = props
+                            .downcast_ref::<C::Props>()
+                            .expect("props of the declared type");
+                        C::render(props, scope)
+                    },
+                    props_equal: None,
                 },
                 None,
             );

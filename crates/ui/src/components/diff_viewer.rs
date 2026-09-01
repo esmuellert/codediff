@@ -3,8 +3,8 @@
 use loom::{Node, Scope, component, rsx, use_context};
 
 use super::context::Ui;
-use super::side_by_side::{SideBySide, SideBySideProps};
-use super::welcome::{Welcome, WelcomeProps};
+use super::side_by_side::SideBySide;
+use super::welcome::Welcome;
 
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {

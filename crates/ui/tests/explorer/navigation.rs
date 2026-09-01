@@ -234,7 +234,7 @@ fn enter_on_a_file_sets_the_focused_file() {
     use loom::testing::Harness;
     use loom::{Node, Scope, component, rsx, use_state};
     use ui::Theme;
-    use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps};
+    use ui::components::{Context, Explorer, Ui, UiProps};
 
     /// Provides context with a set_file that records calls.
     #[component]
@@ -421,7 +421,7 @@ fn moving_to_a_file_opens_it() {
     use loom::testing::Harness;
     use loom::{Node, Scope, component, rsx, use_state};
     use ui::Theme;
-    use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps};
+    use ui::components::{Context, Explorer, Ui, UiProps};
 
     /// Records every file the explorer opens.
     #[component]

@@ -10,8 +10,8 @@ use loom::{
 
 use super::border::{Border, BorderProps};
 use super::context::{UiProvider, UiProviderProps};
-use super::diff_viewer::{DiffViewer, DiffViewerProps};
-use super::explorer::{Explorer, ExplorerProps};
+use super::diff_viewer::DiffViewer;
+use super::explorer::Explorer;
 use crate::services::diff::DiffService;
 use crate::services::files::FilesService;
 use crate::services::syntax::SyntaxService;

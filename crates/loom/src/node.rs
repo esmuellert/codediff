@@ -1,6 +1,6 @@
 //! One frame's description, and what names a child across frames.
 
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::rc::Rc;
 
 use ratatui::layout::Rect;
@@ -11,6 +11,11 @@ use crate::hook::Ref;
 use crate::layout::Layout;
 use crate::paint::Paint;
 use crate::scope::{Scope, ScopeId};
+
+pub type PaintFn = dyn for<'a> Fn(&mut Paint<'a>);
+pub type MeasureFn<T> = fn(&T, u16) -> (u16, u16);
+pub type RenderFn = fn(&dyn Any, &mut Scope) -> Node;
+pub type PropsEqualFn = fn(&dyn Any, &dyn Any) -> bool;
 
 /// One entry in the description of a frame.
 ///
@@ -36,9 +41,9 @@ pub struct Host {
     pub name: &'static str,
     pub layout: Layout,
     /// Ink on cells. `None` for a container that only arranges its children.
-    pub paint: Option<Rc<dyn Fn(&mut Paint<'_>)>>,
+    pub paint: Option<Rc<PaintFn>>,
     /// Measured on the main axis when `Basis::Auto`. `None` measures as zero.
-    pub measure: Option<fn(&Host, u16) -> (u16, u16)>,
+    pub measure: Option<MeasureFn<Host>>,
     pub listeners: Listeners,
     pub focusable: bool,
     pub auto_focus: bool,
@@ -89,11 +94,11 @@ pub struct Part {
     pub key: Option<Key>,
     pub name: &'static str,
     pub type_id: TypeId,
-    pub props: Rc<dyn std::any::Any>,
+    pub props: Rc<dyn Any>,
     /// `Component::render`, with the props type erased.
-    pub render: fn(&dyn std::any::Any, &mut Scope) -> Node,
+    pub render: RenderFn,
     /// Props equality, for `#[component(memo)]`. `None` means "always re-run".
-    pub props_equal: Option<fn(&dyn std::any::Any, &dyn std::any::Any) -> bool>,
+    pub props_equal: Option<PropsEqualFn>,
 }
 
 pub type Children = Vec<Node>;

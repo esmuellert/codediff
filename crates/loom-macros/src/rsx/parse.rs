@@ -24,7 +24,7 @@ pub(crate) struct Element {
 pub(crate) struct If {
     pub condition: Condition,
     pub then: Vec<Node>,
-    pub otherwise: Option<Box<Otherwise>>,
+    pub otherwise: Option<Otherwise>,
 }
 
 pub(crate) enum Condition {
@@ -33,7 +33,7 @@ pub(crate) enum Condition {
 }
 
 pub(crate) enum Otherwise {
-    If(If),
+    If(Box<If>),
     Block(Vec<Node>),
 }
 
@@ -148,11 +148,11 @@ fn if_chain(input: ParseStream) -> Result<If> {
     let otherwise = if input.peek(Token![else]) {
         input.parse::<Token![else]>()?;
         if input.peek(Token![if]) {
-            Some(Box::new(Otherwise::If(if_chain(input)?)))
+            Some(Otherwise::If(Box::new(if_chain(input)?)))
         } else {
             let inner;
             braced!(inner in input);
-            Some(Box::new(Otherwise::Block(nodes(&inner)?)))
+            Some(Otherwise::Block(nodes(&inner)?))
         }
     } else {
         None

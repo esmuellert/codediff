@@ -35,24 +35,26 @@ fn node(node: &Node) -> TokenStream {
 
 fn build(element: &Element) -> TokenStream {
     let path = &element.path;
-    let props_name = props_of(path);
-
-    let names = element.props.iter().map(|(name, _)| name);
-    let values = element.props.iter().map(|(_, value)| value);
-
-    let children = if element.children.is_empty() {
-        quote! {}
+    let props = if element.props.is_empty() && element.children.is_empty() {
+        quote! { ::std::default::Default::default() }
     } else {
-        let each = element.children.iter().map(node);
-        quote! { children: vec![#(#each),*], }
-    };
-
-    // `..` always lands last, where Rust requires it. Writing no props
-    // implies it, which is what makes `Row { Child {} }` compile.
-    let rest = if element.rest || element.props.is_empty() {
-        quote! { ..Default::default() }
-    } else {
-        quote! {}
+        let props_name = props_of(path);
+        let names = element.props.iter().map(|(name, _)| name);
+        let values = element.props.iter().map(|(_, value)| value);
+        let children = if element.children.is_empty() {
+            quote! {}
+        } else {
+            let each = element.children.iter().map(node);
+            quote! { children: vec![#(#each),*], }
+        };
+        // `..` lands last, where Rust requires it. Children with no explicit
+        // props still need the host defaults around them.
+        let rest = if element.rest || element.props.is_empty() {
+            quote! { ..Default::default() }
+        } else {
+            quote! {}
+        };
+        quote! { #props_name { #(#names: #values,)* #children #rest } }
     };
 
     let key = match &element.key {
@@ -61,10 +63,7 @@ fn build(element: &Element) -> TokenStream {
     };
 
     quote! {
-        <#path as ::loom::Element>::build(
-            #props_name { #(#names: #values,)* #children #rest },
-            #key,
-        )
+        <#path as ::loom::Element>::build(#props, #key)
     }
 }
 
@@ -80,7 +79,7 @@ fn props_of(path: &syn::Path) -> TokenStream {
 fn branch(chain: &If) -> TokenStream {
     let then = fragment(&chain.then);
     let otherwise = match &chain.otherwise {
-        Some(next) => match next.as_ref() {
+        Some(next) => match next {
             Otherwise::If(inner) => branch(inner),
             Otherwise::Block(nodes) => fragment(nodes),
         },
