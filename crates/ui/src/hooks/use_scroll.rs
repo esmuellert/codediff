@@ -94,13 +94,13 @@ pub fn use_scroll(scope: &mut Scope, key: Option<&str>) -> (ScrollView, ScrollHa
         if changed {
             // Save the old position.
             if let Some(old_key) = prev_key.current().as_ref() {
-                positions.current().insert(old_key.clone(), SavedPosition {
-                    cursor,
-                    top,
-                });
+                positions
+                    .current()
+                    .insert(old_key.clone(), SavedPosition { cursor, top });
             }
             // Restore or start at zero.
-            let restored = positions.current()
+            let restored = positions
+                .current()
                 .get(current_key)
                 .copied()
                 .unwrap_or_default();

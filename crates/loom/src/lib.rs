@@ -13,23 +13,23 @@ mod run;
 mod runtime;
 mod scope;
 mod screen;
-mod tree;
 pub mod testing;
+mod tree;
 
 pub use component::Component;
 pub use event::{
     Bubble, Focus, Listeners, Mouse, capture_pointer, focus_next, focus_previous, release_pointer,
 };
+/// What `context!`'s `Component::render` calls. Not API: the way to offer a
+/// value is to write the provider element.
+#[doc(hidden)]
+pub use hook::offer;
+pub use hook::use_exit;
 pub use hook::{
     Always, Cleanup, Context, ExternalStore, Notify, Observable, Observer, Promise, Ref, Resolver,
     SetState, Size, Snapshot, Subscription, observable, promise, use_context, use_effect,
     use_layout_effect, use_measure, use_memo, use_ref, use_state, use_sync_external_store,
 };
-pub use hook::use_exit;
-/// What `context!`'s `Component::render` calls. Not API: the way to offer a
-/// value is to write the provider element.
-#[doc(hidden)]
-pub use hook::offer;
 pub use layout::{Basis, Edges, Layout};
 pub use node::{Children, Element, Key, Node, NodeHandle};
 pub use paint::{

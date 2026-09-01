@@ -86,13 +86,28 @@ pub struct Edges {
 
 impl Edges {
     pub const fn all(n: u16) -> Self {
-        Self { top: n, right: n, bottom: n, left: n }
+        Self {
+            top: n,
+            right: n,
+            bottom: n,
+            left: n,
+        }
     }
     pub const fn sides(n: u16) -> Self {
-        Self { top: 0, right: n, bottom: 0, left: n }
+        Self {
+            top: 0,
+            right: n,
+            bottom: 0,
+            left: n,
+        }
     }
     pub const fn rows(n: u16) -> Self {
-        Self { top: n, right: 0, bottom: n, left: 0 }
+        Self {
+            top: n,
+            right: 0,
+            bottom: n,
+            left: 0,
+        }
     }
     pub(crate) const fn across(self) -> u16 {
         self.left + self.right

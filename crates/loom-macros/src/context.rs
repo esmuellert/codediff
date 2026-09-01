@@ -31,7 +31,14 @@ impl Parse for Declaration {
         } else {
             None
         };
-        Ok(Self { docs, visibility, name, value, default, same })
+        Ok(Self {
+            docs,
+            visibility,
+            name,
+            value,
+            default,
+            same,
+        })
     }
 }
 
@@ -41,7 +48,14 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         Err(error) => return error.to_compile_error(),
     };
 
-    let Declaration { docs, visibility, name, value, default, same } = declaration;
+    let Declaration {
+        docs,
+        visibility,
+        name,
+        value,
+        default,
+        same,
+    } = declaration;
     let props_name = format_ident!("{}Props", name);
     let text = name.to_string();
 

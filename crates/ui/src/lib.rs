@@ -21,8 +21,8 @@ use loom::{Flow, Tree, deliver_input};
 
 use components::{App, AppProps};
 use services::diff::DiffService;
-use services::syntax::SyntaxService;
 use services::files::FilesService;
+use services::syntax::SyntaxService;
 
 enum Event {
     Terminal(crossterm::event::Event),
@@ -37,30 +37,22 @@ enum Event {
 pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     let (tx, rx) = mpsc::channel::<Event>();
 
-    let list_worker = pipeline::files::FilesWorker::start(
-        channel::Emitter::new(tx.clone(), Event::ListRefreshed),
-    );
-    let diff_worker = pipeline::diff::DiffWorker::start(
-        channel::Emitter::new(tx.clone(), Event::FileReady),
-    );
-    let syntax_worker = syntax::Syntax::start(
-        channel::Emitter::new(tx.clone(), Event::Coloured),
-    );
-    let _subscription = watcher::subscribe(
-        cwd,
-        channel::Emitter::new(tx.clone(), Event::FsChanged),
-    ).ok();
+    let list_worker = pipeline::files::FilesWorker::start(channel::Emitter::new(
+        tx.clone(),
+        Event::ListRefreshed,
+    ));
+    let diff_worker =
+        pipeline::diff::DiffWorker::start(channel::Emitter::new(tx.clone(), Event::FileReady));
+    let syntax_worker = syntax::Syntax::start(channel::Emitter::new(tx.clone(), Event::Coloured));
+    let _subscription =
+        watcher::subscribe(cwd, channel::Emitter::new(tx.clone(), Event::FsChanged)).ok();
 
     let file_service = Rc::new(FilesService::new(
         Rc::new(RefCell::new(list_worker)),
         pathspec,
     ));
-    let syntax_service = Rc::new(SyntaxService::new(
-        Rc::new(RefCell::new(syntax_worker)),
-    ));
-    let diff_service = Rc::new(DiffService::new(
-        Rc::new(RefCell::new(diff_worker)),
-    ));
+    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
+    let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),

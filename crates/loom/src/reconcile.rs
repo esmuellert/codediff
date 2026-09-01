@@ -73,7 +73,9 @@ fn run(held: &RuntimeRef, scope: ScopeId) -> Vec<Fiber> {
             None => None,
         }
     };
-    let Some((props, render, name, old)) = ready else { return Vec::new() };
+    let Some((props, render, name, old)) = ready else {
+        return Vec::new();
+    };
 
     {
         let mut rt = held.borrow_mut();
@@ -101,7 +103,11 @@ fn run(held: &RuntimeRef, scope: ScopeId) -> Vec<Fiber> {
         }
     }
 
-    let mut cursor = Cursor { old: old.clone(), used: Vec::new(), position: 0 };
+    let mut cursor = Cursor {
+        old: old.clone(),
+        used: Vec::new(),
+        position: 0,
+    };
     let out = expand(held, produced, scope, &mut cursor);
 
     {
@@ -143,9 +149,9 @@ fn expand(held: &RuntimeRef, node: Node, owner: ScopeId, cursor: &mut Cursor) ->
                             if let Some(mounted) = rt.scopes.get_mut(scope) {
                                 // A memoised component whose props match keeps
                                 // last frame's subtree.
-                                let same = mounted
-                                    .props_equal
-                                    .is_some_and(|eq| eq(mounted.props.as_ref(), part.props.as_ref()));
+                                let same = mounted.props_equal.is_some_and(|eq| {
+                                    eq(mounted.props.as_ref(), part.props.as_ref())
+                                });
                                 mounted.props = Rc::clone(&part.props);
                                 mounted.render = part.render;
                                 mounted.props_equal = part.props_equal;
@@ -193,7 +199,9 @@ fn host_into(held: &RuntimeRef, mut host: Host, owner: ScopeId, cursor: &mut Cur
             name: host.name,
             layout: host.layout,
             paint: host.paint,
-            measure: host.measure.map(|_| measure_text as fn(&HostDesc, u16) -> (u16, u16)),
+            measure: host
+                .measure
+                .map(|_| measure_text as fn(&HostDesc, u16) -> (u16, u16)),
             listeners: host.listeners,
             focusable: host.focusable,
             auto_focus: host.auto_focus,
@@ -210,7 +218,10 @@ fn host_into(held: &RuntimeRef, mut host: Host, owner: ScopeId, cursor: &mut Cur
 /// R5.3.1 — the one `measure` in the crate.
 fn measure_text(desc: &HostDesc, _room: u16) -> (u16, u16) {
     match &desc.text {
-        Some(text) => (ratatui::text::Span::styled(text.as_ref(), desc.style).width() as u16, 1),
+        Some(text) => (
+            ratatui::text::Span::styled(text.as_ref(), desc.style).width() as u16,
+            1,
+        ),
         None => (0, 1),
     }
 }

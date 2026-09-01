@@ -10,7 +10,10 @@ pub fn render(root: &Path, workspace: &Path, results: &Path) -> Result<()> {
         .output()
         .context("installing VS Code Web test dependencies with pnpm")?;
     if !output.status.success() {
-        bail!("pnpm install failed: {}", String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "pnpm install failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     let output = Command::new("pnpm")
@@ -22,7 +25,10 @@ pub fn render(root: &Path, workspace: &Path, results: &Path) -> Result<()> {
         .output()
         .context("running VS Code Web highlight oracle")?;
     if !output.status.success() {
-        bail!("VS Code Web highlight oracle failed: {}", String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "VS Code Web highlight oracle failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     Ok(())
 }

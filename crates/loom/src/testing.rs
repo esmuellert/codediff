@@ -20,8 +20,17 @@ pub struct Harness {
 impl Harness {
     /// Mounts `C` at `width` × `height`. Does not draw.
     pub fn new<C: Component>(props: C::Props, width: u16, height: u16) -> Self {
-        let area = Rect { x: 0, y: 0, width, height };
-        Self { tree: Tree::new::<C>(props), cells: Cells::empty(area), area }
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        };
+        Self {
+            tree: Tree::new::<C>(props),
+            cells: Cells::empty(area),
+            area,
+        }
     }
 
     /// Provides a context value above the root, for a component that reads one.
@@ -32,11 +41,14 @@ impl Harness {
             let Some(root) = rt.root else { return };
             let version = rt.context_version + 1;
             rt.context_version = version;
-            rt.offers.entry(root).or_default().push(crate::runtime::Offer {
-                context: std::any::TypeId::of::<C>(),
-                value: Rc::new(value),
-                version,
-            });
+            rt.offers
+                .entry(root)
+                .or_default()
+                .push(crate::runtime::Offer {
+                    context: std::any::TypeId::of::<C>(),
+                    value: Rc::new(value),
+                    version,
+                });
         });
         self
     }
@@ -83,7 +95,10 @@ impl Harness {
 
     pub fn style_at(&mut self, x: u16, y: u16) -> Style {
         self.draw();
-        self.cells.cell((x, y)).map(|cell| cell.style()).unwrap_or_default()
+        self.cells
+            .cell((x, y))
+            .map(|cell| cell.style())
+            .unwrap_or_default()
     }
 
     pub fn cells(&mut self) -> &Cells {
@@ -102,15 +117,27 @@ impl Harness {
     }
 
     pub fn click(&mut self, x: u16, y: u16) -> &mut Self {
-        self.mouse(x, y, crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left))
+        self.mouse(
+            x,
+            y,
+            crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        )
     }
 
     pub fn drag(&mut self, x: u16, y: u16) -> &mut Self {
-        self.mouse(x, y, crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left))
+        self.mouse(
+            x,
+            y,
+            crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+        )
     }
 
     pub fn release(&mut self, x: u16, y: u16) -> &mut Self {
-        self.mouse(x, y, crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left))
+        self.mouse(
+            x,
+            y,
+            crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+        )
     }
 
     pub fn wheel(&mut self, x: u16, y: u16, lines: i32) -> &mut Self {
@@ -133,7 +160,12 @@ impl Harness {
     }
 
     pub fn resize(&mut self, width: u16, height: u16) -> &mut Self {
-        self.area = Rect { x: 0, y: 0, width, height };
+        self.area = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        };
         self.cells = Cells::empty(self.area);
         self.force_draw()
     }
@@ -176,7 +208,13 @@ impl Harness {
     /// How many times a component of this name has run since the harness was
     /// built.
     pub fn render_count_of(&self, name: &str) -> usize {
-        self.tree.runtime().borrow().renders_by_name.get(name).copied().unwrap_or(0)
+        self.tree
+            .runtime()
+            .borrow()
+            .renders_by_name
+            .get(name)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// How many component functions ran during the last `draw`.

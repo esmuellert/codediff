@@ -8,8 +8,14 @@ fn gutter(number: Option<u32>, width: u16) -> Harness {
     let style = Style::default().fg(Color::White).bg(Color::DarkGray);
     let blank = Style::default().bg(Color::Black);
     let mut h = Harness::new::<Gutter>(
-        GutterProps { number, style, blank, width },
-        width, 1,
+        GutterProps {
+            number,
+            style,
+            blank,
+            width,
+        },
+        width,
+        1,
     );
     h.draw();
     h
@@ -20,7 +26,11 @@ fn a_line_number_is_right_aligned() {
     let mut h = gutter(Some(42), 5);
     let row = h.screen_row(0);
     // Width 5: "  42 " — spaces, digits, one trailing space.
-    assert!(row.starts_with("  42"), "right-aligned with trailing space: {:?}", row);
+    assert!(
+        row.starts_with("  42"),
+        "right-aligned with trailing space: {:?}",
+        row
+    );
 }
 
 #[test]
@@ -34,7 +44,11 @@ fn a_single_digit_sits_at_the_right_edge() {
 fn a_blank_gutter_has_no_digits() {
     let mut h = gutter(None, 4);
     let row = h.screen_row(0);
-    assert!(!row.chars().any(|c| c.is_ascii_digit()), "blank has no digits: {:?}", row);
+    assert!(
+        !row.chars().any(|c| c.is_ascii_digit()),
+        "blank has no digits: {:?}",
+        row
+    );
 }
 
 #[test]

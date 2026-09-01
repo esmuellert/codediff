@@ -12,7 +12,7 @@ use crate::event::Listeners;
 use crate::layout::{Axis, Basis, Item, assign};
 use crate::node::NodeHandle;
 use crate::paint::Paint;
-use crate::reconcile::{RuntimeRef, Fiber, HostDesc};
+use crate::reconcile::{Fiber, HostDesc, RuntimeRef};
 use crate::runtime::Runtime;
 use crate::scope::ScopeId;
 
@@ -38,7 +38,9 @@ const ROUNDS: usize = 4;
 
 /// Reconcile, lay out, run layout effects, paint, run effects.
 pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
-    let Some(root) = held.borrow().root else { return };
+    let Some(root) = held.borrow().root else {
+        return;
+    };
     held.borrow_mut().renders = 0;
 
     let mut rounds = 0;
@@ -127,7 +129,11 @@ fn lay_out(
     // R5.5.2 — padding comes off before the children.
     let inner = inset(area, layout.pad);
     // R5.5.3 — a clipping parent shrinks what its children may reach.
-    let inner_clip = if layout.clip { clip.intersection(inner) } else { clip };
+    let inner_clip = if layout.clip {
+        clip.intersection(inner)
+    } else {
+        clip
+    };
 
     let items: Vec<Item> = node
         .children
@@ -198,14 +204,31 @@ fn measure(node: &Fiber, axis: Axis, room: Rect) -> u16 {
         return 0;
     }
 
-    let pad = if axis == Axis::Down { layout.pad.down() } else { layout.pad.across() };
-    let gaps = layout.gap.saturating_mul(node.children.len().saturating_sub(1) as u16);
+    let pad = if axis == Axis::Down {
+        layout.pad.down()
+    } else {
+        layout.pad.across()
+    };
+    let gaps = layout
+        .gap
+        .saturating_mul(node.children.len().saturating_sub(1) as u16);
 
     if node.host_desc.axis == axis {
-        let sum: u32 = node.children.iter().map(|c| u32::from(measure(c, axis, room))).sum();
-        (sum.min(u32::from(u16::MAX)) as u16).saturating_add(gaps).saturating_add(pad)
+        let sum: u32 = node
+            .children
+            .iter()
+            .map(|c| u32::from(measure(c, axis, room)))
+            .sum();
+        (sum.min(u32::from(u16::MAX)) as u16)
+            .saturating_add(gaps)
+            .saturating_add(pad)
     } else {
-        let largest = node.children.iter().map(|c| measure(c, axis, room)).max().unwrap_or(0);
+        let largest = node
+            .children
+            .iter()
+            .map(|c| measure(c, axis, room))
+            .max()
+            .unwrap_or(0);
         largest.saturating_add(pad)
     }
 }
@@ -217,7 +240,15 @@ fn write_refs(held: &RuntimeRef) {
         .placed
         .iter()
         .filter_map(|p| {
-            p.host_desc.node_ref.map(|slot| (slot, NodeHandle { scope: p.scope, nth: p.nth }))
+            p.host_desc.node_ref.map(|slot| {
+                (
+                    slot,
+                    NodeHandle {
+                        scope: p.scope,
+                        nth: p.nth,
+                    },
+                )
+            })
         })
         .collect();
     for (slot, node) in writes {
@@ -266,8 +297,10 @@ fn run_effects(held: &RuntimeRef, before_paint: bool) {
         held.borrow_mut().running_effect = None;
 
         let mut rt = held.borrow_mut();
-        if let Some(slot) =
-            rt.hooks.get_mut(&effect.scope).and_then(|h| h.slots.get_mut(effect.slot as usize))
+        if let Some(slot) = rt
+            .hooks
+            .get_mut(&effect.scope)
+            .and_then(|h| h.slots.get_mut(effect.slot as usize))
         {
             match slot {
                 crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => {
@@ -280,10 +313,13 @@ fn run_effects(held: &RuntimeRef, before_paint: bool) {
 }
 
 fn generation_of(rt: &Runtime, scope: ScopeId, slot: u16) -> Option<u64> {
-    rt.hooks.get(&scope).and_then(|h| h.slots.get(slot as usize)).and_then(|s| match s {
-        crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => Some(e.generation),
-        _ => None,
-    })
+    rt.hooks
+        .get(&scope)
+        .and_then(|h| h.slots.get(slot as usize))
+        .and_then(|s| match s {
+            crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e) => Some(e.generation),
+            _ => None,
+        })
 }
 
 /// R7.1 — the walk. Fill first, then the node's own ink.
@@ -296,7 +332,11 @@ fn paint_one(held: &RuntimeRef, at: usize, cells: &mut Cells) {
             std::rc::Rc::clone(&node.host_desc),
             node.area,
             clip,
-            rt.focused == Some(NodeHandle { scope: node.scope, nth: node.nth }),
+            rt.focused
+                == Some(NodeHandle {
+                    scope: node.scope,
+                    nth: node.nth,
+                }),
         )
     };
 
@@ -315,7 +355,8 @@ fn paint_one(held: &RuntimeRef, at: usize, cells: &mut Cells) {
     }
 
     if let Some(text) = &desc.text {
-        let line = ratatui::text::Line::from(ratatui::text::Span::styled(text.as_ref(), desc.style));
+        let line =
+            ratatui::text::Line::from(ratatui::text::Span::styled(text.as_ref(), desc.style));
         ratatui::widgets::Widget::render(line, clip, cells);
     }
 
@@ -349,7 +390,15 @@ fn auto_focus(held: &RuntimeRef) {
             .iter()
             .enumerate()
             .find(|(_, p)| p.auto_focus && p.focusable)
-            .map(|(i, p)| (i, NodeHandle { scope: p.scope, nth: p.nth }))
+            .map(|(i, p)| {
+                (
+                    i,
+                    NodeHandle {
+                        scope: p.scope,
+                        nth: p.nth,
+                    },
+                )
+            })
     };
     if let Some((_index, node)) = target {
         crate::event::move_focus(held, Some(node));

@@ -72,19 +72,27 @@ pub fn use_ref<T: 'static>(scope: &mut Scope, first: impl FnOnce() -> T) -> Ref<
         scope,
         "Ref",
         || {
-            let start = first.take().expect("the first render builds the value once")();
+            let start = first
+                .take()
+                .expect("the first render builds the value once")();
             // Leaked once per slot, like a state slot's writer, which is what
             // keeps the handle `Copy`.
             let leaked: &'static RefCell<T> = Box::leak(Box::new(RefCell::new(start)));
             Slot::Ref(Box::new(leaked))
         },
         |slot| {
-            let Slot::Ref(held) = slot else { unreachable!("checked by shape") };
+            let Slot::Ref(held) = slot else {
+                unreachable!("checked by shape")
+            };
             *held
                 .downcast_ref::<&'static RefCell<T>>()
                 .expect("a ref slot holds the type its first render put there")
         },
     );
 
-    Ref { scope: id, slot: index as u16, cell }
+    Ref {
+        scope: id,
+        slot: index as u16,
+        cell,
+    }
 }

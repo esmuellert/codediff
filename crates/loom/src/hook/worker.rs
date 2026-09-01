@@ -18,9 +18,15 @@ struct Address {
 impl Address {
     /// Whether the effect that opened this address is still the current one.
     fn wanted(self, runtime: &Weak<RefCell<Runtime>>) -> bool {
-        let Some(runtime) = runtime.upgrade() else { return false };
-        let Ok(rt) = runtime.try_borrow() else { return false };
-        let Some(hooks) = rt.hooks.get(&self.scope) else { return false };
+        let Some(runtime) = runtime.upgrade() else {
+            return false;
+        };
+        let Ok(rt) = runtime.try_borrow() else {
+            return false;
+        };
+        let Some(hooks) = rt.hooks.get(&self.scope) else {
+            return false;
+        };
         match hooks.slots.get(self.slot as usize) {
             Some(crate::hook::Slot::Effect(e) | crate::hook::Slot::LayoutEffect(e)) => {
                 e.generation == self.generation
@@ -60,8 +66,12 @@ impl<T: 'static> Resolver<T> {
         if !self.is_wanted() {
             return false;
         }
-        let Some(take) = self.shared.borrow_mut().take() else { return false };
-        let Some(runtime) = self.runtime.upgrade() else { return false };
+        let Some(take) = self.shared.borrow_mut().take() else {
+            return false;
+        };
+        let Some(runtime) = self.runtime.upgrade() else {
+            return false;
+        };
         crate::current::enter(&runtime, || take(value));
         true
     }
@@ -107,9 +117,13 @@ impl<T: 'static> Observer<T> {
         if !self.is_wanted() {
             return false;
         }
-        let Some(runtime) = self.runtime.upgrade() else { return false };
+        let Some(runtime) = self.runtime.upgrade() else {
+            return false;
+        };
         let mut held = self.shared.borrow_mut();
-        let Some(take) = held.as_mut() else { return false };
+        let Some(take) = held.as_mut() else {
+            return false;
+        };
         crate::current::enter(&runtime, || take(value));
         true
     }
@@ -132,7 +146,11 @@ pub fn promise<T: 'static>() -> (Resolver<T>, Promise<T>) {
     let (address, runtime) = open();
     let shared = Rc::new(RefCell::new(None));
     (
-        Resolver { address, runtime, shared: Rc::clone(&shared) },
+        Resolver {
+            address,
+            runtime,
+            shared: Rc::clone(&shared),
+        },
         Promise { shared },
     )
 }
@@ -142,7 +160,11 @@ pub fn observable<T: 'static>() -> (Observer<T>, Observable<T>) {
     let (address, runtime) = open();
     let shared = Rc::new(RefCell::new(None));
     (
-        Observer { address, runtime, shared: Rc::clone(&shared) },
+        Observer {
+            address,
+            runtime,
+            shared: Rc::clone(&shared),
+        },
         Observable { shared },
     )
 }
@@ -151,8 +173,17 @@ pub fn observable<T: 'static>() -> (Observer<T>, Observable<T>) {
 fn open() -> (Address, Weak<RefCell<Runtime>>) {
     let running = crate::current::with(|rt| rt.running_effect).flatten();
     let Some((scope, slot, generation)) = running else {
-        panic!("promise and observable open an address for the effect that is running, and no effect is");
+        panic!(
+            "promise and observable open an address for the effect that is running, and no effect is"
+        );
     };
     let runtime = crate::current::handle().expect("an effect runs inside a runtime");
-    (Address { scope, slot, generation }, runtime)
+    (
+        Address {
+            scope,
+            slot,
+            generation,
+        },
+        runtime,
+    )
 }

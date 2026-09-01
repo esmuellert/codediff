@@ -41,13 +41,7 @@ impl SyntaxService {
     }
 
     /// Asks the worker to colour one version of one file up to `last`.
-    pub fn request(
-        &self,
-        file: &File,
-        version: DiffVersion,
-        text: Arc<Vec<String>>,
-        last: u32,
-    ) {
+    pub fn request(&self, file: &File, version: DiffVersion, text: Arc<Vec<String>>, last: u32) {
         let syntax_version = *self.version.borrow();
         let (Some(key), Some(path)) = (file.name(version), path_of(file, version)) else {
             return;
@@ -90,7 +84,12 @@ impl SyntaxService {
     /// Reads the coloured spans for one line of one version.
     ///
     /// `line` is the line number as shown, counting from one.
-    pub fn line_spans(store: &Store, file: &File, version: DiffVersion, line: u32) -> Vec<syntax::Span> {
+    pub fn line_spans(
+        store: &Store,
+        file: &File,
+        version: DiffVersion,
+        line: u32,
+    ) -> Vec<syntax::Span> {
         let key = match file.name(version) {
             Some(k) => k,
             None => return Vec::new(),

@@ -9,12 +9,12 @@ use std::rc::Rc;
 use crokey::key;
 use file_types::File;
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope,
-    component, rsx, use_context, use_exit, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
+    use_context, use_exit, use_ref, use_state,
 };
 
+use self::build::{Node, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
-use self::build::{grouped_list, grouped_tree, Node};
 use super::context::Ui;
 use crate::hooks::use_scroll::use_scroll;
 
@@ -60,50 +60,48 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
-        .on_key(move |k| {
-            match k {
-                k if k == key!(j) || k == key!(down) => {
-                    handle.down(total);
-                    let next = (view.cursor + 1).min(total.saturating_sub(1));
-                    if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
-                        open_file(file, set_file);
-                    }
-                    Bubble::Stop
+        .on_key(move |k| match k {
+            k if k == key!(j) || k == key!(down) => {
+                handle.down(total);
+                let next = (view.cursor + 1).min(total.saturating_sub(1));
+                if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
+                    open_file(file, set_file);
                 }
-                k if k == key!(k) || k == key!(up) => {
-                    handle.up(total);
-                    let next = view.cursor.saturating_sub(1);
-                    if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
-                        open_file(file, set_file);
-                    }
-                    Bubble::Stop
-                }
-                k if k == key!(enter) => {
-                    if let Some(ref node) = cursor_node {
-                        activate_node(node, set_folded, set_file);
-                    }
-                    Bubble::Stop
-                }
-                k if k == key!(q) => {
-                    exit();
-                    Bubble::Stop
-                }
-                k if k == key!(i) => {
-                    set_tree_mode(&|mode| !mode);
-                    Bubble::Stop
-                }
-                k if k == key!(space) => {
-                    if let Some(ref node) = cursor_node {
-                        toggle_stage(node, &repo);
-                    }
-                    Bubble::Stop
-                }
-                k if k == key!(right) => {
-                    loom::focus_next();
-                    Bubble::Stop
-                }
-                _ => Bubble::Continue,
+                Bubble::Stop
             }
+            k if k == key!(k) || k == key!(up) => {
+                handle.up(total);
+                let next = view.cursor.saturating_sub(1);
+                if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
+                    open_file(file, set_file);
+                }
+                Bubble::Stop
+            }
+            k if k == key!(enter) => {
+                if let Some(ref node) = cursor_node {
+                    activate_node(node, set_folded, set_file);
+                }
+                Bubble::Stop
+            }
+            k if k == key!(q) => {
+                exit();
+                Bubble::Stop
+            }
+            k if k == key!(i) => {
+                set_tree_mode(&|mode| !mode);
+                Bubble::Stop
+            }
+            k if k == key!(space) => {
+                if let Some(ref node) = cursor_node {
+                    toggle_stage(node, &repo);
+                }
+                Bubble::Stop
+            }
+            k if k == key!(right) => {
+                loom::focus_next();
+                Bubble::Stop
+            }
+            _ => Bubble::Continue,
         })
         .on_wheel(move |delta| {
             handle.wheel(delta, total);
@@ -117,7 +115,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             Bubble::Stop
         });
 
-    let entries: Vec<LoomNode> = view.view_lines
+    let entries: Vec<LoomNode> = view
+        .view_lines
         .clone()
         .filter_map(|line| {
             nodes.get(line as usize).map(|node| {
@@ -165,7 +164,9 @@ fn toggle_stage(node: &Node, repo: &std::path::Path) {
     let is_staged = file.revs().after == file_types::Rev::Index;
     let repo = repo.to_path_buf();
     std::thread::spawn(move || {
-        let Ok(repository) = vcs::Repository::open(&repo) else { return };
+        let Ok(repository) = vcs::Repository::open(&repo) else {
+            return;
+        };
         let _ = if is_staged {
             repository.unstage(&path)
         } else {

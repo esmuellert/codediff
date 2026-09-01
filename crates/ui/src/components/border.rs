@@ -6,8 +6,8 @@
 use std::rc::Rc;
 
 use loom::{
-    Bubble, Canvas, CanvasProps, Column, ColumnProps, Edges, Layout, Listeners, Node, Scope,
-    Stack, StackProps, component, rsx, use_context, use_state,
+    Bubble, Canvas, CanvasProps, Column, ColumnProps, Edges, Layout, Listeners, Node, Scope, Stack,
+    StackProps, component, rsx, use_context, use_state,
 };
 use ratatui::layout::Rect;
 use ratatui::style::Style;

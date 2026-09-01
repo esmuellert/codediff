@@ -28,7 +28,10 @@ fn chain(held: &RuntimeRef, start: usize, at: Position) -> Vec<Step> {
         .map(|index| {
             let frame_node = &rt.placed[index];
             Step {
-                node: NodeHandle { scope: frame_node.scope, nth: frame_node.nth },
+                node: NodeHandle {
+                    scope: frame_node.scope,
+                    nth: frame_node.nth,
+                },
                 listeners: frame_node.listeners.clone(),
                 local: Position {
                     x: at.x.saturating_sub(frame_node.area.x),
@@ -53,22 +56,29 @@ pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
     let start = {
         let rt = held.borrow();
         match rt.focused {
-            Some(node) => rt.placed.iter().position(|p| p.scope == node.scope && p.nth == node.nth),
+            Some(node) => rt
+                .placed
+                .iter()
+                .position(|p| p.scope == node.scope && p.nth == node.nth),
             // With nothing focused, a key is offered to every node from
             // the deepest up, the way a browser sends Tab to the first
             // focusable element.
-            None => {
-                rt.placed.iter().enumerate().rev()
-                    .find(|(_, p)| p.listeners.key.is_some())
-                    .map(|(i, _)| i)
-                    .or((!rt.placed.is_empty()).then_some(0))
-            }
+            None => rt
+                .placed
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, p)| p.listeners.key.is_some())
+                .map(|(i, _)| i)
+                .or((!rt.placed.is_empty()).then_some(0)),
         }
     };
     let Some(start) = start else { return false };
 
     for step in chain(held, start, Position { x: 0, y: 0 }) {
-        let Some(listen) = step.listeners.key.clone() else { continue };
+        let Some(listen) = step.listeners.key.clone() else {
+            continue;
+        };
         if fire(held, step.node, &*listen, press) == Bubble::Stop {
             return true;
         }
@@ -78,12 +88,18 @@ pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
 
 /// R8.1 and R8.4 — hit-test unless the pointer is captured, then bubble.
 pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
-    let at = Position { x: event.column, y: event.row };
+    let at = Position {
+        x: event.column,
+        y: event.row,
+    };
 
     let start = {
         let rt = held.borrow();
         match rt.captured {
-            Some(node) => rt.placed.iter().position(|p| p.scope == node.scope && p.nth == node.nth),
+            Some(node) => rt
+                .placed
+                .iter()
+                .position(|p| p.scope == node.scope && p.nth == node.nth),
             None => hit::at(&rt, at),
         }
     };
@@ -98,7 +114,10 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
             hit::upward(&rt, start)
                 .into_iter()
                 .find(|&i| rt.placed[i].focusable)
-                .map(|i| NodeHandle { scope: rt.placed[i].scope, nth: rt.placed[i].nth })
+                .map(|i| NodeHandle {
+                    scope: rt.placed[i].scope,
+                    nth: rt.placed[i].nth,
+                })
         };
         if focusable != held.borrow().focused {
             move_focus(held, focusable);
@@ -109,23 +128,63 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
     for step in chain(held, start, at) {
         let answer = match event.kind {
             MouseEventKind::Down(button) => step.listeners.mouse_down.clone().map(|listen| {
-                fire(held, step.node, &*listen, Mouse { button: Some(button), at, local: step.local })
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Mouse {
+                        button: Some(button),
+                        at,
+                        local: step.local,
+                    },
+                )
             }),
             MouseEventKind::Up(_) => step.listeners.mouse_up.clone().map(|listen| {
-                fire(held, step.node, &*listen, Mouse { button: None, at, local: step.local })
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Mouse {
+                        button: None,
+                        at,
+                        local: step.local,
+                    },
+                )
             }),
             MouseEventKind::Drag(button) => step.listeners.mouse_move.clone().map(|listen| {
-                fire(held, step.node, &*listen, Mouse { button: Some(button), at, local: step.local })
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Mouse {
+                        button: Some(button),
+                        at,
+                        local: step.local,
+                    },
+                )
             }),
             MouseEventKind::Moved => step.listeners.mouse_move.clone().map(|listen| {
-                fire(held, step.node, &*listen, Mouse { button: None, at, local: step.local })
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Mouse {
+                        button: None,
+                        at,
+                        local: step.local,
+                    },
+                )
             }),
-            MouseEventKind::ScrollDown => {
-                step.listeners.wheel.clone().map(|listen| fire(held, step.node, &*listen, 1))
-            }
-            MouseEventKind::ScrollUp => {
-                step.listeners.wheel.clone().map(|listen| fire(held, step.node, &*listen, -1))
-            }
+            MouseEventKind::ScrollDown => step
+                .listeners
+                .wheel
+                .clone()
+                .map(|listen| fire(held, step.node, &*listen, 1)),
+            MouseEventKind::ScrollUp => step
+                .listeners
+                .wheel
+                .clone()
+                .map(|listen| fire(held, step.node, &*listen, -1)),
             _ => None,
         };
 
@@ -152,7 +211,10 @@ pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
     }
 
     for node in ancestry(held, from) {
-        let listen = held.borrow().listeners_of(node).and_then(|l| l.blur.clone());
+        let listen = held
+            .borrow()
+            .listeners_of(node)
+            .and_then(|l| l.blur.clone());
         if let Some(listen) = listen
             && fire(held, node, &*listen, Focus { related: to }) == Bubble::Stop
         {
@@ -163,7 +225,10 @@ pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
     held.borrow_mut().focused = to;
 
     for node in ancestry(held, to) {
-        let listen = held.borrow().listeners_of(node).and_then(|l| l.focus.clone());
+        let listen = held
+            .borrow()
+            .listeners_of(node)
+            .and_then(|l| l.focus.clone());
         if let Some(listen) = listen
             && fire(held, node, &*listen, Focus { related: from }) == Bubble::Stop
         {
@@ -181,14 +246,19 @@ pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
 fn ancestry(held: &RuntimeRef, node: Option<NodeHandle>) -> Vec<NodeHandle> {
     let Some(node) = node else { return Vec::new() };
     let rt = held.borrow();
-    let Some(start) =
-        rt.placed.iter().position(|p| p.scope == node.scope && p.nth == node.nth)
+    let Some(start) = rt
+        .placed
+        .iter()
+        .position(|p| p.scope == node.scope && p.nth == node.nth)
     else {
         return Vec::new();
     };
     hit::upward(&rt, start)
         .into_iter()
-        .map(|i| NodeHandle { scope: rt.placed[i].scope, nth: rt.placed[i].nth })
+        .map(|i| NodeHandle {
+            scope: rt.placed[i].scope,
+            nth: rt.placed[i].nth,
+        })
         .collect()
 }
 
@@ -199,14 +269,20 @@ pub(crate) fn step_focus(held: &RuntimeRef, by: i32) {
         rt.placed
             .iter()
             .filter(|p| p.focusable)
-            .map(|p| NodeHandle { scope: p.scope, nth: p.nth })
+            .map(|p| NodeHandle {
+                scope: p.scope,
+                nth: p.nth,
+            })
             .collect()
     };
     if order.is_empty() {
         return;
     }
 
-    let at = held.borrow().focused.and_then(|f| order.iter().position(|&n| n == f));
+    let at = held
+        .borrow()
+        .focused
+        .and_then(|f| order.iter().position(|&n| n == f));
     let next = match at {
         Some(at) => {
             let len = order.len() as i32;
@@ -219,5 +295,7 @@ pub(crate) fn step_focus(held: &RuntimeRef, by: i32) {
 
 /// Whether a node is still mounted and focusable. Used by `NodeHandle::focus`.
 pub(crate) fn focusable(rt: &Runtime, node: NodeHandle) -> bool {
-    rt.placed.iter().any(|p| p.scope == node.scope && p.nth == node.nth && p.focusable)
+    rt.placed
+        .iter()
+        .any(|p| p.scope == node.scope && p.nth == node.nth && p.focusable)
 }

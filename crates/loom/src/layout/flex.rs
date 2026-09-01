@@ -29,10 +29,20 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
         return over(inner, children);
     }
 
-    let main_room = if axis == Axis::Across { inner.width } else { inner.height };
-    let cross_room = if axis == Axis::Across { inner.height } else { inner.width };
+    let main_room = if axis == Axis::Across {
+        inner.width
+    } else {
+        inner.height
+    };
+    let cross_room = if axis == Axis::Across {
+        inner.height
+    } else {
+        inner.width
+    };
 
-    let shown: Vec<usize> = (0..children.len()).filter(|&i| !children[i].layout.hidden).collect();
+    let shown: Vec<usize> = (0..children.len())
+        .filter(|&i| !children[i].layout.hidden)
+        .collect();
     let gaps = gap.saturating_mul(shown.len().saturating_sub(1) as u16);
     let room = main_room.saturating_sub(gaps);
 
@@ -41,7 +51,11 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
     // R5.5.1 — the cross axis is the container's, clamped by the child's own
     // bounds. `align-items: stretch`, and the only alignment there is.
     let mut areas = vec![Rect::ZERO; children.len()];
-    let mut at = if axis == Axis::Across { inner.x } else { inner.y };
+    let mut at = if axis == Axis::Across {
+        inner.x
+    } else {
+        inner.y
+    };
     let mut left = main_room;
     let mut too_small = false;
 
@@ -50,12 +64,26 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
         // A child never reaches past the container. Where CSS overflows, this
         // cuts, and the cut is what R5.6.1 sees.
         let size = main[i].min(left);
-        let cross = clamp(cross_room, min_on(layout, cross_axis(axis)), max_on(layout, cross_axis(axis)));
+        let cross = clamp(
+            cross_room,
+            min_on(layout, cross_axis(axis)),
+            max_on(layout, cross_axis(axis)),
+        );
 
         areas[i] = if axis == Axis::Across {
-            Rect { x: at, y: inner.y, width: size, height: cross }
+            Rect {
+                x: at,
+                y: inner.y,
+                width: size,
+                height: cross,
+            }
         } else {
-            Rect { x: inner.x, y: at, width: cross, height: size }
+            Rect {
+                x: inner.x,
+                y: at,
+                width: cross,
+                height: size,
+            }
         };
 
         // R5.6.1 — short of its minimum because shrinking ran out of room.
@@ -117,7 +145,11 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
             .copied()
             .filter(|&i| {
                 !frozen[i]
-                    && if free > 0 { children[i].layout.grow > 0 } else { children[i].layout.shrink > 0 }
+                    && if free > 0 {
+                        children[i].layout.grow > 0
+                    } else {
+                        children[i].layout.shrink > 0
+                    }
             })
             .collect();
 
@@ -238,11 +270,21 @@ mod tests {
     }
 
     fn across(width: u16, gap: u16, children: &[Item]) -> Vec<u16> {
-        assign(Axis::Across, Rect { x: 0, y: 0, width, height: 10 }, gap, children)
-            .areas
-            .iter()
-            .map(|r| r.width)
-            .collect()
+        assign(
+            Axis::Across,
+            Rect {
+                x: 0,
+                y: 0,
+                width,
+                height: 10,
+            },
+            gap,
+            children,
+        )
+        .areas
+        .iter()
+        .map(|r| r.width)
+        .collect()
     }
 
     #[test]
@@ -250,7 +292,13 @@ mod tests {
         let got = across(
             50,
             0,
-            &[item(Layout { basis: Basis::Length(20), ..Default::default() }, 99)],
+            &[item(
+                Layout {
+                    basis: Basis::Length(20),
+                    ..Default::default()
+                },
+                99,
+            )],
         );
         assert_eq!(got, vec![20]);
     }
@@ -260,7 +308,14 @@ mod tests {
         let got = across(
             80,
             0,
-            &[item(Layout { basis: Basis::Percent(25), shrink: 0, ..Default::default() }, 0)],
+            &[item(
+                Layout {
+                    basis: Basis::Percent(25),
+                    shrink: 0,
+                    ..Default::default()
+                },
+                0,
+            )],
         );
         assert_eq!(got, vec![20]);
     }
@@ -271,11 +326,29 @@ mod tests {
             10,
             2,
             &[
-                item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
-                item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
+                item(
+                    Layout {
+                        grow: 1,
+                        basis: Basis::Length(0),
+                        ..Default::default()
+                    },
+                    0,
+                ),
+                item(
+                    Layout {
+                        grow: 1,
+                        basis: Basis::Length(0),
+                        ..Default::default()
+                    },
+                    0,
+                ),
             ],
         );
-        assert_eq!(got, vec![4, 4], "10 cells less one 2-cell gap, split two ways");
+        assert_eq!(
+            got,
+            vec![4, 4],
+            "10 cells less one 2-cell gap, split two ways"
+        );
     }
 
     #[test]
@@ -284,9 +357,31 @@ mod tests {
             100,
             0,
             &[
-                item(Layout { basis: Basis::Length(40), grow: 0, shrink: 0, ..Default::default() }, 0),
-                item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
-                item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
+                item(
+                    Layout {
+                        basis: Basis::Length(40),
+                        grow: 0,
+                        shrink: 0,
+                        ..Default::default()
+                    },
+                    0,
+                ),
+                item(
+                    Layout {
+                        grow: 1,
+                        basis: Basis::Length(0),
+                        ..Default::default()
+                    },
+                    0,
+                ),
+                item(
+                    Layout {
+                        grow: 1,
+                        basis: Basis::Length(0),
+                        ..Default::default()
+                    },
+                    0,
+                ),
             ],
         );
         assert_eq!(got, vec![40, 30, 30]);
@@ -298,12 +393,29 @@ mod tests {
             60,
             0,
             &[
-                item(Layout { basis: Basis::Length(80), shrink: 1, ..Default::default() }, 0),
-                item(Layout { basis: Basis::Length(20), shrink: 1, ..Default::default() }, 0),
+                item(
+                    Layout {
+                        basis: Basis::Length(80),
+                        shrink: 1,
+                        ..Default::default()
+                    },
+                    0,
+                ),
+                item(
+                    Layout {
+                        basis: Basis::Length(20),
+                        shrink: 1,
+                        ..Default::default()
+                    },
+                    0,
+                ),
             ],
         );
         assert_eq!(got.iter().sum::<u16>(), 60);
-        assert!(80 - got[0] > 20 - got[1], "the wide one gave up more: {got:?}");
+        assert!(
+            80 - got[0] > 20 - got[1],
+            "the wide one gave up more: {got:?}"
+        );
     }
 
     #[test]
@@ -313,9 +425,30 @@ mod tests {
                 100,
                 0,
                 &[
-                    item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
-                    item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
-                    item(Layout { grow: 1, basis: Basis::Length(0), ..Default::default() }, 0),
+                    item(
+                        Layout {
+                            grow: 1,
+                            basis: Basis::Length(0),
+                            ..Default::default()
+                        },
+                        0,
+                    ),
+                    item(
+                        Layout {
+                            grow: 1,
+                            basis: Basis::Length(0),
+                            ..Default::default()
+                        },
+                        0,
+                    ),
+                    item(
+                        Layout {
+                            grow: 1,
+                            basis: Basis::Length(0),
+                            ..Default::default()
+                        },
+                        0,
+                    ),
                 ],
             )
         };
@@ -331,9 +464,34 @@ mod tests {
                 width,
                 0,
                 &[
-                    item(Layout { basis: Basis::Length(40), shrink: 1, min_width: 8, ..Default::default() }, 0),
-                    item(Layout { basis: Basis::Length(1), shrink: 0, grow: 0, ..Default::default() }, 0),
-                    item(Layout { grow: 1, basis: Basis::Length(0), shrink: 0, min_width: 20, ..Default::default() }, 0),
+                    item(
+                        Layout {
+                            basis: Basis::Length(40),
+                            shrink: 1,
+                            min_width: 8,
+                            ..Default::default()
+                        },
+                        0,
+                    ),
+                    item(
+                        Layout {
+                            basis: Basis::Length(1),
+                            shrink: 0,
+                            grow: 0,
+                            ..Default::default()
+                        },
+                        0,
+                    ),
+                    item(
+                        Layout {
+                            grow: 1,
+                            basis: Basis::Length(0),
+                            shrink: 0,
+                            min_width: 20,
+                            ..Default::default()
+                        },
+                        0,
+                    ),
                 ],
             )
         };
@@ -346,9 +504,20 @@ mod tests {
     fn a_child_below_its_minimum_makes_its_parent_too_small() {
         let out = assign(
             Axis::Across,
-            Rect { x: 0, y: 0, width: 10, height: 4 },
+            Rect {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 4,
+            },
             0,
-            &[item(Layout { min_width: 20, ..Default::default() }, 0)],
+            &[item(
+                Layout {
+                    min_width: 20,
+                    ..Default::default()
+                },
+                0,
+            )],
         );
         assert!(out.too_small);
     }
@@ -357,7 +526,12 @@ mod tests {
     fn a_child_of_a_row_is_as_tall_as_the_row() {
         let out = assign(
             Axis::Across,
-            Rect { x: 0, y: 0, width: 10, height: 7 },
+            Rect {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 7,
+            },
             0,
             &[item(Layout::default(), 3)],
         );
@@ -366,8 +540,18 @@ mod tests {
 
     #[test]
     fn a_stack_gives_every_child_the_same_rectangle() {
-        let area = Rect { x: 2, y: 1, width: 10, height: 4 };
-        let out = assign(Axis::Over, area, 0, &[item(Layout::default(), 0), item(Layout::default(), 0)]);
+        let area = Rect {
+            x: 2,
+            y: 1,
+            width: 10,
+            height: 4,
+        };
+        let out = assign(
+            Axis::Over,
+            area,
+            0,
+            &[item(Layout::default(), 0), item(Layout::default(), 0)],
+        );
         assert_eq!(out.areas, vec![area, area]);
     }
 
@@ -376,11 +560,32 @@ mod tests {
         let fits = |width| {
             !assign(
                 Axis::Across,
-                Rect { x: 0, y: 0, width, height: 4 },
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height: 4,
+                },
                 0,
                 &[
-                    item(Layout { basis: Basis::Length(40), shrink: 1, min_width: 8, ..Default::default() }, 0),
-                    item(Layout { grow: 1, basis: Basis::Length(0), min_width: 20, ..Default::default() }, 0),
+                    item(
+                        Layout {
+                            basis: Basis::Length(40),
+                            shrink: 1,
+                            min_width: 8,
+                            ..Default::default()
+                        },
+                        0,
+                    ),
+                    item(
+                        Layout {
+                            grow: 1,
+                            basis: Basis::Length(0),
+                            min_width: 20,
+                            ..Default::default()
+                        },
+                        0,
+                    ),
                 ],
             )
             .too_small

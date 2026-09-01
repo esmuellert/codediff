@@ -6,13 +6,13 @@ use std::rc::Rc;
 use align::{DiffVersion, LineDecorations};
 use file_types::DiffType;
 use loom::{
-    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node,
-    Row, RowProps, Scope, component, rsx, use_context,
+    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node, Row,
+    RowProps, Scope, component, rsx, use_context,
 };
 use ratatui::style::Style;
 
-use super::context::Ui;
 use super::code_text::{CodeText, CodeTextProps};
+use super::context::Ui;
 use super::filler::{Filler, FillerProps};
 use super::gutter::{Gutter, GutterProps};
 
@@ -84,22 +84,20 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let divider_style = theme.normal.patch(theme.divider);
 
     let listeners = Listeners::new()
-        .on_key(move |k| {
-            match k {
-                k if k == crokey::key!(j) || k == crokey::key!(down) => {
-                    handle.down(total);
-                    Bubble::Stop
-                }
-                k if k == crokey::key!(k) || k == crokey::key!(up) => {
-                    handle.up(total);
-                    Bubble::Stop
-                }
-                k if k == crokey::key!(left) => {
-                    loom::focus_previous();
-                    Bubble::Stop
-                }
-                _ => Bubble::Continue,
+        .on_key(move |k| match k {
+            k if k == crokey::key!(j) || k == crokey::key!(down) => {
+                handle.down(total);
+                Bubble::Stop
             }
+            k if k == crokey::key!(k) || k == crokey::key!(up) => {
+                handle.up(total);
+                Bubble::Stop
+            }
+            k if k == crokey::key!(left) => {
+                loom::focus_previous();
+                Bubble::Stop
+            }
+            _ => Bubble::Continue,
         })
         .on_wheel(move |delta| {
             handle.wheel(delta, total);

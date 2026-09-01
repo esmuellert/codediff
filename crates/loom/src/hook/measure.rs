@@ -27,10 +27,7 @@ pub fn use_measure(scope: &mut Scope) -> (Ref<Option<NodeHandle>>, Size) {
     let node_ref = super::reference::use_ref(scope, || None::<NodeHandle>);
     let (size, set_size) = super::state::use_state(scope, Size::default);
     super::effect::use_layout_effect(scope, super::effect::Always, move || {
-        let area = node_ref
-            .current()
-            .as_ref()
-            .map_or(Rect::ZERO, |n| n.area());
+        let area = node_ref.current().as_ref().map_or(Rect::ZERO, |n| n.area());
         let measured = Size {
             width: area.width,
             height: area.height,

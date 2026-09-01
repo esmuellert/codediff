@@ -9,7 +9,10 @@ use super::welcome::{Welcome, WelcomeProps};
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
-    let has_diff = matches!(ctx.diff.as_deref(), Some(pipeline::diff::DiffContent::Diff(_)));
+    let has_diff = matches!(
+        ctx.diff.as_deref(),
+        Some(pipeline::diff::DiffContent::Diff(_))
+    );
 
     if has_diff {
         rsx! { SideBySide {} }

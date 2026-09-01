@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use file_types::File;
 use ui::components::explorer::build::grouped_tree;
-use ui::components::explorer::{identity, find_by_identity};
+use ui::components::explorer::{find_by_identity, identity};
 
 use super::common::*;
 
@@ -17,7 +17,11 @@ fn j_and_k_move_the_cursor() {
     assert_eq!(1u32.saturating_add(1).min(total - 1), 2, "j goes down");
     assert_eq!(2u32.saturating_sub(1), 1, "k goes up");
     assert_eq!(0u32.saturating_sub(1), 0, "k at the top stays");
-    assert_eq!(4u32.saturating_add(1).min(total - 1), 4, "j at the end stays");
+    assert_eq!(
+        4u32.saturating_add(1).min(total - 1),
+        4,
+        "j at the end stays"
+    );
     let _ = scroll_top;
 }
 
@@ -75,9 +79,14 @@ fn the_cursor_stays_when_the_file_list_rebuilds() {
         .collect();
 
     let nodes_v1 = grouped_tree(&files_v1, &HashSet::new());
-    let lib_line = nodes_v1.iter().position(|n| matches!(n,
-        ui::components::explorer::build::Node::File { name, .. } if name == "lib.rs"
-    )).expect("lib.rs exists");
+    let lib_line = nodes_v1
+        .iter()
+        .position(|n| {
+            matches!(n,
+                ui::components::explorer::build::Node::File { name, .. } if name == "lib.rs"
+            )
+        })
+        .expect("lib.rs exists");
 
     let files_v2: Vec<File> = ["src/app.rs", "src/lib.rs", "src/new.rs", "notes.txt"]
         .iter()
@@ -90,7 +99,8 @@ fn the_cursor_stays_when_the_file_list_rebuilds() {
         ui::components::explorer::build::Node::File { name, .. } => {
             assert_eq!(name, "lib.rs", "the cursor still points at lib.rs");
         }
-        other => panic!("expected lib.rs at line {lib_line}, got {:?}",
+        other => panic!(
+            "expected lib.rs at line {lib_line}, got {:?}",
             match other {
                 ui::components::explorer::build::Node::Heading { name, .. } => name.to_string(),
                 ui::components::explorer::build::Node::Directory { name, .. } => name.clone(),
@@ -102,22 +112,34 @@ fn the_cursor_stays_when_the_file_list_rebuilds() {
 
 #[test]
 fn the_cursor_follows_its_file_when_one_is_inserted_before_it() {
-    let before: Vec<File> = ["src/lib.rs", "notes.txt"].iter().map(|p| file(p)).collect();
+    let before: Vec<File> = ["src/lib.rs", "notes.txt"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
     let old = grouped_tree(&before, &HashSet::new());
-    let on = old.iter().position(|n| matches!(n,
-        ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
-    )).expect("notes.txt is listed");
+    let on = old
+        .iter()
+        .position(|n| {
+            matches!(n,
+                ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"
+            )
+        })
+        .expect("notes.txt is listed");
     let saved = identity(&old[on]);
 
     let after: Vec<File> = ["src/lib.rs", "a.txt", "notes.txt"]
-        .iter().map(|p| file(p)).collect();
+        .iter()
+        .map(|p| file(p))
+        .collect();
     let new = grouped_tree(&after, &HashSet::new());
 
     let landed = find_by_identity(Some(&saved), &new).expect("notes.txt is still listed");
     assert_ne!(landed, on, "the row moved");
-    assert!(matches!(&new[landed],
+    assert!(
+        matches!(&new[landed],
         ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"),
-        "the cursor is on notes.txt again");
+        "the cursor is on notes.txt again"
+    );
 }
 
 #[test]
@@ -125,8 +147,11 @@ fn a_file_that_is_gone_leaves_the_cursor_where_it_was() {
     let after: Vec<File> = ["a.rs"].iter().map(|p| file(p)).collect();
     let new = grouped_tree(&after, &HashSet::new());
 
-    assert_eq!(find_by_identity(Some("gone.rs"), &new), None,
-        "nothing to move to, so the caller keeps the cursor");
+    assert_eq!(
+        find_by_identity(Some("gone.rs"), &new),
+        None,
+        "nothing to move to, so the caller keeps the cursor"
+    );
 }
 
 #[test]
@@ -138,13 +163,21 @@ fn nothing_saved_moves_nothing() {
 
 #[test]
 fn the_identity_tells_two_files_of_the_same_name_apart() {
-    let files: Vec<File> = ["src/a/mod.rs", "src/b/mod.rs"].iter().map(|p| file(p)).collect();
+    let files: Vec<File> = ["src/a/mod.rs", "src/b/mod.rs"]
+        .iter()
+        .map(|p| file(p))
+        .collect();
     let nodes = grouped_tree(&files, &HashSet::new());
 
-    let first = nodes.iter().position(|n| matches!(n,
-        ui::components::explorer::build::Node::File { file, .. }
-        if file.path().as_str() == "src/b/mod.rs"
-    )).expect("src/b/mod.rs is listed");
+    let first = nodes
+        .iter()
+        .position(|n| {
+            matches!(n,
+                ui::components::explorer::build::Node::File { file, .. }
+                if file.path().as_str() == "src/b/mod.rs"
+            )
+        })
+        .expect("src/b/mod.rs is listed");
 
     let saved = identity(&nodes[first]);
     let landed = find_by_identity(Some(&saved), &nodes).expect("found");
@@ -156,15 +189,19 @@ fn the_identity_tells_two_files_of_the_same_name_apart() {
 #[test]
 fn the_cursor_row_has_a_different_background() {
     let files: Vec<File> = ["src/app.rs", "notes.txt"]
-        .iter().map(|p| file(p)).collect();
+        .iter()
+        .map(|p| file(p))
+        .collect();
     let mut h1 = harness(files.clone(), 40, 10);
     h1.force_draw();
     h1.press(crokey::key!(j));
     h1.force_draw();
     let bg_cursor = h1.style_at(0, 1).bg;
     let bg_other = h1.style_at(0, 2).bg;
-    assert_ne!(bg_cursor, bg_other,
-        "the cursor row has a different background from other rows");
+    assert_ne!(
+        bg_cursor, bg_other,
+        "the cursor row has a different background from other rows"
+    );
 }
 
 // ---- edge cases ----
@@ -173,8 +210,11 @@ fn the_cursor_row_has_a_different_background() {
 fn an_empty_list_draws_nothing() {
     let rows = draw(Vec::new(), 40, 5);
     for row in &rows {
-        assert!(row.is_empty() || row.chars().all(|c| c == ' '),
-            "an empty list is blank: {:?}", row);
+        assert!(
+            row.is_empty() || row.chars().all(|c| c == ' '),
+            "an empty list is blank: {:?}",
+            row
+        );
     }
 }
 
@@ -191,8 +231,8 @@ fn enter_on_a_file_sets_the_focused_file() {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use loom::{Node, Scope, component, rsx, use_state};
     use loom::testing::Harness;
+    use loom::{Node, Scope, component, rsx, use_state};
     use ui::Theme;
     use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps};
 
@@ -241,7 +281,10 @@ fn enter_on_a_file_sets_the_focused_file() {
     h.press(crokey::key!(enter));
     h.force_draw();
 
-    assert!(file_set.get(), "pressing Enter on a file should set the focused file");
+    assert!(
+        file_set.get(),
+        "pressing Enter on a file should set the focused file"
+    );
 }
 
 // ---- scroll vs cursor ----
@@ -249,17 +292,19 @@ fn enter_on_a_file_sets_the_focused_file() {
 #[test]
 fn wheel_scrolls_the_view_without_moving_the_cursor() {
     // A list taller than the viewport. Cursor starts at 0 (the heading).
-    let files: Vec<File> = (0..20)
-        .map(|i| file(&format!("file{i}.rs")))
-        .collect();
+    let files: Vec<File> = (0..20).map(|i| file(&format!("file{i}.rs"))).collect();
     let mut h = harness(files, 40, 6);
-    for _ in 0..5 { h.force_draw(); }
+    for _ in 0..5 {
+        h.force_draw();
+    }
 
     let before = h.screen();
 
     // Scroll down by wheeling.
     h.wheel(10, 3, 3);
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
 
     let after = h.screen();
 
@@ -270,28 +315,34 @@ fn wheel_scrolls_the_view_without_moving_the_cursor() {
     // so the heading row that was at screen row 0 should no longer be there.
     // Press j once — cursor goes to 1, not to wherever the scroll landed + 1.
     h.press(crokey::key!(j));
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
 
     // Now press k — cursor goes back to 0.
     h.press(crokey::key!(k));
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
 
     // The heading "Changes" should be visible again because j/k brought
     // the view back to show the cursor at row 0.
     let final_screen = h.screen();
     let has_heading = final_screen.iter().any(|r| r.contains("Changes"));
-    assert!(has_heading,
+    assert!(
+        has_heading,
         "after j then k, the cursor is at 0 and the heading is visible: {:?}",
-        final_screen);
+        final_screen
+    );
 }
 
 #[test]
 fn j_moves_the_cursor_and_the_view_follows() {
-    let files: Vec<File> = (0..20)
-        .map(|i| file(&format!("file{i}.rs")))
-        .collect();
+    let files: Vec<File> = (0..20).map(|i| file(&format!("file{i}.rs"))).collect();
     let mut h = harness(files, 40, 6);
-    for _ in 0..5 { h.force_draw(); }
+    for _ in 0..5 {
+        h.force_draw();
+    }
 
     // Press j enough times to go past the viewport.
     for _ in 0..10 {
@@ -304,19 +355,21 @@ fn j_moves_the_cursor_and_the_view_follows() {
     // We can check that the screen shows rows that were not initially visible.
     let has_heading = screen.iter().any(|r| r.contains("Changes"));
     // The heading at row 0 should have scrolled off.
-    assert!(!has_heading,
+    assert!(
+        !has_heading,
         "after pressing j 10 times in a 6-row viewport, the heading should be off screen: {:?}",
-        screen);
+        screen
+    );
 }
 
 #[test]
 fn wheel_cannot_scroll_past_the_last_line() {
-    let files: Vec<File> = (0..10)
-        .map(|i| file(&format!("file{i}.rs")))
-        .collect();
+    let files: Vec<File> = (0..10).map(|i| file(&format!("file{i}.rs"))).collect();
     // 6-row viewport, ~11 nodes (heading + 10 files).
     let mut h = harness(files, 40, 6);
-    for _ in 0..5 { h.force_draw(); }
+    for _ in 0..5 {
+        h.force_draw();
+    }
 
     // Scroll way past the end.
     for _ in 0..20 {
@@ -329,7 +382,8 @@ fn wheel_cannot_scroll_past_the_last_line() {
     // with empty rows below.
     let non_empty: Vec<&String> = screen.iter().filter(|r| !r.trim().is_empty()).collect();
     assert_eq!(
-        non_empty.len(), 6,
+        non_empty.len(),
+        6,
         "every row should have content — no empty space below the last line: {:?}",
         screen
     );
@@ -340,17 +394,23 @@ fn short_content_does_not_scroll() {
     // Only 2 files — heading + 2 = 3 nodes, viewport is 6.
     let files = vec![file("a.rs"), file("b.rs")];
     let mut h = harness(files, 40, 6);
-    for _ in 0..5 { h.force_draw(); }
+    for _ in 0..5 {
+        h.force_draw();
+    }
 
     let before = h.screen();
 
     // Try to scroll down.
     h.wheel(10, 3, 3);
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
 
     let after = h.screen();
-    assert_eq!(before, after,
-        "content shorter than the viewport should not scroll");
+    assert_eq!(
+        before, after,
+        "content shorter than the viewport should not scroll"
+    );
 }
 
 #[test]
@@ -358,8 +418,8 @@ fn moving_to_a_file_opens_it() {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use loom::{Node, Scope, component, rsx, use_state};
     use loom::testing::Harness;
+    use loom::{Node, Scope, component, rsx, use_state};
     use ui::Theme;
     use ui::components::{Context, Explorer, ExplorerProps, Ui, UiProps};
 
@@ -404,11 +464,15 @@ fn moving_to_a_file_opens_it() {
         40,
         10,
     );
-    for _ in 0..4 { h.force_draw(); }
+    for _ in 0..4 {
+        h.force_draw();
+    }
 
     // Cursor starts on the heading. Move down to a.rs.
     h.press(crokey::key!(j));
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
     assert_eq!(
         opened.borrow().last().map(String::as_str),
         Some("a.rs"),
@@ -418,7 +482,9 @@ fn moving_to_a_file_opens_it() {
 
     // Move down to b.rs.
     h.press(crokey::key!(j));
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
     assert_eq!(
         opened.borrow().last().map(String::as_str),
         Some("b.rs"),
@@ -428,7 +494,9 @@ fn moving_to_a_file_opens_it() {
 
     // Move back up to a.rs.
     h.press(crokey::key!(k));
-    for _ in 0..3 { h.force_draw(); }
+    for _ in 0..3 {
+        h.force_draw();
+    }
     assert_eq!(
         opened.borrow().last().map(String::as_str),
         Some("a.rs"),

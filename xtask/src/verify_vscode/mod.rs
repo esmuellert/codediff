@@ -51,7 +51,10 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut pairs = history::pairs(&repo, files, versions, max_lines)?;
     if let Some(count) = pair_count {
         if pairs.len() < count {
-            bail!("requested {count} pairs, but only {} were suitable", pairs.len());
+            bail!(
+                "requested {count} pairs, but only {} were suitable",
+                pairs.len()
+            );
         }
         pairs.truncate(count);
     }
@@ -62,8 +65,16 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut manifest = String::new();
     for pair in &pairs {
         let files = output::materialise(&root, pair)?;
-        let original = files.original.strip_prefix(&workspace)?.to_string_lossy().replace('\\', "/");
-        let modified = files.modified.strip_prefix(&workspace)?.to_string_lossy().replace('\\', "/");
+        let original = files
+            .original
+            .strip_prefix(&workspace)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let modified = files
+            .modified
+            .strip_prefix(&workspace)?
+            .to_string_lossy()
+            .replace('\\', "/");
         manifest.push_str(&format!(
             "{}\t{}\t{}\t{}\t{}\n",
             pair.id,
@@ -112,19 +123,27 @@ pub fn run(args: &[String]) -> Result<()> {
         for path in &failures {
             println!("  {}", path.display());
         }
-        bail!("{} of {} historical pair(s) differ from VS Code", failures.len(), pairs.len());
+        bail!(
+            "{} of {} historical pair(s) differ from VS Code",
+            failures.len(),
+            pairs.len()
+        );
     }
     println!("verify-vscode: every historical pair matches");
     Ok(())
 }
 
 fn value(args: &[String], at: usize, option: &str) -> Result<usize> {
-    let Some(value) = args.get(at) else { bail!("{option} needs a number") };
+    let Some(value) = args.get(at) else {
+        bail!("{option} needs a number")
+    };
     Ok(value.parse()?)
 }
 
 fn boolean(args: &[String], at: usize, option: &str) -> Result<bool> {
-    let Some(value) = args.get(at) else { bail!("{option} needs true or false") };
+    let Some(value) = args.get(at) else {
+        bail!("{option} needs true or false")
+    };
     value
         .parse()
         .map_err(|_| anyhow::anyhow!("{option} needs true or false"))
@@ -167,7 +186,9 @@ impl Coverage {
     fn read(&mut self, records: &[output::Record]) {
         for record in records {
             match record {
-                output::Record::Row { original, modified, .. } => {
+                output::Record::Row {
+                    original, modified, ..
+                } => {
                     self.filler |= original.is_none() || modified.is_none();
                 }
                 output::Record::Highlight {

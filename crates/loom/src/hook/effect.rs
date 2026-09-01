@@ -90,7 +90,11 @@ where
 {
     let id = scope.id;
     let index = crate::current::with(|rt| rt.hooks[&id].index).unwrap_or(0) as u16;
-    let kind = if before_paint { "LayoutEffect" } else { "Effect" };
+    let kind = if before_paint {
+        "LayoutEffect"
+    } else {
+        "Effect"
+    };
     let deps_cell = std::cell::Cell::new(Some(deps));
 
     let generation = use_hook(
@@ -98,8 +102,16 @@ where
         kind,
         || {
             let deps = deps_cell.take().expect("the first render stores its deps");
-            let slot = EffectSlot { deps: Box::new(deps), cleanup: None, generation: 0 };
-            if before_paint { Slot::LayoutEffect(slot) } else { Slot::Effect(slot) }
+            let slot = EffectSlot {
+                deps: Box::new(deps),
+                cleanup: None,
+                generation: 0,
+            };
+            if before_paint {
+                Slot::LayoutEffect(slot)
+            } else {
+                Slot::Effect(slot)
+            }
         },
         |slot| {
             let effect = match slot {
@@ -114,7 +126,10 @@ where
                     Some(effect.generation)
                 }
                 Some(next) => {
-                    let same = effect.deps.downcast_ref::<D>().is_some_and(|last| *last == next);
+                    let same = effect
+                        .deps
+                        .downcast_ref::<D>()
+                        .is_some_and(|last| *last == next);
                     if same {
                         None
                     } else {

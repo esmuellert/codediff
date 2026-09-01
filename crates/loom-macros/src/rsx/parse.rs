@@ -111,7 +111,13 @@ fn element(input: ParseStream) -> Result<Element> {
         let _ = inner.parse::<Token![,]>();
     }
 
-    Ok(Element { path, key, props, rest, children })
+    Ok(Element {
+        path,
+        key,
+        props,
+        rest,
+        children,
+    })
 }
 
 /// A prop is `ident :` with no `::` after it, which is what tells it from a
@@ -152,7 +158,11 @@ fn if_chain(input: ParseStream) -> Result<If> {
         None
     };
 
-    Ok(If { condition, then, otherwise })
+    Ok(If {
+        condition,
+        then,
+        otherwise,
+    })
 }
 
 fn match_arms(input: ParseStream) -> Result<Match> {
@@ -187,5 +197,9 @@ fn for_loop(input: ParseStream) -> Result<For> {
     let over = Expr::parse_without_eager_brace(input)?;
     let body;
     braced!(body in input);
-    Ok(For { pattern, over, body: nodes(&body)? })
+    Ok(For {
+        pattern,
+        over,
+        body: nodes(&body)?,
+    })
 }

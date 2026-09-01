@@ -35,13 +35,12 @@ pub fn draw(files: Vec<File>, width: u16, height: u16) -> Vec<String> {
 }
 
 pub fn harness(files: Vec<File>, width: u16, height: u16) -> Harness {
-    Harness::new::<Explorer>(ExplorerProps {}, width, height)
-        .provide::<Ui>(Context {
-            theme: Rc::new(Theme::DARK),
-            repo: Rc::from(Path::new("/repo")),
-            files: Rc::new(files),
-            ..Default::default()
-        })
+    Harness::new::<Explorer>(ExplorerProps {}, width, height).provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        repo: Rc::from(Path::new("/repo")),
+        files: Rc::new(files),
+        ..Default::default()
+    })
 }
 
 pub fn screen(paths: &[&str], width: u16, height: u16) -> Vec<String> {

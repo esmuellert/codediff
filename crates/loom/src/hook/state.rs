@@ -96,7 +96,9 @@ fn write_slot<T: Clone + PartialEq + 'static>(
 
     let now = crate::current::with_mut(|rt| {
         let hooks = rt.hooks.get_mut(&scope)?;
-        let Slot::State(state) = hooks.slots.get_mut(slot)? else { return None };
+        let Slot::State(state) = hooks.slots.get_mut(slot)? else {
+            return None;
+        };
         let cell = state.as_any().downcast_mut::<StateSlot<T>>()?;
         // The closure sees the value the slot will hold when the next render
         // starts, so two writes in one listener compose.
@@ -112,9 +114,15 @@ fn write_slot<T: Clone + PartialEq + 'static>(
     let next = next(now);
 
     crate::current::with_mut(|rt| {
-        let Some(hooks) = rt.hooks.get_mut(&scope) else { return };
-        let Some(Slot::State(state)) = hooks.slots.get_mut(slot) else { return };
-        let Some(cell) = state.as_any().downcast_mut::<StateSlot<T>>() else { return };
+        let Some(hooks) = rt.hooks.get_mut(&scope) else {
+            return;
+        };
+        let Some(Slot::State(state)) = hooks.slots.get_mut(slot) else {
+            return;
+        };
+        let Some(cell) = state.as_any().downcast_mut::<StateSlot<T>>() else {
+            return;
+        };
         let changed = next != cell.value;
         cell.pending = Some(next);
         if changed {
@@ -141,13 +149,23 @@ pub fn use_state<T: Clone + PartialEq + 'static>(
         scope,
         "State",
         || {
-            let start = first.take().expect("the first render builds the value once")();
+            let start = first
+                .take()
+                .expect("the first render builds the value once")();
             let write: &'static dyn Fn(&dyn Fn(T) -> T) =
-                Box::leak(Box::new(move |next: &dyn Fn(T) -> T| write_slot::<T>(id, index, name, next)));
-            Slot::State(Box::new(StateSlot { value: start, pending: None, write }))
+                Box::leak(Box::new(move |next: &dyn Fn(T) -> T| {
+                    write_slot::<T>(id, index, name, next)
+                }));
+            Slot::State(Box::new(StateSlot {
+                value: start,
+                pending: None,
+                write,
+            }))
         },
         |slot| {
-            let Slot::State(state) = slot else { unreachable!("checked by shape") };
+            let Slot::State(state) = slot else {
+                unreachable!("checked by shape")
+            };
             let cell = state
                 .as_any()
                 .downcast_mut::<StateSlot<T>>()
@@ -156,5 +174,12 @@ pub fn use_state<T: Clone + PartialEq + 'static>(
         },
     );
 
-    (value, SetState { scope: id, slot: index as u16, write })
+    (
+        value,
+        SetState {
+            scope: id,
+            slot: index as u16,
+            write,
+        },
+    )
 }

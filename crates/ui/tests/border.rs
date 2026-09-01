@@ -48,11 +48,16 @@ fn ctx() -> Context {
 fn a_border_draws_rounded_corners() {
     let mut h = Harness::new::<Border>(
         BorderProps {
-            layout: Layout { grow: 1, ..Default::default() },
+            layout: Layout {
+                grow: 1,
+                ..Default::default()
+            },
             children: vec![rsx! { Inner {} }],
         },
-        10, 5,
-    ).provide::<Ui>(ctx());
+        10,
+        5,
+    )
+    .provide::<Ui>(ctx());
     h.draw();
     let top = h.screen_row(0);
     let bottom = h.screen_row(4);
@@ -67,25 +72,39 @@ fn a_focused_border_has_a_different_colour() {
     // A border with a focusable child that takes focus on mount.
     let mut focused = Harness::new::<Border>(
         BorderProps {
-            layout: Layout { grow: 1, ..Default::default() },
+            layout: Layout {
+                grow: 1,
+                ..Default::default()
+            },
             children: vec![rsx! { Focusable {} }],
         },
-        10, 5,
-    ).provide::<Ui>(ctx());
-    for _ in 0..4 { focused.force_draw(); }
+        10,
+        5,
+    )
+    .provide::<Ui>(ctx());
+    for _ in 0..4 {
+        focused.force_draw();
+    }
 
     // A border with no focusable child.
     let mut unfocused = Harness::new::<Border>(
         BorderProps {
-            layout: Layout { grow: 1, ..Default::default() },
+            layout: Layout {
+                grow: 1,
+                ..Default::default()
+            },
             children: vec![rsx! { Inner {} }],
         },
-        10, 5,
-    ).provide::<Ui>(ctx());
+        10,
+        5,
+    )
+    .provide::<Ui>(ctx());
     unfocused.draw();
 
     let focused_corner = focused.style_at(0, 0);
     let unfocused_corner = unfocused.style_at(0, 0);
-    assert_ne!(focused_corner.fg, unfocused_corner.fg,
-        "focused and unfocused borders have different colours");
+    assert_ne!(
+        focused_corner.fg, unfocused_corner.fg,
+        "focused and unfocused borders have different colours"
+    );
 }

@@ -107,7 +107,9 @@ impl Node {
             type_id: TypeId::of::<C>(),
             props: Rc::new(props),
             render: |props, scope| {
-                let props = props.downcast_ref::<C::Props>().expect("props of the declared type");
+                let props = props
+                    .downcast_ref::<C::Props>()
+                    .expect("props of the declared type");
                 C::render(props, scope)
             },
             props_equal: None,
@@ -122,10 +124,13 @@ impl Node {
     {
         let mut node = Node::part::<C>(props, key);
         if let Node::Part(part) = &mut node {
-            part.props_equal = Some(|a, b| match (a.downcast_ref::<C::Props>(), b.downcast_ref::<C::Props>()) {
-                (Some(a), Some(b)) => a == b,
-                _ => false,
-            });
+            part.props_equal =
+                Some(
+                    |a, b| match (a.downcast_ref::<C::Props>(), b.downcast_ref::<C::Props>()) {
+                        (Some(a), Some(b)) => a == b,
+                        _ => false,
+                    },
+                );
         }
         node
     }
@@ -147,7 +152,6 @@ impl Node {
             other => into.push(other),
         }
     }
-
 }
 
 /// What names a child across frames.
@@ -215,7 +219,8 @@ impl NodeHandle {
     }
     /// Take focus. A no-op if the node is not `focusable`.
     pub fn focus(self) {
-        let focusable = crate::current::with(|rt| crate::event::focusable(rt, self)).unwrap_or(false);
+        let focusable =
+            crate::current::with(|rt| crate::event::focusable(rt, self)).unwrap_or(false);
         if focusable && let Some(held) = crate::current::held() {
             crate::event::move_focus(&held, Some(self));
         }

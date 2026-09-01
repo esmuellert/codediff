@@ -8,11 +8,10 @@ use ui::components::filler::{Filler, FillerProps};
 use ui::components::{Context, Ui};
 
 fn filler(width: u16) -> Harness {
-    Harness::new::<Filler>(FillerProps {}, width, 1)
-        .provide::<Ui>(Context {
-            theme: Rc::new(Theme::DARK),
-            ..Context::default()
-        })
+    Harness::new::<Filler>(FillerProps {}, width, 1).provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    })
 }
 
 #[test]
@@ -40,12 +39,15 @@ fn the_filler_uses_the_filler_style() {
     let style = h.style_at(0, 0);
     let theme = Theme::DARK;
     let expected = theme.normal.patch(theme.filler);
-    assert_eq!(style.bg, expected.bg, "the filler background matches the theme");
+    assert_eq!(
+        style.bg, expected.bg,
+        "the filler background matches the theme"
+    );
 }
 
 #[test]
 fn a_filler_beside_a_gutter_fills_the_remaining_width() {
-    use loom::{Node, Scope, component, rsx, Row, RowProps, Layout};
+    use loom::{Layout, Node, Row, RowProps, Scope, component, rsx};
     use ui::components::gutter::{Gutter, GutterProps};
 
     #[component]
@@ -68,20 +70,20 @@ fn a_filler_beside_a_gutter_fills_the_remaining_width() {
         }
     }
 
-    let mut h = Harness::new::<GutterAndFiller>(
-        GutterAndFillerProps {},
-        20, 1,
-    )
-    .provide::<Ui>(Context {
-        theme: Rc::new(Theme::DARK),
-        ..Context::default()
-    });
-    for _ in 0..3 { h.force_draw(); }
+    let mut h =
+        Harness::new::<GutterAndFiller>(GutterAndFillerProps {}, 20, 1).provide::<Ui>(Context {
+            theme: Rc::new(Theme::DARK),
+            ..Context::default()
+        });
+    for _ in 0..3 {
+        h.force_draw();
+    }
     let row = h.screen_row(0);
     let hatches = row.chars().filter(|&c| c == '╱').count();
     assert!(
         hatches > 1,
         "the filler should fill the space after the gutter, got {} hatches in {:?}",
-        hatches, row
+        hatches,
+        row
     );
 }

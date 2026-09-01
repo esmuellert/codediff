@@ -43,8 +43,14 @@ pub fn tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
 }
 
 enum Item<'a> {
-    File { name: &'a str, file: &'a File },
-    Directory { name: String, children: Vec<Item<'a>> },
+    File {
+        name: &'a str,
+        file: &'a File,
+    },
+    Directory {
+        name: String,
+        children: Vec<Item<'a>>,
+    },
 }
 
 impl<'a> Item<'a> {
@@ -69,9 +75,9 @@ fn insert<'a>(items: &mut Vec<Item<'a>>, dirs: &[&str], name: &'a str, file: &'a
     let dir_name = dirs[0];
     let rest = &dirs[1..];
 
-    let pos = items.iter().position(|item| {
-        matches!(item, Item::Directory { name, .. } if name == dir_name)
-    });
+    let pos = items
+        .iter()
+        .position(|item| matches!(item, Item::Directory { name, .. } if name == dir_name));
 
     match pos {
         Some(pos) => {
@@ -95,7 +101,9 @@ fn insert<'a>(items: &mut Vec<Item<'a>>, dirs: &[&str], name: &'a str, file: &'a
 /// `src/view` → file.
 fn flatten(items: &mut Vec<Item<'_>>) {
     for item in items.iter_mut() {
-        let Item::Directory { name, children } = item else { continue };
+        let Item::Directory { name, children } = item else {
+            continue;
+        };
         flatten(children);
         if children.len() == 1 && children[0].is_directory() {
             let Item::Directory {
@@ -239,7 +247,12 @@ fn heading_node(name: &'static str, files: &[&File]) -> Node {
             removed += stats.removed;
         }
     }
-    Node::Heading { name, count: files.len(), added, removed }
+    Node::Heading {
+        name,
+        count: files.len(),
+        added,
+        removed,
+    }
 }
 
 /// Groups files by revision pair, preserving the order the first file of

@@ -20,7 +20,12 @@ pub struct Paint<'a> {
 
 impl<'a> Paint<'a> {
     pub(crate) fn new(cells: &'a mut Cells, area: Rect, clip: Rect, focused: bool) -> Self {
-        Self { cells, area, clip, focused }
+        Self {
+            cells,
+            area,
+            clip,
+            focused,
+        }
     }
 
     /// The cell grid.
@@ -78,5 +83,6 @@ impl<'a> Paint<'a> {
 /// Graphemes, without pulling in a segmentation crate: ratatui's own `Span`
 /// measures, and `char_indices` is the boundary set this program's text needs.
 fn unicode_graphemes(text: &str) -> impl Iterator<Item = &str> {
-    text.char_indices().map(move |(at, ch)| &text[at..at + ch.len_utf8()])
+    text.char_indices()
+        .map(move |(at, ch)| &text[at..at + ch.len_utf8()])
 }

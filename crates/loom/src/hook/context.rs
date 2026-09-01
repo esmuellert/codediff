@@ -72,7 +72,11 @@ pub fn offer<C: Context>(scope: &mut Scope, value: C::Value) {
             None => {
                 rt.context_version += 1;
                 let version = rt.context_version;
-                offers.push(crate::runtime::Offer { context: key, value: Rc::new(value), version });
+                offers.push(crate::runtime::Offer {
+                    context: key,
+                    value: Rc::new(value),
+                    version,
+                });
             }
         }
     });
@@ -80,9 +84,16 @@ pub fn offer<C: Context>(scope: &mut Scope, value: C::Value) {
 
 /// Marks every scope below `from` that read `key`.
 fn mark_readers(rt: &mut crate::runtime::Runtime, from: ScopeId, key: TypeId) {
-    let children = rt.scopes.get(from).map(|m| m.children.clone()).unwrap_or_default();
+    let children = rt
+        .scopes
+        .get(from)
+        .map(|m| m.children.clone())
+        .unwrap_or_default();
     for child in children {
-        let reads = rt.scopes.get(child).is_some_and(|m| m.reads.iter().any(|(t, _)| *t == key));
+        let reads = rt
+            .scopes
+            .get(child)
+            .is_some_and(|m| m.reads.iter().any(|(t, _)| *t == key));
         if reads {
             rt.mark(child);
         }

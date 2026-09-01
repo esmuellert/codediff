@@ -28,10 +28,15 @@ where
         "Memo",
         || {
             let (deps, compute) = input.take().expect("the first render computes once");
-            Slot::Memo(MemoSlot { deps: Box::new(deps), value: Rc::new(compute()) })
+            Slot::Memo(MemoSlot {
+                deps: Box::new(deps),
+                value: Rc::new(compute()),
+            })
         },
         |slot| {
-            let Slot::Memo(memo) = slot else { unreachable!("checked by shape") };
+            let Slot::Memo(memo) = slot else {
+                unreachable!("checked by shape")
+            };
             if let Some((deps, compute)) = input.take() {
                 let same = memo
                     .deps

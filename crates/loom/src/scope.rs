@@ -63,7 +63,11 @@ pub(crate) struct Scopes {
 
 impl Scopes {
     pub fn new() -> Self {
-        Self { cells: Vec::new(), generations: Vec::new(), free: None }
+        Self {
+            cells: Vec::new(),
+            generations: Vec::new(),
+            free: None,
+        }
     }
 
     pub fn insert(&mut self, mounted: Mounted) -> ScopeId {
@@ -74,13 +78,19 @@ impl Scopes {
                 };
                 self.free = next;
                 self.cells[index as usize] = Cell::Live(Box::new(mounted));
-                ScopeId { index, generation: self.generations[index as usize] }
+                ScopeId {
+                    index,
+                    generation: self.generations[index as usize],
+                }
             }
             None => {
                 let index = self.cells.len() as u32;
                 self.cells.push(Cell::Live(Box::new(mounted)));
                 self.generations.push(0);
-                ScopeId { index, generation: 0 }
+                ScopeId {
+                    index,
+                    generation: 0,
+                }
             }
         }
     }
@@ -89,8 +99,10 @@ impl Scopes {
         if !self.is_alive(id) {
             return None;
         }
-        let cell =
-            std::mem::replace(&mut self.cells[id.index as usize], Cell::Free { next: self.free });
+        let cell = std::mem::replace(
+            &mut self.cells[id.index as usize],
+            Cell::Free { next: self.free },
+        );
         // The generation moves on, so every handle to the old occupant now
         // fails `is_alive`.
         self.generations[id.index as usize] = id.generation.wrapping_add(1);

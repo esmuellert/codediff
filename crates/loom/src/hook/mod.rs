@@ -100,7 +100,10 @@ pub(crate) fn use_hook<H>(
     let site = std::panic::Location::caller();
 
     let (index, fresh) = crate::current::with_mut(|rt| {
-        let hooks = rt.hooks.get_mut(&id).expect("a running scope has hook storage");
+        let hooks = rt
+            .hooks
+            .get_mut(&id)
+            .expect("a running scope has hook storage");
         let index = hooks.index;
         hooks.index += 1;
         (index, index >= hooks.slots.len())
@@ -110,7 +113,10 @@ pub(crate) fn use_hook<H>(
     if fresh {
         let slot = first();
         crate::current::with_mut(|rt| {
-            let hooks = rt.hooks.get_mut(&id).expect("a running scope has hook storage");
+            let hooks = rt
+                .hooks
+                .get_mut(&id)
+                .expect("a running scope has hook storage");
             hooks.slots.push(slot);
             #[cfg(debug_assertions)]
             hooks.sites.push(site);
@@ -119,7 +125,10 @@ pub(crate) fn use_hook<H>(
 
     crate::current::with_mut(|rt| {
         let name = rt.name_of(id);
-        let hooks = rt.hooks.get_mut(&id).expect("a running scope has hook storage");
+        let hooks = rt
+            .hooks
+            .get_mut(&id)
+            .expect("a running scope has hook storage");
         let current = hooks.slots[index].shape();
         if current != kind {
             #[cfg(debug_assertions)]

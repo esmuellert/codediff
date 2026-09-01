@@ -87,7 +87,6 @@ impl Listeners {
         self.blur = Some(Rc::new(listen));
         self
     }
-
 }
 /// Move focus to the next focusable node in paint order, wrapping. No-ops
 /// when nothing is focusable.

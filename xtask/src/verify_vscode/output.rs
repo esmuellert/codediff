@@ -62,7 +62,11 @@ pub fn build(root: &Path) -> Result<PathBuf> {
     let target = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("target"));
-    Ok(target.join("debug").join(if cfg!(windows) { "codediff.exe" } else { "codediff" }))
+    Ok(target.join("debug").join(if cfg!(windows) {
+        "codediff.exe"
+    } else {
+        "codediff"
+    }))
 }
 
 pub fn materialise(root: &Path, pair: &Pair) -> Result<Files> {
@@ -75,11 +79,7 @@ pub fn materialise(root: &Path, pair: &Pair) -> Result<Files> {
     Ok(Files { original, modified })
 }
 
-pub fn codediff(
-    binary: &Path,
-    files: &Files,
-    ignore_trim_whitespace: bool,
-) -> Result<String> {
+pub fn codediff(binary: &Path, files: &Files, ignore_trim_whitespace: bool) -> Result<String> {
     let output = Command::new(binary)
         .args(["debug", "parity"])
         .arg(&files.original)
@@ -88,7 +88,10 @@ pub fn codediff(
         .arg(ignore_trim_whitespace.to_string())
         .output()?;
     if !output.status.success() {
-        bail!("codediff parity failed: {}", String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "codediff parity failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     Ok(String::from_utf8(output.stdout)?)
 }
@@ -124,7 +127,10 @@ pub fn save_mismatch(
     std::fs::write(dir.join("difference.jsonl"), difference(vscode, codediff)?)?;
     std::fs::write(
         dir.join("revisions.txt"),
-        format!("path = {}\nolder = {}\nnewer = {}\n", pair.path, pair.older, pair.newer),
+        format!(
+            "path = {}\nolder = {}\nnewer = {}\n",
+            pair.path, pair.older, pair.newer
+        ),
     )?;
     Ok(dir)
 }
@@ -139,7 +145,11 @@ pub fn clear(root: &Path) -> Result<()> {
 
 fn validate(record: &Record) -> Result<()> {
     match record {
-        Record::Row { original: None, modified: None, .. } => {
+        Record::Row {
+            original: None,
+            modified: None,
+            ..
+        } => {
             bail!("a row cannot contain two fillers")
         }
         Record::Highlight {
@@ -174,7 +184,12 @@ fn validate(record: &Record) -> Result<()> {
 
 fn normalise(records: &mut [Record]) {
     for record in records.iter_mut() {
-        if let Record::Highlight { characters, empty_markers, .. } = record {
+        if let Record::Highlight {
+            characters,
+            empty_markers,
+            ..
+        } = record
+        {
             characters.sort_unstable();
             empty_markers.sort_unstable();
         }

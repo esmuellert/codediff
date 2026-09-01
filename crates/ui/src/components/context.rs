@@ -4,15 +4,12 @@ use std::path::Path;
 use std::rc::Rc;
 
 use file_types::File;
-use loom::{
-    Node, Scope, SetState, component, context,
-    rsx, use_effect, use_memo, use_state,
-};
+use loom::{Node, Scope, SetState, component, context, rsx, use_effect, use_memo, use_state};
 use syntax::Store;
 
 use crate::services::diff::DiffService;
-use crate::services::syntax::SyntaxService;
 use crate::services::files::FilesService;
+use crate::services::syntax::SyntaxService;
 use crate::theme::Theme;
 
 /// Everything a component reads.
@@ -102,11 +99,13 @@ pub fn UiProvider(
     let svc_fs = Rc::clone(file_service);
     let repo_for_fs = Rc::clone(&repo);
     use_effect(scope, (), move || {
-        svc_fs.on_fs_changed().subscribe(move |what: watcher::Refresh| {
-            if what.worktree || what.index {
-                svc_fs.refresh(&repo_for_fs);
-            }
-        });
+        svc_fs
+            .on_fs_changed()
+            .subscribe(move |what: watcher::Refresh| {
+                if what.worktree || what.index {
+                    svc_fs.refresh(&repo_for_fs);
+                }
+            });
     });
 
     // Subscribe to syntax updates.
@@ -124,15 +123,16 @@ pub fn UiProvider(
     use_effect(scope, file.clone(), move || {
         if let Some(ref file) = file_for_effect {
             ssvc2.new_file();
-            dsvc.get(file).subscribe(move |response: pipeline::diff::Response| {
-                match response.content {
-                    Ok(content) => {
-                        let rc = Rc::new(content);
-                        set_diff(&move |_| Some(Rc::clone(&rc)));
-                    }
-                    Err(_) => set_diff(&|_| None),
-                }
-            });
+            dsvc.get(file)
+                .subscribe(
+                    move |response: pipeline::diff::Response| match response.content {
+                        Ok(content) => {
+                            let rc = Rc::new(content);
+                            set_diff(&move |_| Some(Rc::clone(&rc)));
+                        }
+                        Err(_) => set_diff(&|_| None),
+                    },
+                );
         }
     });
 
@@ -140,7 +140,10 @@ pub fn UiProvider(
     if let Some(ref content) = diff.as_deref() {
         if let pipeline::diff::DiffContent::Diff(d) = content {
             let last = 2000u32;
-            for version in [file_types::DiffVersion::Original, file_types::DiffVersion::Modified] {
+            for version in [
+                file_types::DiffVersion::Original,
+                file_types::DiffVersion::Modified,
+            ] {
                 syntax_service.request(&d.file, version, d.alignment.text(version), last);
             }
         }

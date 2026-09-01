@@ -52,7 +52,12 @@ macro_rules! container {
 
 container!(Row, RowProps, Axis::Across, "Children across.");
 container!(Column, ColumnProps, Axis::Down, "Children down.");
-container!(Stack, StackProps, Axis::Over, "Children painted over one another, in declaration order.");
+container!(
+    Stack,
+    StackProps,
+    Axis::Over,
+    "Children painted over one another, in declaration order."
+);
 
 /// Empty space. `Gap { layout: Layout { grow: 1, .. } }` pushes what follows
 /// away.
@@ -89,7 +94,12 @@ pub struct DividerProps {
 
 impl Default for DividerProps {
     fn default() -> Self {
-        Self { layout: Layout::default(), symbol: "\u{2502}", style: Style::new(), node_ref: None }
+        Self {
+            layout: Layout::default(),
+            symbol: "\u{2502}",
+            style: Style::new(),
+            node_ref: None,
+        }
     }
 }
 
@@ -160,7 +170,10 @@ impl Default for CanvasProps {
     fn default() -> Self {
         Self {
             // A canvas is where unbounded painting would otherwise happen.
-            layout: Layout { clip: true, ..Layout::default() },
+            layout: Layout {
+                clip: true,
+                ..Layout::default()
+            },
             listeners: Listeners::default(),
             focusable: false,
             auto_focus: false,

@@ -12,7 +12,12 @@ pub struct Pair {
     pub modified: String,
 }
 
-pub fn pairs(repo: &Path, file_count: usize, versions: usize, max_lines: usize) -> Result<Vec<Pair>> {
+pub fn pairs(
+    repo: &Path,
+    file_count: usize,
+    versions: usize,
+    max_lines: usize,
+) -> Result<Vec<Pair>> {
     let repo = repo.canonicalize().context("finding repository")?;
     let base = base_ref(&repo)?;
     let mut counts = HashMap::<String, usize>::new();
@@ -21,7 +26,10 @@ pub fn pairs(repo: &Path, file_count: usize, versions: usize, max_lines: usize) 
         *counts.entry(path.to_owned()).or_default() += 1;
     }
 
-    let mut candidates: Vec<_> = counts.into_iter().filter(|(_, count)| *count >= 2).collect();
+    let mut candidates: Vec<_> = counts
+        .into_iter()
+        .filter(|(_, count)| *count >= 2)
+        .collect();
     candidates.sort_by(|(path_a, count_a), (path_b, count_b)| {
         count_b.cmp(count_a).then_with(|| path_a.cmp(path_b))
     });
@@ -36,17 +44,26 @@ pub fn pairs(repo: &Path, file_count: usize, versions: usize, max_lines: usize) 
             continue;
         }
         let limit = (versions + 1).to_string();
-        let commits = text(&repo, &["log", &base, "-n", &limit, "--format=%H", "--", &path])?;
+        let commits = text(
+            &repo,
+            &["log", &base, "-n", &limit, "--format=%H", "--", &path],
+        )?;
         let commits: Vec<_> = commits.lines().collect();
-        let Some(newer) = commits.first().copied() else { continue };
-        let Some(modified) = show(&repo, newer, &path)? else { continue };
+        let Some(newer) = commits.first().copied() else {
+            continue;
+        };
+        let Some(modified) = show(&repo, newer, &path)? else {
+            continue;
+        };
         if unsuitable(&modified, max_lines) {
             continue;
         }
 
         let before = out.len();
         for older in commits.iter().skip(1).take(versions) {
-            let Some(original) = show(&repo, older, &path)? else { continue };
+            let Some(original) = show(&repo, older, &path)? else {
+                continue;
+            };
             if unsuitable(&original, max_lines) || original == modified {
                 continue;
             }
@@ -113,7 +130,11 @@ fn exists(repo: &Path, spec: &str) -> bool {
 fn text(repo: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git").current_dir(repo).args(args).output()?;
     if !output.status.success() {
-        bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     Ok(String::from_utf8(output.stdout)?)
 }

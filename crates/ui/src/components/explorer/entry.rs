@@ -6,7 +6,9 @@
 
 use std::rc::Rc;
 
-use loom::{Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Scope, component, rsx, use_context};
+use loom::{
+    Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Scope, component, rsx, use_context,
+};
 use ratatui::style::Color;
 
 use super::build::Node;

@@ -95,7 +95,10 @@ impl Drop for Subscription {
 /// last. Subscribes on mount and unsubscribes on unmount, so `store` must be
 /// the same store for the component's life.
 #[track_caller]
-pub fn use_sync_external_store<S: ExternalStore>(scope: &mut Scope, store: &S) -> Snapshot<S::Value> {
+pub fn use_sync_external_store<S: ExternalStore>(
+    scope: &mut Scope,
+    store: &S,
+) -> Snapshot<S::Value> {
     let id = scope.id;
     let runtime = crate::current::handle();
 
@@ -119,7 +122,9 @@ pub fn use_sync_external_store<S: ExternalStore>(scope: &mut Scope, store: &S) -
             })
         },
         |slot| {
-            let Slot::Store(held) = slot else { unreachable!("checked by shape") };
+            let Slot::Store(held) = slot else {
+                unreachable!("checked by shape")
+            };
             let last = held
                 .snapshot
                 .downcast_ref::<Snapshot<S::Value>>()

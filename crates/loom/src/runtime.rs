@@ -114,7 +114,11 @@ impl Runtime {
     /// R6.2 — deepest first, so a child's cleanup sees a parent that is still
     /// there.
     pub fn unmount(&mut self, id: ScopeId) {
-        let children = self.scopes.get(id).map(|m| m.children.clone()).unwrap_or_default();
+        let children = self
+            .scopes
+            .get(id)
+            .map(|m| m.children.clone())
+            .unwrap_or_default();
         for child in children {
             self.unmount(child);
         }
@@ -161,7 +165,9 @@ impl Runtime {
         }
         let mut at = Some(id);
         while let Some(scope) = at {
-            let Some(mounted) = self.scopes.get_mut(scope) else { break };
+            let Some(mounted) = self.scopes.get_mut(scope) else {
+                break;
+            };
             if mounted.dirty && scope != id {
                 // Everything above is marked already.
                 break;
@@ -184,7 +190,11 @@ impl Runtime {
 
     fn mark_subtree(&mut self, id: ScopeId) {
         self.mark(id);
-        let children = self.scopes.get(id).map(|m| m.children.clone()).unwrap_or_default();
+        let children = self
+            .scopes
+            .get(id)
+            .map(|m| m.children.clone())
+            .unwrap_or_default();
         for child in children {
             self.mark_subtree(child);
         }
@@ -205,14 +215,16 @@ impl Runtime {
         self.focused
     }
 
-
     /// Whether `other` is `outer` or sits inside it, by walking the placed
     /// tree upward.
     pub fn node_contains(&self, outer: NodeHandle, other: NodeHandle) -> bool {
         if outer == other {
             return true;
         }
-        let Some(start) = self.placed.iter().position(|p| p.scope == other.scope && p.nth == other.nth)
+        let Some(start) = self
+            .placed
+            .iter()
+            .position(|p| p.scope == other.scope && p.nth == other.nth)
         else {
             return false;
         };
@@ -228,7 +240,11 @@ impl Runtime {
     }
 
     /// The nearest offer of `context` at or above `from`, and its version.
-    pub fn read_context(&self, from: ScopeId, context: TypeId) -> Option<(Rc<dyn std::any::Any>, u64)> {
+    pub fn read_context(
+        &self,
+        from: ScopeId,
+        context: TypeId,
+    ) -> Option<(Rc<dyn std::any::Any>, u64)> {
         let mut at = Some(from);
         while let Some(id) = at {
             if let Some(offers) = self.offers.get(&id)

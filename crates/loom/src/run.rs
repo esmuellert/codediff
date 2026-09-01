@@ -108,4 +108,3 @@ fn press(event: &Event) -> Option<crokey::KeyCombination> {
         _ => None,
     }
 }
-

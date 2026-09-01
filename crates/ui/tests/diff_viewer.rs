@@ -9,12 +9,11 @@ use ui::components::diff_viewer::{DiffViewer, DiffViewerProps};
 use ui::components::{Context, Ui};
 
 fn with_diff(diff: Option<Rc<pipeline::diff::DiffContent>>) -> Harness {
-    Harness::new::<DiffViewer>(DiffViewerProps {}, 60, 10)
-        .provide::<Ui>(Context {
-            theme: Rc::new(Theme::DARK),
-            diff,
-            ..Context::default()
-        })
+    Harness::new::<DiffViewer>(DiffViewerProps {}, 60, 10).provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        diff,
+        ..Context::default()
+    })
 }
 
 fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::DiffContent {

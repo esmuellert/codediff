@@ -62,11 +62,7 @@ enum Record {
     },
 }
 
-pub fn run(
-    original_path: &str,
-    modified_path: &str,
-    ignore_trim_whitespace: bool,
-) -> Result<()> {
+pub fn run(original_path: &str, modified_path: &str, ignore_trim_whitespace: bool) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
     let original = vscode_diff::editor_lines(&original_text);

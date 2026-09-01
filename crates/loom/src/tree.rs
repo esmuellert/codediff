@@ -29,7 +29,9 @@ impl Tree {
                 None,
                 Rc::new(props),
                 |props, scope| {
-                    let props = props.downcast_ref::<C::Props>().expect("props of the declared type");
+                    let props = props
+                        .downcast_ref::<C::Props>()
+                        .expect("props of the declared type");
                     C::render(props, scope)
                 },
                 None,
@@ -39,7 +41,10 @@ impl Tree {
             id
         });
         let _: ScopeId = root;
-        Self { runtime, area: Rect::ZERO }
+        Self {
+            runtime,
+            area: Rect::ZERO,
+        }
     }
 
     /// Replaces the root's props and redraws it.

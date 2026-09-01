@@ -39,7 +39,8 @@ pub(crate) fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut names = Vec::new();
     for argument in inputs {
         let FnArg::Typed(argument) = argument else {
-            return syn::Error::new_spanned(argument, "a component takes no self").to_compile_error();
+            return syn::Error::new_spanned(argument, "a component takes no self")
+                .to_compile_error();
         };
         let Pat::Ident(ident) = argument.pat.as_ref() else {
             return syn::Error::new_spanned(&argument.pat, "a prop is one name").to_compile_error();

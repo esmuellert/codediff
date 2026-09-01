@@ -144,15 +144,7 @@ fn a_whole_line_range_starts_before_a_zero_width_control_character() {
 fn an_empty_range_draws_a_marker_without_claiming_a_character() {
     let unchanged = Style::default().bg(Color::Blue);
     let changed = Style::default().bg(Color::Red);
-    let mut h = decorated_code_text(
-        "abc",
-        Vec::new(),
-        None,
-        vec![1],
-        10,
-        unchanged,
-        changed,
-    );
+    let mut h = decorated_code_text("abc", Vec::new(), None, vec![1], 10, unchanged, changed);
 
     let marker = h.style_at(1, 0);
     assert_eq!(marker.bg, Some(Color::Blue));

@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use loom::{
-    Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps,
-    Scope, Text, TextProps, component, rsx, use_effect, use_exit, use_memo, use_ref, use_state,
+    Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Layout, Listeners, Node, Row,
+    RowProps, Scope, Text, TextProps, component, rsx, use_effect, use_exit, use_memo, use_ref,
+    use_state,
 };
 
 #[component]
@@ -179,12 +180,21 @@ fn Effecting(scope: &mut Scope, tag: u32, log: Rc<RefCell<Vec<String>>>) -> Node
 #[test]
 fn a_cleanup_runs_before_the_next_setup() {
     let log = Rc::new(RefCell::new(Vec::new()));
-    let mut screen =
-        Harness::new::<Effecting>(EffectingProps { tag: 1, log: log.clone() }, 4, 1);
+    let mut screen = Harness::new::<Effecting>(
+        EffectingProps {
+            tag: 1,
+            log: log.clone(),
+        },
+        4,
+        1,
+    );
     screen.draw();
     assert_eq!(&*log.borrow(), &["setup 1"]);
 
-    screen.set_props::<Effecting>(EffectingProps { tag: 2, log: log.clone() });
+    screen.set_props::<Effecting>(EffectingProps {
+        tag: 2,
+        log: log.clone(),
+    });
     screen.draw();
     assert_eq!(&*log.borrow(), &["setup 1", "cleanup 1", "setup 2"]);
 }
@@ -218,9 +228,19 @@ fn Memoing(scope: &mut Scope, tag: u32, seen: Rc<RefCell<Vec<usize>>>) -> Node {
 #[test]
 fn a_memo_keeps_its_value_while_its_deps_hold_still() {
     let seen = Rc::new(RefCell::new(Vec::new()));
-    let mut screen = Harness::new::<Memoing>(MemoingProps { tag: 1, seen: seen.clone() }, 4, 1);
+    let mut screen = Harness::new::<Memoing>(
+        MemoingProps {
+            tag: 1,
+            seen: seen.clone(),
+        },
+        4,
+        1,
+    );
     screen.draw();
-    screen.set_props::<Memoing>(MemoingProps { tag: 1, seen: seen.clone() });
+    screen.set_props::<Memoing>(MemoingProps {
+        tag: 1,
+        seen: seen.clone(),
+    });
     screen.draw();
     let seen = seen.borrow();
     assert_eq!(seen.len(), 2);
@@ -230,9 +250,19 @@ fn a_memo_keeps_its_value_while_its_deps_hold_still() {
 #[test]
 fn a_memo_recomputes_when_its_deps_change() {
     let seen = Rc::new(RefCell::new(Vec::new()));
-    let mut screen = Harness::new::<Memoing>(MemoingProps { tag: 1, seen: seen.clone() }, 4, 1);
+    let mut screen = Harness::new::<Memoing>(
+        MemoingProps {
+            tag: 1,
+            seen: seen.clone(),
+        },
+        4,
+        1,
+    );
     screen.draw();
-    screen.set_props::<Memoing>(MemoingProps { tag: 2, seen: seen.clone() });
+    screen.set_props::<Memoing>(MemoingProps {
+        tag: 2,
+        seen: seen.clone(),
+    });
     screen.draw();
     let seen = seen.borrow();
     assert_ne!(seen[0], seen[1], "new deps gave back a new Rc");
@@ -337,10 +367,18 @@ fn Tagged(scope: &mut Scope, tag: u32) -> Node {
 
 #[test]
 fn a_keyed_child_keeps_its_state_when_the_list_reorders() {
-    let mut screen = Harness::new::<Keyed>(KeyedProps { order: vec![1, 2, 3] }, 10, 3);
+    let mut screen = Harness::new::<Keyed>(
+        KeyedProps {
+            order: vec![1, 2, 3],
+        },
+        10,
+        3,
+    );
     assert_eq!(screen.screen(), vec!["1:1", "2:2", "3:3"]);
 
-    screen.set_props::<Keyed>(KeyedProps { order: vec![3, 1, 2] });
+    screen.set_props::<Keyed>(KeyedProps {
+        order: vec![3, 1, 2],
+    });
     // Each row kept the state it mounted with, so the pairs still match.
     assert_eq!(screen.screen(), vec!["3:3", "1:1", "2:2"]);
 }
@@ -427,7 +465,10 @@ fn a_component_can_stop_the_loop() {
 
 /// An observer delivered from outside the tree updates state.
 #[component]
-fn ObserverReceiver(scope: &mut Scope, sender: Rc<RefCell<Option<loom::Observer<String>>>>) -> Node {
+fn ObserverReceiver(
+    scope: &mut Scope,
+    sender: Rc<RefCell<Option<loom::Observer<String>>>>,
+) -> Node {
     let (text, set_text) = use_state(scope, || "waiting".to_string());
     let send = Rc::clone(sender);
     use_effect(scope, (), move || {
@@ -442,8 +483,11 @@ fn ObserverReceiver(scope: &mut Scope, sender: Rc<RefCell<Option<loom::Observer<
 fn an_observer_delivered_from_outside_updates_the_screen() {
     let sender: Rc<RefCell<Option<loom::Observer<String>>>> = Rc::new(RefCell::new(None));
     let mut h = Harness::new::<ObserverReceiver>(
-        ObserverReceiverProps { sender: Rc::clone(&sender) },
-        20, 1,
+        ObserverReceiverProps {
+            sender: Rc::clone(&sender),
+        },
+        20,
+        1,
     );
     h.draw();
     assert_eq!(h.screen_row(0), "waiting");

@@ -37,11 +37,7 @@ fn line_spans_reads_from_the_store() {
     store.install(response(
         &key,
         0,
-        vec![
-            vec![span(0, 2), span(3, 8)],
-            vec![span(0, 5)],
-            vec![],
-        ],
+        vec![vec![span(0, 2), span(3, 8)], vec![span(0, 5)], vec![]],
     ));
 
     // Line 1 (1-based) → index 0, two spans.

@@ -4,8 +4,8 @@ use std::path::Path;
 use std::rc::Rc;
 
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope,
-    component, rsx, use_exit,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
+    use_exit,
 };
 
 use super::border::{Border, BorderProps};

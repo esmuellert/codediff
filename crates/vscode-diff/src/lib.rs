@@ -7,12 +7,12 @@ mod options;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-pub use error::Error;
-pub use file_types::DiffVersion;
-pub use options::Options;
 pub use diff_types::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, MovedText, RangeMapping,
 };
+pub use error::Error;
+pub use file_types::DiffVersion;
+pub use options::Options;
 
 /// The compiled C engine's version.
 pub fn engine_version() -> &'static str {
