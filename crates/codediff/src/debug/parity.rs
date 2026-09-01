@@ -62,14 +62,19 @@ enum Record {
     },
 }
 
-pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
+pub fn run(
+    original_path: &str,
+    modified_path: &str,
+    ignore_trim_whitespace: bool,
+) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
     let original = vscode_diff::editor_lines(&original_text);
     let modified = vscode_diff::editor_lines(&modified_text);
-    let options = vscode_diff::Options::default()
-        .ignoring_trim_whitespace()
-        .with_time_budget_ms(0);
+    let mut options = vscode_diff::Options::default().with_time_budget_ms(0);
+    if ignore_trim_whitespace {
+        options = options.ignoring_trim_whitespace();
+    }
     let diff = vscode_diff::compute(&original, &modified, &options)?;
     let alignment = pipeline::diff::diff::align(diff, &original, &modified)?;
     let height = u16::try_from(alignment.view_line_count(DiffType::SideBySide).max(1))?;

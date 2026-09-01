@@ -4,9 +4,9 @@ use align::Alignment;
 use anyhow::{Context, Result};
 use vscode_diff::LinesDiff;
 
-/// Calls the C engine with VS Code's diff-editor defaults. Only for files with two sides.
+/// Calls the C engine with strict whitespace. Only for files with two sides.
 pub fn compute(before: &[&str], after: &[&str]) -> Result<LinesDiff> {
-    let options = vscode_diff::Options::default().ignoring_trim_whitespace();
+    let options = vscode_diff::Options::default();
     vscode_diff::compute(before, after, &options).context("computing the diff")
 }
 
@@ -14,4 +14,16 @@ pub fn compute(before: &[&str], after: &[&str]) -> Result<LinesDiff> {
 pub fn align(diff: LinesDiff, before: &[&str], after: &[&str]) -> Result<Alignment> {
     Alignment::try_new(diff, before, after)
         .map_err(|_| anyhow::anyhow!("the diff does not describe these two files"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute;
+
+    #[test]
+    fn production_keeps_leading_and_trailing_whitespace_changes() {
+        let diff = compute(&["  value"], &["value  "]).unwrap();
+
+        assert!(!diff.is_empty());
+    }
 }

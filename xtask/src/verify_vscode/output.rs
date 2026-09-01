@@ -75,11 +75,17 @@ pub fn materialise(root: &Path, pair: &Pair) -> Result<Files> {
     Ok(Files { original, modified })
 }
 
-pub fn codediff(binary: &Path, files: &Files) -> Result<String> {
+pub fn codediff(
+    binary: &Path,
+    files: &Files,
+    ignore_trim_whitespace: bool,
+) -> Result<String> {
     let output = Command::new(binary)
         .args(["debug", "parity"])
         .arg(&files.original)
         .arg(&files.modified)
+        .arg("--ignore-trim-whitespace")
+        .arg(ignore_trim_whitespace.to_string())
         .output()?;
     if !output.status.success() {
         bail!("codediff parity failed: {}", String::from_utf8_lossy(&output.stderr));

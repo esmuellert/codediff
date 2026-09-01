@@ -58,7 +58,12 @@ pub enum Debug {
     },
 
     /// Print side-by-side rows and highlight roles for VS Code comparison
-    Parity { original: String, modified: String },
+    Parity {
+        original: String,
+        modified: String,
+        #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+        ignore_trim_whitespace: bool,
+    },
 
     /// Print where each character of a line sits
     Line {

@@ -172,10 +172,14 @@ the JSONL records defined by `xtask/src/verify_vscode/schema.json`. The command
 stores `vscode.jsonl`, `codediff.jsonl`, and `difference.jsonl` under
 `target/vscode-parity/mismatches/`. The verifier disables the computation
 budget on both sides: a wall-clock cutoff is deliberately timing-dependent,
-whereas the completed mappings and their rendering are deterministic. Word
-wrapping and color decorators are disabled so unrelated editor widgets cannot
-change diff coordinates. External pressure-test clones live in the ignored
-`target/vscode-parity-repos/`; only their committed history is read.
+whereas the completed mappings and their rendering are deterministic.
+`--ignore-trim-whitespace true|false` is passed to both producers, and
+`trim-whitespace=yes` means the selected history contains a pair where the two
+settings differ. `--pairs N` takes exactly N dynamic pairs and fails when the
+history cannot supply them. Word wrapping and color decorators are disabled so
+unrelated editor widgets cannot change diff coordinates. Generated pairs live
+under `target/vscode-parity/`; external pressure-test clones live in the
+ignored `target/vscode-parity-repos/`.
 
 `drift` is named for what it measures. It is not `health`, which would collide with
 `codediff doctor` — that reports on the *user's environment*, while this reports on the

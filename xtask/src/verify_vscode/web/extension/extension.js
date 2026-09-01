@@ -14,6 +14,17 @@ async function readPairs() {
   });
 }
 
+async function readOptions() {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+  if (!root) throw new Error('codediff parity workspace is missing');
+  const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(root, 'options.json'));
+  const options = JSON.parse(new TextDecoder().decode(bytes));
+  if (typeof options.ignore_trim_whitespace !== 'boolean') {
+    throw new Error('ignore_trim_whitespace must be boolean');
+  }
+  return options;
+}
+
 async function open(index) {
   if (index >= pairs.length) return;
   current = index;
@@ -33,10 +44,11 @@ async function activate(context) {
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10_000);
   context.subscriptions.push(status);
   context.subscriptions.push(vscode.commands.registerCommand('codediffParity.next', () => open(current + 1)));
+  const options = await readOptions();
   const global = vscode.ConfigurationTarget.Global;
   await vscode.workspace.getConfiguration('diffEditor').update('renderSideBySide', true, global);
   await vscode.workspace.getConfiguration('diffEditor').update('useInlineViewWhenSpaceIsLimited', false, global);
-  await vscode.workspace.getConfiguration('diffEditor').update('ignoreTrimWhitespace', true, global);
+  await vscode.workspace.getConfiguration('diffEditor').update('ignoreTrimWhitespace', options.ignore_trim_whitespace, global);
   await vscode.workspace.getConfiguration('diffEditor').update('maxComputationTime', 0, global);
   await vscode.workspace.getConfiguration('diffEditor').update('experimental.showMoves', false, global);
   await vscode.workspace.getConfiguration('diffEditor').update('hideUnchangedRegions.enabled', false, global);
