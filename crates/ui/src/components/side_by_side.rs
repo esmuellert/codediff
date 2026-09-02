@@ -14,16 +14,10 @@ use ratatui::style::Style;
 use super::code_text::{CodeText, CodeTextProps};
 use super::context::Ui;
 use super::filler::Filler;
-use super::gutter::{Gutter, GutterProps};
+use super::gutter::{Gutter, GutterProps, width_for_line_count};
 
 use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use crate::services::syntax::SyntaxService;
-
-/// Digits + one trailing space, at least 4 columns.
-fn gutter_width(max_line: u32) -> u16 {
-    let digits = max_line.max(1).ilog10() + 1;
-    (digits as u16).max(3) + 1
-}
 
 fn row_styles(
     theme: &crate::theme::Theme,
@@ -77,8 +71,8 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let alignment = &diff.alignment;
     let original_lines = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_lines = alignment.lines(DiffVersion::Modified).len() as u32;
-    let original_gutter = gutter_width(original_lines);
-    let modified_gutter = gutter_width(modified_lines);
+    let original_gutter = width_for_line_count(original_lines);
+    let modified_gutter = width_for_line_count(modified_lines);
 
     let pairs: Vec<align::ViewLine> = alignment
         .view_lines_from(DiffType::SideBySide, view.view_lines.start)
