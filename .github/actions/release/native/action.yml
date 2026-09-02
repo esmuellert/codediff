@@ -22,6 +22,7 @@ runs:
       run: |
         cargo set-version "${{ inputs.version }}"
         cargo update -w
+        printf '%s\n' "${{ inputs.version }}" > libvscode-diff/VERSION
 
     - name: Apply version locally (Windows)
       if: runner.os == 'Windows'
@@ -29,6 +30,7 @@ runs:
       run: |
         cargo set-version "${{ inputs.version }}"
         cargo update -w
+        Set-Content -Path libvscode-diff/VERSION -Value "${{ inputs.version }}"
 
     - uses: Swatinem/rust-cache@v2
       with:

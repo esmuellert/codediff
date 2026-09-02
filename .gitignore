@@ -4,8 +4,8 @@
 **/*.rs.bk
 *.pdb
 
-# Vendored C build outputs. The C *source* is tracked and its provenance is
-# recorded in vendor/UPSTREAM.lock; build.rs compiles it into OUT_DIR.
+# C engine build outputs. The source is tracked; build.rs compiles it into OUT_DIR.
+/libvscode-diff/build/
 libvscode-diff/**/*.o
 libvscode-diff/**/*.a
 libvscode-diff/**/*.so

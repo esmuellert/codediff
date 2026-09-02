@@ -31,19 +31,17 @@ The library is 12 C files, 7,538 lines, builds in 2.1 seconds, and produces a
 
 ---
 
-## D3 — Copy the C source, do not submodule
+## D3 — Maintain the C engine here
 
-`libvscode-diff/` is a copy from a pinned upstream tag. `cargo xtask
-sync-c` refreshes it; `cargo xtask verify-c` detects drift in CI. Corrections
-needed for the pinned VS Code build live as explicit patches under
-`crates/vscode-diff-sys/patches/`. The build applies them to `OUT_DIR`, never to
-the vendored tree, and fails when an upstream refresh makes a patch stop
-applying.
+`libvscode-diff/` is the canonical C implementation. Cargo and CMake compile
+the same checked-in sources, including the parity corrections established by
+the VS Code oracle. The directory owns its version, tests, headers, and bundled
+utf8proc dependency; it has no source or build relationship with the Neovim
+plugin from which its initial revision was imported.
 
-Submodules are the norm for `-sys` crates, but the C rarely changes and
-submodule friction (recursive clone, CI config, confusing errors) costs more
-than it saves during fast iteration. Switch to a submodule when the C
-stabilises or a third consumer appears.
+Keeping the engine in this repository lets C changes land with their Rust FFI
+and VS Code parity tests. Other consumers pin an immutable repository commit
+rather than copying the source or following a moving branch.
 
 ---
 

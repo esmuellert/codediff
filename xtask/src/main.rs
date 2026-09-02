@@ -2,21 +2,19 @@
 //!
 //! Rust rather than shell so that it is cross-platform without duplication,
 //! type-checked, and able to use the workspace crates. This is not a build
-//! system: `cargo build` and `build.rs` compile everything, including the
-//! vendored C. These are the chores cargo has no opinion about.
+//! system: `cargo build` and `build.rs` compile everything, including the C
+//! engine. These are the chores cargo has no opinion about.
 //!
-//! Three of these tasks — `verify-c`, `lint-size` and `lint-arch` — exist to
-//! turn the rules in docs/plan into build failures.
+//! The lint tasks turn the rules in docs/plan into build failures.
 
+#[cfg(test)]
+mod attribution;
 mod dev;
 mod lint_arch;
 mod lint_size;
-mod lock;
 mod oracle_output;
 #[cfg(test)]
 mod release_policy;
-mod sync_c;
-mod verify_c;
 mod verify_oracle;
 mod verify_vscode;
 
@@ -28,8 +26,6 @@ fn main() -> Result<()> {
     let task = args.first().map(String::as_str);
 
     match task {
-        Some("sync-c") => sync_c::run(&args[1..]),
-        Some("verify-c") => verify_c::run(),
         Some("verify-oracle") => verify_oracle::run(),
         Some("verify-vscode") => verify_vscode::run(&args[1..]),
         Some("lint-size") => lint_size::run(),
@@ -55,10 +51,8 @@ fn help() {
         "\
 cargo xtask <task>
 
-Vendored C engine
-  sync-c --tag <tag> [--from <path>]   refresh vendor/ from an upstream tag
-  verify-c                             fail if vendor/ drifted from UPSTREAM.lock
-  verify-oracle                        compare our binding against upstream diff_tool
+C engine
+  verify-oracle                        compare our binding against the C diff tool
   verify-vscode [repo] [--files N --versions N --max-lines N]
                                        compare VS Code Web highlighting on Git history
 

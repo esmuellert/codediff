@@ -8,8 +8,7 @@ dependencies, vendored Neovim internals and documentation assets — none of whi
 present here.
 
 Everything below is compiled by `crates/vscode-diff-sys/build.rs` from
-`libvscode-diff/` plus the source patches beside that build script,
-except the icon table, which is Rust source in
+`libvscode-diff/`, except the icon table, which is Rust source in
 `crates/ui/src/theme/icon/table.rs`.
 
 ---
@@ -127,5 +126,5 @@ Full license text:
 Written by hand rather than copied from upstream, because attribution describes what
 *this* binary contains.
 
-`cargo xtask sync-c` lists the bundled third-party sources it finds, so a new one
-cannot arrive here unnoticed.
+A workspace test checks the bundled third-party source names, so a new one cannot
+arrive here unnoticed.

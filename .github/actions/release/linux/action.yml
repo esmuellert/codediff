@@ -27,6 +27,7 @@ runs:
       run: |
         cargo set-version "${{ inputs.version }}"
         cargo update -w
+        printf '%s\n' "${{ inputs.version }}" > libvscode-diff/VERSION
 
     - name: Build in CentOS 7
       shell: bash

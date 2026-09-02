@@ -1,6 +1,6 @@
 //! `cargo xtask verify-oracle`
 //!
-//! Builds upstream's own `diff_tool` from the vendored C, runs it and our Rust
+//! Builds `diff_tool` from the canonical C engine, runs it and our Rust
 //! binding over the same fixtures, and compares the results structurally.
 //!
 //! This is the differential test that catches marshalling mistakes the unit
@@ -12,7 +12,6 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::lock;
 use crate::oracle_output::{self, OracleChange, OracleInner};
 use vscode_diff::{LinesDiff, Options, compute};
 
@@ -35,14 +34,14 @@ const SOURCES: &[&str] = &[
 
 pub fn run() -> Result<()> {
     let root = crate::workspace_root();
-    lock::require_vendored(&root)?;
+    let engine = root.join("libvscode-diff");
+    if !engine.is_dir() {
+        bail!("libvscode-diff is missing at {}", engine.display());
+    }
 
-    let pairs_dir = lock::test_pairs_dir(&root);
+    let pairs_dir = engine.join("tests").join("oracle");
     if !pairs_dir.is_dir() {
-        bail!(
-            "no oracle fixtures at {}.\nRun: cargo xtask sync-c --tag <tag>",
-            pairs_dir.display()
-        );
+        bail!("no oracle fixtures at {}", pairs_dir.display());
     }
 
     let tool = build_oracle(&root).context("building upstream diff_tool")?;
@@ -237,16 +236,16 @@ fn change_mismatch(
     None
 }
 
-/// Compiles `diff_tool` from the vendored sources into `target/oracle/`.
+/// Compiles `diff_tool` from the canonical C sources into `target/oracle/`.
 ///
 /// Built here rather than by a build script because it is a development tool,
 /// not part of any shipped crate.
 fn build_oracle(root: &Path) -> Result<PathBuf> {
-    let engine = lock::engine_dir(root);
+    let engine = root.join("libvscode-diff");
     let out_dir = root.join("target").join("oracle");
     std::fs::create_dir_all(&out_dir)?;
 
-    let version = std::fs::read_to_string(lock::vendor_dir(root).join("VERSION"))?;
+    let version = std::fs::read_to_string(engine.join("VERSION"))?;
     write_version_header(&engine, &out_dir, version.trim())?;
 
     let exe = out_dir.join(if cfg!(windows) {

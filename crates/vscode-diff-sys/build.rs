@@ -1,4 +1,4 @@
-//! Builds the patched, static C diff engine.
+//! Builds the canonical C diff engine as a static library.
 
 use std::path::{Path, PathBuf};
 
@@ -19,20 +19,11 @@ const SOURCES: &[&str] = &[
     "vendor/utf8proc.c",
 ];
 
-const PATCHES: &[(&str, &str)] = &[
-    ("src/char_level.c", "char-level-text.patch"),
-    ("src/myers.c", "myers-typed-array.patch"),
-];
-
 fn main() {
-    let root = workspace_root();
-    let vendor = root.join("vendor");
-    let engine = root.join("libvscode-diff");
-
+    let engine = workspace_root().join("libvscode-diff");
     if !engine.is_dir() {
         panic!(
-            "libvscode-diff is missing.\nRun: cargo xtask sync-c --tag <tag>\n\
-             (expected at {})",
+            "libvscode-diff is missing (expected at {})",
             engine.display()
         );
     }
@@ -40,7 +31,7 @@ fn main() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
     let generated = out_dir.join("include");
     std::fs::create_dir_all(&generated).expect("creating generated include dir");
-    write_version_header(&vendor, &engine, &generated);
+    write_version_header(&engine, &generated);
 
     let mut build = cc::Build::new();
     build
@@ -55,38 +46,18 @@ fn main() {
         build.define("BUILDING_DLL", None);
     }
 
-    let patches = Path::new(env!("CARGO_MANIFEST_DIR")).join("patches");
     for source in SOURCES {
-        build.file(patched_source(&engine, &patches, &out_dir, source));
+        build.file(engine.join(source));
     }
-
     build.compile("vscode_diff");
 
     println!("cargo:rerun-if-changed={}", engine.display());
-    println!("cargo:rerun-if-changed={}", patches.display());
-    println!(
-        "cargo:rerun-if-changed={}",
-        vendor.join("VERSION").display()
-    );
-}
-
-fn patched_source(engine: &Path, patches: &Path, out_dir: &Path, source: &str) -> PathBuf {
-    let Some((_, patch_name)) = PATCHES.iter().find(|(path, _)| *path == source) else {
-        return engine.join(source);
-    };
-    let base = std::fs::read_to_string(engine.join(source)).expect("reading C source to patch");
-    let text = std::fs::read_to_string(patches.join(patch_name)).expect("reading C parity patch");
-    let patch = diffy::Patch::from_str(&text).expect("parsing C parity patch");
-    let patched = diffy::apply(&base, &patch).expect("C parity patch no longer applies");
-    let destination = out_dir.join(source.replace('/', "-"));
-    std::fs::write(&destination, patched).expect("writing patched C source");
-    destination
 }
 
 /// Generates the version header normally written by CMake.
-fn write_version_header(vendor: &Path, engine: &Path, generated: &Path) {
-    let raw = std::fs::read_to_string(vendor.join("VERSION"))
-        .expect("vendor/VERSION is written by `cargo xtask sync-c`");
+fn write_version_header(engine: &Path, generated: &Path) {
+    let raw = std::fs::read_to_string(engine.join("VERSION"))
+        .expect("libvscode-diff/VERSION must be present");
     let full = raw.trim();
 
     let base: String = full

@@ -14,13 +14,13 @@ painting.
 
 ## Phase A — Foundation (headless, text output)
 
-### S1 — Skeleton, vendored C, FFI
+### S1 — Skeleton, C engine, FFI
 
 **Build.** Cargo workspace with the crates S1 actually needs — `vscode-diff-sys`,
-`vscode-diff`, `codediff` and `xtask`. Copy `libvscode-diff` into `vendor/` with
-`UPSTREAM.lock`. `vscode-diff-sys` compiles it with `cc`, OpenMP off. CI: fmt,
-`clippy -D warnings`, test, `lint-size`, `lint-arch`, `verify-c`, and a check that every
-crate other than `vscode-diff-sys` and `vscode-diff` carries `#![forbid(unsafe_code)]`.
+`vscode-diff`, `codediff` and `xtask`. `libvscode-diff/` is the canonical C engine;
+`vscode-diff-sys` compiles it with `cc`, OpenMP off. CI runs fmt, Clippy, Rust and C
+tests, `lint-size`, `lint-arch`, and checks that every crate other than
+`vscode-diff-sys` and `vscode-diff` carries `#![forbid(unsafe_code)]`.
 
 The remaining crates are created by the milestone that needs them. Stubbing them up
 front constrains nothing — there is no code in an empty crate to violate a rule — and
@@ -35,9 +35,9 @@ ldd target/release/codediff        # otool -L on macOS
 ```
 
 **Pass when.**
-- [x] `doctor` prints the engine version (`2.60.0`) and reports static linkage
+- [x] `doctor` prints the engine version and reports static linkage
 - [x] `ldd` shows **neither `libvscode_diff` nor `libgomp`** — only libc and libm
-- [x] `cargo xtask verify-c` passes
+- [x] the standalone CMake build and C tests pass
 - [x] `cargo xtask lint-arch` passes
 
 ---
@@ -98,8 +98,8 @@ This is VSCode's model — see D18.
 
 **Check.**
 ```
-codediff debug align vendor/test-pairs/<name>/original.txt \
-                     vendor/test-pairs/<name>/modified.txt [-v]
+codediff debug align libvscode-diff/tests/oracle/<name>/original.txt \
+                     libvscode-diff/tests/oracle/<name>/modified.txt [-v]
 ```
 for all twelve fixture pairs. Output resembles:
 ```
@@ -319,7 +319,7 @@ codediff <path>      # then press t, ]c, t
 - [x] the same diff reads one version per row: what was there, then what replaced it
 - [x] **two gutters**, and the missing number is what says which version a row belongs to
 - [x] `t` switches either way and **keeps the reader on the same line**, not the same row
-- [x] both layouts read back as the same two files, over the twelve vendored pairs
+- [x] both layouts read back as the same two files, over the twelve oracle pairs
 - [x] `]c` stops in the right places in both, and the status line agrees with it
 - [x] the divider keys are inert inline, where there is no divider
 - [x] one text column, so a long line needs less horizontal scrolling

@@ -328,6 +328,10 @@ static int intarray_get(IntArray *arr, int idx) {
   }
 }
 
+static bool intarray_contains(const IntArray *arr, int idx) {
+  return idx < 0 ? -idx - 1 < arr->neg_capacity : idx < arr->pos_capacity;
+}
+
 static void intarray_set(IntArray *arr, int idx, int value) {
   if (idx < 0) {
     int neg_idx = -idx - 1;
@@ -444,7 +448,8 @@ static int myers_get_x_after_snake(const ISequence *seq_a, const ISequence *seq_
   int len_a = seq_a->getLength(seq_a);
   int len_b = seq_b->getLength(seq_b);
 
-  while (x < len_a && y < len_b && seq_a->getElement(seq_a, x) == seq_b->getElement(seq_b, y)) {
+  while (x >= 0 && y >= 0 && x < len_a && y < len_b &&
+         seq_a->getElement(seq_a, x) == seq_b->getElement(seq_b, y)) {
     x++;
     y++;
   }
@@ -529,8 +534,19 @@ SequenceDiffArray *myers_nd_diff_algorithm(const ISequence *seq1, const ISequenc
 
     for (k = lower_bound; k <= upper_bound; k += 2) {
       // Determine whether to go down (insert) or right (delete)
+      bool top_defined = k == upper_bound || intarray_contains(V, k + 1);
+      bool left_defined = k == lower_bound || intarray_contains(V, k - 1);
       int max_x_top = (k == upper_bound) ? -1 : intarray_get(V, k + 1);
       int max_x_left = (k == lower_bound) ? -1 : intarray_get(V, k - 1) + 1;
+
+      // FastInt32Array.get returns `undefined` beyond its current typed-array
+      // capacity. Math.max then produces NaN, and assigning that back stores
+      // zero. Preserve that observable VS Code behavior.
+      if (!top_defined || !left_defined) {
+        intarray_set(V, k, 0);
+        patharray_set(paths, k, patharray_get(paths, k - 1));
+        continue;
+      }
 
       int x = min_int(max_int(max_x_top, max_x_left), len_a);
       int y = x - k;

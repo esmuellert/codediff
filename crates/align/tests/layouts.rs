@@ -42,23 +42,23 @@ fn read_back(alignment: &Alignment, layout: DiffType, version: DiffVersion) -> V
         .collect()
 }
 
-macro_rules! vendored {
+macro_rules! oracle_pairs {
     ($($name:ident),* $(,)?) => {
         [$((
             stringify!($name),
-            include_str!(concat!("../../../vendor/test-pairs/", stringify!($name), "/original.txt")),
-            include_str!(concat!("../../../vendor/test-pairs/", stringify!($name), "/modified.txt")),
+            include_str!(concat!("../../../libvscode-diff/tests/oracle/", stringify!($name), "/original.txt")),
+            include_str!(concat!("../../../libvscode-diff/tests/oracle/", stringify!($name), "/modified.txt")),
         )),*]
     };
 }
 
-/// The twelve vendored pairs, plus edge shapes they do not cover.
+/// The twelve oracle pairs, plus edge shapes they do not cover.
 ///
-/// The vendored ones were crafted upstream to stress move detection, which
-/// produces the most awkward change ranges; the hand-written ones cover the
+/// The oracle pairs stress move detection, which produces the most awkward
+/// change ranges; the hand-written ones cover the
 /// boundaries — empty files, a change touching the very first or last line.
 fn pairs() -> Vec<(&'static str, &'static str, &'static str)> {
-    let mut pairs: Vec<_> = vendored![
+    let mut pairs: Vec<_> = oracle_pairs![
         adjacent_move,
         block_moved_down,
         comprehensive_move,

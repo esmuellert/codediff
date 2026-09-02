@@ -27,8 +27,8 @@ codediff/
 │   ├── ui/                   terminal, input, rendering, theme, syntax worker
 │   ├── codediff/             binary — argument parsing, wiring
 │   └── fixtures/             dev-only: builds test git repositories
-├── xtask/                    lint-arch, lint-size, verify-c, fixture-repo, dev
-├── libvscode-diff/           C source, pinned to an upstream tag
+├── xtask/                    lint-arch, lint-size, fixture-repo, dev
+├── libvscode-diff/           canonical C diff engine
 └── docs/
 ```
 

@@ -5,8 +5,8 @@ if(POLICY CMP0177)
     cmake_policy(SET CMP0177 NEW) # install() DESTINATION paths are normalized
 endif()
 
-# Read version from VERSION file (single source of truth)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/VERSION" FULL_VERSION)
+# Read version from this source tree.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" FULL_VERSION)
 string(STRIP "${FULL_VERSION}" FULL_VERSION)
 
 # Extract base version for CMake (handles prerelease like 2.0.0-next.1)
@@ -215,34 +215,21 @@ else()
     set_target_properties(vscode_diff PROPERTIES SUFFIX ".so")
 endif()
 
-# Install to parent directory (for Lua FFI)
-set(INSTALL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+include(GNUInstallDirs)
 install(TARGETS vscode_diff
-    LIBRARY DESTINATION ${INSTALL_DIR}
-    RUNTIME DESTINATION ${INSTALL_DIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-
-# Custom install target that copies immediately
-# Use copy_if_different to avoid unnecessary timestamp updates
-if(WIN32)
-    # Windows: Copy with error suppression if file is locked
-    add_custom_command(TARGET vscode_diff POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo "Installing library to plugin root..."
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:vscode_diff>
-            ${INSTALL_DIR}/libvscode_diff$<TARGET_FILE_SUFFIX:vscode_diff>
-            || (exit 0)
-        COMMENT "Installing library (skips if unchanged or locked)"
-    )
-else()
-    # Unix: Use copy_if_different (no locking issues)
-    add_custom_command(TARGET vscode_diff POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:vscode_diff>
-            ${INSTALL_DIR}/libvscode_diff$<TARGET_FILE_SUFFIX:vscode_diff>
-        COMMENT "Installing library to plugin root"
-    )
-endif()
+install(
+    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+)
+install(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/include/version.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
 # Testing
 enable_testing()
@@ -396,15 +383,6 @@ if(USE_OPENMP)
     endif()
 endif()
 
-# Copy diff tool to plugin root for easy access (similar to library)
-# Use copy_if_different to avoid unnecessary timestamp updates
-add_custom_command(TARGET diff POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:diff>
-        ${INSTALL_DIR}/$<TARGET_FILE_NAME:diff>
-    COMMENT "Installing diff CLI tool to plugin root"
-)
-
 # Print configuration
 message(STATUS "===========================================")
 message(STATUS "  vscode_diff Configuration")
@@ -423,36 +401,4 @@ else()
 message(STATUS "  OpenMP: disabled (sequential char diff)")
 endif()
 message(STATUS "===========================================")
-
-# Generate standalone build scripts for users without CMake
-message(STATUS "Generating standalone build scripts...")
-
-# Determine script output directory (repository root)
-set(SCRIPT_OUTPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
-# Generate build.sh for Unix/Linux/macOS (with LF line endings)
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/build.sh.in
-    ${SCRIPT_OUTPUT_DIR}/build.sh
-    @ONLY
-    NEWLINE_STYLE LF
-)
-
-# Make build.sh executable on Unix-like systems
-if(UNIX)
-    # Use execute_process instead of file(CHMOD) for CMake 3.15 compatibility
-    execute_process(COMMAND chmod +x ${SCRIPT_OUTPUT_DIR}/build.sh)
-endif()
-message(STATUS "✓ Generated: ../build.sh")
-
-# Generate build.cmd for Windows (with CRLF line endings)
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/build.cmd.in
-    ${SCRIPT_OUTPUT_DIR}/build.cmd
-    @ONLY
-    NEWLINE_STYLE CRLF
-)
-message(STATUS "✓ Generated: ../build.cmd")
-
-message(STATUS "  Users can now build without CMake using these scripts at repository root")
 
