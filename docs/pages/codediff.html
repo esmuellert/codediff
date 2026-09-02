@@ -274,6 +274,12 @@ use_effect(scope, repo, move || {
             return;
         }
         let matching_files = Rc::new(response.files);
+        if let Some(set_file) = set_file {
+            let files_for_selection = Rc::clone(&matching_files);
+            set_file(&move |selected| {
+                matching_selected_file(selected, &files_for_selection)
+            });
+        }
         set_files(&move |_| Rc::clone(&matching_files));
     });
     let service_to_refresh = Rc::clone(&file_service);
@@ -300,7 +306,7 @@ rsx! {
             }
         }
     }
-}`}),(0,h.jsx)(E,{id:`explorer-modes`,children:`Tree and list`}),(0,h.jsx)(`p`,{children:`Tree mode shows short names and indent lines. List mode shows full paths and no lines. The mode is toggled by a key and lives inside this component.`}),(0,h.jsx)(E,{id:`explorer-letters`,children:`Change letters`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Letter`}),(0,h.jsx)(`th`,{children:`Means`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`A`})}),(0,h.jsx)(`td`,{children:`added`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`M`})}),(0,h.jsx)(`td`,{children:`modified`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`D`})}),(0,h.jsx)(`td`,{children:`deleted`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`R`})}),(0,h.jsx)(`td`,{children:`moved or copied`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`??`})}),(0,h.jsx)(`td`,{children:`untracked`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`!`})}),(0,h.jsx)(`td`,{children:`conflicted`})]})]}),(0,h.jsx)(O,{children:`The repository is the effect dependency, so changing it installs a new request and filesystem subscription. A late response is accepted only when its repository still matches. Refreshes keep the cursor anchored to the same file when it remains in the list.`})]})}function Ee(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`entry-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`│ └  tab.rs                          +4 M
+}`}),(0,h.jsx)(E,{id:`explorer-modes`,children:`Tree and list`}),(0,h.jsx)(`p`,{children:`Tree mode shows short names and indent lines. List mode shows full paths and no lines. The mode is toggled by a key and lives inside this component.`}),(0,h.jsx)(E,{id:`explorer-letters`,children:`Change letters`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Letter`}),(0,h.jsx)(`th`,{children:`Means`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`A`})}),(0,h.jsx)(`td`,{children:`added`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`M`})}),(0,h.jsx)(`td`,{children:`modified`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`D`})}),(0,h.jsx)(`td`,{children:`deleted`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`R`})}),(0,h.jsx)(`td`,{children:`moved or copied`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`??`})}),(0,h.jsx)(`td`,{children:`untracked`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`!`})}),(0,h.jsx)(`td`,{children:`conflicted`})]})]}),(0,h.jsx)(O,{children:`The repository is the effect dependency, so changing it installs a new request and filesystem subscription. A late response is accepted only when its repository still matches. A refresh replaces the selected file with its current list entry, or clears the selection when that entry is gone. DiffViewer then shows Welcome. The cursor remains anchored when its entry survives.`})]})}function Ee(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`entry-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`│ └  tab.rs                          +4 M
 └───┘└──────────────┘                └──┘└┘
 indent     body (truncates)         status`}),(0,h.jsx)(E,{id:`entry-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
 pub fn Entry(
