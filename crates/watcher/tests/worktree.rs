@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use watcher::{Refresh, Subscription};
 
@@ -23,21 +23,45 @@ fn git_in(dir: &Path, args: &[&str]) -> bool {
         .success()
 }
 
-fn drain(rx: &Receiver<Refresh>) {
-    while rx.try_recv().is_ok() {}
+const TIMEOUT: Duration = Duration::from_secs(3);
+
+fn wait_for(rx: &Receiver<Refresh>, expected: impl Fn(&Refresh) -> bool) -> Refresh {
+    let deadline = Instant::now() + TIMEOUT;
+    let mut combined = Refresh::default();
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return combined;
+        }
+        let Ok(refresh) = rx.recv_timeout(remaining) else {
+            return combined;
+        };
+        combined = combined.union(refresh);
+        if expected(&combined) {
+            return combined;
+        }
+    }
 }
 
-const TIMEOUT: Duration = Duration::from_secs(3);
-const SHORT: Duration = Duration::from_millis(300);
+#[test]
+fn wait_for_skips_events_without_the_expected_state() {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    sender
+        .send(Refresh {
+            index: true,
+            ..Refresh::default()
+        })
+        .unwrap();
+    sender
+        .send(Refresh {
+            head: true,
+            ..Refresh::default()
+        })
+        .unwrap();
 
-fn wait_for(rx: &Receiver<Refresh>) -> Refresh {
-    let first = rx.recv_timeout(TIMEOUT).unwrap_or_default();
-    std::thread::sleep(Duration::from_millis(100));
-    let mut combined = first;
-    while let Ok(r) = rx.try_recv() {
-        combined = combined.union(r);
-    }
-    combined
+    let refresh = wait_for(&receiver, |refresh| refresh.head);
+
+    assert!(refresh.index && refresh.head);
 }
 
 // === Linked worktrees ===
@@ -81,8 +105,6 @@ fn setup_worktree() -> (Linked, Subscription, Receiver<Refresh>) {
     let (tx, rx) = std::sync::mpsc::channel();
     let emitter = channel::Emitter::new(tx, std::convert::identity);
     let watcher = watcher::subscribe(&linked.wt, emitter).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
-    while rx.try_recv().is_ok() {}
 
     (linked, watcher, rx)
 }
@@ -91,7 +113,7 @@ fn setup_worktree() -> (Linked, Subscription, Receiver<Refresh>) {
 fn worktree_edit_triggers_worktree() {
     let (linked, _w, rx) = setup_worktree();
     fs::write(linked.wt.join("file.txt"), "changed").unwrap();
-    let r = wait_for(&rx);
+    let r = wait_for(&rx, |refresh| refresh.worktree);
     assert!(r.worktree, "edit in a worktree must set worktree, got {r}");
 }
 
@@ -99,11 +121,9 @@ fn worktree_edit_triggers_worktree() {
 fn worktree_add_triggers_index() {
     let (linked, _w, rx) = setup_worktree();
     fs::write(linked.wt.join("file.txt"), "modified").unwrap();
-    let _ = wait_for(&rx);
-    std::thread::sleep(SHORT);
-    drain(&rx);
+    let _ = wait_for(&rx, |refresh| refresh.worktree);
     linked.git(&["add", "file.txt"]);
-    let r = wait_for(&rx);
+    let r = wait_for(&rx, |refresh| refresh.index);
     assert!(
         r.index,
         "the worktree's own index is under main/.git/worktrees, got {r}"
@@ -115,10 +135,9 @@ fn worktree_commit_triggers_refs() {
     let (linked, _w, rx) = setup_worktree();
     fs::write(linked.wt.join("file.txt"), "v2").unwrap();
     linked.git(&["add", "."]);
-    std::thread::sleep(Duration::from_millis(200));
-    drain(&rx);
+    let _ = wait_for(&rx, |refresh| refresh.index);
     linked.git(&["commit", "-m", "second"]);
-    let r = wait_for(&rx);
+    let r = wait_for(&rx, |refresh| refresh.refs);
     assert!(r.refs, "refs are shared with the main repo, got {r}");
 }
 
@@ -126,16 +145,14 @@ fn worktree_commit_triggers_refs() {
 fn worktree_branch_create_triggers_refs() {
     let (linked, _w, rx) = setup_worktree();
     linked.git(&["branch", "another"]);
-    let r = wait_for(&rx);
+    let r = wait_for(&rx, |refresh| refresh.refs);
     assert!(r.refs, "branch create must set refs, got {r}");
 }
 
 #[test]
 fn worktree_switch_triggers_head() {
     let (linked, _w, rx) = setup_worktree();
-    std::thread::sleep(Duration::from_millis(200));
-    drain(&rx);
     linked.git(&["switch", "--detach", "HEAD"]);
-    let r = wait_for(&rx);
+    let r = wait_for(&rx, |refresh| refresh.head);
     assert!(r.head, "the worktree's own HEAD moved, got {r}");
 }
