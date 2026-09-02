@@ -1,22 +1,51 @@
-//! Reads the diff from context and shows the right view.
+//! Loads the selected file and chooses its view.
 
-use loom::{Node, Scope, component, rsx, use_context};
+use std::rc::Rc;
+
+use loom::{Node, Scope, component, rsx, use_context, use_effect, use_state};
+use pipeline::diff::DiffContent;
 
 use super::context::Ui;
-use super::side_by_side::SideBySide;
+use super::side_by_side::{SideBySide, SideBySideProps};
+use super::single_file::{SingleFile, SingleFileProps};
 use super::welcome::Welcome;
 
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
-    let has_diff = matches!(
-        ctx.diff.as_deref(),
-        Some(pipeline::diff::DiffContent::Diff(_))
-    );
+    let (content, set_content) = use_state(scope, || None::<Rc<DiffContent>>);
+    let selected_file = ctx.file.as_ref().map(Rc::clone);
+    let file_for_request = selected_file.as_ref().map(Rc::clone);
+    let diff_service = ctx.diff_service.as_ref().map(Rc::clone);
 
-    if has_diff {
-        rsx! { SideBySide {} }
-    } else {
-        rsx! { Welcome {} }
+    use_effect(scope, selected_file, move || {
+        let (Some(requested_file), Some(diff_service)) = (file_for_request, diff_service) else {
+            set_content(&|_| None);
+            return;
+        };
+        let requested_file_for_response = Rc::clone(&requested_file);
+        diff_service
+            .get(&requested_file)
+            .subscribe(move |response| {
+                if response.file != *requested_file_for_response {
+                    return;
+                }
+                let matching_content = response
+                    .content
+                    .ok()
+                    .filter(|content| content.file() == &*requested_file_for_response)
+                    .map(Rc::new);
+                set_content(&move |_| matching_content.clone());
+            });
+    });
+
+    match content {
+        Some(content) => match content.as_ref() {
+            DiffContent::Diff(_) => rsx! { SideBySide { content: Rc::clone(&content) } },
+            DiffContent::SingleFile(_) => {
+                rsx! { SingleFile { content: Rc::clone(&content) } }
+            }
+        },
+        None => rsx! { Welcome {} },
     }
 }

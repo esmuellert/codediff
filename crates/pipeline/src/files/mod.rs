@@ -45,6 +45,13 @@ impl Request {
     }
 }
 
+/// What one request produced.
+pub struct Response {
+    /// Which repository this answers — used to drop late responses.
+    pub repo: PathBuf,
+    pub files: Vec<File>,
+}
+
 /// Every file the request finds, each with what it gained and lost.
 pub fn get_files(request: &Request) -> Result<Vec<File>> {
     tracing::info!("listing files");

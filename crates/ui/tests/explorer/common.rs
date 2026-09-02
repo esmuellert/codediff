@@ -1,10 +1,14 @@
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use file_types::{File, Oid, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use ui::Theme;
 use ui::components::{Context, Explorer, ExplorerProps, Ui};
+use ui::services::files::FilesService;
 
 pub fn file(path: &str) -> File {
     File::unchanged_path(
@@ -34,13 +38,36 @@ pub fn draw(files: Vec<File>, width: u16, height: u16) -> Vec<String> {
     (0..height).map(|y| h.screen_row(y)).collect()
 }
 
+pub fn mock_file_service(
+    responses: Vec<Vec<File>>,
+) -> (Rc<FilesService>, mpsc::Receiver<pipeline::files::Response>) {
+    let (tx, rx) = mpsc::channel();
+    let worker = pipeline::files::FilesWorker::mock(
+        responses,
+        channel::Emitter::new(tx, |response| response),
+    );
+    (
+        Rc::new(FilesService::new(Rc::new(RefCell::new(worker)), Vec::new())),
+        rx,
+    )
+}
+
 pub fn harness(files: Vec<File>, width: u16, height: u16) -> Harness {
-    Harness::new::<Explorer>(ExplorerProps {}, width, height).provide::<Ui>(Context {
-        theme: Rc::new(Theme::DARK),
-        repo: Rc::from(Path::new("/repo")),
-        files: Rc::new(files),
-        ..Default::default()
-    })
+    let (file_service, rx) = mock_file_service(vec![files]);
+    let mut harness =
+        Harness::new::<Explorer>(ExplorerProps {}, width, height).provide::<Ui>(Context {
+            theme: Rc::new(Theme::DARK),
+            repo: Rc::from(Path::new("/repo")),
+            file_service: Some(Rc::clone(&file_service)),
+            ..Default::default()
+        });
+    harness.force_draw();
+    file_service.deliver(
+        rx.recv_timeout(Duration::from_secs(1))
+            .expect("file list response"),
+    );
+    harness.force_draw();
+    harness
 }
 
 pub fn screen(paths: &[&str], width: u16, height: u16) -> Vec<String> {

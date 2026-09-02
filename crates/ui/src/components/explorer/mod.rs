@@ -10,7 +10,7 @@ use crokey::key;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
-    use_context, use_exit, use_ref, use_state,
+    use_context, use_effect, use_exit, use_ref, use_state,
 };
 
 use self::build::{Node, grouped_list, grouped_tree};
@@ -23,8 +23,35 @@ use crate::services::version_control::VersionControlService;
 pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
-    let files = &ctx.files;
     let set_file = ctx.set_file;
+    let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
+    let repo = Rc::clone(&ctx.repo);
+    let file_service = ctx.file_service.as_ref().map(Rc::clone);
+    let repo_for_effect = Rc::clone(&repo);
+    use_effect(scope, repo, move || {
+        let Some(file_service) = file_service else {
+            return;
+        };
+        let requested_repo_for_response = Rc::clone(&repo_for_effect);
+        file_service
+            .get(&repo_for_effect)
+            .subscribe(move |response: pipeline::files::Response| {
+                if response.repo.as_path() != requested_repo_for_response.as_ref() {
+                    return;
+                }
+                let matching_files = Rc::new(response.files);
+                set_files(&move |_| Rc::clone(&matching_files));
+            });
+        let service_to_refresh = Rc::clone(&file_service);
+        let repo_to_refresh = Rc::clone(&repo_for_effect);
+        file_service
+            .on_fs_changed()
+            .subscribe(move |what: watcher::Refresh| {
+                if what.worktree || what.index {
+                    service_to_refresh.refresh(&repo_to_refresh);
+                }
+            });
+    });
 
     let (view, handle) = use_scroll(scope, None);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
@@ -32,24 +59,23 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     let base = theme.normal;
 
-    let files: &[File] = files;
     let nodes = if tree_mode {
-        grouped_tree(files, &folded)
+        grouped_tree(&files, &folded)
     } else {
-        grouped_list(files)
+        grouped_list(&files)
     };
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
 
     // When the file list changes, keep the cursor on the same item.
-    let prev_files = use_ref(scope, || Rc::clone(&ctx.files));
+    let prev_files = use_ref(scope, || Rc::clone(&files));
     let saved_anchor = use_ref(scope, || None::<String>);
-    let files_changed = !Rc::ptr_eq(&ctx.files, &*prev_files.current());
+    let files_changed = !Rc::ptr_eq(&files, &*prev_files.current());
     if files_changed {
         if let Some(pos) = find_by_identity(saved_anchor.current().as_deref(), &nodes) {
             handle.set(pos as u32);
         }
-        *prev_files.current() = Rc::clone(&ctx.files);
+        *prev_files.current() = Rc::clone(&files);
     } else {
         *saved_anchor.current() = nodes.get(view.cursor as usize).map(identity);
     }
@@ -57,7 +83,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let cursor_node = nodes.get(view.cursor as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
     let nodes_keys = Rc::clone(&nodes);
-    let version_control = ctx.version_control.as_ref().map(Rc::clone);
+    let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
@@ -94,7 +120,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             k if k == key!(space) => {
                 if let Some(ref node) = cursor_node {
-                    toggle_stage(node, version_control.as_deref());
+                    toggle_stage(node, version_control_service.as_deref());
                 }
                 Bubble::Stop
             }
@@ -156,11 +182,12 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
     }
 }
 
-fn toggle_stage(node: &Node, version_control: Option<&VersionControlService>) {
-    let (Node::File { file, .. }, Some(version_control)) = (node, version_control) else {
+fn toggle_stage(node: &Node, version_control_service: Option<&VersionControlService>) {
+    let (Node::File { file, .. }, Some(version_control_service)) = (node, version_control_service)
+    else {
         return;
     };
-    version_control.toggle_stage(file);
+    version_control_service.toggle_stage(file);
 }
 
 fn activate_node(

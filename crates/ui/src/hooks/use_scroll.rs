@@ -1,8 +1,4 @@
-//! Shared scroll and cursor logic for any scrollable pane.
-//!
-//! Both Explorer and SideBySide call `use_scroll` and use the
-//! returned handle for every movement. The handle is `Copy`, so
-//! closures capture it without cloning.
+//! Shared scroll and cursor state for scrollable panes.
 
 use std::collections::HashMap;
 use std::ops::Range;
