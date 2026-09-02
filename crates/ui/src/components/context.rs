@@ -21,7 +21,8 @@ pub struct Context {
     pub files: Rc<Vec<File>>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
-    pub diff: Option<Rc<pipeline::diff::DiffContent>>,
+    pub diff_service: Option<Rc<DiffService>>,
+    pub syntax_service: Option<Rc<SyntaxService>>,
     pub syntax: Option<Rc<Store>>,
     pub version_control: Option<Rc<VersionControlService>>,
     pub set_repo: Option<SetState<Rc<Path>>>,
@@ -35,7 +36,8 @@ impl Default for Context {
             files: Rc::new(Vec::new()),
             file: None,
             set_file: None,
-            diff: None,
+            diff_service: None,
+            syntax_service: None,
             syntax: None,
             version_control: None,
             set_repo: None,
@@ -50,7 +52,8 @@ impl Context {
             && Rc::ptr_eq(&self.files, &other.files)
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
-            && same_rc(&self.diff, &other.diff)
+            && same_rc(&self.diff_service, &other.diff_service)
+            && same_rc(&self.syntax_service, &other.syntax_service)
             && same_rc(&self.syntax, &other.syntax)
             && same_rc(&self.version_control, &other.version_control)
             && self.set_repo == other.set_repo
@@ -85,7 +88,6 @@ pub fn UiProvider(
     let (repo, set_repo) = use_state(scope, || initial);
     let (file_list, set_file_list) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
-    let (diff, set_diff) = use_state(scope, || None::<Rc<pipeline::diff::DiffContent>>);
     let (syntax, set_syntax) = use_state(scope, || None::<Rc<Store>>);
 
     let theme = use_memo(scope, (), Theme::from_environment);
@@ -121,42 +123,6 @@ pub fn UiProvider(
         });
     });
 
-    // When a file is focused, fetch its diff.
-    let dsvc = Rc::clone(diff_service);
-    let ssvc2 = Rc::clone(syntax_service);
-    let file_for_effect = file.clone();
-    use_effect(scope, file.clone(), move || {
-        if let Some(ref file) = file_for_effect {
-            ssvc2.new_file();
-            dsvc.get(file)
-                .subscribe(
-                    move |response: pipeline::diff::Response| match response.content {
-                        Ok(content) => {
-                            let rc = Rc::new(content);
-                            set_diff(&move |_| Some(Rc::clone(&rc)));
-                        }
-                        Err(_) => set_diff(&|_| None),
-                    },
-                );
-        }
-    });
-
-    // Request syntax colours for whatever diff is showing.
-    if let Some(pipeline::diff::DiffContent::Diff(content)) = diff.as_deref() {
-        let last = 2000u32;
-        for version in [
-            file_types::DiffVersion::Original,
-            file_types::DiffVersion::Modified,
-        ] {
-            syntax_service.request(
-                &content.file,
-                version,
-                content.alignment.text(version),
-                last,
-            );
-        }
-    }
-
     rsx! {
         Ui {
             value: Context {
@@ -165,7 +131,8 @@ pub fn UiProvider(
                 files: file_list,
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
-                diff: diff.clone(),
+                diff_service: Some(Rc::clone(diff_service)),
+                syntax_service: Some(Rc::clone(syntax_service)),
                 syntax: syntax.clone(),
                 version_control: Some(Rc::clone(version_control_service)),
                 set_repo: Some(set_repo),

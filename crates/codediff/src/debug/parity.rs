@@ -79,17 +79,16 @@ pub fn run(original_path: &str, modified_path: &str, ignore_trim_whitespace: boo
         RepoPath::new("parity.txt", &root),
         Revs::worktree_against(Oid::new("parity")),
     );
-    let content = pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
+    let content = Rc::new(pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
         file: file.clone(),
         alignment,
-    });
+    }));
     let theme = Theme::DARK;
     let width = parity_width(&original, &modified)?;
-    let mut harness =
-        Harness::new::<SideBySide>(SideBySideProps {}, width, height).provide::<Ui>(UiContext {
+    let mut harness = Harness::new::<SideBySide>(SideBySideProps { content }, width, height)
+        .provide::<Ui>(UiContext {
             theme: Rc::new(theme),
             file: Some(Rc::new(file)),
-            diff: Some(Rc::new(content)),
             ..UiContext::default()
         });
     for _ in 0..4 {

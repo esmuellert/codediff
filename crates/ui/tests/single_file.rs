@@ -19,14 +19,14 @@ fn file(deleted: bool) -> file_types::File {
 
 fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
     let file = file(deleted);
-    let content = pipeline::diff::DiffContent::SingleFile(pipeline::diff::SingleFile {
-        file: file.clone(),
-        lines: Arc::new(lines),
-    });
-    Harness::new::<SingleFile>(SingleFileProps {}, width, height).provide::<Ui>(Context {
+    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file,
+            lines: Arc::new(lines),
+        },
+    ));
+    Harness::new::<SingleFile>(SingleFileProps { content }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
-        file: Some(Rc::new(file)),
-        diff: Some(Rc::new(content)),
         ..Context::default()
     })
 }

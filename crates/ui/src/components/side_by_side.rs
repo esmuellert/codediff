@@ -47,28 +47,17 @@ fn row_styles(
 }
 
 #[component]
-pub fn SideBySide(scope: &mut Scope) -> Node {
+pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let syntax = ctx.syntax.as_deref();
-
-    let diff = match ctx.diff.as_deref() {
-        Some(pipeline::diff::DiffContent::Diff(diff)) => Some(diff),
-        _ => None,
+    let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+        unreachable!("DiffViewer sends diffs to SideBySide")
     };
-    let view_line_count = diff
-        .map(|diff| diff.alignment.view_line_count(DiffType::SideBySide))
-        .unwrap_or(0);
-    let file_key = ctx
-        .file
-        .as_ref()
-        .map(|file| file.path().as_str().to_string());
-    let (view, listeners) = use_diff_viewer_navigation(scope, file_key.as_deref(), view_line_count);
-    let Some(diff) = diff else {
-        return rsx! { Column { layout: Layout { grow: 1, ..Default::default() }, .. } };
-    };
-
     let alignment = &diff.alignment;
+    let view_line_count = alignment.view_line_count(DiffType::SideBySide);
+    let file_key = diff.file.path().as_str().to_string();
+    let (view, listeners) = use_diff_viewer_navigation(scope, Some(&file_key), view_line_count);
     let original_lines = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_lines = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter = width_for_line_count(original_lines);

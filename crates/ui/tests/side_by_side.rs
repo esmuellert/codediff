@@ -18,11 +18,11 @@ fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
 }
 
 fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
-    let diff = make_diff(original, modified);
-    let content = pipeline::diff::DiffContent::Diff(diff);
-    Harness::new::<SideBySide>(SideBySideProps {}, width, height).provide::<Ui>(Context {
+    let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+        original, modified,
+    )));
+    Harness::new::<SideBySide>(SideBySideProps { content }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
-        diff: Some(Rc::new(content)),
         ..Context::default()
     })
 }
