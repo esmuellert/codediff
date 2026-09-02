@@ -10,6 +10,7 @@ pub mod explorer;
 pub mod filler;
 pub mod gutter;
 pub mod side_by_side;
+pub mod single_file;
 mod welcome;
 
 pub use app::{App, AppProps};

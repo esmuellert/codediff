@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use loom::testing::Harness;
 use ui::Theme;
@@ -26,6 +27,17 @@ fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::DiffConten
     pipeline::diff::DiffContent::Diff(pipeline::diff::Diff { file, alignment })
 }
 
+fn make_single() -> pipeline::diff::DiffContent {
+    let file = file_types::File::added(
+        file_types::RepoPath::new("untracked.rs", Path::new("/repo")),
+        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+    );
+    pipeline::diff::DiffContent::SingleFile(pipeline::diff::SingleFile {
+        file,
+        lines: Arc::new(vec!["untracked body".to_owned()]),
+    })
+}
+
 #[test]
 fn no_diff_shows_welcome() {
     let mut h = with_diff(None);
@@ -35,6 +47,15 @@ fn no_diff_shows_welcome() {
         text.contains("Select a file"),
         "welcome should appear when there is no diff: {screen:?}"
     );
+}
+
+#[test]
+fn a_single_file_shows_its_content() {
+    let mut h = with_diff(Some(Rc::new(make_single())));
+    let text = h.screen().join("\n");
+
+    assert!(text.contains("untracked body"), "got {text:?}");
+    assert!(!text.contains("Select a file"), "got {text:?}");
 }
 
 #[test]
