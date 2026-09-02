@@ -78,6 +78,58 @@ impl Batch {
     }
 }
 
+struct BatchTimer {
+    quiet_deadline: Instant,
+    hard_deadline: Instant,
+}
+
+impl BatchTimer {
+    fn new(started_at: Instant) -> Self {
+        Self {
+            quiet_deadline: started_at + QUIET_PERIOD,
+            hard_deadline: started_at + MAX_BATCH_DURATION,
+        }
+    }
+
+    fn observe_event(&mut self, observed_at: Instant) {
+        self.quiet_deadline = (observed_at + QUIET_PERIOD).min(self.hard_deadline);
+    }
+
+    fn remaining(&self, now: Instant) -> Duration {
+        self.quiet_deadline
+            .min(self.hard_deadline)
+            .saturating_duration_since(now)
+    }
+}
+
+fn collect_batch(
+    event_receiver: &mpsc::Receiver<notify::Event>,
+    first_event: notify::Event,
+    filter_context: &Context,
+    watch_scope: &WatchScope,
+) -> (Batch, bool) {
+    let started_at = Instant::now();
+    let mut batch = Batch::default();
+    batch.add_event(&first_event, filter_context, watch_scope);
+    let mut timer = BatchTimer::new(started_at);
+    timer.observe_event(Instant::now());
+
+    loop {
+        let remaining = timer.remaining(Instant::now());
+        if remaining.is_zero() {
+            return (batch, false);
+        }
+        match event_receiver.recv_timeout(remaining) {
+            Ok(event) => {
+                batch.add_event(&event, filter_context, watch_scope);
+                timer.observe_event(Instant::now());
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => return (batch, false),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return (batch, true),
+        }
+    }
+}
+
 fn try_queue_event(
     sender: &mpsc::SyncSender<notify::Event>,
     queue_overflow_flag: &AtomicBool,
@@ -127,24 +179,8 @@ pub fn subscribe(repo_root: &Path, emitter: Emitter<Refresh>) -> anyhow::Result<
         .name("watcher-events".to_owned())
         .spawn(move || {
             while let Ok(first_event) = event_receiver.recv() {
-                let batch_deadline = Instant::now() + MAX_BATCH_DURATION;
-                let mut batch = Batch::default();
-                batch.add_event(&first_event, &filter_context, &watch_scope);
-
-                let queue_disconnected = loop {
-                    let remaining_batch_time =
-                        batch_deadline.saturating_duration_since(Instant::now());
-                    if remaining_batch_time.is_zero() {
-                        break false;
-                    }
-                    match event_receiver.recv_timeout(QUIET_PERIOD.min(remaining_batch_time)) {
-                        Ok(event) => {
-                            batch.add_event(&event, &filter_context, &watch_scope);
-                        }
-                        Err(mpsc::RecvTimeoutError::Timeout) => break false,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break true,
-                    }
-                };
+                let (mut batch, queue_disconnected) =
+                    collect_batch(&event_receiver, first_event, &filter_context, &watch_scope);
 
                 if queue_overflow_flag.swap(false, Ordering::Relaxed) {
                     tracing::warn!("filesystem event queue overflowed; refreshing all state");
@@ -192,6 +228,95 @@ mod tests {
 
     use super::*;
 
+    fn filter_context() -> Context {
+        let (ignorer, _) = ignore::gitignore::Gitignore::new("/repo/.gitignore");
+        Context {
+            repo_root: PathBuf::from("/repo"),
+            worktree_git_dir: PathBuf::from("/repo/.git"),
+            common_git_dir: PathBuf::from("/repo/.git"),
+            ignorer,
+        }
+    }
+
+    fn worktree_event() -> notify::Event {
+        notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("/repo/file.txt")],
+            attrs: Default::default(),
+        }
+    }
+
+    #[test]
+    fn batch_timer_waits_for_quiet_after_the_latest_event() {
+        let started_at = Instant::now();
+        let mut timer = BatchTimer::new(started_at);
+
+        assert_eq!(timer.remaining(started_at), Duration::from_millis(50));
+        timer.observe_event(started_at + Duration::from_millis(40));
+        assert_eq!(
+            timer.remaining(started_at + Duration::from_millis(40)),
+            Duration::from_millis(50)
+        );
+        assert_eq!(
+            timer.remaining(started_at + Duration::from_millis(89)),
+            Duration::from_millis(1)
+        );
+        assert!(
+            timer
+                .remaining(started_at + Duration::from_millis(90))
+                .is_zero()
+        );
+    }
+
+    #[test]
+    fn batch_timer_never_moves_the_hard_deadline() {
+        let started_at = Instant::now();
+        let mut timer = BatchTimer::new(started_at);
+        for elapsed in [40, 80, 120, 160, 200, 240] {
+            timer.observe_event(started_at + Duration::from_millis(elapsed));
+        }
+
+        assert_eq!(
+            timer.remaining(started_at + Duration::from_millis(240)),
+            Duration::from_millis(10)
+        );
+        assert!(
+            timer
+                .remaining(started_at + Duration::from_millis(250))
+                .is_zero()
+        );
+    }
+
+    #[test]
+    fn queued_events_are_collected_into_one_batch() {
+        let (sender, receiver) = mpsc::channel();
+        for _ in 0..100 {
+            sender.send(worktree_event()).unwrap();
+        }
+        drop(sender);
+        let first_event = receiver.recv().unwrap();
+
+        let (batch, queue_disconnected) = collect_batch(
+            &receiver,
+            first_event,
+            &filter_context(),
+            &WatchScope::default(),
+        );
+
+        assert!(queue_disconnected);
+        assert_eq!(batch.processed_event_count, 100);
+        assert_eq!(
+            batch.refresh,
+            Refresh {
+                worktree: true,
+                ..Refresh::default()
+            }
+        );
+        assert!(!batch.reload_ignore_rules && !batch.recompute_scope && !batch.events_lost);
+    }
+
     #[test]
     fn event_queue_overflow_invalidates_all_derived_state() {
         let (sender, _receiver) = mpsc::sync_channel(1);
@@ -235,15 +360,8 @@ mod tests {
         let event =
             notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan);
         let mut batch = Batch::default();
-        let (ignorer, _) = ignore::gitignore::Gitignore::new("/repo/.gitignore");
-        let filter_context = Context {
-            repo_root: PathBuf::from("/repo"),
-            worktree_git_dir: PathBuf::from("/repo/.git"),
-            common_git_dir: PathBuf::from("/repo/.git"),
-            ignorer,
-        };
 
-        batch.add_event(&event, &filter_context, &WatchScope::default());
+        batch.add_event(&event, &filter_context(), &WatchScope::default());
 
         assert_eq!(
             batch.refresh,

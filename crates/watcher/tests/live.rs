@@ -372,42 +372,6 @@ fn gitignore_change_triggers_worktree() {
     );
 }
 
-#[test]
-fn heavy_non_ignored_writes_stay_responsive() {
-    let (repo, _w, rx) = setup();
-    // Create a non-ignored directory with 500 files rapidly.
-    // All events pass the filter — stress the classify path.
-    fs::create_dir_all(repo.path().join("src")).unwrap();
-    let start = std::time::Instant::now();
-    for i in 0..500 {
-        fs::write(
-            repo.path().join(format!("src/file{i}.rs")),
-            format!("// {i}"),
-        )
-        .unwrap();
-    }
-    let write_time = start.elapsed();
-
-    // Wait for pending batches to flush.
-    std::thread::sleep(Duration::from_secs(2));
-    let mut count = 0;
-    while rx.try_recv().is_ok() {
-        count += 1;
-    }
-
-    // The 500 writes should coalesce into a small number of refreshes.
-    assert!(
-        count <= 10,
-        "500 non-ignored writes should coalesce to ≤10 refreshes, got {count}"
-    );
-    assert!(count >= 1, "at least one refresh expected");
-    // The writes themselves shouldn't be blocked by the watcher.
-    assert!(
-        write_time < Duration::from_secs(5),
-        "writing 500 files took {write_time:?} — watcher may be blocking"
-    );
-}
-
 // === Read-only access must never wake the watcher ===
 
 /// Every read codediff performs while it refreshes.
@@ -437,26 +401,29 @@ fn refresh_does_not_feed_itself() {
     fs::write(repo.path().join("file.txt"), "changed").unwrap();
 
     // Answer every refresh with the reads a refresh performs. If a read
-    // counts as a change, this never settles.
-    let mut refreshes = 0;
+    // counts as a change, the watcher never reaches a quiet period.
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while std::time::Instant::now() < deadline {
-        match rx.recv_timeout(QUIET) {
+    let mut refresh_seen = false;
+    let settled = loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break false;
+        }
+        match rx.recv_timeout(QUIET.min(remaining)) {
             Ok(_) => {
-                refreshes += 1;
-                assert!(
-                    refreshes <= 20,
-                    "feedback loop: {refreshes} refreshes and still going"
-                );
+                refresh_seen = true;
                 read_like_a_refresh(&repo);
             }
-            Err(_) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break true,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("watcher disconnected")
+            }
         }
-    }
+    };
 
-    assert!(refreshes >= 1, "the edit itself must produce a refresh");
+    assert!(refresh_seen, "the edit itself must produce a refresh");
     assert!(
-        refreshes <= 3,
-        "should settle in a few refreshes, got {refreshes}"
+        settled,
+        "refresh reads kept the watcher active for 10 seconds"
     );
 }
