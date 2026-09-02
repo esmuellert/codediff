@@ -12,13 +12,15 @@ use ui::components::diff_viewer::DiffViewer;
 use ui::components::{Context, Explorer, Ui, UiProps};
 use ui::services::diff::DiffService;
 use ui::services::files::FilesService;
+use ui::services::watcher::WatcherService;
 
-use super::common::{file, file_with_stats, mock_file_service};
+use super::common::{file, file_with_stats, mock_files_service};
 
 #[component]
 fn SelectionHost(
     scope: &mut Scope,
-    file_service: Rc<FilesService>,
+    files_service: Rc<FilesService>,
+    watcher_service: Rc<WatcherService>,
     initial_file: Rc<file_types::File>,
     observed_file: Rc<RefCell<Option<file_types::File>>>,
 ) -> Node {
@@ -32,7 +34,8 @@ fn SelectionHost(
                 repo: Rc::from(Path::new("/repo")),
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
-                file_service: Some(Rc::clone(file_service)),
+                files_service: Some(Rc::clone(files_service)),
+                watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
             Explorer {}
@@ -43,8 +46,9 @@ fn SelectionHost(
 #[component]
 fn ReviewHost(
     scope: &mut Scope,
-    file_service: Rc<FilesService>,
+    files_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
+    watcher_service: Rc<WatcherService>,
     initial_file: Rc<file_types::File>,
 ) -> Node {
     let initial_file = Rc::clone(initial_file);
@@ -56,8 +60,9 @@ fn ReviewHost(
                 repo: Rc::from(Path::new("/repo")),
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
-                file_service: Some(Rc::clone(file_service)),
+                files_service: Some(Rc::clone(files_service)),
                 diff_service: Some(Rc::clone(diff_service)),
+                watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
             Row {
@@ -72,7 +77,8 @@ fn ReviewHost(
 
 struct SelectionHarness {
     harness: Harness,
-    file_service: Rc<FilesService>,
+    files_service: Rc<FilesService>,
+    watcher_service: Rc<WatcherService>,
     responses: std::sync::mpsc::Receiver<pipeline::files::Response>,
     observed_file: Rc<RefCell<Option<file_types::File>>>,
 }
@@ -81,11 +87,13 @@ fn selection_harness(
     responses: Vec<Vec<file_types::File>>,
     selected: file_types::File,
 ) -> SelectionHarness {
-    let (file_service, responses) = mock_file_service(responses);
+    let (files_service, responses) = mock_files_service(responses);
+    let watcher_service = Rc::new(WatcherService::new());
     let observed_file = Rc::new(RefCell::new(None));
     let mut harness = Harness::new::<SelectionHost>(
         SelectionHostProps {
-            file_service: Rc::clone(&file_service),
+            files_service: Rc::clone(&files_service),
+            watcher_service: Rc::clone(&watcher_service),
             initial_file: Rc::new(selected),
             observed_file: Rc::clone(&observed_file),
         },
@@ -93,10 +101,11 @@ fn selection_harness(
         5,
     );
     harness.force_draw();
-    receive(&mut harness, &file_service, &responses);
+    receive(&mut harness, &files_service, &responses);
     SelectionHarness {
         harness,
-        file_service,
+        files_service,
+        watcher_service,
         responses,
         observed_file,
     }
@@ -104,27 +113,28 @@ fn selection_harness(
 
 fn receive(
     harness: &mut Harness,
-    file_service: &FilesService,
+    files_service: &FilesService,
     responses: &std::sync::mpsc::Receiver<pipeline::files::Response>,
 ) {
-    file_service.deliver(
+    files_service.deliver(
         responses
             .recv_timeout(Duration::from_secs(1))
-            .expect("file list response"),
+            .expect("files response"),
     );
     harness.force_draw().force_draw();
 }
 
 fn refresh(
     harness: &mut Harness,
-    file_service: &FilesService,
+    files_service: &FilesService,
+    watcher_service: &WatcherService,
     responses: &std::sync::mpsc::Receiver<pipeline::files::Response>,
 ) {
-    file_service.fs_changed(watcher::Refresh {
+    watcher_service.deliver(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    receive(harness, file_service, responses);
+    receive(harness, files_service, responses);
 }
 
 fn added_file(path: &str) -> file_types::File {
@@ -149,12 +159,13 @@ fn an_empty_refresh_clears_the_selected_file() {
     let selected = file("selected.rs");
     let SelectionHarness {
         mut harness,
-        file_service,
+        files_service,
+        watcher_service,
         responses,
         observed_file,
     } = selection_harness(vec![vec![selected.clone()], Vec::new()], selected);
 
-    refresh(&mut harness, &file_service, &responses);
+    refresh(&mut harness, &files_service, &watcher_service, &responses);
 
     assert!(observed_file.borrow().is_none());
 }
@@ -162,8 +173,9 @@ fn an_empty_refresh_clears_the_selected_file() {
 #[test]
 fn clearing_the_last_change_replaces_its_diff_with_welcome() {
     let selected = added_file("selected.rs");
-    let (file_service, file_responses) =
-        mock_file_service(vec![vec![selected.clone()], Vec::new()]);
+    let (files_service, files_responses) =
+        mock_files_service(vec![vec![selected.clone()], Vec::new()]);
+    let watcher_service = Rc::new(WatcherService::new());
     let (diff_tx, diff_responses) = mpsc::channel();
     let content = pipeline::diff::DiffContent::SingleFile(pipeline::diff::SingleFile {
         file: selected.clone(),
@@ -176,15 +188,16 @@ fn clearing_the_last_change_replaces_its_diff_with_welcome() {
     let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
     let mut harness = Harness::new::<ReviewHost>(
         ReviewHostProps {
-            file_service: Rc::clone(&file_service),
+            files_service: Rc::clone(&files_service),
             diff_service: Rc::clone(&diff_service),
+            watcher_service: Rc::clone(&watcher_service),
             initial_file: Rc::new(selected),
         },
         100,
         12,
     );
     harness.force_draw();
-    receive(&mut harness, &file_service, &file_responses);
+    receive(&mut harness, &files_service, &files_responses);
     diff_service.deliver(
         diff_responses
             .recv_timeout(Duration::from_secs(1))
@@ -193,7 +206,12 @@ fn clearing_the_last_change_replaces_its_diff_with_welcome() {
     harness.force_draw().force_draw();
     assert!(harness.screen().join("\n").contains("stale body"));
 
-    refresh(&mut harness, &file_service, &file_responses);
+    refresh(
+        &mut harness,
+        &files_service,
+        &watcher_service,
+        &files_responses,
+    );
 
     let screen = harness.screen().join("\n");
     assert!(screen.contains("Select a file"), "got {screen:?}");
@@ -206,7 +224,8 @@ fn removing_the_selected_file_clears_it_while_other_files_remain() {
     let other = file("other.rs");
     let SelectionHarness {
         mut harness,
-        file_service,
+        files_service,
+        watcher_service,
         responses,
         observed_file,
     } = selection_harness(
@@ -214,7 +233,7 @@ fn removing_the_selected_file_clears_it_while_other_files_remain() {
         selected,
     );
 
-    refresh(&mut harness, &file_service, &responses);
+    refresh(&mut harness, &files_service, &watcher_service, &responses);
 
     assert!(observed_file.borrow().is_none());
 }
@@ -225,7 +244,8 @@ fn a_surviving_selection_uses_the_refreshed_file() {
     let refreshed = file_with_stats("selected.rs", 4, 2);
     let SelectionHarness {
         mut harness,
-        file_service,
+        files_service,
+        watcher_service,
         responses,
         observed_file,
     } = selection_harness(
@@ -233,7 +253,7 @@ fn a_surviving_selection_uses_the_refreshed_file() {
         selected,
     );
 
-    refresh(&mut harness, &file_service, &responses);
+    refresh(&mut harness, &files_service, &watcher_service, &responses);
 
     assert_eq!(observed_file.borrow().as_ref(), Some(&refreshed));
 }
@@ -243,7 +263,8 @@ fn the_same_path_in_another_comparison_does_not_keep_the_selection() {
     let selected = staged_file("selected.rs");
     let SelectionHarness {
         mut harness,
-        file_service,
+        files_service,
+        watcher_service,
         responses,
         observed_file,
     } = selection_harness(
@@ -251,7 +272,7 @@ fn the_same_path_in_another_comparison_does_not_keep_the_selection() {
         selected,
     );
 
-    refresh(&mut harness, &file_service, &responses);
+    refresh(&mut harness, &files_service, &watcher_service, &responses);
 
     assert!(observed_file.borrow().is_none());
 }

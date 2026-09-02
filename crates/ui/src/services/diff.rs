@@ -28,6 +28,11 @@ impl DiffService {
         responses
     }
 
+    /// Re-sends a request through the existing response subscription.
+    pub fn refresh(&self, file: &File) {
+        self.worker.borrow_mut().send(file.clone());
+    }
+
     pub fn deliver(&self, response: Response) {
         self.worker.borrow_mut().received(&response);
         if let Some(observer) = self.observer.borrow().as_ref() {

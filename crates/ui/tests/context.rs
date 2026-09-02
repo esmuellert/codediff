@@ -16,31 +16,33 @@ use ui::services::diff::DiffService;
 use ui::services::files::FilesService;
 use ui::services::syntax::SyntaxService;
 use ui::services::version_control::VersionControlService;
+use ui::services::watcher::WatcherService;
 
 fn idle_app() -> Harness {
-    let (tx, _rx) = mpsc::channel();
-    let files = FilesService::new(
+    let (files_tx, _files_responses) = mpsc::channel();
+    let files_service = FilesService::new(
         Rc::new(RefCell::new(pipeline::files::FilesWorker::start(
-            channel::Emitter::new(tx, |v| v),
+            channel::Emitter::new(files_tx, |response| response),
         ))),
         Vec::new(),
     );
-    let (dtx, _drx) = mpsc::channel();
-    let diff = DiffService::new(Rc::new(RefCell::new(pipeline::diff::DiffWorker::start(
-        channel::Emitter::new(dtx, |v| v),
+    let (diff_tx, _diff_responses) = mpsc::channel();
+    let diff_service = DiffService::new(Rc::new(RefCell::new(pipeline::diff::DiffWorker::start(
+        channel::Emitter::new(diff_tx, |response| response),
     ))));
-    let (stx, _srx) = mpsc::channel();
-    let syntax = SyntaxService::new(Rc::new(RefCell::new(syntax::Syntax::start(
-        channel::Emitter::new(stx, |v| v),
+    let (syntax_tx, _syntax_responses) = mpsc::channel();
+    let syntax_service = SyntaxService::new(Rc::new(RefCell::new(syntax::Syntax::start(
+        channel::Emitter::new(syntax_tx, |response| response),
     ))));
 
     Harness::new::<App>(
         AppProps {
             cwd: Rc::from(Path::new("/tmp")),
-            file_service: Rc::new(files),
-            diff_service: Rc::new(diff),
-            syntax_service: Rc::new(syntax),
+            files_service: Rc::new(files_service),
+            diff_service: Rc::new(diff_service),
+            syntax_service: Rc::new(syntax_service),
             version_control_service: Rc::new(VersionControlService::new()),
+            watcher_service: Rc::new(WatcherService::new()),
         },
         80,
         24,

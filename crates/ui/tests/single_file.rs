@@ -21,7 +21,7 @@ fn file(deleted: bool) -> file_types::File {
     }
 }
 
-fn harness_with_service(
+fn harness_with_syntax_service(
     lines: Vec<String>,
     deleted: bool,
     width: u16,
@@ -43,7 +43,7 @@ fn harness_with_service(
 }
 
 fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
-    harness_with_service(lines, deleted, width, height, None)
+    harness_with_syntax_service(lines, deleted, width, height, None)
 }
 
 #[test]
@@ -79,10 +79,11 @@ fn added_and_deleted_files_have_no_diff_background() {
 
 #[test]
 fn syntax_is_requested_for_the_present_side() {
-    let (tx, rx) = mpsc::channel();
-    let worker = syntax::Syntax::start(channel::Emitter::new(tx, |response| response));
-    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(worker))));
-    let mut harness = harness_with_service(
+    let (syntax_tx, syntax_responses) = mpsc::channel();
+    let syntax_worker =
+        syntax::Syntax::start(channel::Emitter::new(syntax_tx, |response| response));
+    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
+    let mut harness = harness_with_syntax_service(
         vec!["fn main() {}".into()],
         false,
         30,
@@ -90,7 +91,7 @@ fn syntax_is_requested_for_the_present_side() {
         Some(Rc::clone(&syntax_service)),
     );
     harness.force_draw().force_draw();
-    let response = rx
+    let response = syntax_responses
         .recv_timeout(Duration::from_secs(1))
         .expect("syntax response");
     syntax_service.deliver(response);
