@@ -3,13 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      package:
-        description: Build release archives without publishing
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -32,7 +25,6 @@ jobs:
   version:
     name: Version
     needs: check
-    if: github.event_name == 'push' || inputs.package
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
