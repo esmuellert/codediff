@@ -57,7 +57,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let cursor_node = nodes.get(view.cursor as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
     let nodes_keys = Rc::clone(&nodes);
-    let version_control = ctx.version_control.as_ref().map(Rc::clone);
+    let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
@@ -94,7 +94,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             k if k == key!(space) => {
                 if let Some(ref node) = cursor_node {
-                    toggle_stage(node, version_control.as_deref());
+                    toggle_stage(node, version_control_service.as_deref());
                 }
                 Bubble::Stop
             }
@@ -156,11 +156,12 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
     }
 }
 
-fn toggle_stage(node: &Node, version_control: Option<&VersionControlService>) {
-    let (Node::File { file, .. }, Some(version_control)) = (node, version_control) else {
+fn toggle_stage(node: &Node, version_control_service: Option<&VersionControlService>) {
+    let (Node::File { file, .. }, Some(version_control_service)) = (node, version_control_service)
+    else {
         return;
     };
-    version_control.toggle_stage(file);
+    version_control_service.toggle_stage(file);
 }
 
 fn activate_node(

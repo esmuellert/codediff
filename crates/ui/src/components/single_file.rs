@@ -1,7 +1,8 @@
-//! One plain, full-width file.
+//! One full-width file with no diff decorations.
 
 use std::rc::Rc;
 
+use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
 };
@@ -10,6 +11,8 @@ use super::code_text::{CodeText, CodeTextProps};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
+use crate::hooks::use_syntax::use_syntax;
+use crate::services::syntax::SyntaxService;
 
 #[component]
 pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
@@ -20,6 +23,16 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let line_count = single.lines.len() as u32;
     let file_key = single.file.path().as_str().to_string();
     let (view, listeners) = use_diff_viewer_navigation(scope, Some(&file_key), line_count);
+    let syntax = use_syntax(
+        scope,
+        ctx.syntax_service.as_ref().map(Rc::clone),
+        Rc::clone(content),
+        DiffType::Single,
+        view.view_lines.clone(),
+    );
+    let version = single.side();
+    let syntax = syntax.as_deref();
+
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
     let gutter_width = width_for_line_count(line_count);
@@ -49,7 +62,12 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                         diff: Rc::from([]),
                         fill_from: None,
                         empty_markers: Rc::from([]),
-                        syntax: Rc::from([]),
+                        syntax: Rc::from(
+                            syntax
+                                .map(|store| SyntaxService::line_spans(store, &single.file, version, number))
+                                .unwrap_or_default()
+                                .as_slice()
+                        ),
                         unchanged_style: base,
                         changed_style: base,
                         selection: None,

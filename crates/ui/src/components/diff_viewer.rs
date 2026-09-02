@@ -17,16 +17,12 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     let selected_file = ctx.file.as_ref().map(Rc::clone);
     let file_for_request = selected_file.as_ref().map(Rc::clone);
     let diff_service = ctx.diff_service.as_ref().map(Rc::clone);
-    let syntax_for_file = ctx.syntax_service.as_ref().map(Rc::clone);
 
     use_effect(scope, selected_file.clone(), move || {
         set_content(&|_| None);
         let (Some(requested_file), Some(diff_service)) = (file_for_request, diff_service) else {
             return;
         };
-        if let Some(syntax_service) = syntax_for_file {
-            syntax_service.new_file();
-        }
         let requested_file_for_response = Rc::clone(&requested_file);
         diff_service
             .get(&requested_file)
@@ -44,17 +40,6 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             .as_deref()
             .is_some_and(|file| content.file() == file)
     });
-    if let (Some(DiffContent::Diff(diff)), Some(syntax_service)) =
-        (content.as_deref(), ctx.syntax_service.as_ref())
-    {
-        for version in [
-            file_types::DiffVersion::Original,
-            file_types::DiffVersion::Modified,
-        ] {
-            syntax_service.request(&diff.file, version, diff.alignment.text(version), 2000);
-        }
-    }
-
     match content {
         Some(content) => match content.as_ref() {
             DiffContent::Diff(_) => rsx! { SideBySide { content: Rc::clone(&content) } },

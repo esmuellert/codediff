@@ -17,6 +17,7 @@ use super::filler::Filler;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 
 use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
+use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
 fn row_styles(
@@ -50,7 +51,6 @@ fn row_styles(
 pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
-    let syntax = ctx.syntax.as_deref();
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to SideBySide")
     };
@@ -68,6 +68,14 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
         .take(view.view_lines.len())
         .collect();
 
+    let syntax = use_syntax(
+        scope,
+        ctx.syntax_service.as_ref().map(Rc::clone),
+        Rc::clone(content),
+        DiffType::SideBySide,
+        view.view_lines.clone(),
+    );
+    let syntax = syntax.as_deref();
     let divider_style = theme.normal.patch(theme.divider);
 
     let mut rows: Vec<Node> = Vec::with_capacity(pairs.len());

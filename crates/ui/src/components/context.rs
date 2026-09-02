@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{Node, Scope, SetState, component, context, rsx, use_effect, use_memo, use_state};
-use syntax::Store;
 
 use crate::services::diff::DiffService;
 use crate::services::files::FilesService;
@@ -23,8 +22,7 @@ pub struct Context {
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub diff_service: Option<Rc<DiffService>>,
     pub syntax_service: Option<Rc<SyntaxService>>,
-    pub syntax: Option<Rc<Store>>,
-    pub version_control: Option<Rc<VersionControlService>>,
+    pub version_control_service: Option<Rc<VersionControlService>>,
     pub set_repo: Option<SetState<Rc<Path>>>,
 }
 
@@ -38,8 +36,7 @@ impl Default for Context {
             set_file: None,
             diff_service: None,
             syntax_service: None,
-            syntax: None,
-            version_control: None,
+            version_control_service: None,
             set_repo: None,
         }
     }
@@ -54,8 +51,10 @@ impl Context {
             && self.set_file == other.set_file
             && same_rc(&self.diff_service, &other.diff_service)
             && same_rc(&self.syntax_service, &other.syntax_service)
-            && same_rc(&self.syntax, &other.syntax)
-            && same_rc(&self.version_control, &other.version_control)
+            && same_rc(
+                &self.version_control_service,
+                &other.version_control_service,
+            )
             && self.set_repo == other.set_repo
     }
 }
@@ -88,7 +87,6 @@ pub fn UiProvider(
     let (repo, set_repo) = use_state(scope, || initial);
     let (file_list, set_file_list) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
-    let (syntax, set_syntax) = use_state(scope, || None::<Rc<Store>>);
 
     let theme = use_memo(scope, (), Theme::from_environment);
 
@@ -115,14 +113,6 @@ pub fn UiProvider(
             });
     });
 
-    // Subscribe to syntax updates.
-    let ssvc = Rc::clone(syntax_service);
-    use_effect(scope, (), move || {
-        ssvc.subscribe().subscribe(move |store: Rc<Store>| {
-            set_syntax(&move |_| Some(Rc::clone(&store)));
-        });
-    });
-
     rsx! {
         Ui {
             value: Context {
@@ -133,8 +123,7 @@ pub fn UiProvider(
                 set_file: Some(set_file),
                 diff_service: Some(Rc::clone(diff_service)),
                 syntax_service: Some(Rc::clone(syntax_service)),
-                syntax: syntax.clone(),
-                version_control: Some(Rc::clone(version_control_service)),
+                version_control_service: Some(Rc::clone(version_control_service)),
                 set_repo: Some(set_repo),
             },
             { children.clone() }
