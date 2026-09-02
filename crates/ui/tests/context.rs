@@ -16,6 +16,7 @@ use ui::services::diff::DiffService;
 use ui::services::files::FilesService;
 use ui::services::syntax::SyntaxService;
 use ui::services::version_control::VersionControlService;
+use ui::services::watcher::WatcherService;
 
 fn idle_app() -> Harness {
     let (files_tx, _files_responses) = mpsc::channel();
@@ -41,6 +42,7 @@ fn idle_app() -> Harness {
             diff_service: Rc::new(diff_service),
             syntax_service: Rc::new(syntax_service),
             version_control_service: Rc::new(VersionControlService::new()),
+            watcher_service: Rc::new(WatcherService::new()),
         },
         80,
         24,

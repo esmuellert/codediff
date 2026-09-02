@@ -13,7 +13,6 @@ pub struct FilesService {
     worker: Rc<RefCell<FilesWorker>>,
     pathspec: Vec<String>,
     files_observer: RefCell<Option<Observer<Response>>>,
-    fs_observer: RefCell<Option<Observer<watcher::Refresh>>>,
 }
 
 impl FilesService {
@@ -22,7 +21,6 @@ impl FilesService {
             worker,
             pathspec,
             files_observer: RefCell::new(None),
-            fs_observer: RefCell::new(None),
         }
     }
 
@@ -32,13 +30,6 @@ impl FilesService {
         *self.files_observer.borrow_mut() = Some(observer);
         let request = Request::worktree(repo).with_pathspec(self.pathspec.clone());
         self.worker.borrow_mut().send(request);
-        responses
-    }
-
-    /// Subscribes to filesystem changes.
-    pub fn on_fs_changed(&self) -> Observable<watcher::Refresh> {
-        let (observer, responses) = observable();
-        *self.fs_observer.borrow_mut() = Some(observer);
         responses
     }
 
@@ -54,13 +45,6 @@ impl FilesService {
         self.worker.borrow_mut().received(&response);
         if let Some(observer) = self.files_observer.borrow().as_ref() {
             observer.next(response);
-        }
-    }
-
-    /// The loop calls this when the watcher fired.
-    pub fn fs_changed(&self, refresh: watcher::Refresh) {
-        if let Some(observer) = self.fs_observer.borrow().as_ref() {
-            observer.next(refresh);
         }
     }
 }

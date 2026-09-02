@@ -7,11 +7,17 @@ use loom::{Node, Scope, component, rsx};
 use ui::Theme;
 use ui::components::{Context, Explorer, Ui, UiProps};
 use ui::services::files::FilesService;
+use ui::services::watcher::WatcherService;
 
 use super::common::{file, mock_files_service};
 
 #[component]
-fn Host(scope: &mut Scope, repo: Rc<Path>, files_service: Rc<FilesService>) -> Node {
+fn Host(
+    scope: &mut Scope,
+    repo: Rc<Path>,
+    files_service: Rc<FilesService>,
+    watcher_service: Rc<WatcherService>,
+) -> Node {
     let _ = scope;
     rsx! {
         Ui {
@@ -19,6 +25,7 @@ fn Host(scope: &mut Scope, repo: Rc<Path>, files_service: Rc<FilesService>) -> N
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
                 files_service: Some(Rc::clone(files_service)),
+                watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
             Explorer {}
@@ -42,10 +49,12 @@ fn receive(
 #[test]
 fn explorer_requests_its_file_list() {
     let (files_service, responses) = mock_files_service(vec![vec![file("one.rs")]]);
+    let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
             files_service: Rc::clone(&files_service),
+            watcher_service,
         },
         40,
         5,
@@ -60,10 +69,12 @@ fn explorer_requests_its_file_list() {
 fn changing_repository_requests_a_new_file_list() {
     let (files_service, responses) =
         mock_files_service(vec![vec![file("one.rs")], vec![file("two.rs")]]);
+    let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
             files_service: Rc::clone(&files_service),
+            watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
@@ -74,6 +85,7 @@ fn changing_repository_requests_a_new_file_list() {
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
         files_service: Rc::clone(&files_service),
+        watcher_service,
     });
     harness.force_draw();
     receive(&mut harness, &files_service, &responses);
@@ -87,10 +99,12 @@ fn changing_repository_requests_a_new_file_list() {
 fn a_late_response_from_the_previous_repository_is_ignored() {
     let (files_service, responses) =
         mock_files_service(vec![vec![file("one.rs")], vec![file("two.rs")]]);
+    let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
             files_service: Rc::clone(&files_service),
+            watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
@@ -101,6 +115,7 @@ fn a_late_response_from_the_previous_repository_is_ignored() {
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
         files_service: Rc::clone(&files_service),
+        watcher_service,
     });
     harness.force_draw();
     files_service.deliver(pipeline::files::Response {
@@ -123,10 +138,12 @@ fn refresh_keeps_the_cursor_on_the_same_file() {
         vec![file("a.rs"), file("b.rs"), file("c.rs")],
         vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],
     ]);
+    let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
             files_service: Rc::clone(&files_service),
+            watcher_service: Rc::clone(&watcher_service),
         },
         40,
         6,
@@ -140,7 +157,7 @@ fn refresh_keeps_the_cursor_on_the_same_file() {
     let selected_background = harness.style_at(0, 2).bg;
     assert_ne!(selected_background, harness.style_at(0, 1).bg);
 
-    files_service.fs_changed(watcher::Refresh {
+    watcher_service.deliver(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
@@ -155,10 +172,12 @@ fn refresh_keeps_the_cursor_on_the_same_file() {
 fn filesystem_changes_refresh_the_current_repository() {
     let (files_service, responses) =
         mock_files_service(vec![vec![file("before.rs")], vec![file("after.rs")]]);
+    let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
             files_service: Rc::clone(&files_service),
+            watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
@@ -166,7 +185,7 @@ fn filesystem_changes_refresh_the_current_repository() {
     harness.force_draw();
     receive(&mut harness, &files_service, &responses);
 
-    files_service.fs_changed(watcher::Refresh {
+    watcher_service.deliver(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });

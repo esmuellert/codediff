@@ -16,6 +16,7 @@ use crate::services::diff::DiffService;
 use crate::services::files::FilesService;
 use crate::services::syntax::SyntaxService;
 use crate::services::version_control::VersionControlService;
+use crate::services::watcher::WatcherService;
 
 #[component]
 pub fn App(
@@ -25,6 +26,7 @@ pub fn App(
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
     version_control_service: Rc<VersionControlService>,
+    watcher_service: Rc<WatcherService>,
 ) -> Node {
     let exit = use_exit(scope);
     let keys = Listeners::new().on_key(move |k| {
@@ -47,6 +49,7 @@ pub fn App(
                 diff_service: Rc::clone(diff_service),
                 syntax_service: Rc::clone(syntax_service),
                 version_control_service: Rc::clone(version_control_service),
+                watcher_service: Rc::clone(watcher_service),
                 Row {
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,

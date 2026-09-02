@@ -28,6 +28,7 @@ use services::diff::DiffService;
 use services::files::FilesService;
 use services::syntax::SyntaxService;
 use services::version_control::VersionControlService;
+use services::watcher::WatcherService;
 
 enum Event {
     Terminal(crossterm::event::Event),
@@ -65,6 +66,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
     let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
     let version_control_service = Rc::new(VersionControlService::new());
+    let watcher_service = Rc::new(WatcherService::new());
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
@@ -72,6 +74,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
         diff_service: Rc::clone(&diff_service),
         syntax_service: Rc::clone(&syntax_service),
         version_control_service,
+        watcher_service: Rc::clone(&watcher_service),
     });
 
     #[cfg(unix)]
@@ -103,7 +106,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
                 std::process::exit(128 + signal);
             }
             Event::RepositoryChanged(refresh) => {
-                files_service.fs_changed(refresh);
+                watcher_service.deliver(refresh);
                 Flow::Continue
             }
             Event::FilesReady(response) => {

@@ -4,3 +4,4 @@ pub mod diff;
 pub mod files;
 pub mod syntax;
 pub mod version_control;
+pub mod watcher;

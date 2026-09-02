@@ -27,6 +27,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let repo = Rc::clone(&ctx.repo);
     let files_service = ctx.files_service.as_ref().map(Rc::clone);
+    let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
     let repo_for_effect = Rc::clone(&repo);
     use_effect(scope, repo, move || {
         let Some(files_service) = files_service else {
@@ -48,12 +49,15 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 set_files(&move |_| Rc::clone(&matching_files));
             },
         );
+        let Some(watcher_service) = watcher_service else {
+            return;
+        };
         let files_service_to_refresh = Rc::clone(&files_service);
         let repo_to_refresh = Rc::clone(&repo_for_effect);
-        files_service
-            .on_fs_changed()
+        watcher_service
+            .changes()
             .subscribe(move |refresh: watcher::Refresh| {
-                if refresh.worktree || refresh.index {
+                if !refresh.is_empty() {
                     files_service_to_refresh.refresh(&repo_to_refresh);
                 }
             });
