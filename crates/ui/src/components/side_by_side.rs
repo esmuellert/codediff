@@ -6,8 +6,8 @@ use std::rc::Rc;
 use align::{DiffVersion, LineDecorations};
 use file_types::DiffType;
 use loom::{
-    Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node, Row,
-    RowProps, Scope, component, rsx, use_context,
+    Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope,
+    component, rsx, use_context,
 };
 use ratatui::style::Style;
 
@@ -16,7 +16,7 @@ use super::context::Ui;
 use super::filler::Filler;
 use super::gutter::{Gutter, GutterProps};
 
-use crate::hooks::use_scroll::use_scroll;
+use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use crate::services::syntax::SyntaxService;
 
 /// Digits + one trailing space, at least 4 columns.
@@ -58,19 +58,23 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
     let theme = &ctx.theme;
     let syntax = ctx.syntax.as_deref();
 
-    // All hooks must run before any early return.
-    let file_path = ctx.file.as_ref().map(|f| f.path().as_str().to_string());
-    let (view, handle) = use_scroll(scope, file_path.as_deref());
-
     let diff = match ctx.diff.as_deref() {
-        Some(pipeline::diff::DiffContent::Diff(d)) => d,
-        _ => {
-            return rsx! { Column { layout: Layout { grow: 1, ..Default::default() }, .. } };
-        }
+        Some(pipeline::diff::DiffContent::Diff(diff)) => Some(diff),
+        _ => None,
+    };
+    let view_line_count = diff
+        .map(|diff| diff.alignment.view_line_count(DiffType::SideBySide))
+        .unwrap_or(0);
+    let file_key = ctx
+        .file
+        .as_ref()
+        .map(|file| file.path().as_str().to_string());
+    let (view, listeners) = use_diff_viewer_navigation(scope, file_key.as_deref(), view_line_count);
+    let Some(diff) = diff else {
+        return rsx! { Column { layout: Layout { grow: 1, ..Default::default() }, .. } };
     };
 
     let alignment = &diff.alignment;
-    let total = alignment.view_lines(DiffType::SideBySide).count() as u32;
     let original_lines = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_lines = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter = gutter_width(original_lines);
@@ -82,31 +86,6 @@ pub fn SideBySide(scope: &mut Scope) -> Node {
         .collect();
 
     let divider_style = theme.normal.patch(theme.divider);
-
-    let listeners = Listeners::new()
-        .on_key(move |k| match k {
-            k if k == crokey::key!(j) || k == crokey::key!(down) => {
-                handle.down(total);
-                Bubble::Stop
-            }
-            k if k == crokey::key!(k) || k == crokey::key!(up) => {
-                handle.up(total);
-                Bubble::Stop
-            }
-            k if k == crokey::key!(left) => {
-                loom::focus_previous();
-                Bubble::Stop
-            }
-            _ => Bubble::Continue,
-        })
-        .on_wheel(move |delta| {
-            handle.wheel(delta, total);
-            Bubble::Stop
-        })
-        .on_mouse_down(move |mouse| {
-            handle.click(mouse.local.y as u32, total);
-            Bubble::Stop
-        });
 
     let mut rows: Vec<Node> = Vec::with_capacity(pairs.len());
     for (offset, pair) in pairs.iter().enumerate() {

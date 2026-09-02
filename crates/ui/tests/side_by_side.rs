@@ -17,16 +17,18 @@ fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
     pipeline::diff::Diff { file, alignment }
 }
 
-fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<String> {
+fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
     let diff = make_diff(original, modified);
     let content = pipeline::diff::DiffContent::Diff(diff);
-    let mut h =
-        Harness::new::<SideBySide>(SideBySideProps {}, width, height).provide::<Ui>(Context {
-            theme: Rc::new(Theme::DARK),
-            diff: Some(Rc::new(content)),
-            ..Context::default()
-        });
-    h.screen()
+    Harness::new::<SideBySide>(SideBySideProps {}, width, height).provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        diff: Some(Rc::new(content)),
+        ..Context::default()
+    })
+}
+
+fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<String> {
+    harness(original, modified, width, height).screen()
 }
 
 #[test]
@@ -62,4 +64,32 @@ fn line_numbers_are_drawn() {
 fn a_divider_separates_the_two_sides() {
     let rows = render(&["a"], &["a"], 40, 3);
     assert!(rows[0].contains('│'), "a divider: {:?}", rows[0]);
+}
+
+#[test]
+fn j_scrolls_a_long_diff() {
+    let lines: Vec<String> = (1..=20).map(|line| format!("line {line}")).collect();
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let mut h = harness(&lines, &lines, 40, 4);
+    h.force_draw().force_draw();
+    let before = h.screen();
+
+    for _ in 0..8 {
+        h.press(crokey::key!(j)).force_draw();
+    }
+
+    assert_ne!(h.screen(), before);
+}
+
+#[test]
+fn the_wheel_scrolls_without_a_keypress() {
+    let lines: Vec<String> = (1..=20).map(|line| format!("line {line}")).collect();
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let mut h = harness(&lines, &lines, 40, 4);
+    h.force_draw().force_draw();
+    let before = h.screen();
+
+    h.wheel(10, 1, 1).force_draw();
+
+    assert_ne!(h.screen(), before);
 }
