@@ -41,7 +41,7 @@ fn workspace() -> PathBuf {
 }
 
 fn render(pair: &str) -> String {
-    let dir = workspace().join("vendor/test-pairs").join(pair);
+    let dir = workspace().join("libvscode-diff/tests/oracle").join(pair);
     let output = Command::new(env!("CARGO_BIN_EXE_codediff"))
         .arg("debug")
         .arg("align")
@@ -110,7 +110,7 @@ fn the_rendered_pairs_match_their_snapshots() {
 #[test]
 fn both_rendered_columns_read_back_as_their_files() {
     for pair in PAIRS {
-        let dir = workspace().join("vendor/test-pairs").join(pair);
+        let dir = workspace().join("libvscode-diff/tests/oracle").join(pair);
         let original = std::fs::read_to_string(dir.join("original.txt")).expect("fixture exists");
         let modified = std::fs::read_to_string(dir.join("modified.txt")).expect("fixture exists");
         let rendered = render(pair);

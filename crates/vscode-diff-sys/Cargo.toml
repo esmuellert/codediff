@@ -1,6 +1,6 @@
 [package]
 name = "vscode-diff-sys"
-description = "Raw FFI bindings to the vendored libvscode-diff C engine."
+description = "Raw FFI bindings to the canonical libvscode-diff C engine."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,4 +21,3 @@ all = { level = "deny", priority = -1 }
 
 [build-dependencies]
 cc = "1"
-diffy.workspace = true

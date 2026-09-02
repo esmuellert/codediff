@@ -1,4 +1,4 @@
-//! The twelve vendored pairs, checked against the files they came from.
+//! The twelve oracle pairs, checked against their source files.
 //!
 //! The governing property: **read the left column top to bottom and you have
 //! the original file; read the right and you have the modified one.** Fillers
@@ -16,14 +16,14 @@ macro_rules! pairs {
     ($($name:ident),* $(,)?) => {
         &[$((
             stringify!($name),
-            include_str!(concat!("../../../vendor/test-pairs/", stringify!($name), "/original.txt")),
-            include_str!(concat!("../../../vendor/test-pairs/", stringify!($name), "/modified.txt")),
+            include_str!(concat!("../../../libvscode-diff/tests/oracle/", stringify!($name), "/original.txt")),
+            include_str!(concat!("../../../libvscode-diff/tests/oracle/", stringify!($name), "/modified.txt")),
         )),*]
     };
 }
 
-/// Every pair in `vendor/test-pairs`. Most were crafted upstream to exercise
-/// move detection, which is the hardest case for a pairing to get right.
+/// Every pair in `libvscode-diff/tests/oracle`. Most exercise move detection,
+/// which is the hardest case for a pairing to get right.
 const PAIRS: &[(&str, &str, &str)] = pairs![
     adjacent_move,
     block_moved_down,
@@ -46,10 +46,10 @@ fn split(text: &str) -> Vec<&str> {
 
 fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
     vscode_diff::compute(original, modified, &Options::default().with_moves())
-        .expect("the vendored pairs are well within every limit")
+        .expect("the oracle pairs are well within every limit")
 }
 
-/// Runs a check over every vendored pair.
+/// Runs a check over every oracle pair.
 ///
 /// The alignment borrows the line vectors, so they have to outlive it here
 /// rather than being returned.
@@ -247,7 +247,7 @@ fn moves_are_found_by_line_number() {
     let (_, original_text, modified_text) = PAIRS
         .iter()
         .find(|(name, _, _)| *name == "block_moved_down")
-        .expect("the fixture is vendored");
+        .expect("the fixture is checked in");
     let original = split(original_text);
     let modified = split(modified_text);
     let diff = compute(&original, &modified);

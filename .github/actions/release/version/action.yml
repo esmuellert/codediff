@@ -28,6 +28,13 @@ runs:
         next_tag=$(git-cliff --bumped-version)
         next=${next_tag#v}
 
+        current_major=${current%%.*}
+        next_major=${next%%.*}
+        if [ "$current_major" = "0" ] && [ "$next_major" != "0" ]; then
+          echo "::error title=Unexpected stable release::$current cannot advance to $next without removing the pre-1.0 guard"
+          exit 1
+        fi
+
         if [ "$next" = "$current" ]; then
           echo "Nothing to release (version unchanged at $current)"
           echo "released=false" >> "$GITHUB_OUTPUT"

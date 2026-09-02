@@ -270,7 +270,7 @@ fn utf16_tree_glyphs_do_not_truncate_character_heuristics() {
         "│   ├── codediff/             binary · composition root\n",
         "│   └── fixtures/             dev-only: builds test repositories, emits a manifest\n",
         "├── xtask/                    lint, sync, verify and generate tasks (not a build system)\n",
-        "├── vendor/libvscode-diff/    C source, copied from a pinned upstream tag\n",
+        "├── libvscode-diff/           C source, copied from a pinned upstream tag\n",
         "└── docs/",
     ));
     let modified = vscode_diff::lines(concat!(
@@ -287,7 +287,7 @@ fn utf16_tree_glyphs_do_not_truncate_character_heuristics() {
         "│   ├── codediff/             binary — argument parsing, wiring\n",
         "│   └── fixtures/             dev-only: builds test git repositories\n",
         "├── xtask/                    lint-arch, lint-size, verify-c, fixture-repo, dev\n",
-        "├── vendor/libvscode-diff/    C source, pinned to an upstream tag\n",
+        "├── libvscode-diff/           C source, pinned to an upstream tag\n",
         "└── docs/",
     ));
     let options = Options::default()
