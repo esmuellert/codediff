@@ -13,6 +13,8 @@ mod lint_arch;
 mod lint_size;
 mod lock;
 mod oracle_output;
+#[cfg(test)]
+mod release_policy;
 mod sync_c;
 mod verify_c;
 mod verify_oracle;
