@@ -40,6 +40,12 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                     return;
                 }
                 let matching_files = Rc::new(response.files);
+                if let Some(set_file) = set_file {
+                    let files_for_selection = Rc::clone(&matching_files);
+                    set_file(&move |selected| {
+                        matching_selected_file(selected, &files_for_selection)
+                    });
+                }
                 set_files(&move |_| Rc::clone(&matching_files));
             });
         let service_to_refresh = Rc::clone(&file_service);
@@ -220,6 +226,20 @@ fn open_file(file: &File, set_file: Option<loom::SetState<Option<Rc<File>>>>) {
     }
 }
 
+fn matching_selected_file(selected: Option<Rc<File>>, files: &[File]) -> Option<Rc<File>> {
+    let selected = selected?;
+    let matching = files.iter().find(|file| same_file_entry(file, &selected))?;
+    if matching == selected.as_ref() {
+        Some(selected)
+    } else {
+        Some(Rc::new(matching.clone()))
+    }
+}
+
+fn same_file_entry(left: &File, right: &File) -> bool {
+    left.path() == right.path() && left.revs().heading() == right.revs().heading()
+}
+
 pub fn find_by_identity(saved: Option<&str>, nodes: &[Node]) -> Option<usize> {
     let saved = saved?;
     nodes.iter().position(|n| identity(n) == saved)
@@ -230,5 +250,27 @@ pub fn identity(node: &Node) -> String {
         Node::Heading { name, .. } => name.to_string(),
         Node::Directory { path, .. } => path.clone(),
         Node::File { file, .. } => file.path().as_str().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use file_types::{Oid, RepoPath, Revs};
+
+    use super::*;
+
+    #[test]
+    fn an_unchanged_selection_keeps_its_rc() {
+        let file = File::unchanged_path(
+            RepoPath::new("selected.rs", Path::new("/repo")),
+            Revs::worktree_against(Oid::new("abc")),
+        );
+        let selected = Rc::new(file.clone());
+
+        let matching = matching_selected_file(Some(Rc::clone(&selected)), &[file]).unwrap();
+
+        assert!(Rc::ptr_eq(&matching, &selected));
     }
 }
