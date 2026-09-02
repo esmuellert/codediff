@@ -6,9 +6,10 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx};
 use ui::Theme;
 use ui::components::diff_viewer::{DiffViewer, DiffViewerProps};
-use ui::components::{Context, Ui};
+use ui::components::{Context, Ui, UiProps};
 use ui::services::diff::DiffService;
 
 fn file(path: &str) -> file_types::File {
@@ -27,9 +28,13 @@ fn make_diff(file: file_types::File) -> pipeline::diff::DiffContent {
 }
 
 fn make_single(file: file_types::File) -> pipeline::diff::DiffContent {
+    make_single_with_text(file, "untracked body")
+}
+
+fn make_single_with_text(file: file_types::File, text: &str) -> pipeline::diff::DiffContent {
     pipeline::diff::DiffContent::SingleFile(pipeline::diff::SingleFile {
         file,
-        lines: Arc::new(vec!["untracked body".to_owned()]),
+        lines: Arc::new(vec![text.to_owned()]),
     })
 }
 
@@ -68,6 +73,26 @@ fn with_response(file: file_types::File, content: pipeline::diff::DiffContent) -
     harness
 }
 
+#[component]
+fn ViewerHost(
+    scope: &mut Scope,
+    file: Rc<file_types::File>,
+    diff_service: Rc<DiffService>,
+) -> Node {
+    let _ = scope;
+    rsx! {
+        Ui {
+            value: Context {
+                theme: Rc::new(Theme::DARK),
+                file: Some(Rc::clone(file)),
+                diff_service: Some(Rc::clone(diff_service)),
+                ..Context::default()
+            },
+            DiffViewer {}
+        }
+    }
+}
+
 #[test]
 fn no_file_shows_welcome() {
     let mut harness =
@@ -95,6 +120,52 @@ fn a_response_for_another_file_is_ignored() {
     let text = harness.screen().join("\n");
     assert!(text.contains("Select a file"), "got {text:?}");
     assert!(!text.contains("untracked body"), "got {text:?}");
+}
+
+#[test]
+fn the_previous_file_stays_visible_until_the_next_response() {
+    let first = file("first.rs");
+    let second = file("second.rs");
+    let (tx, rx) = mpsc::channel();
+    let worker = pipeline::diff::DiffWorker::mock(
+        vec![
+            Ok(make_single_with_text(first.clone(), "first body")),
+            Ok(make_single_with_text(second.clone(), "second body")),
+        ],
+        channel::Emitter::new(tx, |response| response),
+    );
+    let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(worker))));
+    let mut harness = Harness::new::<ViewerHost>(
+        ViewerHostProps {
+            file: Rc::new(first),
+            diff_service: Rc::clone(&diff_service),
+        },
+        60,
+        10,
+    );
+    harness.force_draw();
+    diff_service.deliver(
+        rx.recv_timeout(Duration::from_secs(1))
+            .expect("first response"),
+    );
+    harness.force_draw().force_draw();
+    assert!(harness.screen().join("\n").contains("first body"));
+
+    harness.set_props::<ViewerHost>(ViewerHostProps {
+        file: Rc::new(second),
+        diff_service: Rc::clone(&diff_service),
+    });
+    harness.force_draw();
+    assert!(harness.screen().join("\n").contains("first body"));
+
+    diff_service.deliver(
+        rx.recv_timeout(Duration::from_secs(1))
+            .expect("second response"),
+    );
+    harness.force_draw().force_draw();
+    let text = harness.screen().join("\n");
+    assert!(text.contains("second body"), "got {text:?}");
+    assert!(!text.contains("first body"), "got {text:?}");
 }
 
 #[test]

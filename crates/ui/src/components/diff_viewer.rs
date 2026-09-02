@@ -18,9 +18,9 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     let file_for_request = selected_file.as_ref().map(Rc::clone);
     let diff_service = ctx.diff_service.as_ref().map(Rc::clone);
 
-    use_effect(scope, selected_file.clone(), move || {
-        set_content(&|_| None);
+    use_effect(scope, selected_file, move || {
         let (Some(requested_file), Some(diff_service)) = (file_for_request, diff_service) else {
+            set_content(&|_| None);
             return;
         };
         let requested_file_for_response = Rc::clone(&requested_file);
@@ -30,16 +30,15 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
                 if response.file != *requested_file_for_response {
                     return;
                 }
-                let next = response.content.ok().map(Rc::new);
-                set_content(&move |_| next.clone());
+                let matching_content = response
+                    .content
+                    .ok()
+                    .filter(|content| content.file() == &*requested_file_for_response)
+                    .map(Rc::new);
+                set_content(&move |_| matching_content.clone());
             });
     });
 
-    let content = content.filter(|content| {
-        selected_file
-            .as_deref()
-            .is_some_and(|file| content.file() == file)
-    });
     match content {
         Some(content) => match content.as_ref() {
             DiffContent::Diff(_) => rsx! { SideBySide { content: Rc::clone(&content) } },
