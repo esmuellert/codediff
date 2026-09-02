@@ -21,7 +21,6 @@ use std::sync::mpsc::Sender;
 #[cfg(unix)]
 use std::thread;
 
-use file_types::File;
 use loom::{Flow, Tree, deliver_input};
 
 use components::{App, AppProps};
@@ -35,7 +34,7 @@ enum Event {
     #[cfg(unix)]
     Signal(i32),
     FsChanged(watcher::Refresh),
-    ListRefreshed(Vec<File>),
+    ListRefreshed(pipeline::files::Response),
     FileReady(Box<pipeline::diff::Response>),
     Coloured(syntax::SyntaxResponse),
 }
