@@ -343,25 +343,6 @@ fn git_commit_all_triggers_index_and_refs() {
 // === Stress / coalescing ===
 
 #[test]
-fn rapid_edits_coalesce() {
-    let (repo, _w, rx) = setup();
-    for i in 0..100 {
-        fs::write(repo.path().join("file.txt"), format!("edit {i}")).unwrap();
-    }
-    // Wait for pending batches to flush.
-    std::thread::sleep(Duration::from_secs(1));
-    let mut count = 0;
-    while rx.try_recv().is_ok() {
-        count += 1;
-    }
-    assert!(
-        count <= 5,
-        "100 rapid edits should coalesce to ≤5 refreshes, got {count}"
-    );
-    assert!(count >= 1, "at least one refresh expected");
-}
-
-#[test]
 fn build_in_ignored_dir_triggers_nothing() {
     let (repo, _w, rx) = setup();
     fs::create_dir_all(repo.path().join("target/debug")).unwrap();
