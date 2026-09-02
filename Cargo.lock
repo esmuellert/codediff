@@ -308,8 +308,12 @@ dependencies = [
  "file-types",
  "fixtures",
  "line-index",
+ "loom",
  "pipeline",
  "portable-pty",
+ "serde",
+ "serde_json",
+ "syntax",
  "tracing-subscriber",
  "ui",
  "vcs",
@@ -561,6 +565,15 @@ dependencies = [
 [[package]]
 name = "diff-types"
 version = "0.17.0"
+
+[[package]]
+name = "diffy"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e3dc2f773b6aaa63b1a7684b8589f670a8a0146a510b74d23a401c882364b49"
+dependencies = [
+ "hashbrown 0.17.1",
+]
 
 [[package]]
 name = "digest"
@@ -1043,6 +1056,26 @@ name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+
+[[package]]
+name = "loom"
+version = "0.17.0"
+dependencies = [
+ "crokey",
+ "crossterm",
+ "loom-macros",
+ "ratatui",
+ "signal-hook 0.4.4",
+]
+
+[[package]]
+name = "loom-macros"
+version = "0.17.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "lru"
@@ -2712,11 +2745,13 @@ dependencies = [
  "diff-types",
  "file-types",
  "line-index",
+ "loom",
  "pipeline",
  "ratatui",
  "signal-hook 0.4.4",
  "syntax",
  "tracing",
+ "vcs",
  "watcher",
 ]
 
@@ -2808,6 +2843,7 @@ name = "vscode-diff-sys"
 version = "0.17.0"
 dependencies = [
  "cc",
+ "diffy",
 ]
 
 [[package]]
@@ -2906,6 +2942,8 @@ dependencies = [
  "channel",
  "ignore",
  "notify",
+ "serde",
+ "serde_json",
  "tempfile",
  "tracing",
 ]
@@ -3129,6 +3167,8 @@ version = "0.17.0"
 dependencies = [
  "anyhow",
  "fixtures",
+ "serde",
+ "serde_json",
  "sha2 0.11.0",
  "toml",
  "vscode-diff",

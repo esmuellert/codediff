@@ -9,11 +9,17 @@ repository.workspace = true
 authors.workspace = true
 publish = false
 
+[[test]]
+name = "binary"
+path = "tests/binary/mod.rs"
+
 [dependencies]
 notify = { workspace = true }
 ignore = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 channel.workspace = true
 
 [dev-dependencies]

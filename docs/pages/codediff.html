@@ -37,13 +37,7 @@ StatusLine            the bottom row: body, sidecar`}),(0,h.jsx)(E,{id:`shared`,
     -> (Style, Style, Style)
 
 fn clip_to_line(range: Option<Range>, line: u32)
-    -> Option<Range<u32>>`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`row_styles`}),` is used by `,(0,h.jsx)(`code`,{children:`SideBySide`}),` and`,` `,(0,h.jsx)(`code`,{children:`Inline`}),`. `,(0,h.jsx)(`code`,{children:`clip_to_line`}),` is used by all three diff screens. `,(0,h.jsx)(`code`,{children:`SingleFile`}),` computes its styles inline because it has two branches (cursor or plain).`]}),(0,h.jsx)(E,{id:`data-flow`,children:`Data flow`}),(0,h.jsxs)(`p`,{children:[`Screens read shared state from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`:`,` `,`the focused file, cursor, scroll position, selection. Workers fill stores that components subscribe to. Callbacks (`,(0,h.jsx)(`code`,{children:`on_press`}),`,`,` `,(0,h.jsx)(`code`,{children:`on_open`}),`) flow up as props. Bricks take per-row values as props — they read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context.`]})]})}function _e(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsxs)(`p`,{children:[`Shared state, provided at the root. Screens and the status line read these with `,(0,h.jsx)(`code`,{children:`use_context`}),`. Bricks take props.`]}),(0,h.jsx)(E,{id:`ctx-values`,children:`Values`}),(0,h.jsx)(T,{children:`use_context::<Theme>(scope)
-use_context::<Option<Rc<File>>>(scope)
-use_context::<Range<u32>>(scope)         // view_lines
-use_context::<u32>(scope)                // cursor
-use_context::<u32>(scope)                // first_cell
-use_context::<Option<Selection>>(scope)
-use_context::<Option<Rc<str>>>(scope)    // notice`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Value`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`theme`})}),(0,h.jsx)(`td`,{children:`colours and styles for every component`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`repo`})}),(0,h.jsx)(`td`,{children:`the repository path`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`file`})}),(0,h.jsxs)(`td`,{children:[`the focused file, or `,(0,h.jsx)(`code`,{children:`None`}),` in the explorer`]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`view_lines`})}),(0,h.jsx)(`td`,{children:`which rows to render`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`cursor`})}),(0,h.jsx)(`td`,{children:`which row the cursor is on`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`first_cell`})}),(0,h.jsx)(`td`,{children:`horizontal scroll offset in cells`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`notice`})}),(0,h.jsx)(`td`,{children:`an error or warning to display`})]})]}),(0,h.jsx)(E,{id:`ctx-who`,children:`Who reads what`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Component`}),(0,h.jsx)(`th`,{children:`Reads from context`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#side-by-side`,children:`SideBySide`})}),(0,h.jsx)(`td`,{children:`theme, file, view_lines, cursor, first_cell`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#inline`,children:`Inline`})}),(0,h.jsx)(`td`,{children:`theme, file, view_lines, cursor, first_cell`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#single-file`,children:`SingleFile`})}),(0,h.jsx)(`td`,{children:`theme, file, view_lines, cursor, first_cell`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#explorer`,children:`Explorer`})}),(0,h.jsx)(`td`,{children:`theme, repo, view_lines, cursor`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#status-line`,children:`StatusLine`})}),(0,h.jsx)(`td`,{children:`theme, file, view_lines, cursor, notice`})]})]}),(0,h.jsx)(E,{id:`ctx-stores`,children:`Stores`}),(0,h.jsxs)(`p`,{children:[`Workers fill two stores. Components subscribe with`,` `,(0,h.jsx)(`code`,{children:`use_sync_external_store`}),`:`]}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Store`}),(0,h.jsx)(`th`,{children:`Filled by`}),(0,h.jsx)(`th`,{children:`Read by`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:`file list`}),(0,h.jsx)(`td`,{children:`the list worker (watches the worktree)`}),(0,h.jsx)(`td`,{children:`Explorer`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:`diffs + colours`}),(0,h.jsx)(`td`,{children:`the diff and syntax workers`}),(0,h.jsx)(`td`,{children:`SideBySide, Inline, SingleFile`})]})]}),(0,h.jsx)(`p`,{children:`Stores are subscriptions, separate from context. A worker finishing redraws the component that subscribed, and nothing else.`}),(0,h.jsxs)(O,{children:[`Bricks (`,(0,h.jsx)(`a`,{href:`#gutter`,children:`Gutter`}),`, `,(0,h.jsx)(`a`,{href:`#code-text`,children:`CodeText`}),`,`,` `,(0,h.jsx)(`a`,{href:`#filler`,children:`Filler`}),`, `,(0,h.jsx)(`a`,{href:`#explorer-entry`,children:`explorer::Entry`}),`) read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context. Everything else they need arrives as props — per-row values their parent computed.`]})]})}function ve(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`app-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌──────────────────┬─────────────────────────┐
+    -> Option<Range<u32>>`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`row_styles`}),` is used by `,(0,h.jsx)(`code`,{children:`SideBySide`}),` and`,` `,(0,h.jsx)(`code`,{children:`Inline`}),`. `,(0,h.jsx)(`code`,{children:`clip_to_line`}),` is used by all three diff screens. `,(0,h.jsx)(`code`,{children:`SingleFile`}),` computes its styles inline because it has two branches (cursor or plain).`]}),(0,h.jsx)(E,{id:`data-flow`,children:`Data flow`}),(0,h.jsxs)(`p`,{children:[`Screens read shared state from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`:`,` `,`the focused file, cursor, scroll position, selection. Workers fill stores that components read from context. Bricks take per-row values as props — they read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context.`]})]})}function _e(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsxs)(`p`,{children:[`Shared state, provided at the root. Screens and the status line read these with `,(0,h.jsx)(`code`,{children:`use_context`}),`. Bricks take props.`]}),(0,h.jsx)(E,{id:`ctx-values`,children:`Values`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Value`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`theme`})}),(0,h.jsx)(`td`,{children:`colours and styles for every component`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`repo`})}),(0,h.jsx)(`td`,{children:`the repository path`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`files`})}),(0,h.jsx)(`td`,{children:`the files this review changes`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`file`})}),(0,h.jsxs)(`td`,{children:[`the focused file, or `,(0,h.jsx)(`code`,{children:`None`}),` in the explorer`]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`set_file`})}),(0,h.jsx)(`td`,{children:`setter for the focused file`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`diff`})}),(0,h.jsxs)(`td`,{children:[`the diff on screen, or `,(0,h.jsx)(`code`,{children:`None`}),` while there is none`]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`syntax`})}),(0,h.jsxs)(`td`,{children:[`the syntax colour cache, a snapshot of the `,(0,h.jsx)(`code`,{children:`Store`})]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`first_cell`})}),(0,h.jsx)(`td`,{children:`horizontal scroll offset in cells`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`selection`})}),(0,h.jsx)(`td`,{children:`the live text selection`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`notice`})}),(0,h.jsx)(`td`,{children:`an error or warning to display`})]})]}),(0,h.jsxs)(`p`,{children:[`Workers fill `,(0,h.jsx)(`code`,{children:`diff`}),`, `,(0,h.jsx)(`code`,{children:`syntax`}),`, and`,` `,(0,h.jsx)(`code`,{children:`files`}),` through the provider's effects and the event loop. Components read them from context.`]}),(0,h.jsx)(E,{id:`ctx-who`,children:`Who reads what`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Component`}),(0,h.jsx)(`th`,{children:`Reads from context`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#side-by-side`,children:`SideBySide`})}),(0,h.jsx)(`td`,{children:`theme, diff, syntax`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#inline`,children:`Inline`})}),(0,h.jsx)(`td`,{children:`theme, diff, syntax`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#single-file`,children:`SingleFile`})}),(0,h.jsx)(`td`,{children:`theme, diff, syntax`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#explorer`,children:`Explorer`})}),(0,h.jsx)(`td`,{children:`theme, files, set_file`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#status-line`,children:`StatusLine`})}),(0,h.jsx)(`td`,{children:`theme, file, notice, diff`})]})]}),(0,h.jsxs)(O,{children:[`Cursor, scroll position, and view lines are internal state owned by each scrollable component (Explorer, SideBySide). Each component calls`,` `,(0,h.jsx)(`code`,{children:`use_measure`}),` to track its own height and computes its own scroll.`]}),(0,h.jsxs)(O,{children:[`Bricks (`,(0,h.jsx)(`a`,{href:`#gutter`,children:`Gutter`}),`, `,(0,h.jsx)(`a`,{href:`#code-text`,children:`CodeText`}),`,`,` `,(0,h.jsx)(`a`,{href:`#filler`,children:`Filler`}),`, `,(0,h.jsx)(`a`,{href:`#explorer-entry`,children:`explorer::Entry`}),`) read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context. Everything else they need arrives as props — per-row values their parent computed.`]})]})}function ve(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`app-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌──────────────────┬─────────────────────────┐
 │                  │  1 one       │  1 one   │
 │  Changes (2)     │  2 two       │  2 TWO   │
 │  ├  app.rs   M   │  3 three     │  3 three │
@@ -52,22 +46,29 @@ use_context::<Option<Rc<str>>>(scope)    // notice`}),(0,h.jsxs)(`table`,{childr
 ├──────────────────┴─────────────────────────┤
 │ src/app.rs              2 changes     1/6  │
 └────────────────────────────────────────────┘`}),(0,h.jsx)(E,{id:`app-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
-pub fn App(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Provides `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),` for everything below.`]}),(0,h.jsx)(E,{id:`app-body`,children:`Body`}),(0,h.jsx)(T,{children:`rsx! {
+pub fn App(
+    scope: &mut Scope,
+    cwd: Rc<Path>,
+    file_service: Rc<FilesService>,
+    diff_service: Rc<DiffService>,
+    syntax_service: Rc<SyntaxService>,
+) -> Node`}),(0,h.jsxs)(`p`,{children:[`Provides `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),` through`,` `,(0,h.jsx)(`code`,{children:`UiProvider`}),`. The provider owns the state and the effects that keep it current.`]}),(0,h.jsx)(E,{id:`app-body`,children:`Body`}),(0,h.jsx)(T,{children:`rsx! {
     Column { ..,
-        Row { grow: 1, ..,
-            if show_explorer {
-                Explorer { on_open }
-                Divider { symbol: "│" }
-            }
-            match layout {
-                DiffType::SideBySide => rsx! { SideBySide {} },
-                DiffType::Inline => rsx! { Inline {} },
-                DiffType::Single => rsx! { SingleFile {} },
+        UiProvider {
+            cwd, file_service, diff_service, syntax_service, rows,
+            Row { grow: 1, ..,
+                Border {
+                    layout: Layout { basis: Length(40), .. },
+                    Explorer {}
+                }
+                Border {
+                    layout: Layout { grow: 1, .. },
+                    DiffViewer {}
+                }
             }
         }
-        StatusLine {}
     }
-}`}),(0,h.jsx)(E,{id:`app-explorer`,children:`Showing the explorer`}),(0,h.jsxs)(`p`,{children:[`The explorer is toggled by a key. When visible, it sits beside the diff with a divider between them. When hidden, the diff fills the width. Each side carries a `,(0,h.jsx)(`code`,{children:`min_width`}),`. When both don't fit, it shows just the focused one.`]}),(0,h.jsx)(E,{id:`app-context`,children:`Context`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`App`}),` is where `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),` is provided. It owns the pane state and passes it down through context so every child reads it directly.`]}),(0,h.jsxs)(O,{children:[`The "terminal too small" message is a `,(0,h.jsx)(`code`,{children:`too_small`}),` node on the outermost `,(0,h.jsx)(`code`,{children:`Column`}),`. When the minimum doesn't fit, loom shows it instead of the tree.`]})]})}function ye(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`sbs-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌─────────────────────┬─────────────────────┐
+}`}),(0,h.jsx)(E,{id:`app-explorer`,children:`Showing the explorer`}),(0,h.jsxs)(`p`,{children:[`The explorer is toggled by a key. When visible, it sits beside the diff with a divider between them. When hidden, the diff fills the width. Each side carries a `,(0,h.jsx)(`code`,{children:`min_width`}),`. When both don't fit, it shows just the focused one.`]}),(0,h.jsx)(E,{id:`app-context`,children:`Context`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`App`}),` wraps `,(0,h.jsx)(`code`,{children:`UiProvider`}),`, which owns the state and provides `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),`. `,(0,h.jsx)(`code`,{children:`Border`}),` `,`detects focus through loom's bubbling `,(0,h.jsx)(`code`,{children:`on_focus`}),` /`,` `,(0,h.jsx)(`code`,{children:`on_blur`}),` and highlights the focused pane.`]}),(0,h.jsxs)(O,{children:[`The "terminal too small" message is a `,(0,h.jsx)(`code`,{children:`too_small`}),` node on the outermost `,(0,h.jsx)(`code`,{children:`Column`}),`. When the minimum doesn't fit, loom shows it instead of the tree.`]})]})}function ye(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`sbs-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌─────────────────────┬─────────────────────┐
 │  1 one              │  1 one              │
 │  2 two              │  2 TWO              │
 │  3 three            │  3 three            │
@@ -75,7 +76,7 @@ pub fn App(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Pr
 │  4 four             │  5 four             │
 └─────────────────────┴─────────────────────┘
   21 cells         1         22 cells`}),(0,h.jsx)(E,{id:`sbs-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
-pub fn SideBySide(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Reads `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),` for the file, cursor, scroll position. Subscribes to the diff store. The divider position and text selection are internal state.`]}),(0,h.jsx)(E,{id:`sbs-body`,children:`Body`}),(0,h.jsx)(T,{children:`let column = |diff_version, layout: Layout| {
+pub fn SideBySide(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Reads `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),` for the diff and syntax colours. Cursor, scroll position, and the divider position are internal state. Height is measured with `,(0,h.jsx)(`code`,{children:`use_measure`}),`.`]}),(0,h.jsx)(E,{id:`sbs-body`,children:`Body`}),(0,h.jsx)(T,{children:`let column = |diff_version, layout: Layout| {
     let gutter =
         gutter_width(alignment.lines(diff_version).len() as u32);
 
@@ -282,40 +283,23 @@ rsx! {
 └  notes.txt                             ??
 Staged Changes (1 · +1 -1)
 └  README.md                        +1 -1 M`}),(0,h.jsx)(E,{id:`explorer-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
-pub fn Explorer(
-    scope: &mut Scope,
-    on_open: Rc<dyn Fn(File)>,
-) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`on_open`})}),(0,h.jsx)(`td`,{children:`called with the file to open when a row is activated`})]})]}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`repo`}),`, `,(0,h.jsx)(`code`,{children:`view_lines`}),` and `,(0,h.jsx)(`code`,{children:`cursor`}),` `,`come from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`. The file list comes from the list store.`]}),(0,h.jsx)(E,{id:`explorer-body`,children:`Body`}),(0,h.jsx)(T,{children:`let files = use_sync_external_store(scope, list_store());
+pub fn Explorer(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Reads `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),` for the file list, cursor, and scroll position. Sets `,(0,h.jsx)(`code`,{children:`set_file`}),` from context when a file is activated.`]}),(0,h.jsx)(E,{id:`explorer-body`,children:`Body`}),(0,h.jsx)(T,{children:`let files = &ctx.files;
+let nodes = tree(&files);
 
 rsx! {
-    Column { layout, listeners, fill: Some(theme.normal), ..,
-        for (offset, content) in visible_lines.enumerate() {
+    Column { focusable: true, auto_focus: true, layout, ..,
+        for (offset, node) in visible_nodes.enumerate() {
             let selected = view_lines.start + offset as u32 == cursor;
-            let indent = match tree.nested_at(index) {
-                Some((model, id)) => indent(model, id),
-                None => String::new(),
-            };
-            let (body, status) = match &content {
-                Content::Heading { name, files, stats } =>
-                    heading(name, files, stats),
-                Content::Directory { name, open, .. } =>
-                    directory(name, open),
-                Content::File { name, file } =>
-                    file_entry(name, file),
-            };
-
             rsx! {
                 Entry {
                     key: offset,
-                    indent: Indent { lines: indent.into() },
-                    body,
-                    status,
+                    node: Rc::new(node.clone()),
                     selected,
                 }
             }
         }
     }
-}`}),(0,h.jsx)(E,{id:`explorer-modes`,children:`Tree and list`}),(0,h.jsx)(`p`,{children:`Tree mode shows short names and indent lines. List mode shows full paths and no lines. The mode is toggled by a key and lives inside this component.`}),(0,h.jsx)(E,{id:`explorer-letters`,children:`Change letters`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Letter`}),(0,h.jsx)(`th`,{children:`Means`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`A`})}),(0,h.jsx)(`td`,{children:`added`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`M`})}),(0,h.jsx)(`td`,{children:`modified`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`D`})}),(0,h.jsx)(`td`,{children:`deleted`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`R`})}),(0,h.jsx)(`td`,{children:`moved or copied`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`??`})}),(0,h.jsx)(`td`,{children:`untracked`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`!`})}),(0,h.jsx)(`td`,{children:`conflicted`})]})]}),(0,h.jsx)(O,{children:`The file list arrives from a worker that watches the worktree. This component subscribes to the store the same way the diff screens subscribe to theirs.`})]})}function Ee(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`entry-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`│ └  tab.rs                          +4 M
+}`}),(0,h.jsx)(E,{id:`explorer-modes`,children:`Tree and list`}),(0,h.jsx)(`p`,{children:`Tree mode shows short names and indent lines. List mode shows full paths and no lines. The mode is toggled by a key and lives inside this component.`}),(0,h.jsx)(E,{id:`explorer-letters`,children:`Change letters`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Letter`}),(0,h.jsx)(`th`,{children:`Means`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`A`})}),(0,h.jsx)(`td`,{children:`added`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`M`})}),(0,h.jsx)(`td`,{children:`modified`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`D`})}),(0,h.jsx)(`td`,{children:`deleted`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`R`})}),(0,h.jsx)(`td`,{children:`moved or copied`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`??`})}),(0,h.jsx)(`td`,{children:`untracked`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`!`})}),(0,h.jsx)(`td`,{children:`conflicted`})]})]}),(0,h.jsxs)(O,{children:[`The file list arrives from a worker that watches the worktree. The component reads `,(0,h.jsx)(`code`,{children:`files`}),` from context and sets`,` `,(0,h.jsx)(`code`,{children:`set_file`}),` when Enter is pressed on a file.`]})]})}function Ee(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`entry-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`│ └  tab.rs                          +4 M
 └───┘└──────────────┘                └──┘└┘
 indent     body (truncates)         status`}),(0,h.jsx)(E,{id:`entry-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
 pub fn Entry(
@@ -325,7 +309,8 @@ pub fn Entry(
     status: Option<Status>,
     selected: bool,
 ) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`indent`})}),(0,h.jsx)(`td`,{children:`tree lines, or empty in flat mode`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`body`})}),(0,h.jsx)(`td`,{children:`icon and name (or full path)`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`status`})}),(0,h.jsxs)(`td`,{children:[`line counts and change letter, or `,(0,h.jsx)(`code`,{children:`None`}),` for directories and headings`]})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`selected`})}),(0,h.jsx)(`td`,{children:`whether this row is the cursor row`})]})]}),(0,h.jsx)(E,{id:`entry-sections`,children:`The three sections`}),(0,h.jsx)(T,{children:`pub struct Indent {
-    pub lines: Rc<str>,  // "│ └ " or ""
+    pub markers: Rc<str>,  // "│ └ " or ""
+}
 }
 
 pub struct Body {

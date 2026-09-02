@@ -21,7 +21,7 @@ use std::path::Path;
 
 use file_types::Revs;
 
-use crate::git::{cat_file, rev_parse};
+use crate::git::{cat_file, rev_parse, stage};
 use crate::repo::Repo;
 
 /// An open repository.
@@ -53,6 +53,16 @@ impl Repository {
     /// file watcher needs to notice a branch switch.
     pub fn repo_path(&self) -> &Repo {
         &self.repo
+    }
+
+    /// Stages a file: `git add -- <path>`.
+    pub fn stage(&self, path: &str) -> crate::Result<()> {
+        stage::stage(&self.repo.root, path)
+    }
+
+    /// Unstages a file: `git reset HEAD -- <path>`.
+    pub fn unstage(&self, path: &str) -> crate::Result<()> {
+        stage::unstage(&self.repo.root, path)
     }
 
     /// What the two sides of the working-tree comparison are, resolved.

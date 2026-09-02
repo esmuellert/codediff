@@ -38,7 +38,11 @@ pub fn run(command: Debug) -> Result<()> {
             verbose,
         } => align::run(&original, &modified, verbose),
         Debug::Line { file, verbose } => line::run(&file, verbose),
-        Debug::Parity { original, modified } => parity::run(&original, &modified),
+        Debug::Parity {
+            original,
+            modified,
+            ignore_trim_whitespace,
+        } => parity::run(&original, &modified, ignore_trim_whitespace),
         Debug::Show { spec, raw } => show::run(&spec, raw),
         Debug::List {
             rev,

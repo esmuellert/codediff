@@ -31,7 +31,7 @@ const BUDGET: usize = 800_000;
 /// Spans and nothing else. Deliberately not a `Highlighted`: that holds an
 /// engine's position, which is the worker's business, and the interface has no
 /// use for one when it is not doing the colouring.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Colours {
     lines: Vec<Vec<Span>>,
     /// Which content these describe. An answer for anything else is thrown
@@ -71,7 +71,7 @@ impl Colours {
 }
 
 /// The colours of every file open, and the order they were last used in.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Store {
     entries: HashMap<String, Colours>,
     /// Most recently used last. A `Vec` rather than a queue because it is
@@ -79,6 +79,13 @@ pub struct Store {
     /// holds a scan beats a second index.
     order: Vec<String>,
     cached_lines: usize,
+}
+
+// A new snapshot should always trigger a re-render.
+impl PartialEq for Store {
+    fn eq(&self, _: &Self) -> bool {
+        false
+    }
 }
 
 impl Store {

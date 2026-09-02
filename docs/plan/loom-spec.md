@@ -18,7 +18,7 @@ carries the name of the test that proves it. Every panic carries its message.
 | element tree | a value describing one frame, built by `rsx!`, thrown away after reconciliation |
 | reconciliation | matching this frame's description against the live instance tree, so state has an owner |
 | function components | `#[component] fn Name(scope: &mut Scope, …) -> Node` |
-| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context`, `use_sync_external_store` |
+| hooks | `use_state`, `use_ref`, `use_memo`, `use_effect`, `use_layout_effect`, `use_context`, `use_measure`, `use_sync_external_store` |
 | layout | one axis per container, integer terminal cells, two passes |
 | paint | a top-down walk that writes into `ratatui::buffer::Buffer` |
 | events | hit-test by rectangle, focus by scope, bubbling, pointer capture |
@@ -131,8 +131,8 @@ pub use event::{
 };
 pub use hook::{
     Always, Cleanup, Context, ExternalStore, Notify, Observable, Observer, Promise, Ref,
-    Resolver, SetState, Snapshot, Subscription, observable, promise, use_context, use_effect,
-    use_layout_effect, use_memo, use_ref, use_state, use_sync_external_store,
+    Resolver, SetState, Size, Snapshot, Subscription, observable, promise, use_context, use_effect,
+    use_layout_effect, use_measure, use_memo, use_ref, use_state, use_sync_external_store,
 };
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
 /// value is to write the provider element.
@@ -187,6 +187,9 @@ pub struct Host {
     pub measure: Option<fn(&Host, u16) -> (u16, u16)>,
     pub listeners: Listeners,
     pub focusable: bool,
+    /// Focus this node on the first frame, if nothing else is focused.
+    /// The terminal equivalent of React's `autoFocus`.
+    pub auto_focus: bool,
     /// Where to write this node's handle once it has a rectangle. React's
     /// `ref`, and `rsx!` spells it `ref` too.
     pub node_ref: Option<Ref<Option<NodeHandle>>>,
@@ -534,7 +537,8 @@ spells `ref`; it is left out of the listings below to keep them readable.
 ```rust
 // paint/host.rs
 pub struct Row;      pub struct RowProps      { pub layout: Layout, pub listeners: Listeners,
-                                                pub focusable: bool, pub too_small: Option<Node>,
+                                                pub focusable: bool, pub auto_focus: bool,
+                                                pub too_small: Option<Node>,
                                                 pub children: Children }
 pub struct Column;   pub struct ColumnProps   { /* the same fields */ }
 /// Children painted over one another, in declaration order.
@@ -552,7 +556,7 @@ pub struct Text;     pub struct TextProps     { pub layout: Layout,
                                                 pub style: ratatui::style::Style }
 /// The escape hatch: a rectangle handed to a painting function.
 pub struct Canvas;   pub struct CanvasProps   { pub layout: Layout, pub listeners: Listeners,
-                                                pub focusable: bool,
+                                                pub focusable: bool, pub auto_focus: bool,
                                                 pub paint: std::rc::Rc<dyn Fn(&mut Paint<'_>)> }
 
 // … and so on; every host's props derive or implement `Default`.
@@ -932,6 +936,17 @@ pub fn use_memo<D, T>(scope: &mut Scope, deps: D, compute: impl FnOnce() -> T) -
 where
     D: PartialEq + 'static,
     T: 'static;
+```
+
+```rust
+// hook/measure.rs
+/// The size of a laid-out node. Updated after each layout pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Size { pub width: u16, pub height: u16 }
+
+/// Returns a ref to put on a host element and its measured size.
+/// The terminal equivalent of React's `useMeasure` / `useElementSize`.
+pub fn use_measure(scope: &mut Scope) -> (Ref<Option<NodeHandle>>, Size);
 ```
 
 ```rust
@@ -1786,10 +1801,17 @@ terminal has no such convention, so a key listener calls them.
 target, unless a listener between them returned `Bubble::Stop` first.
 *test: `clicking_a_pane_focuses_it`*
 
-**R8.2.4** `on_blur` is called on the scope losing focus and `on_focus` on the
-scope gaining it, during the dispatch that moved focus — not on the next frame.
+**R8.2.4** `on_blur` fires on the scope losing focus and then climbs to its
+ancestors; `on_focus` fires on the scope gaining focus and climbs the same way.
+Both run during the dispatch that moved focus, not on the next frame.
 Blur runs first, as in a browser.
 *test: `losing_focus_is_reported_before_the_next_frame`*
+
+**R8.2.5** A node with `auto_focus: true` and `focusable: true` receives focus
+on the first frame if nothing else is already focused. The terminal equivalent
+of React's `autoFocus` prop. After that first focus, the flag is inert — loom
+does not steal focus back on every render.
+*test: `auto_focus_gives_the_first_node_focus_on_mount`*
 
 ### 8.3 Bubbling
 

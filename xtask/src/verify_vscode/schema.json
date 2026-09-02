@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "codediff VS Code parity record",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "index", "original", "modified"],
+      "properties": {
+        "type": { "const": "row" },
+        "index": { "type": "integer", "minimum": 0 },
+        "original": { "type": ["integer", "null"], "minimum": 1 },
+        "modified": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "side",
+        "line",
+        "line_background",
+        "gutter_background",
+        "characters",
+        "empty_markers"
+      ],
+      "properties": {
+        "type": { "const": "highlight" },
+        "side": { "enum": ["original", "modified"] },
+        "line": { "type": "integer", "minimum": 1 },
+        "line_background": { "enum": ["insert", "delete", null] },
+        "gutter_background": { "enum": ["insert", "delete", null] },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end", "fill_to_edge"],
+            "properties": {
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": ["integer", "null"], "minimum": 0 },
+              "fill_to_edge": { "type": "boolean" }
+            }
+          }
+        },
+        "empty_markers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  ]
+}

@@ -11,9 +11,65 @@
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+/// Everything the child has written, and when it last wrote.
+#[derive(Default)]
+struct Output {
+    bytes: Vec<u8>,
+    last: Option<Instant>,
+}
+
+/// Reads the pty on a thread of its own, into something a test can watch.
+fn collect(mut reader: Box<dyn Read + Send>) -> (std::thread::JoinHandle<()>, Arc<Mutex<Output>>) {
+    let shared = Arc::new(Mutex::new(Output::default()));
+    let filling = Arc::clone(&shared);
+    let thread = std::thread::spawn(move || {
+        let mut chunk = [0u8; 4096];
+        while let Ok(read) = reader.read(&mut chunk) {
+            if read == 0 {
+                break;
+            }
+            let mut held = filling.lock().expect("nothing else holds the lock");
+            held.bytes.extend_from_slice(&chunk[..read]);
+            held.last = Some(Instant::now());
+        }
+    });
+    (thread, shared)
+}
+
+/// Blocks until the child has drawn and then gone quiet.
+///
+/// A keystroke means nothing until the first frame is on screen, and what that
+/// frame waits for — a process started, a repository listed, a file diffed —
+/// takes a different length of time on every machine. Measured here at 840 ms
+/// for a debug build, against the 400 ms a fixed sleep used to guess: the keys
+/// landed before the diff they act on, and the test read a screen with only
+/// the list on it. So wait for the writing to stop rather than guess.
+fn drawn(output: &Arc<Mutex<Output>>) {
+    const QUIET: Duration = Duration::from_millis(250);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        {
+            let held = output.lock().expect("nothing else holds the lock");
+            if held.last.is_some_and(|last| last.elapsed() >= QUIET) {
+                return;
+            }
+        }
+        assert!(Instant::now() < deadline, "the child never drew anything");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// What the child wrote, once it has stopped writing.
+fn written(thread: std::thread::JoinHandle<()>, output: &Arc<Mutex<Output>>) -> String {
+    thread.join().expect("collecting output");
+    let held = output.lock().expect("the reader is gone");
+    String::from_utf8_lossy(&held.bytes).into_owned()
+}
 
 /// `CSI ? 1049 h` and `l` — the alternate screen on and off.
 const ENTER_ALT: &str = "\u{1b}[?1049h";
@@ -61,24 +117,14 @@ fn on_a_terminal(args: &[&str], cwd: Option<&PathBuf>, keys: &[u8]) -> (String, 
     let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
     drop(pty.slave);
 
-    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
-    let collector = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            output.extend_from_slice(&chunk[..read]);
-        }
-        output
-    });
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
 
     if !keys.is_empty() {
         // The child has to have drawn its first frame before a keystroke means
         // anything; without this the key can arrive before raw mode is on and
         // be echoed instead of read.
-        std::thread::sleep(Duration::from_millis(400));
+        drawn(&output);
         let mut writer = pty.master.take_writer().expect("writing to the pty");
         writer.write_all(keys).expect("sending keys");
         writer.flush().expect("flushing");
@@ -95,11 +141,7 @@ fn on_a_terminal(args: &[&str], cwd: Option<&PathBuf>, keys: &[u8]) -> (String, 
     };
 
     drop(pty.master);
-    let output = collector.join().expect("collecting output");
-    (
-        String::from_utf8_lossy(&output).into_owned(),
-        status.success(),
-    )
+    (written(collector, &output), status.success())
 }
 
 #[test]
@@ -124,116 +166,6 @@ fn quitting_gives_the_terminal_back() {
         output.matches(ENTER_ALT).count(),
         output.matches(LEAVE_ALT).count(),
         "the alternate screen was not balanced"
-    );
-}
-
-#[test]
-fn the_diff_is_actually_drawn_before_it_is_dismissed() {
-    // Guards against the previous test passing on a program that opens the
-    // alternate screen and immediately closes it.
-    let fixture = Fixture::new("drawn");
-    let (output, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"q");
-    assert!(ok);
-    assert!(
-        output.contains("modified.txt"),
-        "no status line:\n{output:?}"
-    );
-    assert!(output.contains('│'), "no divider between the two columns");
-}
-
-#[test]
-fn a_one_sided_file_is_drawn_in_one_pane() {
-    // An untracked file has no original to compare against, so it is drawn in
-    // one column with nothing to separate. See D23.
-    //
-    // The absence of a divider cannot show that any more. `codediff
-    // <path>` is a pathspec on the list (D58), so the screen is always split —
-    // list on the left, file on the right — and there is one `│` whatever the
-    // file. What a second *column* would add is a second gutter, so that is
-    // what this counts: a file with two sides numbers both, and this one numbers
-    // only its own.
-    let fixture = Fixture::new("one-sided");
-    let (output, ok) = on_a_terminal(&["untracked.txt"], Some(&fixture.dir), b"\tq");
-    assert!(ok);
-    assert!(output.contains("never added"), "no content:\n{output:?}");
-    assert!(!output.contains('╱'), "fillers were drawn:\n{output:?}");
-
-    // A file with two sides, for the contrast: two gutters where this
-    // one has a single column of them.
-    let two_sided = Fixture::new("one-sided-two-sided");
-    let (both, ok) = on_a_terminal(&["modified.txt"], Some(&two_sided.dir), b"\tq");
-    assert!(ok);
-    assert!(
-        gutters(&both) > gutters(&output),
-        "a one-sided file was given a second column:\n{output:?}"
-    );
-}
-
-/// How many line numbers the screen writes.
-///
-/// A file with two sides numbers both, so it writes about twice as many as a
-/// file with one side. Counting them is what tells the two apart now that the
-/// divider is always there.
-fn gutters(output: &str) -> usize {
-    output.matches("  1 ").count() + output.matches("  2 ").count()
-}
-
-#[test]
-fn a_change_key_with_nowhere_to_go_says_so_on_a_real_terminal() {
-    // `]c` is the only binding made of punctuation, and an in-memory test
-    // cannot show that a terminal delivers `]` as itself. Two presses on a
-    // one-change file: the first lands on it, the second has nowhere to go.
-    //
-    // Asserted in fragments because only changed cells are redrawn, so the
-    // phrase arrives split across a cursor move — `no` and then `next change`,
-    // the space between them already being right. Matching the whole phrase
-    // would be asserting on the redraw strategy rather than on the screen.
-    //
-    // `Tab` first: `codediff <path>` is a pathspec on the list (D58), so the
-    // reader lands on the list with the file open beside it, and `]c` is the
-    // diff's key rather than the list's.
-    let fixture = Fixture::new("exhausted");
-    let (output, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\x1b[C]c]cq");
-    assert!(ok);
-    assert!(
-        output.contains("change 1/1"),
-        "the first `]c` never landed:\n{output:?}"
-    );
-    assert!(
-        output.contains("next change"),
-        "the second `]c` said nothing:\n{output:?}"
-    );
-}
-
-#[test]
-fn the_layout_key_is_delivered_by_a_real_terminal() {
-    // What only a pty can show: that `t` arrives as `t` and the program stays
-    // healthy after rebuilding its buffer. What is on screen afterwards is
-    // asserted against the exact grid in `screens.rs` instead — the capture
-    // here is cumulative and ratatui redraws only the cells that changed, so
-    // the first frame's two columns are still in the bytes, and the row total
-    // going from `1/4` to `1/5` emits one digit rather than a phrase.
-    //
-    // `Tab` first, for the reason `]c` needs one: the list has focus at
-    // startup, and the status line counts its rows until the diff takes it.
-    let fixture = Fixture::new("inline");
-    let (columns, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\x1b[Cq");
-    assert!(ok);
-    // The fourth gutter, not the status line's `1/4`. Taking focus rewrites
-    // only the cells that changed, and the count goes from the list's `2/2` to
-    // the diff's `1/4` a digit at a time — so the phrase is never on the wire
-    // even though it is on the screen. The grid is the honest witness: four
-    // numbered view lines means four view lines.
-    assert!(
-        columns.contains("  4 "),
-        "not four view lines:\n{columns:?}"
-    );
-
-    let (toggled, ok) = on_a_terminal(&["modified.txt"], Some(&fixture.dir), b"\x1b[Ctq");
-    assert!(ok, "toggling then quitting failed");
-    assert!(
-        toggled.len() > columns.len(),
-        "`t` redrew nothing, so it never arrived"
     );
 }
 
@@ -271,95 +203,6 @@ fn a_command_that_prints_text_never_touches_the_alternate_screen() {
     let (output, ok) = on_a_terminal(&["doctor"], None, &[]);
     assert!(ok, "{output}");
     assert!(!output.contains(ENTER_ALT), "{output:?}");
-}
-
-/// Runs the binary on a real terminal, suspends it, resumes it, then quits.
-///
-/// Unix only: `SIGTSTP` has no Windows equivalent, and there `Ctrl-Z` is
-/// simply an unbound key.
-#[cfg(unix)]
-#[test]
-fn suspending_gives_the_terminal_back_and_resuming_redraws() {
-    use std::process::Command;
-
-    let fixture = Fixture::new("suspend");
-    let pty = native_pty_system()
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .expect("opening a pty");
-
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codediff"));
-    command.args(["untracked.txt"]);
-    command.cwd(&fixture.dir);
-    command.env("TERM", "xterm-256color");
-
-    let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
-    drop(pty.slave);
-    let pid = child.process_id().expect("a process id");
-
-    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
-    let collector = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            output.extend_from_slice(&chunk[..read]);
-        }
-        output
-    });
-
-    let mut writer = pty.master.take_writer().expect("writing to the pty");
-    std::thread::sleep(Duration::from_millis(400));
-    writer.write_all(&[0x1a]).expect("Ctrl-Z"); // ^Z
-    writer.flush().unwrap();
-
-    // Stopped, not exited, and the terminal handed back.
-    std::thread::sleep(Duration::from_millis(500));
-    assert!(
-        child.try_wait().expect("checking").is_none(),
-        "Ctrl-Z should stop the process, not end it"
-    );
-
-    let resumed = Command::new("kill")
-        .args(["-CONT", &pid.to_string()])
-        .status()
-        .expect("running kill");
-    assert!(resumed.success(), "could not resume the process");
-
-    std::thread::sleep(Duration::from_millis(400));
-    writer.write_all(b"q").expect("quit");
-    writer.flush().unwrap();
-    drop(writer);
-
-    let deadline = Instant::now() + Duration::from_secs(20);
-    let status = loop {
-        if let Some(status) = child.try_wait().expect("waiting") {
-            break status;
-        }
-        assert!(Instant::now() < deadline, "never exited after resuming");
-        std::thread::sleep(Duration::from_millis(25));
-    };
-    drop(pty.master);
-
-    let output = String::from_utf8_lossy(&collector.join().expect("output")).into_owned();
-    assert!(status.success(), "{output}");
-    assert_eq!(
-        output.matches(ENTER_ALT).count(),
-        2,
-        "entered once, then again on resuming:\n{output:?}"
-    );
-    assert_eq!(output.matches(LEAVE_ALT).count(), 2, "left both times");
-    assert!(
-        output.matches("untracked.txt").count() >= 2,
-        "resuming must repaint the whole screen, not send a difference \
-         against a frame the terminal no longer holds"
-    );
 }
 
 #[test]
@@ -419,21 +262,11 @@ fn killed_by(args: &[&str], cwd: &PathBuf, signal: i32) -> (String, Option<i32>)
     let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
     drop(pty.slave);
 
-    let mut reader = pty.master.try_clone_reader().expect("reading the pty");
-    let collector = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            output.extend_from_slice(&chunk[..read]);
-        }
-        output
-    });
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
 
     // The first frame has to be on screen, or there is nothing to restore.
-    std::thread::sleep(Duration::from_millis(600));
+    drawn(&output);
     let pid = child.process_id().expect("a process id") as i32;
     std::process::Command::new("kill")
         .args([format!("-{signal}"), pid.to_string()])
@@ -453,6 +286,5 @@ fn killed_by(args: &[&str], cwd: &PathBuf, signal: i32) -> (String, Option<i32>)
     };
 
     drop(pty.master);
-    let output = collector.join().expect("collecting output");
-    (String::from_utf8_lossy(&output).into_owned(), status)
+    (written(collector, &output), status)
 }

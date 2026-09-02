@@ -34,7 +34,11 @@ The library is 12 C files, 7,538 lines, builds in 2.1 seconds, and produces a
 ## D3 — Copy the C source, do not submodule
 
 `vendor/libvscode-diff/` is a copy from a pinned upstream tag. `cargo xtask
-sync-c` refreshes it; `cargo xtask verify-c` detects drift in CI.
+sync-c` refreshes it; `cargo xtask verify-c` detects drift in CI. Corrections
+needed for the pinned VS Code build live as explicit patches under
+`crates/vscode-diff-sys/patches/`. The build applies them to `OUT_DIR`, never to
+the vendored tree, and fails when an upstream refresh makes a patch stop
+applying.
 
 Submodules are the norm for `-sys` crates, but the C rarely changes and
 submodule friction (recursive clone, CI config, confusing errors) costs more

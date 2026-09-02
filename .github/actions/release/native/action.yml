@@ -1,0 +1,99 @@
+name: Build native release
+description: Build and archive both release binaries on macOS or Windows.
+
+inputs:
+  version:
+    description: Release version without the v prefix.
+    required: true
+  platform:
+    description: Platform suffix used in archive names.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-edit
+
+    - name: Apply version locally
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        cargo set-version "${{ inputs.version }}"
+        cargo update -w
+
+    - name: Apply version locally (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        cargo set-version "${{ inputs.version }}"
+        cargo update -w
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: release-${{ inputs.platform }}
+
+    - name: Build release binaries
+      if: runner.os != 'Windows'
+      shell: bash
+      run: cargo build --locked --release -p codediff -p watcher --bins
+
+    - name: Build release binaries (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: cargo build --locked --release -p codediff -p watcher --bins
+
+    - name: Verify versions
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        codediff_version="$(target/release/codediff --version)"
+        watcher_version="$(target/release/codediff-watcher --version)"
+        echo "$codediff_version"
+        echo "$watcher_version"
+        test "$codediff_version" = "codediff ${{ inputs.version }}"
+        test "$watcher_version" = "codediff-watcher ${{ inputs.version }}"
+
+    - name: Verify versions (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $codediffVersion = (& .\target\release\codediff.exe --version).Trim()
+        $watcherVersion = (& .\target\release\codediff-watcher.exe --version).Trim()
+        $expectedCodediff = "codediff ${{ inputs.version }}"
+        $expectedWatcher = "codediff-watcher ${{ inputs.version }}"
+        if ($codediffVersion -cne $expectedCodediff) {
+          throw "expected '$expectedCodediff', got '$codediffVersion'"
+        }
+        if ($watcherVersion -cne $expectedWatcher) {
+          throw "expected '$expectedWatcher', got '$watcherVersion'"
+        }
+
+    - name: Archive binaries (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        mkdir -p dist
+        tar -czf "dist/codediff-${{ inputs.version }}-${{ inputs.platform }}.tar.gz" \
+          -C target/release codediff
+        tar -czf "dist/codediff-watcher-${{ inputs.version }}-${{ inputs.platform }}.tar.gz" \
+          -C target/release codediff-watcher
+
+    - name: Archive binaries (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force dist | Out-Null
+        Compress-Archive -Path target/release/codediff.exe `
+          -DestinationPath "dist/codediff-${{ inputs.version }}-${{ inputs.platform }}.zip"
+        Compress-Archive -Path target/release/codediff-watcher.exe `
+          -DestinationPath "dist/codediff-watcher-${{ inputs.version }}-${{ inputs.platform }}.zip"
+
+    - name: Upload release archives
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-${{ inputs.platform }}
+        path: dist/*
+        if-no-files-found: error
+        overwrite: true

@@ -9,21 +9,25 @@ use crate::Refresh;
 
 pub struct Context {
     pub repo_root: std::path::PathBuf,
-    pub git_dir: std::path::PathBuf,
-    pub common_dir: std::path::PathBuf,
+    pub worktree_git_dir: std::path::PathBuf,
+    pub common_git_dir: std::path::PathBuf,
     pub ignorer: Gitignore,
 }
 
-/// Given a batch of debounced events, returns what needs refreshing.
+/// Given a batch of filesystem events, returns what needs refreshing.
 pub fn get_refresh(events: &[notify::Event], ctx: &Context) -> Refresh {
-    let mut out = Refresh::default();
-    for event in events {
-        for path in &event.paths {
-            let r = refresh_for_path(path, event.kind, ctx);
-            out = out.union(r);
-        }
-    }
-    out
+    events.iter().fold(Refresh::default(), |refresh, event| {
+        refresh.union(refresh_for_event(event, ctx))
+    })
+}
+
+pub(crate) fn refresh_for_event(event: &notify::Event, context: &Context) -> Refresh {
+    event
+        .paths
+        .iter()
+        .fold(Refresh::default(), |refresh, path| {
+            refresh.union(refresh_for_path(path, event.kind, context))
+        })
 }
 
 fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
@@ -39,12 +43,12 @@ fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
         return Refresh::default();
     }
 
-    // Path inside a git dir? The private one is asked first: in a worktree it
-    // sits inside the common one, at .git/worktrees/<name>.
-    if let Ok(rel) = path.strip_prefix(&ctx.git_dir) {
+    // Ask the worktree-specific Git dir first: for a linked worktree it sits
+    // inside the common one, at .git/worktrees/<name>.
+    if let Ok(rel) = path.strip_prefix(&ctx.worktree_git_dir) {
         return refresh_for_git_path(rel, path);
     }
-    if let Ok(rel) = path.strip_prefix(&ctx.common_dir) {
+    if let Ok(rel) = path.strip_prefix(&ctx.common_git_dir) {
         return refresh_for_git_path(rel, path);
     }
 
@@ -78,9 +82,15 @@ fn refresh_for_path(path: &Path, kind: EventKind, ctx: &Context) -> Refresh {
 }
 
 fn refresh_for_git_path(rel: &Path, full: &Path) -> Refresh {
-    let first = rel.components().next().map(|c| c.as_os_str());
+    let rel_str = rel.to_string_lossy();
+    if rel_str == "info/exclude" {
+        return Refresh {
+            worktree: true,
+            ..Default::default()
+        };
+    }
 
-    // Skip internals that don't affect status.
+    let first = rel.components().next().map(|c| c.as_os_str());
     if matches!(
         first.and_then(|s| s.to_str()),
         Some("objects" | "logs" | "hooks" | "lfs" | "fsmonitor--daemon" | "info")
@@ -88,8 +98,6 @@ fn refresh_for_git_path(rel: &Path, full: &Path) -> Refresh {
         tracing::trace!(?full, "skipped: git internal");
         return Refresh::default();
     }
-
-    let rel_str = rel.to_string_lossy();
 
     if rel_str == "index" {
         tracing::debug!("git index changed");
@@ -139,12 +147,12 @@ mod tests {
 
     fn ctx(root: &str) -> Context {
         let repo_root = PathBuf::from(root);
-        let git_dir = repo_root.join(".git");
+        let worktree_git_dir = repo_root.join(".git");
         let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
         Context {
             repo_root,
-            common_dir: git_dir.clone(),
-            git_dir,
+            common_git_dir: worktree_git_dir.clone(),
+            worktree_git_dir,
             ignorer,
         }
     }
@@ -152,19 +160,19 @@ mod tests {
     /// A linked worktree at /wt, whose main repository is /repo.
     fn worktree_ctx() -> Context {
         let repo_root = PathBuf::from("/wt");
-        let common_dir = PathBuf::from("/repo/.git");
+        let common_git_dir = PathBuf::from("/repo/.git");
         let (ignorer, _) = Gitignore::new(repo_root.join(".gitignore"));
         Context {
             repo_root,
-            git_dir: common_dir.join("worktrees/wt"),
-            common_dir,
+            worktree_git_dir: common_git_dir.join("worktrees/wt"),
+            common_git_dir,
             ignorer,
         }
     }
 
     fn ctx_with_ignore(root: &str, patterns: &[&str]) -> Context {
         let repo_root = PathBuf::from(root);
-        let git_dir = repo_root.join(".git");
+        let worktree_git_dir = repo_root.join(".git");
         let mut builder = ignore::gitignore::GitignoreBuilder::new(&repo_root);
         for p in patterns {
             builder.add_line(None, p).unwrap();
@@ -172,8 +180,8 @@ mod tests {
         let ignorer = builder.build().unwrap();
         Context {
             repo_root,
-            common_dir: git_dir.clone(),
-            git_dir,
+            common_git_dir: worktree_git_dir.clone(),
+            worktree_git_dir,
             ignorer,
         }
     }
@@ -266,6 +274,19 @@ mod tests {
             &c,
         );
         assert!(r.refs);
+    }
+
+    #[test]
+    fn info_exclude_sets_worktree() {
+        let c = ctx("/repo");
+        let r = get_refresh(
+            &[event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                "/repo/.git/info/exclude",
+            )],
+            &c,
+        );
+        assert!(r.worktree);
     }
 
     #[test]
@@ -384,7 +405,7 @@ mod tests {
     // === Linked worktrees ===
 
     #[test]
-    fn worktree_private_index_sets_index() {
+    fn worktree_git_dir_index_sets_index() {
         let c = worktree_ctx();
         let r = get_refresh(
             &[event(
@@ -393,12 +414,12 @@ mod tests {
             )],
             &c,
         );
-        assert!(r.index, "the private index is this worktree's, got {r}");
+        assert!(r.index, "the index belongs to this worktree, got {r}");
         assert!(!r.worktree);
     }
 
     #[test]
-    fn worktree_private_head_sets_head() {
+    fn worktree_git_dir_head_sets_head() {
         let c = worktree_ctx();
         let r = get_refresh(
             &[event(
@@ -407,7 +428,7 @@ mod tests {
             )],
             &c,
         );
-        assert!(r.head, "the private HEAD is this worktree's, got {r}");
+        assert!(r.head, "HEAD belongs to this worktree, got {r}");
     }
 
     #[test]

@@ -1,26 +1,11 @@
-//! Raw FFI bindings to the vendored libvscode-diff C engine.
-//!
-//! This crate is a faithful, unsafe, 1:1 transcription of the C ABI and nothing
-//! more. It is the only crate in the workspace where `unsafe` is permitted;
-//! ownership, `Result` and `Drop` belong to the `vscode-diff` crate above it.
-//!
-//! Layouts mirror `vendor/libvscode-diff/include/types.h` exactly. `bool` in
-//! that header is C99 `_Bool`, which matches Rust's `bool` on every platform
-//! this project targets.
-//!
-//! Index conventions, carried unchanged from the C:
-//!
-//! - `LineRange` is 1-indexed, start inclusive, end exclusive.
-//! - `CharRange` is 1-indexed; `end_col` is exclusive. Columns are **UTF-16
-//!   code units**, because the algorithm mirrors VSCode, whose strings are
-//!   UTF-16. Converting them to byte offsets is `line-index`'s job.
+//! Raw bindings matching `vendor/libvscode-diff/include/types.h`.
 
 #![allow(non_camel_case_types)]
 
 use std::ffi::c_char;
 use std::os::raw::c_int;
 
-/// A range of lines. 1-indexed; `start_line` inclusive, `end_line` exclusive.
+/// A 1-based, end-exclusive line range.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineRange {
@@ -28,8 +13,7 @@ pub struct LineRange {
     pub end_line: c_int,
 }
 
-/// A range of characters. 1-indexed; `end_col` exclusive, columns in UTF-16
-/// code units.
+/// A 1-based, end-exclusive range with UTF-16 columns.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharRange {
@@ -39,7 +23,7 @@ pub struct CharRange {
     pub end_col: c_int,
 }
 
-/// A character-level correspondence between the two sides.
+/// Corresponding character ranges on both sides.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RangeMapping {
@@ -55,9 +39,7 @@ pub struct RangeMappingArray {
     pub capacity: c_int,
 }
 
-/// A line-level change, optionally refined by character-level inner changes.
-///
-/// `inner_changes` is null when there are none; `inner_change_count` is then 0.
+/// A line change with optional character ranges.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct DetailedLineRangeMapping {
@@ -75,7 +57,7 @@ pub struct DetailedLineRangeMappingArray {
     pub capacity: c_int,
 }
 
-/// A block of lines detected as moved rather than deleted and re-added.
+/// Corresponding line ranges detected as moved.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MovedText {
@@ -91,9 +73,7 @@ pub struct MovedTextArray {
     pub capacity: c_int,
 }
 
-/// Tuning for a single `compute_diff` call.
-///
-/// `max_computation_time_ms` of 0 means no timeout.
+/// Options for one diff computation.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiffOptions {
@@ -113,31 +93,14 @@ pub struct LinesDiff {
 }
 
 unsafe extern "C" {
-    /// Computes the diff between two arrays of NUL-terminated lines.
+    /// Computes a diff and returns an allocation owned by the caller.
     ///
-    /// Returns a heap-allocated `LinesDiff`, or null on allocation failure.
-    /// The caller owns the result and must release it with [`free_lines_diff`].
-    ///
-    /// # Representing an empty file
-    ///
-    /// An empty file is one empty line, `[""]`, not zero lines. The engine
-    /// mirrors VSCode's document model, in which every document has at least
-    /// one line, and it has a dedicated full-file path keyed on
-    /// `count == 1 && strlen(lines[0]) == 0`.
-    ///
-    /// Passing a count of 0 does not error: it silently returns no changes, so
-    /// a file whose entire content was added would appear unchanged. Callers
-    /// must normalise an empty side to `[""]`.
+    /// Empty files must be passed as `[""]`.
     ///
     /// # Safety
     ///
-    /// `original_lines` and `modified_lines` must point to arrays of at least
-    /// `original_count` and `modified_count` valid, NUL-terminated pointers,
-    /// which must remain valid for the duration of the call. `options` must be
-    /// a valid pointer.
-    ///
-    /// Rust string slices are not NUL-terminated; callers must marshal through
-    /// `CString` or equivalent.
+    /// Both line arrays must contain the stated number of live, NUL-terminated
+    /// pointers. `options` must be valid.
     pub fn compute_diff(
         original_lines: *const *const c_char,
         original_count: c_int,
@@ -146,12 +109,11 @@ unsafe extern "C" {
         options: *const DiffOptions,
     ) -> *mut LinesDiff;
 
-    /// Releases a `LinesDiff` and everything it owns.
+    /// Releases a result from [`compute_diff`].
     ///
     /// # Safety
     ///
-    /// `diff` must have come from [`compute_diff`] and must not have been freed
-    /// already. Passing null is permitted.
+    /// `diff` must be null or a live result from [`compute_diff`].
     pub fn free_lines_diff(diff: *mut LinesDiff);
 
     /// The engine's version string, statically allocated. Never null.
@@ -166,8 +128,6 @@ mod tests {
 
     #[test]
     fn layouts_match_the_c_header() {
-        // Every field is a C int, so these are pure arithmetic and would fail
-        // loudly if a field were added, removed or reordered.
         assert_eq!(size_of::<LineRange>(), 2 * size_of::<c_int>());
         assert_eq!(size_of::<CharRange>(), 4 * size_of::<c_int>());
         assert_eq!(size_of::<RangeMapping>(), 2 * size_of::<CharRange>());
@@ -192,18 +152,7 @@ mod tests {
         );
     }
 
-    // ---- Exercising the data-carrying ABI ------------------------------------
-    //
-    // `get_version` proves only that the library is linked. These tests drive
-    // `compute_diff`, which is the part that can be subtly wrong: struct field
-    // order, array marshalling, following `inner_changes`, and freeing.
-
-    /// Lines marshalled the way the C expects: an array of pointers to
-    /// NUL-terminated strings.
-    ///
-    /// A Rust `&str` is *not* NUL-terminated and the C calls `strlen`, so
-    /// handing over `s.as_ptr()` would read past the end. The `CString`s must
-    /// outlive the pointer array, which is why both live in one struct.
+    /// Owns test strings behind an FFI pointer array.
     struct Lines {
         _owned: Vec<CString>,
         ptrs: Vec<*const c_char>,
@@ -237,9 +186,6 @@ mod tests {
         hit_timeout: bool,
     }
 
-    /// Computes a diff, copies the result into owned Rust values, and frees the
-    /// C allocation before returning. This is the shape the safe wrapper takes
-    /// in S2: nothing owned by C outlives the call.
     fn diff_with(original: &[&str], modified: &[&str], options: DiffOptions) -> Snapshot {
         let orig = Lines::new(original);
         let modi = Lines::new(modified);
@@ -314,8 +260,6 @@ mod tests {
         let d = diff(&["alpha", "beta", "gamma"], &["alpha", "BETA", "gamma"]);
         assert_eq!(d.changes.len(), 1, "{:?}", d.changes);
 
-        // Line 2 changed. Ranges are 1-indexed with an exclusive end, so the
-        // second line alone is [2, 3).
         assert_eq!(
             d.changes[0].original,
             LineRange {
@@ -376,7 +320,6 @@ mod tests {
 
     #[test]
     fn inner_changes_locate_the_edited_span_within_a_line() {
-        // "one" -> "three" at columns 5..8 of line 1, 1-indexed, end exclusive.
         let d = diff(&["value one here"], &["value three here"]);
         assert_eq!(d.changes.len(), 1, "{:?}", d.changes);
 
@@ -395,9 +338,6 @@ mod tests {
 
     #[test]
     fn multibyte_lines_survive_marshalling() {
-        // The C indexes columns in UTF-16 code units, so a line containing
-        // characters outside the BMP is the case most likely to expose a
-        // marshalling or indexing mistake.
         let d = diff(&["日本語 alpha 🎉"], &["日本語 beta 🎉"]);
         assert_eq!(d.changes.len(), 1, "{:?}", d.changes);
         assert!(!d.changes[0].inner_changes.is_empty());
@@ -405,8 +345,6 @@ mod tests {
 
     #[test]
     fn many_lines_are_marshalled_without_truncation() {
-        // Guards the pointer-array plumbing: a length mistake would show up as
-        // a change reported outside the input, or as a crash.
         let original: Vec<String> = (0..500).map(|i| format!("line {i}")).collect();
         let mut modified = original.clone();
         modified[250] = "line 250 edited".to_owned();
@@ -427,9 +365,6 @@ mod tests {
 
     #[test]
     fn an_empty_file_is_one_empty_line_not_zero_lines() {
-        // The C mirrors VSCode's document model, in which every document has at
-        // least one line. `compute_diff` recognises `[""]` as an empty file and
-        // takes a dedicated full-file path for it.
         let d = diff(&[""], &["alpha", "beta"]);
         assert_eq!(d.changes.len(), 1, "{:?}", d.changes);
         assert_eq!(
@@ -451,16 +386,6 @@ mod tests {
 
     #[test]
     fn zero_lines_is_outside_the_contract_and_silently_reports_nothing() {
-        // A count of 0 does not crash; it reports no changes at all, which is
-        // wrong for a file whose entire content was added.
-        //
-        // Why: `arrays_equal` rejects the equality shortcut because the counts
-        // differ, the full-file path requires `count == 1`, and the algorithm
-        // is then handed an empty sequence.
-        //
-        // Pinned rather than fixed, because the C is upstream and unmodified.
-        // The safe wrapper in S2 must normalise an empty side to `[""]` before
-        // calling in, or an entirely-added file will silently appear unchanged.
         let d = diff(&[], &["alpha", "beta"]);
         assert!(
             d.changes.is_empty(),
@@ -501,8 +426,6 @@ mod tests {
 
     #[test]
     fn repeated_calls_do_not_corrupt_state() {
-        // Every call allocates and frees; running many in sequence would surface
-        // a double free or a use-after-free as a crash under the test harness.
         for i in 0..200 {
             let modified = format!("beta {i}");
             let d = diff(&["alpha", "beta", "gamma"], &["alpha", &modified, "gamma"]);

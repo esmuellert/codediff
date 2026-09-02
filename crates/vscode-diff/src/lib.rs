@@ -1,20 +1,4 @@
-//! A safe wrapper over the libvscode-diff C engine.
-//!
-//! ```
-//! use vscode_diff::{Options, compute};
-//!
-//! let original = ["fn main() {", "    let x = 1;", "}"];
-//! let modified = ["fn main() {", "    let x = 42;", "    dbg!(x);", "}"];
-//!
-//! let diff = compute(&original, &modified, &Options::default())?;
-//! assert!(!diff.is_empty());
-//! # Ok::<(), vscode_diff::Error>(())
-//! ```
-//!
-//! The boundary rule is *convert eagerly, free immediately*: C memory is walked
-//! once into owned Rust values and released before returning, so a [`LinesDiff`] is
-//! an ordinary value with no borrows and no hidden lifetime. All `unsafe` lives
-//! in `vscode_diff_sys` and this crate's `convert` module.
+//! Safe bindings for the libvscode-diff C engine.
 
 mod convert;
 mod error;
@@ -23,22 +7,16 @@ mod options;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-pub use error::Error;
-pub use file_types::DiffVersion;
-pub use options::Options;
-// Re-exported so a caller that already depends on this crate need not also name
-// `diff-types`. The structs themselves live there, with no dependencies and no
-// build script, so `align` can name a diff without inheriting a C toolchain.
 pub use diff_types::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, MovedText, RangeMapping,
 };
+pub use error::Error;
+pub use file_types::DiffVersion;
+pub use options::Options;
 
-/// The version of the C diff engine compiled into this binary.
-///
-/// This is the vendored engine's version, not this crate's.
+/// The compiled C engine's version.
 pub fn engine_version() -> &'static str {
-    // The engine returns a pointer to a static string literal, so it is
-    // non-null and lives for the duration of the program.
+    // SAFETY: the engine returns a static, non-null string.
     #[allow(unsafe_code)]
     let raw = unsafe { vscode_diff_sys::get_version() };
 
@@ -51,34 +29,39 @@ pub fn engine_version() -> &'static str {
         .expect("the engine version is an ASCII string literal")
 }
 
-/// Splits text into the lines [`compute`] expects.
-///
-/// Splits on `\n` only. Keeps the empty piece after a trailing newline
-/// (the engine counts it). Does not strip `\r` — line-ending differences
-/// must be visible.
-///
-/// ```
-/// assert_eq!(vscode_diff::lines("a\nb\n"), ["a", "b", ""]);
-/// assert_eq!(vscode_diff::lines("a\r\nb"), ["a\r", "b"]);
-/// assert_eq!(vscode_diff::lines(""), [""]);
-/// ```
+/// Splits on `\n`, retaining carriage returns and a trailing empty line.
 pub fn lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
 }
 
-/// Computes the difference between two texts, given as lines.
+/// Splits CRLF, bare CR, and LF as VS Code's text model does.
+pub fn editor_lines(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\r' => {
+                lines.push(&text[start..at]);
+                at += usize::from(bytes.get(at + 1) == Some(&b'\n')) + 1;
+                start = at;
+            }
+            b'\n' => {
+                lines.push(&text[start..at]);
+                at += 1;
+                start = at;
+            }
+            _ => at += 1,
+        }
+    }
+    lines.push(&text[start..]);
+    lines
+}
+
+/// Computes a diff with 1-based lines and UTF-16 columns.
 ///
-/// Results use 1-based line numbers, end-exclusive ranges, and UTF-16 columns.
-///
-/// # Empty input
-///
-/// `&[]` and `&[""]` are both accepted as an empty file. Passing zero lines
-/// directly to the engine would silently report no changes.
-///
-/// # Errors
-///
-/// [`Error::InteriorNul`] if a line contains `\0`;
-/// [`Error::OutOfMemory`] if the engine cannot allocate.
+/// Empty input is treated as one empty line.
 pub fn compute(
     original: &[&str],
     modified: &[&str],
@@ -88,9 +71,7 @@ pub fn compute(
     let modified = Marshalled::new(modified, DiffVersion::Modified)?;
     let raw_options = vscode_diff_sys::DiffOptions::from(*options);
 
-    // SAFETY: both pointer arrays are non-empty, live for the duration of this
-    // call, and point to NUL-terminated strings owned by the `Marshalled`
-    // values; `raw_options` is a live local.
+    // SAFETY: `Marshalled` owns both non-empty pointer arrays for this call.
     #[allow(unsafe_code)]
     let raw = unsafe {
         vscode_diff_sys::compute_diff(
@@ -106,19 +87,14 @@ pub fn compute(
         return Err(Error::OutOfMemory);
     }
 
-    // SAFETY: `raw` is non-null and came from `compute_diff` immediately above.
-    // `take` frees it, and it is not used afterwards.
+    // SAFETY: `raw` is the live result above; `take` frees it.
     #[allow(unsafe_code)]
     let diff = unsafe { convert::take(raw) };
 
     Ok(diff)
 }
 
-/// Lines converted to the array of NUL-terminated pointers the engine expects.
-///
-/// The `CString`s must outlive the pointer array, so both are held together.
-/// A Rust `&str` is not NUL-terminated and the engine calls `strlen`, so
-/// passing `str::as_ptr` directly would read past the end of the string.
+/// Owns the C strings behind an engine pointer array.
 struct Marshalled {
     _owned: Vec<CString>,
     pointers: Vec<*const c_char>,
@@ -126,9 +102,6 @@ struct Marshalled {
 
 impl Marshalled {
     fn new(lines: &[&str], version: DiffVersion) -> Result<Self, Error> {
-        // The engine models an empty file as one empty line, following
-        // VSCode's document model. A count of zero is not equivalent: it
-        // silently yields no changes.
         let empty = [""];
         let lines = if lines.is_empty() { &empty[..] } else { lines };
 
@@ -161,23 +134,17 @@ impl Marshalled {
 mod tests {
     #[test]
     fn a_trailing_newline_leaves_an_empty_last_line() {
-        // The engine counts it, so both sides must agree that it is there.
         assert_eq!(super::lines("a\nb\n"), ["a", "b", ""]);
         assert_eq!(super::lines("a\nb"), ["a", "b"]);
     }
 
     #[test]
     fn empty_text_is_one_empty_line() {
-        // Not zero lines: `compute` documents that the engine models an empty
-        // file as a single empty line, and reports nothing at all for a
-        // genuinely empty sequence.
         assert_eq!(super::lines(""), [""]);
     }
 
     #[test]
     fn carriage_returns_are_kept() {
-        // `str::lines()` would eat these, and a file that gained CRLF endings
-        // would then diff as unchanged.
         assert_eq!(super::lines("a\r\nb\r\n"), ["a\r", "b\r", ""]);
     }
 

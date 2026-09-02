@@ -7,7 +7,9 @@
 
 use align::{Alignment, Malformed, Slot, ViewLineType};
 use file_types::DiffType;
-use vscode_diff::{DetailedLineRangeMapping, LineRange, LinesDiff, Options};
+use vscode_diff::{
+    CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, Options, RangeMapping,
+};
 
 fn split(text: &str) -> Vec<&str> {
     text.split('\n').collect()
@@ -56,6 +58,68 @@ fn a_change_taller_on_one_side_puts_its_fillers_last() {
     let modified = split("a\nQ\nz");
     let diff = compute(&original, &modified);
     let alignment = Alignment::new(diff.clone(), &original, &modified);
+
+    assert_eq!(
+        table(&alignment),
+        vec![
+            (Some(1), Some(1), Unchanged),
+            (Some(2), Some(2), Modified),
+            (Some(3), None, Deleted),
+            (Some(4), None, Deleted),
+            (Some(5), Some(3), Unchanged),
+        ]
+    );
+}
+
+#[test]
+fn final_alignment_keeps_a_one_sided_tail() {
+    let original = split("keep\nabcd\nleft one\nleft two\nkeep");
+    let modified = split("keep\n\nkeep");
+    let diff = LinesDiff {
+        changes: vec![DetailedLineRangeMapping {
+            original: LineRange {
+                start_line: 2,
+                end_line: 5,
+            },
+            modified: LineRange {
+                start_line: 2,
+                end_line: 3,
+            },
+            inner_changes: vec![
+                RangeMapping {
+                    original: CharRange {
+                        start_line: 2,
+                        start_col: 1,
+                        end_line: 2,
+                        end_col: 5,
+                    },
+                    modified: CharRange {
+                        start_line: 2,
+                        start_col: 1,
+                        end_line: 2,
+                        end_col: 1,
+                    },
+                },
+                RangeMapping {
+                    original: CharRange {
+                        start_line: 3,
+                        start_col: 1,
+                        end_line: 5,
+                        end_col: 1,
+                    },
+                    modified: CharRange {
+                        start_line: 3,
+                        start_col: 1,
+                        end_line: 3,
+                        end_col: 1,
+                    },
+                },
+            ],
+        }],
+        moves: Vec::new(),
+        hit_timeout: false,
+    };
+    let alignment = Alignment::new(diff, &original, &modified);
 
     assert_eq!(
         table(&alignment),

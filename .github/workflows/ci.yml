@@ -3,14 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 concurrency:
-  group: ci-main
+  group: ci-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,22 +17,10 @@ env:
 
 jobs:
   check:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: linux-x64,     runner: ubuntu-24.04     }
-          - { name: linux-arm64,   runner: ubuntu-24.04-arm }
-          - { name: windows-x64,   runner: windows-2025     }
-          - { name: windows-arm64, runner: windows-11-arm   }
-          - { name: macos-arm64,   runner: macos-15         }
-          - { name: macos-x64,     runner: macos-15-intel   }
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/check
+    name: Check
+    uses: ./.github/workflows/check.yml
+    permissions:
+      contents: read
 
   version:
     name: Version
@@ -41,46 +28,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      version: ${{ steps.bump.outputs.version }}
-      tag: ${{ steps.bump.outputs.tag }}
-      released: ${{ steps.bump.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      released: ${{ steps.release.outputs.released }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
+      - id: release
+        uses: ./.github/actions/release/version
 
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff
-
-      - name: Decide next version
-        id: bump
-        run: |
-          set -euo pipefail
-          CURRENT=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          NEXT_TAG=$(git-cliff --bumped-version)
-          NEXT="${NEXT_TAG#v}"
-
-          if [ "$NEXT" = "$CURRENT" ]; then
-            echo "Nothing to release (version unchanged at $CURRENT)"
-            echo "released=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git rev-parse "$NEXT_TAG" >/dev/null 2>&1; then
-            echo "Tag $NEXT_TAG already exists — skipping"
-            echo "released=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "Next release: $NEXT"
-          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
-          echo "released=true" >> "$GITHUB_OUTPUT"
-
-  build:
-    name: Build (${{ matrix.name }})
+  linux:
+    name: ${{ matrix.name }}
     needs: version
     if: needs.version.outputs.released == 'true'
     runs-on: ${{ matrix.runner }}
@@ -89,155 +49,65 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: linux-x64,     runner: ubuntu-24.04     }
-          - { name: linux-arm64,   runner: ubuntu-24.04-arm }
-          - { name: windows-x64,   runner: windows-2025     }
-          - { name: windows-arm64, runner: windows-11-arm   }
-          - { name: macos-arm64,   runner: macos-15         }
-          - { name: macos-x64,     runner: macos-15-intel   }
+          - { name: linux-x64,   runner: ubuntu-24.04,     arch: x64,   docker_platform: linux/amd64 }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, arch: arm64, docker_platform: linux/arm64 }
     steps:
       - uses: actions/checkout@v7
-
-      - uses: taiki-e/install-action@v2
+      - uses: ./.github/actions/release/linux
         with:
-          tool: cargo-edit
+          version: ${{ needs.version.outputs.version }}
+          platform: ${{ matrix.name }}
+          arch: ${{ matrix.arch }}
+          docker_platform: ${{ matrix.docker_platform }}
 
-      - name: Apply version locally
-        run: |
-          cargo set-version "${{ needs.version.outputs.version }}"
-          cargo update -w
-
-      - uses: Swatinem/rust-cache@v2
+  native:
+    name: ${{ matrix.name }}
+    needs: version
+    if: needs.version.outputs.released == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64,   runner: windows-2025   }
+          - { name: windows-arm64, runner: windows-11-arm }
+          - { name: macos-arm64,   runner: macos-15       }
+          - { name: macos-x64,     runner: macos-15-intel }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/release/native
         with:
-          key: release-${{ matrix.name }}
+          version: ${{ needs.version.outputs.version }}
+          platform: ${{ matrix.name }}
 
-      - name: Build release binary
-        run: cargo build --release -p codediff
-
-      - name: Verify version
-        if: runner.os != 'Windows'
-        run: |
-          got="$(./target/release/codediff --version)"
-          echo "$got"
-          test "$got" = "codediff ${{ needs.version.outputs.version }}"
-
-      - name: Verify version (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $got = (& .\target\release\codediff.exe --version).Trim()
-          $want = "codediff ${{ needs.version.outputs.version }}"
-          if ($got -cne $want) { throw "expected '$want', got '$got'" }
-
-      - name: Archive (unix)
-        if: runner.os != 'Windows'
-        run: |
-          mkdir -p dist
-          tar -czf "dist/codediff-${{ needs.version.outputs.version }}-${{ matrix.name }}.tar.gz" \
-            -C target/release codediff
-
-      - name: Archive (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path target/release/codediff.exe `
-            -DestinationPath "dist/codediff-${{ needs.version.outputs.version }}-${{ matrix.name }}.zip"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: codediff-${{ matrix.name }}
-          path: dist/*
-          if-no-files-found: error
-
-  release:
-    name: Release
-    needs: [version, build]
+  assemble:
+    name: Assemble release assets
+    needs: [version, linux, native]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Generate GitHub App Token
-        id: generate_token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/release/assemble-assets
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          fetch-tags: true
-          token: ${{ steps.generate_token.outputs.token }}
+          version: ${{ needs.version.outputs.version }}
 
-      - uses: taiki-e/install-action@v2
+  publish:
+    name: Publish
+    needs: [version, assemble]
+    if: github.event_name == 'push' && needs.version.outputs.released == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/release/publish
         with:
-          tool: cargo-edit
-
-      - name: Commit and tag
-        id: publish
-        env:
-          TAG: ${{ needs.version.outputs.tag }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          cargo set-version "$VERSION"
-          cargo update -w
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "release: $TAG [skip ci]"
-
-          # Delete any local tag first — on re-run, fetch-tags pulls it back.
-          git tag -d "$TAG" 2>/dev/null || true
-
-          git tag -a "$TAG" -m "$TAG"
-
-          # If main moved while we were building, skip — the queued run for
-          # the newer tip will cut this release instead.
-          git fetch --quiet origin main
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo "::notice title=Release deferred::main moved; the queued run will cut $TAG"
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Atomic: commit and tag land together or not at all.
-          if git push --atomic origin "HEAD:refs/heads/main" "refs/tags/$TAG"; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Push rejected — recheck if it was a race.
-          git fetch --quiet origin main
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo "::notice title=Release deferred::lost the push race; the queued run will cut $TAG"
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "::error::push rejected while main is unchanged"
-          exit 1
-
-      - uses: actions/download-artifact@v8
-        if: steps.publish.outputs.published == 'true'
-        with:
-          path: dist
-          pattern: codediff-*
-          merge-multiple: true
-
-      - name: Checksums
-        if: steps.publish.outputs.published == 'true'
-        run: cd dist && sha256sum * > SHA256SUMS
-
-      - name: Create GitHub Release
-        if: steps.publish.outputs.published == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ needs.version.outputs.tag }}" \
-            --title "${{ needs.version.outputs.tag }}" \
-            --generate-notes \
-            dist/*
+          version: ${{ needs.version.outputs.version }}
+          tag: ${{ needs.version.outputs.tag }}
+          source_sha: ${{ github.sha }}
+          app_id: ${{ vars.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

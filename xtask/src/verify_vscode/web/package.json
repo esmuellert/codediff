@@ -1,0 +1,8 @@
+{
+  "name": "@codediff/vscode-parity",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "verify": "pnpm --filter @codediff/vscode-runner run verify"
+  }
+}

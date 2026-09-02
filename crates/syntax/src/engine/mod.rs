@@ -1,11 +1,4 @@
-//! The choice between two engines.
-//!
-//! `lint-arch` refuses engine names outside this directory.
-//!
-//! - [`treesitter`] parses (knows types/functions, 25 languages)
-//! - [`syntect`] matches regexes (183 languages, resumable)
-//!
-//! One engine per file: parse where we have a grammar, match otherwise.
+//! Chooses Tree-sitter when available and TextMate otherwise.
 
 pub mod captures;
 pub mod scopes;
@@ -24,31 +17,20 @@ pub struct Engine {
     trees: treesitter::Engine,
 }
 
-/// Which grammar reads a file, and therefore which engine.
-///
-/// An index either way, so it can be stored beside the buffer that needs it
-/// without borrowing the engine.
+/// A grammar owned by either engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Grammar {
     Tree(treesitter::Grammar),
     TextMate(syntect::Grammar),
 }
 
-/// How far through a file an engine has coloured.
-///
-/// The parser carries nothing between calls — it does the whole file at once —
-/// so its variant is only the grammar it has yet to use. The matcher's state
-/// is the reason it can stop and resume at all.
+/// State needed to continue colouring a file.
 pub enum EngineState {
     Tree(treesitter::Grammar),
     TextMate(Box<syntect::SyntectState>),
 }
 
-/// Which syntax group a pen names, whichever engine produced it.
-///
-/// The inverse of the numbering in [`Palette::new`], and deliberately beside
-/// it. Everything above asks this one question and gets one answer, which is
-/// what "two engines look like one" actually means.
+/// The syntax group assigned to a pen.
 pub fn group(pen: Pen) -> Option<Group> {
     let n = pen.0 as usize;
     match scopes::SCOPES.get(n) {
@@ -59,10 +41,7 @@ pub fn group(pen: Pen) -> Option<Group> {
     }
 }
 
-/// The matcher's half, numbered from zero.
-///
-/// Public because a test may want to give the matcher its rules and nothing
-/// else, to prove every selector claims something real.
+/// TextMate rules, numbered from zero.
 pub fn rules() -> Vec<Rule> {
     scopes::SCOPES
         .iter()
@@ -79,9 +58,7 @@ pub fn rules() -> Vec<Rule> {
         .collect()
 }
 
-/// The parser's half, numbered from where the matcher's stops.
-///
-/// Colour and nothing else: no capture asks for a font style.
+/// Tree-sitter captures, numbered after the TextMate rules.
 fn captures() -> Vec<Capture> {
     let base = scopes::SCOPES.len() as u16;
     captures::NAMES
@@ -91,24 +68,14 @@ fn captures() -> Vec<Capture> {
         .collect()
 }
 
-/// The caller's colours, in the form each engine matches against.
-///
-/// Both halves, because which engine reads a file is not known when the
-/// palette is built, and because a [`Pen`](crate::Pen) means the same thing
-/// whichever engine produced it — that is what lets the two share one theme.
+/// The same pens represented for both engines.
 pub struct Palette {
     textmate: syntect::Palette,
     trees: treesitter::Palette,
 }
 
 impl Palette {
-    /// The colours both engines answer in.
-    ///
-    /// The only place a pen is given a number. Both tables are numbered
-    /// here, one after the other, and [`group`] reads them back with the same
-    /// arithmetic ten lines away. Numbering assigned in two files is an
-    /// agreement two files have to keep; numbered here it is one function that
-    /// cannot disagree with itself.
+    /// Builds both engine palettes from the shared pen numbering.
     pub fn new() -> Self {
         Self {
             textmate: syntect::Palette::new(&rules()),
@@ -116,10 +83,7 @@ impl Palette {
         }
     }
 
-    /// Built from tables a caller supplies rather than our own.
-    ///
-    /// For tests that want a palette of two rules, so a failure names the rule
-    /// that failed instead of one of three hundred.
+    /// Builds a palette from caller-supplied tables.
     pub fn from_tables(rules: &[Rule], captures: &[Capture]) -> Self {
         Self {
             textmate: syntect::Palette::new(rules),
@@ -146,16 +110,7 @@ impl Engine {
         }
     }
 
-    /// Which grammar reads this file, if any does.
-    ///
-    /// A parser is preferred wherever one exists: it answers a question the
-    /// matcher cannot, and on a long file it is the faster of the two by an
-    /// order of magnitude. It once was not preferred above a size, because a
-    /// whole-file parse would have held a frame — colouring happens on its own
-    /// thread now, so there is no frame to hold. See D41.
-    ///
-    /// `lines` is unused today and kept because the choice is the seam's to
-    /// make: a future engine may well have an opinion about size.
+    /// Chooses a grammar, preferring Tree-sitter.
     pub fn find(&self, clues: Clues<'_>, _lines: usize) -> Option<Grammar> {
         if let Some(grammar) = self.trees.find(clues) {
             return Some(Grammar::Tree(grammar));
@@ -163,12 +118,7 @@ impl Engine {
         self.textmate.find(clues).map(Grammar::TextMate)
     }
 
-    /// Which TextMate grammar reads this file, ignoring the parser.
-    ///
-    /// For the tests that are about *scope selectors* — which only that engine
-    /// matches — and for nothing else. A reader always gets the seam's answer;
-    /// this exists so `ui`'s scope table can be checked against the engine
-    /// that uses it, on languages the parser also happens to know.
+    /// Chooses a TextMate grammar without consulting Tree-sitter.
     pub fn find_textmate(&self, clues: Clues<'_>) -> Option<Grammar> {
         self.textmate.find(clues).map(Grammar::TextMate)
     }
@@ -191,15 +141,7 @@ impl Engine {
         }
     }
 
-    /// Reads the lines in `want`, appending the spans for each.
-    ///
-    /// The range is a request, not a promise. The matcher honours it, which
-    /// is what lets a frame stop halfway through a long file. The parser has no
-    /// range API at all, so it reads everything and the caller gets more than
-    /// it asked for — which is why [`Highlighted`] checks how far it actually
-    /// got rather than assuming.
-    ///
-    /// [`Highlighted`]: crate::Highlighted
+    /// Appends coloured spans; Tree-sitter may read beyond `rows`.
     pub fn colour(
         &self,
         engine_state: &mut EngineState,
@@ -235,13 +177,6 @@ mod tests {
     use super::*;
     use crate::style::{Pen, Style};
 
-    // --- the numbering ---------------------------------------------------
-    //
-    // Both tables are numbered by one function above, so these cannot fail
-    // the way they once could, when each table numbered itself and a third
-    // file read them back. They stay because the arithmetic is still
-    // arithmetic, and because a reader wants to see it stated.
-
     #[test]
     fn every_rule_carries_its_own_position() {
         for (n, rule) in rules().iter().enumerate() {
@@ -265,8 +200,6 @@ mod tests {
 
     #[test]
     fn the_two_tables_do_not_share_a_pen() {
-        // The whole reason one function numbers both. A shared pen would mean
-        // a word coloured as whatever the other engine calls that number.
         let mut seen = std::collections::HashSet::new();
         for pen in rules()
             .iter()
@@ -301,10 +234,6 @@ mod tests {
 
     #[test]
     fn no_comment_rule_asks_for_a_font_style() {
-        // Colour arrives a frame or two after the text, so anything a comment
-        // wears beyond a colour changes the *shape* of every glyph in it when
-        // it lands, and a screen of comments redraws visibly. Both tables,
-        // because a file goes through whichever engine claims it.
         let styles = rules()
             .into_iter()
             .map(|rule| (rule.selector, rule.style))
@@ -320,8 +249,6 @@ mod tests {
             );
         }
     }
-
-    // --- the seam --------------------------------------------------------
 
     fn palette() -> Palette {
         Palette::from_tables(
@@ -342,7 +269,6 @@ mod tests {
 
     #[test]
     fn a_language_without_one_falls_back_to_the_matcher() {
-        // Neither is wrong; the point is that the file is still coloured.
         let engine = Engine::new();
         let grammar = engine
             .find(Clues::new("Makefile", None), 10)
@@ -352,11 +278,6 @@ mod tests {
 
     #[test]
     fn a_very_long_file_is_parsed_too() {
-        // It once was not: a whole-file parse would have held a frame, so
-        // above a size the matcher was used because it could stop halfway.
-        // Colouring is on its own thread now, so the faster engine wins
-        // outright — and on a file this long the parser is ten times faster,
-        // which is precisely where that matters most. See D41.
         let engine = Engine::new();
         let long = engine.find(Clues::new("a.rs", None), 500_000).unwrap();
         assert!(matches!(long, Grammar::Tree(_)));
@@ -370,8 +291,6 @@ mod tests {
 
     #[test]
     fn both_engines_answer_in_the_same_currency() {
-        // The property the whole hybrid rests on: a `Pen` means the same thing
-        // whichever engine produced it, so one theme serves both.
         let engine = Engine::new();
         let palette = palette();
         let lines = vec!["fn a() {}".to_owned()];

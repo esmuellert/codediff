@@ -16,11 +16,6 @@ use std::process::ExitCode;
 
 use cli::{Cli, Command};
 
-/// What we exit with when the reader asks for a rebuild; `cargo xtask dev`
-/// reads it and starts us again. Only a debug build can produce it — the key
-/// that asks for a rebuild is not bound in a release one.
-const REBUILD_EXIT_CODE: u8 = 42;
-
 fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
 
@@ -34,7 +29,7 @@ fn main() -> Result<ExitCode> {
     }
 
     if cli.self_panic {
-        let _screen = ui::Screen::open()?;
+        let _screen = loom::Screen::open()?;
         panic!("deliberate panic, to check the terminal is restored");
     }
 
@@ -49,11 +44,8 @@ fn main() -> Result<ExitCode> {
         }
         None => {
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            let outcome = ui::start(cwd, cli.path.into_iter().collect(), None)?;
-            Ok(match outcome {
-                ui::Exit::Quit => ExitCode::SUCCESS,
-                ui::Exit::Rebuild => ExitCode::from(REBUILD_EXIT_CODE),
-            })
+            let code = ui::main(&cwd, cli.path.into_iter().collect())?;
+            Ok(ExitCode::from(code as u8))
         }
     }
 }

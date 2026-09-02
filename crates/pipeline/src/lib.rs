@@ -9,5 +9,5 @@
 //! [`File`]: file_types::File
 //! [`DiffContent`]: file::DiffContent
 
-pub mod file;
-pub mod list;
+pub mod diff;
+pub mod files;

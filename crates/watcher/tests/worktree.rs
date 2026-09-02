@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use watcher::{Refresh, Watcher};
+use watcher::{Refresh, Subscription};
 
 fn git_in(dir: &Path, args: &[&str]) -> bool {
     Command::new("git")
@@ -56,7 +56,7 @@ impl Linked {
     }
 }
 
-fn setup_worktree() -> (Linked, Watcher, Receiver<Refresh>) {
+fn setup_worktree() -> (Linked, Subscription, Receiver<Refresh>) {
     let dir = tempfile::tempdir().unwrap();
     let main = dir.path().join("main");
     fs::create_dir(&main).unwrap();
@@ -80,7 +80,7 @@ fn setup_worktree() -> (Linked, Watcher, Receiver<Refresh>) {
     let linked = Linked { _dir: dir, wt };
     let (tx, rx) = std::sync::mpsc::channel();
     let emitter = channel::Emitter::new(tx, std::convert::identity);
-    let watcher = watcher::start(&linked.wt, emitter).unwrap();
+    let watcher = watcher::subscribe(&linked.wt, emitter).unwrap();
     std::thread::sleep(Duration::from_millis(500));
     while rx.try_recv().is_ok() {}
 

@@ -18,6 +18,7 @@ pub mod diff;
 pub mod merge_base;
 pub mod rev_parse;
 pub mod run;
+pub mod stage;
 pub mod status;
 pub mod worktree;
 

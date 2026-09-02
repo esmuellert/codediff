@@ -6,9 +6,11 @@ use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff, MovedText};
 use file_types::DiffType;
 pub use file_types::DiffVersion;
 
+use crate::decoration::{LineDecorations, decorations};
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
 use crate::layout::{self, ViewLines};
+use crate::normalize::normalize_document_diff;
 use crate::view_line::{ViewLine, blocks, is_well_formed};
 
 /// A diff whose ranges do not describe a coherent pairing.
@@ -93,6 +95,8 @@ impl Alignment {
     ) -> Result<Self, Malformed> {
         let original = normalise(original);
         let modified = normalise(modified);
+        let mut diff = diff;
+        normalize_document_diff(&mut diff, &original, &modified);
         if !is_well_formed(&diff, original.len() as u32, modified.len() as u32) {
             return Err(Malformed);
         }
@@ -280,6 +284,17 @@ impl Alignment {
             .filter(|range| line >= range.start_line && line <= range.end_line)
             .flat_map(|range| span_on(range, line, lines, self.tab_width))
             .collect()
+    }
+
+    /// The backgrounds, character ranges, and empty markers VS Code gives a line.
+    pub fn decorations(&self, version: DiffVersion, line: u32) -> LineDecorations {
+        decorations(
+            &self.diff,
+            self.lines(version),
+            self.tab_width,
+            version,
+            line,
+        )
     }
 
     /// The move a line takes part in, if any.

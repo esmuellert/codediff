@@ -57,6 +57,14 @@ fn main() {
 }
 
 #[test]
+fn editor_lines_remove_every_form_of_line_ending() {
+    assert_eq!(
+        vscode_diff::editor_lines("alpha\r\nbeta\rgamma\n"),
+        ["alpha", "beta", "gamma", ""]
+    );
+}
+
+#[test]
 fn identical_text_produces_an_empty_diff() {
     let text = lines("alpha\nbeta\ngamma");
     let diff = compute(&text, &text, &Options::default()).unwrap();
@@ -220,4 +228,104 @@ fn repeated_use_is_stable() {
         let diff = compute(&original, &modified, &Options::default()).unwrap();
         assert_eq!(diff.changes.len(), 1);
     }
+}
+
+#[test]
+fn a_single_line_break_does_not_join_long_character_diffs() {
+    let original = vscode_diff::lines(concat!(
+        "    let cwd = std::env::current_dir().context(\"finding the current directory\")?;\n",
+        "    let mut git = Git::open(&cwd).context(\"opening a repository\")?;\n",
+        "\n",
+        "    let file = find(&mut git, path)?;\n",
+        "    let before = git.before(&file).context(\"reading the before side\")?;\n",
+        "    let after = git.after(&file).context(\"reading the after side\")?;\n",
+        "\n",
+        "    header(&file, &before, &after);",
+    ));
+    let modified = vscode_diff::lines(concat!(
+        "    let runner = Runner::new(&find(path)?)?;\n",
+        "    let contents = &runner.contents;\n",
+        "    header(&contents.file, &contents.original, &contents.modified);",
+    ));
+    let options = Options::default()
+        .ignoring_trim_whitespace()
+        .with_time_budget_ms(0);
+    let diff = compute(&original, &modified, &options).unwrap();
+
+    assert_eq!(diff.changes.len(), 1);
+    assert_eq!(diff.changes[0].inner_changes.len(), 5);
+}
+
+#[test]
+fn utf16_tree_glyphs_do_not_truncate_character_heuristics() {
+    let original = vscode_diff::lines(concat!(
+        "│   ├── vscode-diff/          safe wrapper → Diff                      pure\n",
+        "│   ├── metrics/              text measurement + coordinate mapping    pure\n",
+        "│   ├── syntax/               text → normalized syntactic spans        pure\n",
+        "│   ├── align/                AlignedDoc · rows · hunks · projections  pure\n",
+        "│   ├── explorer/             entries · grouping · tree · filter       pure\n",
+        "│   ├── vcs/                  git today, jj tomorrow\n",
+        "│   ├── runtime/              events · commands · effects · watcher\n",
+        "│   ├── display/              ratatui rendering + input\n",
+        "│   ├── codediff/             binary · composition root\n",
+        "│   └── fixtures/             dev-only: builds test repositories, emits a manifest\n",
+        "├── xtask/                    lint, sync, verify and generate tasks (not a build system)\n",
+        "├── vendor/libvscode-diff/    C source, copied from a pinned upstream tag\n",
+        "└── docs/",
+    ));
+    let modified = vscode_diff::lines(concat!(
+        "│   ├── diff-types/           the six structs a diff is made of — no deps, no C\n",
+        "│   ├── file-types/           what a file under review is — no deps\n",
+        "│   ├── vscode-diff/          safe wrapper → LinesDiff\n",
+        "│   ├── line-index/           UTF-16 ↔ byte ↔ char ↔ cell, display width, tabs\n",
+        "│   ├── syntax/               language detection, text → coloured spans\n",
+        "│   ├── align/                pairing lines, fillers, hunks, inner-change spans\n",
+        "│   ├── explorer/             file list: tree, flat mode, grouping, filtering\n",
+        "│   ├── vcs/                  git subprocess: status, blob reads, cat-file\n",
+        "│   ├── pipeline/             wires vcs + vscode-diff + align for one file\n",
+        "│   ├── ui/                   terminal, input, rendering, theme, syntax worker\n",
+        "│   ├── codediff/             binary — argument parsing, wiring\n",
+        "│   └── fixtures/             dev-only: builds test git repositories\n",
+        "├── xtask/                    lint-arch, lint-size, verify-c, fixture-repo, dev\n",
+        "├── vendor/libvscode-diff/    C source, pinned to an upstream tag\n",
+        "└── docs/",
+    ));
+    let options = Options::default()
+        .ignoring_trim_whitespace()
+        .with_time_budget_ms(0);
+    let diff = compute(&original, &modified, &options).unwrap();
+
+    assert_eq!(diff.changes.len(), 1);
+    assert_eq!(diff.changes[0].inner_changes.len(), 14);
+}
+
+#[test]
+fn long_myers_diagonals_match_vscode_typed_array_growth() {
+    let original = vscode_diff::lines(concat!(
+        "**Decision.** `j k h l Ctrl-D Ctrl-U gg G ]c [c Tab Enter / n N q ?` and counts. Nothing\n",
+        "else.\n",
+        "\n",
+        "**Rationale.** Cursor, viewport and motions are entirely net-new work that Neovim previously\n",
+        "supplied for free; it is 500–1,000 lines to do convincingly. Reimplementing Vim is an\n",
+        "unbounded commitment that contributes nothing to the core thesis. Additional motions can be\n",
+        "added on demand, from evidence.\n",
+    ));
+    let modified = vscode_diff::lines(concat!(
+        "`j k h l Ctrl-D Ctrl-U gg G ]c [c Tab Enter / n N q ?` and counts. Nothing\n",
+        "else. Additional motions added on demand from evidence.\n",
+    ));
+    let options = Options::default()
+        .ignoring_trim_whitespace()
+        .with_time_budget_ms(0);
+    let diff = compute(&original, &modified, &options).unwrap();
+
+    let inner = &diff.changes[0].inner_changes;
+    assert_eq!(inner.len(), 4);
+    assert_eq!(inner[1].original.start_line, 2);
+    assert_eq!(inner[1].original.start_col, 6);
+    assert_eq!(inner[1].original.end_line, 6);
+    assert_eq!(inner[1].original.end_col, 77);
+    assert_eq!(inner[1].modified.start_line, 2);
+    assert_eq!(inner[1].modified.start_col, 6);
+    assert_eq!(inner[1].modified.end_col, 17);
 }
