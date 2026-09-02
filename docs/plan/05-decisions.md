@@ -33,7 +33,7 @@ The library is 12 C files, 7,538 lines, builds in 2.1 seconds, and produces a
 
 ## D3 — Copy the C source, do not submodule
 
-`vendor/libvscode-diff/` is a copy from a pinned upstream tag. `cargo xtask
+`libvscode-diff/` is a copy from a pinned upstream tag. `cargo xtask
 sync-c` refreshes it; `cargo xtask verify-c` detects drift in CI. Corrections
 needed for the pinned VS Code build live as explicit patches under
 `crates/vscode-diff-sys/patches/`. The build applies them to `OUT_DIR`, never to
@@ -243,7 +243,7 @@ alignment will live in `ui`, not `align` — the same split VSCode makes.
 
 ## D20 — Type names mirror the C header
 
-Our Rust types mirror `vendor/libvscode-diff/include/types.h`, which mirrors
+Our Rust types mirror `libvscode-diff/include/types.h`, which mirrors
 VSCode. `LinesDiff`, `DetailedLineRangeMapping`, `MovedText`, `RangeMapping`,
 `LineRange`, `CharRange` — all match the header. The cost is verbosity; the
 benefit is that VSCode's source directly explains our behaviour.

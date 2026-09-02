@@ -8,7 +8,7 @@ dependencies, vendored Neovim internals and documentation assets — none of whi
 present here.
 
 Everything below is compiled by `crates/vscode-diff-sys/build.rs` from
-`vendor/libvscode-diff/` plus the source patches beside that build script,
+`libvscode-diff/` plus the source patches beside that build script,
 except the icon table, which is Rust source in
 `crates/ui/src/theme/icon/table.rs`.
 
@@ -113,12 +113,12 @@ SOFTWARE.
 **Copyright**: Copyright (c) 2014-2021 Steven G. Johnson, Jiahao Chen, Tony Kelman,
 Jonas Fonseca, and other contributors
 **Source**: https://github.com/JuliaStrings/utf8proc
-**Location**: `vendor/libvscode-diff/vendor/`
+**Location**: `libvscode-diff/vendor/`
 **Purpose**: UTF-8 processing, and conversion of byte offsets to UTF-16 code unit
 offsets so that column positions match VSCode's
 
 Full license text:
-[vendor/libvscode-diff/vendor/utf8proc_LICENSE.md](vendor/libvscode-diff/vendor/utf8proc_LICENSE.md)
+[libvscode-diff/vendor/utf8proc_LICENSE.md](libvscode-diff/vendor/utf8proc_LICENSE.md)
 
 ---
 

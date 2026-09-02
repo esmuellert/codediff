@@ -25,12 +25,13 @@ const PATCHES: &[(&str, &str)] = &[
 ];
 
 fn main() {
-    let vendor = workspace_root().join("vendor");
-    let engine = vendor.join("libvscode-diff");
+    let root = workspace_root();
+    let vendor = root.join("vendor");
+    let engine = root.join("libvscode-diff");
 
     if !engine.is_dir() {
         panic!(
-            "vendor/libvscode-diff is missing.\nRun: cargo xtask sync-c --tag <tag>\n\
+            "libvscode-diff is missing.\nRun: cargo xtask sync-c --tag <tag>\n\
              (expected at {})",
             engine.display()
         );

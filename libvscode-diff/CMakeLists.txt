@@ -6,7 +6,7 @@ if(POLICY CMP0177)
 endif()
 
 # Read version from VERSION file (single source of truth)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" FULL_VERSION)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/VERSION" FULL_VERSION)
 string(STRIP "${FULL_VERSION}" FULL_VERSION)
 
 # Extract base version for CMake (handles prerelease like 2.0.0-next.1)

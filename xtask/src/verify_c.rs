@@ -22,13 +22,13 @@ pub fn run() -> Result<()> {
 
     if actual != recorded.tree_sha256 {
         bail!(
-            "vendor/libvscode-diff has been modified locally.\n\
+            "libvscode-diff has been modified locally.\n\
              \n\
              recorded {}\n\
              actual   {}\n\
              \n\
-             The vendored C must match {} {} exactly.\n\
-             Patch upstream and re-run: cargo xtask sync-c --tag <tag>",
+             The C tree must match the recorded import from {} {}.\n\
+             Re-run: cargo xtask sync-c --tag <tag>",
             recorded.tree_sha256,
             actual,
             recorded.repository,
@@ -37,7 +37,7 @@ pub fn run() -> Result<()> {
     }
 
     println!(
-        "vendor/libvscode-diff matches {} {} ({})",
+        "libvscode-diff matches the recorded import from {} {} ({})",
         recorded.repository, recorded.tag, recorded.version
     );
     Ok(())

@@ -1,7 +1,7 @@
 //! Reading, writing and verifying `vendor/UPSTREAM.lock`.
 //!
 //! The lock records where the vendored C came from and a content hash of the
-//! extracted tree, so that a local edit to `vendor/` becomes a CI failure
+//! extracted tree, so that a local edit to `libvscode-diff/` becomes a CI failure
 //! rather than a silent fork. See docs/plan/05-decisions.md D3.
 
 use anyhow::{Context, Result, bail};
@@ -26,7 +26,7 @@ impl Lock {
         s.push_str(
             "# Provenance of the vendored C diff engine.\n\
              # Written by `cargo xtask sync-c`; checked by `cargo xtask verify-c`.\n\
-             # Do not edit vendor/libvscode-diff by hand — patch upstream instead.\n\n",
+             # Do not edit libvscode-diff by hand — patch upstream instead.\n\n",
         );
         let _ = writeln!(s, "repository = \"{}\"", self.repository);
         let _ = writeln!(s, "tag = \"{}\"", self.tag);
@@ -127,7 +127,7 @@ pub fn vendor_dir(root: &Path) -> PathBuf {
 }
 
 pub fn engine_dir(root: &Path) -> PathBuf {
-    vendor_dir(root).join("libvscode-diff")
+    root.join("libvscode-diff")
 }
 
 /// Upstream's diff fixtures, used by `verify-oracle`.
@@ -143,7 +143,7 @@ pub fn require_vendored(root: &Path) -> Result<()> {
     let dir = engine_dir(root);
     if !dir.is_dir() {
         bail!(
-            "vendor/libvscode-diff is missing.\n\
+            "libvscode-diff is missing.\n\
              Run: cargo xtask sync-c --tag <tag>"
         );
     }

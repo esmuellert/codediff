@@ -28,7 +28,7 @@ codediff/
 │   ├── codediff/             binary — argument parsing, wiring
 │   └── fixtures/             dev-only: builds test git repositories
 ├── xtask/                    lint-arch, lint-size, verify-c, fixture-repo, dev
-├── vendor/libvscode-diff/    C source, pinned to an upstream tag
+├── libvscode-diff/           C source, pinned to an upstream tag
 └── docs/
 ```
 

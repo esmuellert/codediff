@@ -1,8 +1,8 @@
 //! `cargo xtask sync-c --tag <tag> [--from <path>]`
 //!
-//! Replaces `vendor/` with the `libvscode-diff` tree from an upstream tag and
-//! rewrites `UPSTREAM.lock`. This is the only sanctioned way to update the
-//! vendored C: doing it by hand is how a silent fork begins.
+//! Replaces `libvscode-diff/` and its vendor metadata from an upstream tag.
+//! This is the only sanctioned way to update the copied C source; doing it by
+//! hand is how a silent fork begins.
 
 use anyhow::{Context, Result, bail};
 use std::path::Path;
@@ -53,16 +53,19 @@ pub fn run(args: &[String]) -> Result<()> {
     }
     std::fs::create_dir_all(&vendor)?;
 
-    extract(source, &tag, "libvscode-diff", &vendor)?;
-    // CMake reads ../VERSION relative to libvscode-diff/, and
-    // default_lines_diff_computer.c includes the version.h generated from it.
+    let engine = lock::engine_dir(&root);
+    if engine.exists() {
+        std::fs::remove_dir_all(&engine).context("clearing libvscode-diff/")?;
+    }
+    extract(source, &tag, "libvscode-diff", &root)?;
+    adapt_to_repository_layout(&engine)?;
+    // The Rust build and oracle generate version.h from the imported version.
     std::fs::write(vendor.join("VERSION"), format!("{version}\n"))?;
     // Upstream's own diff fixtures, used by `verify-oracle`. Taking their cases
     // rather than inventing ours is the point: an oracle we chose the questions
     // for proves much less.
     extract_test_pairs(source, &tag, &vendor)?;
 
-    let engine = lock::engine_dir(&root);
     let tree_sha256 = lock::hash_tree(&engine)?;
 
     let lock = Lock {
@@ -80,6 +83,33 @@ pub fn run(args: &[String]) -> Result<()> {
     println!("  fixtures    {} oracle pair(s)", count_pairs(&vendor)?);
 
     report_bundled_dependencies(&engine)?;
+    Ok(())
+}
+
+fn adapt_to_repository_layout(engine: &Path) -> Result<()> {
+    replace_once(
+        &engine.join("CMakeLists.txt"),
+        "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION",
+        "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/VERSION",
+    )?;
+    replace_once(
+        &engine.join("build.sh.in"),
+        "cat ../VERSION",
+        "cat ../vendor/VERSION",
+    )?;
+    replace_once(
+        &engine.join("build.cmd.in"),
+        "<..\\VERSION",
+        "<..\\vendor\\VERSION",
+    )
+}
+
+fn replace_once(path: &Path, from: &str, to: &str) -> Result<()> {
+    let text = std::fs::read_to_string(path)?;
+    if text.matches(from).count() != 1 {
+        bail!("expected exactly one `{from}` in {}", path.display());
+    }
+    std::fs::write(path, text.replacen(from, to, 1))?;
     Ok(())
 }
 

@@ -6,11 +6,11 @@
 
 # Vendored C build outputs. The C *source* is tracked and its provenance is
 # recorded in vendor/UPSTREAM.lock; build.rs compiles it into OUT_DIR.
-vendor/**/*.o
-vendor/**/*.a
-vendor/**/*.so
-vendor/**/*.dylib
-vendor/**/*.dll
+libvscode-diff/**/*.o
+libvscode-diff/**/*.a
+libvscode-diff/**/*.so
+libvscode-diff/**/*.dylib
+libvscode-diff/**/*.dll
 
 # Editor / OS
 .DS_Store

@@ -1,6 +1,6 @@
 # VS Code parity patches
 
-`vendor/libvscode-diff` stays byte-for-byte identical to the tag recorded in
+`libvscode-diff` stays byte-for-byte identical to the tag recorded in
 `vendor/UPSTREAM.lock`. `build.rs` applies the patches in this directory to
 copies under `OUT_DIR` before compiling them.
 

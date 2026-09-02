@@ -1,4 +1,4 @@
-//! Raw bindings matching `vendor/libvscode-diff/include/types.h`.
+//! Raw bindings matching `libvscode-diff/include/types.h`.
 
 #![allow(non_camel_case_types)]
 

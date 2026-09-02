@@ -94,7 +94,7 @@ mkdir -p build
 mkdir -p build/include
 
 # Generate version.h
-VERSION=$(cat ../VERSION | tr -d '[:space:]')
+VERSION=$(cat ../vendor/VERSION | tr -d '[:space:]')
 sed "s/@''PROJECT_VERSION@/$VERSION/g" include/version.h.in > build/include/version.h
 
 echo "Compiling..."
