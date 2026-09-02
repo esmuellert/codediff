@@ -82,11 +82,12 @@ binary crate in the workspace plus an alias in `.cargo/config.toml`.
 xtask = "run --package xtask --"
 ```
 
-`cargo xtask verify-c` is then literally `cargo run -p xtask -- verify-c`. It is not a
-framework and nothing needs installing.
+`cargo xtask lint-arch` is then literally `cargo run -p xtask -- lint-arch`. It is not
+a framework and nothing needs installing.
 
-**xtask is not a build system.** It never compiles anything — `cargo build` and `build.rs`
-do that, including the vendored C. It holds only the chores cargo has no opinion about.
+**xtask is not a build system.** It never compiles anything — Cargo, `build.rs`, and
+CMake do that, including the canonical C engine. It holds only the chores those tools
+have no opinion about.
 
 For comparison, codediff.nvim's `Makefile` (duplicated in full as `Makefile.win`) has
 thirteen targets, of which nine are free here:
@@ -105,15 +106,15 @@ thirteen targets, of which nine are free here:
 
 Both makefiles collapse to zero files, because cargo is already cross-platform.
 
-Three of our tasks — `lint-arch`, `lint-size`, `verify-c` — have **no plugin equivalent**,
-because Make and Lua had no way to express them. That is the real point:
+Two of our tasks — `lint-arch` and `lint-size` — have **no plugin equivalent**, because
+Make and Lua had no way to express them. That is the real point:
 
 > **xtask is where the rules in this plan stop being prose and become build failures.**
 
 Cargo enforces exactly one architectural rule for free (acyclic crate dependencies).
-Everything else — `ui` must not reach `vcs`, pure crates must declare no IO, files stay
-under the size cap, the vendored C must match its pinned tag — is project-specific, and
-therefore has to be encoded somewhere. That somewhere is `xtask`.
+Everything else — `ui` must not reach `vcs`, pure crates must declare no IO, and files
+must stay under the size cap — is project-specific, and therefore has to be encoded
+somewhere. That somewhere is `xtask`.
 
 Writing it in Rust rather than shell also means it is cross-platform without duplication,
 type-checked, testable, and able to `use` the workspace crates. `lint-arch` in particular
@@ -151,8 +152,6 @@ human-readable artifact and the regression fixture are the same file.
 
 | command | asserts | arrives |
 |---|---|---|
-| `cargo xtask verify-c` | vendored C matches the pinned upstream tag; fails on drift | S1 |
-| `cargo xtask sync-c --tag vX.Y.Z` | refreshes the vendored C and its oracle fixtures, rewrites `vendor/UPSTREAM.lock` | S1 |
 | `cargo xtask lint-size` | no file exceeds the hard cap, counting non-test lines only | S1 |
 | `cargo xtask lint-arch` | no forbidden crate edge; pure crates declare no IO dependencies; `forbid(unsafe_code)` present where required | S1 |
 | `cargo xtask verify-oracle` | our diff output matches upstream `diff_tool` on every fixture | S2 |

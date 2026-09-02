@@ -95,7 +95,7 @@ width-independent and `computeRangeAlignment` in its view. See D19.
 ## Checking it
 
 ```sh
-codediff debug align vendor/test-pairs/block_moved_down/{original,modified}.txt
+codediff debug align libvscode-diff/tests/oracle/block_moved_down/{original,modified}.txt
 ```
 
 The left column must read as exactly the original file and the right as exactly the

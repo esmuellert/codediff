@@ -29,9 +29,14 @@ runs:
       shell: bash
       run: cargo test --workspace
 
-    - name: Verify vendored C
+    - name: Test C engine
       shell: bash
-      run: cargo xtask verify-c
+      run: |
+        cmake -S libvscode-diff -B target/libvscode-diff-cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_OPENMP=OFF
+        cmake --build target/libvscode-diff-cmake --config Release --parallel
+        ctest --test-dir target/libvscode-diff-cmake -C Release --output-on-failure
 
     - name: Lint file sizes
       shell: bash

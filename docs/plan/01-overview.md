@@ -8,9 +8,8 @@ edits a repository while a human reviews the result.
 - **Read-only.** codediff never writes to the user's files. (The agent may write; codediff
   only observes.) It is not an editor.
 - **Standalone.** No Neovim, no editor host. A single static binary.
-- **Reuses the proven diff engine.** The C library `libvscode-diff` from
-  [codediff.nvim](https://github.com/esmuellert/vscode-diff.nvim) — a port of VSCode's
-  diffing algorithm — is compiled from source and statically linked.
+- **Owns the proven diff engine.** The canonical `libvscode-diff` C library — a port
+  of VS Code's diffing algorithm — is compiled from source and statically linked.
 - **Rendered with [ratatui](https://ratatui.rs).**
 
 ## MVP definition

@@ -332,10 +332,9 @@ static void scan_for_whitespace_changes(
  * @return LinesDiff structure containing changes and metadata
  * 
  * VSCode Reference: defaultLinesDiffComputer.ts computeDiff() lines 31-174
- * VSCode Parity: 100% (excluding computeMoves)
- * 
- * Notable differences from VSCode:
- * - No computeMoves implementation (Neovim UI limitation)
+ * VSCode parity is checked against the pinned browser oracle.
+ *
+ * Notable difference from VSCode:
  * - No assertion validation (can be added later if needed)
  */
 LinesDiff* compute_diff(

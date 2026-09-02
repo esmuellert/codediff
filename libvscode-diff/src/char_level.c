@@ -521,6 +521,27 @@ static SequenceDiffArray *extend_diffs_to_entire_word(const CharSequence *seq1,
 // removeVeryShortMatchingTextBetweenLongDiffs() - VSCode Parity
 // =============================================================================
 
+static bool is_trim_whitespace(uint32_t ch) {
+  return (ch >= 0x0009 && ch <= 0x000D) || ch == 0x0020 || ch == 0x00A0 || ch == 0x1680 ||
+         (ch >= 0x2000 && ch <= 0x200A) || ch == 0x2028 || ch == 0x2029 || ch == 0x202F ||
+         ch == 0x205F || ch == 0x3000 || ch == 0xFEFF;
+}
+
+static int trimmed_element_length(const CharSequence *seq, int start, int end) {
+  while (start < end && is_trim_whitespace(seq->elements[start])) start++;
+  while (end > start && is_trim_whitespace(seq->elements[end - 1])) end--;
+  return end - start;
+}
+
+static bool trimmed_text_has_line_break(const CharSequence *seq, int start, int end) {
+  while (start < end && is_trim_whitespace(seq->elements[start])) start++;
+  while (end > start && is_trim_whitespace(seq->elements[end - 1])) end--;
+  for (int i = start; i < end; i++) {
+    if (seq->elements[i] == '\n' || seq->elements[i] == '\r') return true;
+  }
+  return false;
+}
+
 /**
  * Remove very short matching text between long diffs - VSCode Parity
  * 
@@ -565,32 +586,8 @@ static SequenceDiffArray *remove_very_short_text(const CharSequence *seq1, const
         continue;
       }
 
-      // Get unchanged text and check length
-      char *unchanged_text = char_sequence_get_text(seq1, unchanged_start, unchanged_end);
-      if (!unchanged_text) {
-        result[result_count++] = cur;
-        continue;
-      }
-
-      // Trim and check
-      char *trimmed = unchanged_text;
-      while (*trimmed && isspace(*trimmed))
-        trimmed++;
-      char *end = trimmed + strlen(trimmed) - 1;
-      while (end > trimmed && isspace(*end))
-        *end-- = '\0';
-
-      bool short_text = (strlen(trimmed) <= 20);
-
-      // Count newlines
-      int newline_count = 0;
-      for (char *p = trimmed; *p; p++) {
-        if (*p == '\n' || *p == '\r')
-          newline_count++;
-      }
-      bool single_line = (newline_count <= 1);
-
-      free(unchanged_text);
+      bool short_text = trimmed_element_length(seq1, unchanged_start, unchanged_end) <= 20;
+      bool single_line = !trimmed_text_has_line_break(seq1, unchanged_start, unchanged_end);
 
       if (!short_text || !single_line) {
         result[result_count++] = cur;
@@ -664,50 +661,26 @@ static SequenceDiffArray *remove_very_short_text(const CharSequence *seq1, const
     // Check prefix
     if (full_start < cur->seq1_start && is_large_diff) {
       int text_len = cur->seq1_start - full_start;
-      char *prefix = char_sequence_get_text(seq1, full_start, cur->seq1_start);
-      if (prefix) {
-        // Trim whitespace
-        const char *start = prefix;
-        const char *end = prefix + strlen(prefix) - 1;
-        while (*start && isspace((unsigned char)*start))
-          start++;
-        while (end > start && isspace((unsigned char)*end))
-          end--;
+      int trimmed_len = trimmed_element_length(seq1, full_start, cur->seq1_start);
+      bool should_include = (text_len > 0 && trimmed_len <= 3);
 
-        int trimmed_len = (start > end) ? 0 : (int)(end - start + 1);
-        bool should_include = (text_len > 0 && trimmed_len <= 3);
-
-        if (should_include) {
-          int prefix_len = cur->seq1_start - full_start;
-          new_diff.seq1_start -= prefix_len;
-          new_diff.seq2_start -= prefix_len;
-        }
-        free(prefix);
+      if (should_include) {
+        int prefix_len = cur->seq1_start - full_start;
+        new_diff.seq1_start -= prefix_len;
+        new_diff.seq2_start -= prefix_len;
       }
     }
 
     // Check suffix
     if (cur->seq1_end < full_end && is_large_diff) {
       int text_len = full_end - cur->seq1_end;
-      char *suffix = char_sequence_get_text(seq1, cur->seq1_end, full_end);
-      if (suffix) {
-        // Trim whitespace
-        const char *start = suffix;
-        const char *end = suffix + strlen(suffix) - 1;
-        while (*start && isspace((unsigned char)*start))
-          start++;
-        while (end > start && isspace((unsigned char)*end))
-          end--;
+      int trimmed_len = trimmed_element_length(seq1, cur->seq1_end, full_end);
+      bool should_include = (text_len > 0 && trimmed_len <= 3);
 
-        int trimmed_len = (start > end) ? 0 : (int)(end - start + 1);
-        bool should_include = (text_len > 0 && trimmed_len <= 3);
-
-        if (should_include) {
-          int suffix_len = full_end - cur->seq1_end;
-          new_diff.seq1_end += suffix_len;
-          new_diff.seq2_end += suffix_len;
-        }
-        free(suffix);
+      if (should_include) {
+        int suffix_len = full_end - cur->seq1_end;
+        new_diff.seq1_end += suffix_len;
+        new_diff.seq2_end += suffix_len;
       }
     }
 
