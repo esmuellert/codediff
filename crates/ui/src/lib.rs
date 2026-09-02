@@ -33,29 +33,33 @@ enum Event {
     Terminal(crossterm::event::Event),
     #[cfg(unix)]
     Signal(i32),
-    FsChanged(watcher::Refresh),
-    ListRefreshed(pipeline::files::Response),
-    FileReady(Box<pipeline::diff::Response>),
-    Coloured(syntax::SyntaxResponse),
+    RepositoryChanged(watcher::Refresh),
+    FilesReady(pipeline::files::Response),
+    DiffReady(Box<pipeline::diff::Response>),
+    SyntaxReady(syntax::SyntaxResponse),
 }
 
 pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
-    let (tx, rx) = mpsc::channel::<Event>();
+    let (events_tx, events_rx) = mpsc::channel::<Event>();
 
-    let list_worker = pipeline::files::FilesWorker::start(channel::Emitter::new(
-        tx.clone(),
-        Event::ListRefreshed,
+    let files_worker = pipeline::files::FilesWorker::start(channel::Emitter::new(
+        events_tx.clone(),
+        Event::FilesReady,
     ));
     let diff_worker =
-        pipeline::diff::DiffWorker::start(channel::Emitter::new(tx.clone(), |response| {
-            Event::FileReady(Box::new(response))
+        pipeline::diff::DiffWorker::start(channel::Emitter::new(events_tx.clone(), |response| {
+            Event::DiffReady(Box::new(response))
         }));
-    let syntax_worker = syntax::Syntax::start(channel::Emitter::new(tx.clone(), Event::Coloured));
-    let _subscription =
-        watcher::subscribe(cwd, channel::Emitter::new(tx.clone(), Event::FsChanged)).ok();
+    let syntax_worker =
+        syntax::Syntax::start(channel::Emitter::new(events_tx.clone(), Event::SyntaxReady));
+    let _watcher_subscription = watcher::subscribe(
+        cwd,
+        channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
+    )
+    .ok();
 
-    let file_service = Rc::new(FilesService::new(
-        Rc::new(RefCell::new(list_worker)),
+    let files_service = Rc::new(FilesService::new(
+        Rc::new(RefCell::new(files_worker)),
         pathspec,
     ));
     let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
@@ -64,14 +68,14 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
-        file_service: Rc::clone(&file_service),
+        files_service: Rc::clone(&files_service),
         diff_service: Rc::clone(&diff_service),
         syntax_service: Rc::clone(&syntax_service),
         version_control_service,
     });
 
     #[cfg(unix)]
-    spawn_signals(tx.clone());
+    spawn_signals(events_tx.clone());
 
     #[cfg(debug_assertions)]
     let rebuild = Rc::new(Cell::new(false));
@@ -80,37 +84,37 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
 
     loom::run(
         &mut tree,
-        rx,
-        tx,
+        events_rx,
+        events_tx,
         Event::Terminal,
         move |event, tree| match event {
-            Event::Terminal(ref e) => {
+            Event::Terminal(ref terminal_event) => {
                 #[cfg(debug_assertions)]
-                if is_f5(e) {
+                if is_f5(terminal_event) {
                     rebuild_flag.set(true);
                     return Flow::Quit;
                 }
-                deliver_input(tree, e);
+                deliver_input(tree, terminal_event);
                 Flow::Continue
             }
             #[cfg(unix)]
-            Event::Signal(sig) => {
+            Event::Signal(signal) => {
                 loom::restore();
-                std::process::exit(128 + sig);
+                std::process::exit(128 + signal);
             }
-            Event::FsChanged(what) => {
-                file_service.fs_changed(what);
+            Event::RepositoryChanged(refresh) => {
+                files_service.fs_changed(refresh);
                 Flow::Continue
             }
-            Event::ListRefreshed(list) => {
-                file_service.deliver(list);
+            Event::FilesReady(response) => {
+                files_service.deliver(response);
                 Flow::Continue
             }
-            Event::FileReady(response) => {
+            Event::DiffReady(response) => {
                 diff_service.deliver(*response);
                 Flow::Continue
             }
-            Event::Coloured(response) => {
+            Event::SyntaxReady(response) => {
                 syntax_service.deliver(response);
                 Flow::Continue
             }
@@ -125,7 +129,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
 }
 
 #[cfg(unix)]
-fn spawn_signals(tx: Sender<Event>) {
+fn spawn_signals(events_tx: Sender<Event>) {
     use signal_hook::consts::{SIGHUP, SIGQUIT, SIGTERM};
     use signal_hook::iterator::Signals;
 
@@ -133,8 +137,8 @@ fn spawn_signals(tx: Sender<Event>) {
     thread::Builder::new()
         .name("signals".to_owned())
         .spawn(move || {
-            for sig in signals.forever() {
-                if tx.send(Event::Signal(sig)).is_err() {
+            for signal in signals.forever() {
+                if events_tx.send(Event::Signal(signal)).is_err() {
                     break;
                 }
             }

@@ -38,33 +38,37 @@ pub fn draw(files: Vec<File>, width: u16, height: u16) -> Vec<String> {
     (0..height).map(|y| h.screen_row(y)).collect()
 }
 
-pub fn mock_file_service(
+pub fn mock_files_service(
     responses: Vec<Vec<File>>,
 ) -> (Rc<FilesService>, mpsc::Receiver<pipeline::files::Response>) {
-    let (tx, rx) = mpsc::channel();
-    let worker = pipeline::files::FilesWorker::mock(
+    let (files_tx, files_responses) = mpsc::channel();
+    let files_worker = pipeline::files::FilesWorker::mock(
         responses,
-        channel::Emitter::new(tx, |response| response),
+        channel::Emitter::new(files_tx, |response| response),
     );
     (
-        Rc::new(FilesService::new(Rc::new(RefCell::new(worker)), Vec::new())),
-        rx,
+        Rc::new(FilesService::new(
+            Rc::new(RefCell::new(files_worker)),
+            Vec::new(),
+        )),
+        files_responses,
     )
 }
 
 pub fn harness(files: Vec<File>, width: u16, height: u16) -> Harness {
-    let (file_service, rx) = mock_file_service(vec![files]);
+    let (files_service, files_responses) = mock_files_service(vec![files]);
     let mut harness =
         Harness::new::<Explorer>(ExplorerProps {}, width, height).provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             repo: Rc::from(Path::new("/repo")),
-            file_service: Some(Rc::clone(&file_service)),
+            files_service: Some(Rc::clone(&files_service)),
             ..Default::default()
         });
     harness.force_draw();
-    file_service.deliver(
-        rx.recv_timeout(Duration::from_secs(1))
-            .expect("file list response"),
+    files_service.deliver(
+        files_responses
+            .recv_timeout(Duration::from_secs(1))
+            .expect("files response"),
     );
     harness.force_draw();
     harness

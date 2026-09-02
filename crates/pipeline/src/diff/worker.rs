@@ -1,7 +1,7 @@
-//! The file worker thread — diffs one file at a time off the drawing thread.
+//! The diff worker thread — diffs one file at a time off the drawing thread.
 //!
 //! ```text
-//!  drawing thread                        file worker thread
+//!  drawing thread                        diff worker thread
 //!  ──────────────                        ──────────────────
 //!  send_diff_request(file) ────────────────────────►  recv(file)
 //!  draw (still showing previous file)    read, diff, align
@@ -34,14 +34,14 @@ impl DiffWorker {
     pub fn start(emitter: Emitter<Response>) -> Self {
         let job = move |file: File| {
             let content = compare(&file);
-            tracing::info!(path = %file.path(), "file ready");
+            tracing::info!(path = %file.path(), "diff ready");
             emitter.send(Response { file, content })
         };
         let (requests, worker_loop) = Slot::new(job);
         thread::Builder::new()
-            .name("file".to_owned())
+            .name("diff".to_owned())
             .spawn(worker_loop)
-            .expect("the file thread starts");
+            .expect("the diff thread starts");
         Self { requests }
     }
 
@@ -56,9 +56,9 @@ impl DiffWorker {
         };
         let (requests, worker_loop) = Slot::new(job);
         thread::Builder::new()
-            .name("file-canned".to_owned())
+            .name("diff-canned".to_owned())
             .spawn(worker_loop)
-            .expect("the file thread starts");
+            .expect("the diff thread starts");
         Self { requests }
     }
 }

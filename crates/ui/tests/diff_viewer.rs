@@ -46,29 +46,29 @@ fn pending_response(
     Rc<DiffService>,
     mpsc::Receiver<pipeline::diff::Response>,
 ) {
-    let (tx, rx) = mpsc::channel();
-    let worker = pipeline::diff::DiffWorker::mock(
+    let (diff_tx, diff_responses) = mpsc::channel();
+    let diff_worker = pipeline::diff::DiffWorker::mock(
         vec![Ok(content)],
-        channel::Emitter::new(tx, |response| response),
+        channel::Emitter::new(diff_tx, |response| response),
     );
-    let service = Rc::new(DiffService::new(Rc::new(RefCell::new(worker))));
+    let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
     let mut harness =
         Harness::new::<DiffViewer>(DiffViewerProps {}, 60, 10).provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             file: Some(Rc::new(file)),
-            diff_service: Some(Rc::clone(&service)),
+            diff_service: Some(Rc::clone(&diff_service)),
             ..Context::default()
         });
     harness.force_draw();
-    (harness, service, rx)
+    (harness, diff_service, diff_responses)
 }
 
 fn with_response(file: file_types::File, content: pipeline::diff::DiffContent) -> Harness {
-    let (mut harness, service, rx) = pending_response(file, content);
-    let response = rx
+    let (mut harness, diff_service, diff_responses) = pending_response(file, content);
+    let response = diff_responses
         .recv_timeout(Duration::from_secs(1))
         .expect("diff response");
-    service.deliver(response);
+    diff_service.deliver(response);
     harness.force_draw().force_draw();
     harness
 }
@@ -109,12 +109,12 @@ fn no_file_shows_welcome() {
 fn a_response_for_another_file_is_ignored() {
     let selected = file("selected.rs");
     let content = make_single(selected.clone());
-    let (mut harness, service, rx) = pending_response(selected, content);
-    let mut response = rx
+    let (mut harness, diff_service, diff_responses) = pending_response(selected, content);
+    let mut response = diff_responses
         .recv_timeout(Duration::from_secs(1))
         .expect("diff response");
     response.file = file("other.rs");
-    service.deliver(response);
+    diff_service.deliver(response);
     harness.force_draw().force_draw();
 
     let text = harness.screen().join("\n");
@@ -126,15 +126,15 @@ fn a_response_for_another_file_is_ignored() {
 fn the_previous_file_stays_visible_until_the_next_response() {
     let first = file("first.rs");
     let second = file("second.rs");
-    let (tx, rx) = mpsc::channel();
-    let worker = pipeline::diff::DiffWorker::mock(
+    let (diff_tx, diff_responses) = mpsc::channel();
+    let diff_worker = pipeline::diff::DiffWorker::mock(
         vec![
             Ok(make_single_with_text(first.clone(), "first body")),
             Ok(make_single_with_text(second.clone(), "second body")),
         ],
-        channel::Emitter::new(tx, |response| response),
+        channel::Emitter::new(diff_tx, |response| response),
     );
-    let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(worker))));
+    let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             file: Rc::new(first),
@@ -145,8 +145,9 @@ fn the_previous_file_stays_visible_until_the_next_response() {
     );
     harness.force_draw();
     diff_service.deliver(
-        rx.recv_timeout(Duration::from_secs(1))
-            .expect("first response"),
+        diff_responses
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first diff response"),
     );
     harness.force_draw().force_draw();
     assert!(harness.screen().join("\n").contains("first body"));
@@ -159,8 +160,9 @@ fn the_previous_file_stays_visible_until_the_next_response() {
     assert!(harness.screen().join("\n").contains("first body"));
 
     diff_service.deliver(
-        rx.recv_timeout(Duration::from_secs(1))
-            .expect("second response"),
+        diff_responses
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second diff response"),
     );
     harness.force_draw().force_draw();
     let text = harness.screen().join("\n");

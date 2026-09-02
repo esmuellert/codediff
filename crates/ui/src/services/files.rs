@@ -12,7 +12,7 @@ use pipeline::files::{FilesWorker, Request, Response};
 pub struct FilesService {
     worker: Rc<RefCell<FilesWorker>>,
     pathspec: Vec<String>,
-    file_observer: RefCell<Option<Observer<Response>>>,
+    files_observer: RefCell<Option<Observer<Response>>>,
     fs_observer: RefCell<Option<Observer<watcher::Refresh>>>,
 }
 
@@ -21,7 +21,7 @@ impl FilesService {
         Self {
             worker,
             pathspec,
-            file_observer: RefCell::new(None),
+            files_observer: RefCell::new(None),
             fs_observer: RefCell::new(None),
         }
     }
@@ -29,7 +29,7 @@ impl FilesService {
     /// Requests the file list for `repo`.
     pub fn get(&self, repo: &Path) -> Observable<Response> {
         let (observer, responses) = observable();
-        *self.file_observer.borrow_mut() = Some(observer);
+        *self.files_observer.borrow_mut() = Some(observer);
         let request = Request::worktree(repo).with_pathspec(self.pathspec.clone());
         self.worker.borrow_mut().send(request);
         responses
@@ -52,15 +52,15 @@ impl FilesService {
     /// The loop calls this when the worker answered.
     pub fn deliver(&self, response: Response) {
         self.worker.borrow_mut().received(&response);
-        if let Some(observer) = self.file_observer.borrow().as_ref() {
+        if let Some(observer) = self.files_observer.borrow().as_ref() {
             observer.next(response);
         }
     }
 
     /// The loop calls this when the watcher fired.
-    pub fn fs_changed(&self, what: watcher::Refresh) {
+    pub fn fs_changed(&self, refresh: watcher::Refresh) {
         if let Some(observer) = self.fs_observer.borrow().as_ref() {
-            observer.next(what);
+            observer.next(refresh);
         }
     }
 }

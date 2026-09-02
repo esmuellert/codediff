@@ -26,16 +26,15 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let set_file = ctx.set_file;
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let repo = Rc::clone(&ctx.repo);
-    let file_service = ctx.file_service.as_ref().map(Rc::clone);
+    let files_service = ctx.files_service.as_ref().map(Rc::clone);
     let repo_for_effect = Rc::clone(&repo);
     use_effect(scope, repo, move || {
-        let Some(file_service) = file_service else {
+        let Some(files_service) = files_service else {
             return;
         };
         let requested_repo_for_response = Rc::clone(&repo_for_effect);
-        file_service
-            .get(&repo_for_effect)
-            .subscribe(move |response: pipeline::files::Response| {
+        files_service.get(&repo_for_effect).subscribe(
+            move |response: pipeline::files::Response| {
                 if response.repo.as_path() != requested_repo_for_response.as_ref() {
                     return;
                 }
@@ -47,14 +46,15 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                     });
                 }
                 set_files(&move |_| Rc::clone(&matching_files));
-            });
-        let service_to_refresh = Rc::clone(&file_service);
+            },
+        );
+        let files_service_to_refresh = Rc::clone(&files_service);
         let repo_to_refresh = Rc::clone(&repo_for_effect);
-        file_service
+        files_service
             .on_fs_changed()
-            .subscribe(move |what: watcher::Refresh| {
-                if what.worktree || what.index {
-                    service_to_refresh.refresh(&repo_to_refresh);
+            .subscribe(move |refresh: watcher::Refresh| {
+                if refresh.worktree || refresh.index {
+                    files_service_to_refresh.refresh(&repo_to_refresh);
                 }
             });
     });

@@ -21,7 +21,7 @@ fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
     pipeline::diff::Diff { file, alignment }
 }
 
-fn harness_with_service(
+fn harness_with_syntax_service(
     original: &[&str],
     modified: &[&str],
     width: u16,
@@ -39,7 +39,7 @@ fn harness_with_service(
 }
 
 fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
-    harness_with_service(original, modified, width, height, None)
+    harness_with_syntax_service(original, modified, width, height, None)
 }
 
 fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<String> {
@@ -83,10 +83,11 @@ fn a_divider_separates_the_two_sides() {
 
 #[test]
 fn syntax_is_requested_for_both_sides() {
-    let (tx, rx) = mpsc::channel();
-    let worker = syntax::Syntax::start(channel::Emitter::new(tx, |response| response));
-    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(worker))));
-    let mut harness = harness_with_service(
+    let (syntax_tx, syntax_responses) = mpsc::channel();
+    let syntax_worker =
+        syntax::Syntax::start(channel::Emitter::new(syntax_tx, |response| response));
+    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
+    let mut harness = harness_with_syntax_service(
         &["fn before() {}"],
         &["fn after() {}"],
         40,
@@ -95,7 +96,7 @@ fn syntax_is_requested_for_both_sides() {
     );
     harness.force_draw().force_draw();
     for _ in 0..2 {
-        let response = rx
+        let response = syntax_responses
             .recv_timeout(Duration::from_secs(1))
             .expect("syntax response");
         syntax_service.deliver(response);

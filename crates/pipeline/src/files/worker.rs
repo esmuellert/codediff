@@ -7,7 +7,7 @@ use file_types::File;
 
 use super::{Request, Response, get_files};
 
-/// The list worker — re-runs the file list in the background when asked.
+/// Re-runs the changed-files request in the background.
 pub struct FilesWorker {
     requests: Slot<Request>,
 }
@@ -22,7 +22,7 @@ impl FilesWorker {
                     files,
                 })
             },
-            "list",
+            "files",
         )
     }
 
@@ -35,16 +35,16 @@ impl FilesWorker {
                     files: script.next().unwrap_or_default(),
                 })
             },
-            "list-canned",
+            "files-canned",
         )
     }
 
-    fn spawn(job: impl FnMut(Request) -> bool + Send + 'static, name: &str) -> Self {
+    fn spawn(job: impl FnMut(Request) -> bool + Send + 'static, thread_name: &str) -> Self {
         let (requests, worker_loop) = Slot::new(job);
         thread::Builder::new()
-            .name(name.to_owned())
+            .name(thread_name.to_owned())
             .spawn(worker_loop)
-            .expect("the list thread starts");
+            .expect("the files thread starts");
         Self { requests }
     }
 }

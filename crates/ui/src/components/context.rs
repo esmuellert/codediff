@@ -19,7 +19,7 @@ pub struct Context {
     pub repo: Rc<Path>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
-    pub file_service: Option<Rc<FilesService>>,
+    pub files_service: Option<Rc<FilesService>>,
     pub diff_service: Option<Rc<DiffService>>,
     pub syntax_service: Option<Rc<SyntaxService>>,
     pub version_control_service: Option<Rc<VersionControlService>>,
@@ -33,7 +33,7 @@ impl Default for Context {
             repo: Rc::from(Path::new("")),
             file: None,
             set_file: None,
-            file_service: None,
+            files_service: None,
             diff_service: None,
             syntax_service: None,
             version_control_service: None,
@@ -48,7 +48,7 @@ impl Context {
             && Rc::ptr_eq(&self.repo, &other.repo)
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
-            && same_rc(&self.file_service, &other.file_service)
+            && same_rc(&self.files_service, &other.files_service)
             && same_rc(&self.diff_service, &other.diff_service)
             && same_rc(&self.syntax_service, &other.syntax_service)
             && same_rc(
@@ -77,7 +77,7 @@ context!(
 pub fn UiProvider(
     scope: &mut Scope,
     cwd: Rc<Path>,
-    file_service: Rc<FilesService>,
+    files_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
     version_control_service: Rc<VersionControlService>,
@@ -96,7 +96,7 @@ pub fn UiProvider(
                 repo,
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
-                file_service: Some(Rc::clone(file_service)),
+                files_service: Some(Rc::clone(files_service)),
                 diff_service: Some(Rc::clone(diff_service)),
                 syntax_service: Some(Rc::clone(syntax_service)),
                 version_control_service: Some(Rc::clone(version_control_service)),

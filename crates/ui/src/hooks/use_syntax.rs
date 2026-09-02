@@ -36,15 +36,15 @@ pub fn use_syntax(
     visible_lines: Range<u32>,
 ) -> Option<Rc<Store>> {
     let content_id = Rc::as_ptr(&content) as usize;
-    let service_id = syntax_service
+    let syntax_service_id = syntax_service
         .as_ref()
-        .map(|service| Rc::as_ptr(service) as usize);
+        .map(|syntax_service| Rc::as_ptr(syntax_service) as usize);
     let (syntax, set_syntax) = use_state(scope, || None::<(usize, Rc<Store>)>);
 
-    let subscription_service = syntax_service.as_ref().map(Rc::clone);
-    use_effect(scope, (content_id, service_id), move || {
+    let syntax_service_for_subscription = syntax_service.as_ref().map(Rc::clone);
+    use_effect(scope, (content_id, syntax_service_id), move || {
         set_syntax(&|_| None);
-        let Some(syntax_service) = subscription_service else {
+        let Some(syntax_service) = syntax_service_for_subscription else {
             return;
         };
         syntax_service.new_file();
@@ -54,16 +54,20 @@ pub fn use_syntax(
     });
 
     let requests = syntax_requests(&content, diff_type, visible_lines);
-    let request_service = syntax_service;
+    let syntax_service_for_requests = syntax_service;
     let requests_for_effect = requests.clone();
-    use_effect(scope, (content_id, service_id, requests), move || {
-        let Some(syntax_service) = request_service else {
-            return;
-        };
-        for request in requests_for_effect {
-            syntax_service.request(&request.file, request.version, request.text, request.last);
-        }
-    });
+    use_effect(
+        scope,
+        (content_id, syntax_service_id, requests),
+        move || {
+            let Some(syntax_service) = syntax_service_for_requests else {
+                return;
+            };
+            for request in requests_for_effect {
+                syntax_service.request(&request.file, request.version, request.text, request.last);
+            }
+        },
+    );
 
     syntax
         .filter(|(syntax_content_id, _)| *syntax_content_id == content_id)

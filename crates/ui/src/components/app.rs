@@ -21,7 +21,7 @@ use crate::services::version_control::VersionControlService;
 pub fn App(
     scope: &mut Scope,
     cwd: Rc<Path>,
-    file_service: Rc<FilesService>,
+    files_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
     version_control_service: Rc<VersionControlService>,
@@ -43,7 +43,7 @@ pub fn App(
             ..,
             UiProvider {
                 cwd: Rc::clone(cwd),
-                file_service: Rc::clone(file_service),
+                files_service: Rc::clone(files_service),
                 diff_service: Rc::clone(diff_service),
                 syntax_service: Rc::clone(syntax_service),
                 version_control_service: Rc::clone(version_control_service),
