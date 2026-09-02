@@ -41,6 +41,26 @@ are written to stderr. Startup failure produces no `ready` line and exits non-ze
 stdout write also stops the process with a non-zero status. `codediff-watcher --version` prints the binary
 version without starting a watcher.
 
+## Release archives
+
+Each release publishes one watcher-only archive per supported platform:
+
+```text
+codediff-watcher-<version>-linux-x64.tar.gz
+codediff-watcher-<version>-linux-arm64.tar.gz
+codediff-watcher-<version>-macos-x64.tar.gz
+codediff-watcher-<version>-macos-arm64.tar.gz
+codediff-watcher-<version>-windows-x64.zip
+codediff-watcher-<version>-windows-arm64.zip
+```
+
+The archive contains `codediff-watcher` (`codediff-watcher.exe` on Windows). The release's
+`SHA256SUMS` covers both the watcher and `codediff` archives.
+
+Linux release binaries are built in CentOS 7, alongside `codediff`, so both require at most
+GLIBC 2.17. Cargo compiles the bundled C diff engine without OpenMP; neither executable
+links to `libgomp` or needs a companion shared library.
+
 ## How it works
 
 Two groups of watched paths feed one event worker:

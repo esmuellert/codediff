@@ -10,7 +10,9 @@ pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 pub use crossterm;
 pub use ratatui;
 
-use std::cell::{Cell, RefCell};
+#[cfg(debug_assertions)]
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc;

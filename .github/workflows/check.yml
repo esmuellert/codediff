@@ -1,16 +1,17 @@
-name: PR
+name: Check
 
 on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
-
-concurrency:
-  group: pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always

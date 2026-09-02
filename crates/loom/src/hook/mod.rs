@@ -97,6 +97,7 @@ pub(crate) fn use_hook<H>(
     read: impl FnOnce(&mut Slot) -> H,
 ) -> H {
     let id = scope.id;
+    #[cfg(debug_assertions)]
     let site = std::panic::Location::caller();
 
     let (index, fresh) = crate::current::with_mut(|rt| {

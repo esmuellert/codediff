@@ -1,0 +1,48 @@
+name: Release version
+description: Determine whether the current revision needs a release.
+
+outputs:
+  version:
+    description: Version without the v prefix.
+    value: ${{ steps.bump.outputs.version }}
+  tag:
+    description: Version tag.
+    value: ${{ steps.bump.outputs.tag }}
+  released:
+    description: Whether release artifacts should be built.
+    value: ${{ steps.bump.outputs.released }}
+
+runs:
+  using: composite
+  steps:
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: git-cliff
+
+    - name: Decide next version
+      id: bump
+      shell: bash
+      run: |
+        set -euo pipefail
+        current=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f 2)
+        next_tag=$(git-cliff --bumped-version)
+        next=${next_tag#v}
+
+        if [ "$next" = "$current" ]; then
+          echo "Nothing to release (version unchanged at $current)"
+          echo "released=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if git rev-parse "$next_tag" >/dev/null 2>&1; then
+          echo "Tag $next_tag already exists — skipping"
+          echo "released=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Next release: $next"
+        {
+          echo "version=$next"
+          echo "tag=$next_tag"
+          echo "released=true"
+        } >> "$GITHUB_OUTPUT"
