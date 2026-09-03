@@ -9,6 +9,7 @@ use std::rc::Rc;
 use loom::{
     Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Scope, component, rsx, use_context,
 };
+use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use super::build::Node;
@@ -72,8 +73,13 @@ pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
             layout: Layout { basis: Basis::Length(1), shrink: 0, fill: Some(base), ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
-                let width = area.width;
                 cells::fill(paint.cells(), area, base);
+                let area = Rect {
+                    x: area.x.saturating_add(1),
+                    width: area.width.saturating_sub(2),
+                    ..area
+                };
+                let width = area.width;
 
                 let (indent, body, status): (Indent, Body, Option<Status>) = match &node {
                     Node::Heading { name, count, added, removed } => {

@@ -89,7 +89,7 @@ pub fn Border(scope: &mut Scope, layout: Layout, children: loom::Children) -> No
                 ..
             }
             Column {
-                layout: Layout { grow: 1, pad: Edges { top: 1, right: 2, bottom: 1, left: 2 }, ..Default::default() },
+                layout: Layout { grow: 1, pad: Edges { top: 1, right: 1, bottom: 1, left: 1 }, ..Default::default() },
                 ..,
                 { children.clone() }
             }

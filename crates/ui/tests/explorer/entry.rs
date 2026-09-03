@@ -77,7 +77,7 @@ fn a_wide_name_is_cut_between_characters() {
     let rows = draw(vec![file_with_stats("ファイル.txt", 4, 3)], 18, 3);
     assert!(rows[1].contains('…'), "the name was cut: {:?}", rows[1]);
     assert!(
-        rows[1].contains("ファ"),
+        rows[1].contains("フ…"),
         "whole characters survive: {:?}",
         rows[1]
     );
@@ -160,7 +160,7 @@ fn a_heading_name_is_not_bold_and_the_count_is_highlighted() {
 fn the_indent_marker_has_its_own_colour() {
     let mut h = harness(vec![file("src/app.rs"), file("notes.txt")], 40, 10);
     h.draw();
-    let marker_style = h.style_at(0, 1);
+    let marker_style = h.style_at(1, 1);
     let row = h.screen_row(1);
     let name_start = row.find('s').unwrap_or(6) as u16;
     let name_style = h.style_at(name_start, 1);
@@ -187,7 +187,7 @@ fn the_heading_colour_differs_from_the_file_name_colour() {
     let files = vec![file("app.rs")];
     let mut h = harness(files, 40, 10);
     h.draw();
-    let heading_style = h.style_at(0, 0);
+    let heading_style = h.style_at(1, 0);
     let row1 = h.screen_row(1);
     let name_start = row1.find("app").unwrap_or(3) as u16;
     let name_style = h.style_at(name_start, 1);
