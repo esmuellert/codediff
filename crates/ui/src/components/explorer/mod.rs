@@ -13,7 +13,7 @@ use loom::{
     use_context, use_effect, use_exit, use_ref, use_state,
 };
 
-use self::build::{Node, grouped_list, grouped_tree};
+use self::build::{Node, directory_key, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
 use super::context::Ui;
 use crate::hooks::use_scroll::use_scroll;
@@ -193,11 +193,18 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
 }
 
 fn toggle_stage(node: &Node, version_control_service: Option<&VersionControlService>) {
-    let (Node::File { file, .. }, Some(version_control_service)) = (node, version_control_service)
-    else {
+    let Some(version_control_service) = version_control_service else {
         return;
     };
-    version_control_service.toggle_stage(file);
+    match node {
+        Node::Heading { .. } => {}
+        Node::Directory { path, revs, .. } => {
+            version_control_service.toggle_stage(path, revs);
+        }
+        Node::File { file, .. } => {
+            version_control_service.toggle_stage(file.path(), &file.revs());
+        }
+    }
 }
 
 fn activate_node(
@@ -207,13 +214,13 @@ fn activate_node(
 ) {
     match node {
         Node::Heading { .. } => {}
-        Node::Directory { path, .. } => {
-            let path = path.clone();
+        Node::Directory { path, revs, .. } => {
+            let key = directory_key(path, revs);
             set_folded(&move |mut set| {
-                if set.contains(&path) {
-                    set.remove(&path);
+                if set.contains(&key) {
+                    set.remove(&key);
                 } else {
-                    set.insert(path.clone());
+                    set.insert(key.clone());
                 }
                 set
             });
@@ -252,7 +259,7 @@ pub fn find_by_identity(saved: Option<&str>, nodes: &[Node]) -> Option<usize> {
 pub fn identity(node: &Node) -> String {
     match node {
         Node::Heading { name, .. } => name.to_string(),
-        Node::Directory { path, .. } => path.clone(),
+        Node::Directory { path, revs, .. } => directory_key(path, revs),
         Node::File { file, .. } => file.path().as_str().to_string(),
     }
 }

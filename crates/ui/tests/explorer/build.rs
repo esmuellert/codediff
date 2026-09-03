@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use file_types::File;
 use ui::components::explorer::build::{Node, grouped_list, grouped_tree};
+use ui::components::explorer::identity;
 
 use super::common::*;
 
@@ -185,7 +186,7 @@ fn folding_a_directory_in_one_group_does_not_fold_the_same_name_in_another() {
     let first_src = nodes
         .iter()
         .find_map(|n| match n {
-            Node::Directory { path, .. } => Some(path.clone()),
+            Node::Directory { .. } => Some(identity(n)),
             _ => None,
         })
         .expect("a src directory");

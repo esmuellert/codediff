@@ -55,12 +55,12 @@ impl Repository {
         &self.repo
     }
 
-    /// Stages a file: `git add -- <path>`.
+    /// Stages a file or directory: `git add -- <path>`.
     pub fn stage(&self, path: &str) -> crate::Result<()> {
         stage::stage(&self.repo.root, path)
     }
 
-    /// Unstages a file: `git reset HEAD -- <path>`.
+    /// Unstages a file or directory: `git reset HEAD -- <path>`.
     pub fn unstage(&self, path: &str) -> crate::Result<()> {
         stage::unstage(&self.repo.root, path)
     }

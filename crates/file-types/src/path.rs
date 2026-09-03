@@ -1,8 +1,8 @@
-//! Where a file lives.
+//! Paths inside a repository.
 
 use std::path::{Path, PathBuf};
 
-/// A file's location: git's relative path and the absolute path on disk.
+/// A repository path in Git's relative form and the filesystem's absolute form.
 ///
 /// Both forms are needed at different layers, and passing them separately
 /// risks them going out of sync. One constructor, private fields.
