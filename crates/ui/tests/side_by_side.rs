@@ -46,6 +46,14 @@ fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<
     harness(original, modified, width, height).screen()
 }
 
+fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
+    let cells = harness.cells();
+    (start..end)
+        .filter_map(|x| cells.cell((x, 0)))
+        .map(|cell| cell.symbol())
+        .collect()
+}
+
 #[test]
 fn unchanged_lines_appear_on_both_sides() {
     let rows = render(&["hello", "world"], &["hello", "world"], 40, 4);
@@ -113,6 +121,80 @@ fn syntax_is_requested_for_both_sides() {
         .unwrap();
     assert_ne!(harness.style_at(4, 0).fg, Theme::DARK.normal.fg);
     assert_ne!(harness.style_at(divider + 5, 0).fg, Theme::DARK.normal.fg);
+}
+
+#[test]
+fn horizontal_scroll_keeps_gutters_and_divider_fixed() {
+    let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 25, 2);
+    harness.force_draw().force_draw();
+    let left_gutter = symbols(&mut harness, 0, 4);
+    let divider = symbols(&mut harness, 12, 13);
+    let right_gutter = symbols(&mut harness, 13, 17);
+
+    for _ in 0..3 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+
+    assert_eq!(symbols(&mut harness, 0, 4), left_gutter);
+    assert_eq!(symbols(&mut harness, 12, 13), divider);
+    assert_eq!(symbols(&mut harness, 13, 17), right_gutter);
+    assert_eq!(symbols(&mut harness, 4, 12), "DEFGHIJK");
+    assert_eq!(symbols(&mut harness, 17, 25), "defghijk");
+}
+
+#[test]
+fn an_odd_text_cell_goes_to_the_original_side() {
+    let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 26, 2);
+    harness.force_draw().force_draw();
+
+    assert_eq!(symbols(&mut harness, 4, 13), "ABCDEFGHI");
+    assert_eq!(symbols(&mut harness, 13, 14), "│");
+    assert_eq!(symbols(&mut harness, 18, 26), "abcdefgh");
+
+    for _ in 0..20 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+    assert_eq!(symbols(&mut harness, 4, 13), "PQRST    ");
+    assert_eq!(symbols(&mut harness, 18, 26), "qrst    ");
+}
+
+#[test]
+fn the_shorter_side_stops_while_the_longer_side_continues() {
+    let mut harness = harness(&["ABCDEFGHIJKL"], &["abcdefghijklmnopqrst"], 25, 2);
+    harness.force_draw().force_draw();
+
+    for _ in 0..10 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+
+    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+    assert_eq!(symbols(&mut harness, 17, 25), "klmnopqr");
+}
+
+#[test]
+fn the_modified_side_can_stop_before_the_original() {
+    let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijkl"], 25, 2);
+    harness.force_draw().force_draw();
+
+    for _ in 0..10 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+
+    assert_eq!(symbols(&mut harness, 4, 12), "KLMNOPQR");
+    assert_eq!(symbols(&mut harness, 17, 25), "ijkl    ");
+}
+
+#[test]
+fn the_endpoint_keeps_four_cells_after_each_longest_line() {
+    let mut harness = harness(&["ABCDEFGHIJKL"], &["abcdefghijklmnopqrst"], 25, 2);
+    harness.force_draw().force_draw();
+
+    for _ in 0..20 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+
+    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+    assert_eq!(symbols(&mut harness, 17, 25), "qrst    ");
 }
 
 #[test]

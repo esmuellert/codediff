@@ -5,12 +5,14 @@ use std::rc::Rc;
 use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
+    use_memo,
 };
 
-use super::code_text::{CodeText, CodeTextProps};
+use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
+use crate::hooks::use_horizontal_scroll::HorizontalDimensions;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
@@ -22,7 +24,18 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     };
     let line_count = single.lines.len() as u32;
     let file_key = single.file.path().as_str().to_string();
-    let (view, listeners) = use_diff_viewer_navigation(scope, Some(&file_key), line_count);
+    let gutter_width = width_for_line_count(line_count);
+    let content_id = Rc::as_ptr(content) as usize;
+    let maximum_line_cells = use_memo(scope, content_id, || longest_line_cells(&single.lines));
+    let (view, horizontal, listeners) = use_diff_viewer_navigation(
+        scope,
+        Some(&file_key),
+        line_count,
+        HorizontalDimensions::Single {
+            longest_line_cells: *maximum_line_cells,
+            gutter_cells: gutter_width,
+        },
+    );
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
@@ -35,7 +48,6 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
 
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
-    let gutter_width = width_for_line_count(line_count);
     let visible_lines: Vec<Node> = single
         .lines
         .iter()
@@ -59,6 +71,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     CodeText {
                         key: 1u32,
                         text: Rc::from(text.as_str()),
+                        first_cell: horizontal.first_cell(version),
                         diff: Rc::from([]),
                         fill_from: None,
                         empty_markers: Rc::from([]),

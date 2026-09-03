@@ -32,18 +32,45 @@ fn decorated_code_text(
     unchanged: Style,
     changed: Style,
 ) -> Harness {
+    code_text_harness(CodeTextInput {
+        text,
+        first_cell: 0,
+        diff,
+        fill_from,
+        empty_markers,
+        syntax: Vec::new(),
+        width,
+        unchanged,
+        changed,
+    })
+}
+
+struct CodeTextInput<'a> {
+    text: &'a str,
+    first_cell: u32,
+    diff: Vec<Range<u32>>,
+    fill_from: Option<u32>,
+    empty_markers: Vec<u32>,
+    syntax: Vec<syntax::Span>,
+    width: u16,
+    unchanged: Style,
+    changed: Style,
+}
+
+fn code_text_harness(input: CodeTextInput<'_>) -> Harness {
     let mut h = Harness::new::<CodeText>(
         CodeTextProps {
-            text: Rc::from(text),
-            diff: Rc::from(diff.as_slice()),
-            fill_from,
-            empty_markers: Rc::from(empty_markers.as_slice()),
-            syntax: Rc::from([]),
-            unchanged_style: unchanged,
-            changed_style: changed,
+            text: Rc::from(input.text),
+            first_cell: input.first_cell,
+            diff: Rc::from(input.diff.as_slice()),
+            fill_from: input.fill_from,
+            empty_markers: Rc::from(input.empty_markers.as_slice()),
+            syntax: Rc::from(input.syntax.as_slice()),
+            unchanged_style: input.unchanged,
+            changed_style: input.changed,
             selection: None,
         },
-        width,
+        input.width,
         1,
     )
     .provide::<Ui>(Context {
@@ -52,6 +79,20 @@ fn decorated_code_text(
     });
     h.draw();
     h
+}
+
+fn scrolled_text(text: &str, first_cell: u32, width: u16) -> Harness {
+    code_text_harness(CodeTextInput {
+        text,
+        first_cell,
+        diff: Vec::new(),
+        fill_from: None,
+        empty_markers: Vec::new(),
+        syntax: Vec::new(),
+        width,
+        unchanged: Style::default(),
+        changed: Style::default(),
+    })
 }
 
 #[test]
@@ -65,6 +106,68 @@ fn the_text_appears_on_screen() {
     );
     let row = h.screen_row(0);
     assert!(row.contains("hello world"), "got {:?}", row);
+}
+
+#[test]
+fn horizontal_start_selects_the_painted_cell_window() {
+    let mut harness = scrolled_text("abcdef", 2, 4);
+
+    assert_eq!(harness.screen_row(0), "cdef");
+}
+
+#[test]
+fn horizontal_start_does_not_split_a_wide_character() {
+    let mut harness = scrolled_text("a日bc", 2, 3);
+
+    assert_eq!(harness.screen_row(0), " bc");
+}
+
+#[test]
+fn tabs_keep_their_cell_positions_after_horizontal_scrolling() {
+    let mut harness = scrolled_text("a\tbc", 2, 4);
+
+    assert_eq!(harness.screen_row(0), "  bc");
+}
+
+#[test]
+fn diff_styles_follow_their_characters_after_horizontal_scrolling() {
+    let unchanged = Style::default().bg(Color::Blue);
+    let changed = Style::default().bg(Color::Red);
+    let mut harness = code_text_harness(CodeTextInput {
+        text: "abcdef",
+        first_cell: 2,
+        diff: one_range(3..4),
+        fill_from: None,
+        empty_markers: Vec::new(),
+        syntax: Vec::new(),
+        width: 3,
+        unchanged,
+        changed,
+    });
+
+    assert_eq!(harness.style_at(0, 0).bg, Some(Color::Blue));
+    assert_eq!(harness.style_at(1, 0).bg, Some(Color::Red));
+    assert_eq!(harness.style_at(2, 0).bg, Some(Color::Blue));
+}
+
+#[test]
+fn syntax_styles_follow_their_characters_after_horizontal_scrolling() {
+    let pen = syntax::Pen(0);
+    let mut harness = code_text_harness(CodeTextInput {
+        text: "abcdef",
+        first_cell: 2,
+        diff: Vec::new(),
+        fill_from: None,
+        empty_markers: Vec::new(),
+        syntax: vec![syntax::Span::new(3..4, syntax::Style::pen(pen))],
+        width: 3,
+        unchanged: Style::default(),
+        changed: Style::default(),
+    });
+
+    let plain = harness.style_at(0, 0).fg;
+    assert_eq!(harness.style_at(1, 0).fg, Theme::DARK.code.pen(Some(pen)));
+    assert_eq!(harness.style_at(2, 0).fg, plain);
 }
 
 #[test]

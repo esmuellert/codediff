@@ -46,6 +46,14 @@ fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harnes
     harness_with_syntax_service(lines, deleted, width, height, None)
 }
 
+fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
+    let cells = harness.cells();
+    (start..end)
+        .filter_map(|x| cells.cell((x, 0)))
+        .map(|cell| cell.symbol())
+        .collect()
+}
+
 #[test]
 fn lines_are_numbered_in_one_full_width_pane() {
     let mut harness = harness(vec!["alpha".into(), "beta".into()], false, 30, 3);
@@ -99,6 +107,33 @@ fn syntax_is_requested_for_the_present_side() {
 
     assert_ne!(harness.style_at(4, 0).fg, Theme::DARK.normal.fg);
     assert_eq!(harness.style_at(4, 0).bg, Theme::DARK.normal.bg);
+}
+
+#[test]
+fn horizontal_scroll_keeps_the_gutter_and_four_trailing_cells() {
+    let mut harness = harness(vec!["ABCDEFGHIJKL".into()], false, 12, 2);
+    harness.force_draw().force_draw();
+    let gutter = symbols(&mut harness, 0, 4);
+
+    for _ in 0..12 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+
+    assert_eq!(symbols(&mut harness, 0, 4), gutter);
+    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+}
+
+#[test]
+fn an_offscreen_longest_line_sets_the_horizontal_endpoint() {
+    let mut harness = harness(vec!["short".into(), "ABCDEFGHIJKL".into()], false, 12, 1);
+    harness.force_draw().force_draw();
+    for _ in 0..12 {
+        harness.press(crokey::key!(l)).force_draw();
+    }
+
+    harness.press(crokey::key!(j)).force_draw();
+
+    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
 }
 
 #[test]

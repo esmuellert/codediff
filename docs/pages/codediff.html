@@ -35,8 +35,13 @@ Explorer              the file list
 └ Column
   └ Entry             indent, body, status
 
-StatusLine            the bottom row: body, sidecar`}),(0,h.jsx)(E,{id:`shared`,children:`Shared`}),(0,h.jsx)(T,{children:`fn use_diff_viewer_navigation(scope, file_key, view_line_count)
-fn use_syntax(scope, service, content, diff_type, visible_lines)
+StatusLine            the bottom row: body, sidecar`}),(0,h.jsx)(E,{id:`shared`,children:`Shared`}),(0,h.jsx)(T,{children:`fn use_diff_viewer_navigation(
+    scope, file_key, view_line_count, horizontal_dimensions,
+)
+fn use_horizontal_scroll(
+    scope, file_key, viewport_width, horizontal_dimensions,
+)
+fn use_syntax(scope, syntax_service, content, diff_type, visible_lines)
 fn width_for_line_count(line_count)
 fn decorations(diff_version, line)`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`align`}),` converts the diff engine's mappings into VS Code decoration semantics once. Diff screens consume the same whole-line, ranged, line-break-filling, and empty decorations.`]}),(0,h.jsx)(E,{id:`data-flow`,children:`Data flow`}),(0,h.jsxs)(`p`,{children:[`Explorer reads the repository and FilesService from`,` `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),` and owns its loaded file list. DiffViewer reads the selected file and DiffService, then owns the loaded content it passes to one child. Both subscribe to WatcherService: Explorer refreshes its list and DiffViewer refreshes a selected mutable file. SideBySide and SingleFile read SyntaxService and own their syntax snapshots.`]})]})}function _e(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsxs)(`p`,{children:[`Shared state, provided at the root. Screens and the status line read these with `,(0,h.jsx)(`code`,{children:`use_context`}),`. Bricks take props.`]}),(0,h.jsx)(E,{id:`ctx-values`,children:`Values`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Value`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`theme`})}),(0,h.jsx)(`td`,{children:`colours and styles for every component`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`repo`})}),(0,h.jsx)(`td`,{children:`the repository path`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`file`})}),(0,h.jsx)(`td`,{children:`the file selected for review`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`set_file`})}),(0,h.jsx)(`td`,{children:`setter for the selected file`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`set_repo`})}),(0,h.jsx)(`td`,{children:`setter for the repository`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`files_service`})}),(0,h.jsx)(`td`,{children:`loads and refreshes Explorer's file list`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`diff_service`})}),(0,h.jsx)(`td`,{children:`loads the selected file's renderable content`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`syntax_service`})}),(0,h.jsx)(`td`,{children:`colours the content a view renders`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`version_control_service`})}),(0,h.jsx)(`td`,{children:`staging operations used by Explorer`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`watcher_service`})}),(0,h.jsx)(`td`,{children:`multicasts repository changes to their consumers`})]})]}),(0,h.jsx)(`p`,{children:`Context owns shared selection and stable service handles. Explorer owns its loaded file list, DiffViewer owns loaded content, and SideBySide and SingleFile own syntax snapshots.`}),(0,h.jsx)(E,{id:`ctx-who`,children:`Who reads what`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Component`}),(0,h.jsx)(`th`,{children:`Reads from context`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`DiffViewer`})}),(0,h.jsx)(`td`,{children:`file, diff_service, watcher_service`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#side-by-side`,children:`SideBySide`})}),(0,h.jsx)(`td`,{children:`theme, syntax_service`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#single-file`,children:`SingleFile`})}),(0,h.jsx)(`td`,{children:`theme, syntax_service`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`a`,{href:`#explorer`,children:`Explorer`})}),(0,h.jsx)(`td`,{children:`theme, repo, files_service, set_file, version_control_service, watcher_service`})]})]}),(0,h.jsx)(O,{children:`Loaded file lists, content, and syntax are component state, not context state. WatcherService carries events rather than loaded state. Explorer and DiffViewer subscribe independently and reject late responses for an old repository or file.`}),(0,h.jsxs)(O,{children:[`Bricks (`,(0,h.jsx)(`a`,{href:`#gutter`,children:`Gutter`}),`, `,(0,h.jsx)(`a`,{href:`#code-text`,children:`CodeText`}),`,`,` `,(0,h.jsx)(`a`,{href:`#filler`,children:`Filler`}),`, `,(0,h.jsx)(`a`,{href:`#explorer-entry`,children:`explorer::Entry`}),`) read only `,(0,h.jsx)(`code`,{children:`theme`}),` from context. Everything else they need arrives as props — per-row values their parent computed.`]})]})}function ve(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`app-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌──────────────────┬─────────────────────────┐
 │                  │  1 one       │  1 one   │
@@ -72,7 +77,7 @@ pub fn App(
             }
         }
     }
-}`}),(0,h.jsx)(E,{id:`app-explorer`,children:`Showing the explorer`}),(0,h.jsxs)(`p`,{children:[`The explorer is toggled by a key. When visible, it sits beside the diff with a divider between them. When hidden, the diff fills the width. Each side carries a `,(0,h.jsx)(`code`,{children:`min_width`}),`. When both don't fit, it shows just the focused one.`]}),(0,h.jsx)(E,{id:`app-context`,children:`Context`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`App`}),` wraps `,(0,h.jsx)(`code`,{children:`UiProvider`}),`, which owns the state and provides `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),`. `,(0,h.jsx)(`code`,{children:`Border`}),` `,`detects focus through loom's bubbling `,(0,h.jsx)(`code`,{children:`on_focus`}),` /`,` `,(0,h.jsx)(`code`,{children:`on_blur`}),` and highlights the focused pane.`]}),(0,h.jsxs)(O,{children:[`The "terminal too small" message is a `,(0,h.jsx)(`code`,{children:`too_small`}),` node on the outermost `,(0,h.jsx)(`code`,{children:`Column`}),`. When the minimum doesn't fit, loom shows it instead of the tree.`]})]})}function ye(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`sbs-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌─────────────────────┬─────────────────────┐
+}`}),(0,h.jsx)(E,{id:`app-explorer`,children:`Showing the explorer`}),(0,h.jsxs)(`p`,{children:[`The explorer is toggled by a key. When visible, it sits beside the diff with a divider between them. When hidden, the diff fills the width. Each side carries a `,(0,h.jsx)(`code`,{children:`min_width`}),`. When both don't fit, it shows just the focused one.`]}),(0,h.jsx)(E,{id:`app-context`,children:`Context`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`App`}),` wraps `,(0,h.jsx)(`code`,{children:`UiProvider`}),`, which owns the state and provides `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),`. `,(0,h.jsx)(`code`,{children:`Border`}),` `,`detects focus through loom's bubbling `,(0,h.jsx)(`code`,{children:`on_focus`}),` /`,` `,(0,h.jsx)(`code`,{children:`on_blur`}),` and highlights the focused view.`]}),(0,h.jsxs)(O,{children:[`The "terminal too small" message is a `,(0,h.jsx)(`code`,{children:`too_small`}),` node on the outermost `,(0,h.jsx)(`code`,{children:`Column`}),`. When the minimum doesn't fit, loom shows it instead of the tree.`]})]})}function ye(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`sbs-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`┌─────────────────────┬─────────────────────┐
 │  1 one              │  1 one              │
 │  2 two              │  2 TWO              │
 │  3 three            │  3 three            │
@@ -84,10 +89,18 @@ pub fn SideBySide(
     content: Rc<pipeline::diff::DiffContent>,
 ) -> Node`}),(0,h.jsxs)(`p`,{children:[`DiffViewer supplies the exact diff to render. SideBySide reads the theme and SyntaxService from `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`, and owns its navigation and syntax snapshot.`]}),(0,h.jsx)(E,{id:`sbs-body`,children:`Body`}),(0,h.jsx)(T,{children:`let alignment = &diff.alignment;
 let view_line_count = alignment.view_line_count(SideBySide);
-let (view, listeners) = use_diff_viewer_navigation(
+let horizontal_dimensions = HorizontalDimensions::SideBySide {
+    original_longest_line_cells,
+    modified_longest_line_cells,
+    original_gutter_cells: original_gutter_width,
+    modified_gutter_cells: modified_gutter_width,
+    divider_cells: 1,
+};
+let (view, horizontal, listeners) = use_diff_viewer_navigation(
     scope,
     Some(diff.file.path().as_str()),
     view_line_count,
+    horizontal_dimensions,
 );
 let visible_lines = alignment
     .view_lines_from(SideBySide, view.view_lines.start)
@@ -102,14 +115,14 @@ let syntax = use_syntax(
 );`}),(0,h.jsx)(E,{id:`sbs-lines`,children:`Visible lines`}),(0,h.jsx)(T,{children:`Row {
     Row {
         Gutter { ... }
-        CodeText { ... }
+        CodeText { first_cell: horizontal.first_cell(Original), ... }
     }
     Divider { symbol: "│" }
     Row {
         Gutter { ... }
-        CodeText { ... }
+        CodeText { first_cell: horizontal.first_cell(Modified), ... }
     }
-}`}),(0,h.jsx)(`p`,{children:`A missing slot becomes a Filler. Both sides come from one aligned view line, so their vertical positions cannot drift.`}),(0,h.jsx)(E,{id:`sbs-colours`,children:`Decorations`}),(0,h.jsx)(T,{children:`let decorations = alignment.decorations(diff_version, number);
+}`}),(0,h.jsx)(`p`,{children:`A missing slot becomes a Filler. Both sides come from one aligned view line, so their vertical positions cannot drift.`}),(0,h.jsx)(E,{id:`sbs-horizontal`,children:`Horizontal scroll`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`h`}),` and `,(0,h.jsx)(`code`,{children:`l`}),` move one requested cell,`,` `,(0,h.jsx)(`code`,{children:`0`}),` returns to the start, and `,(0,h.jsx)(`code`,{children:`$`}),` moves to the end. Gutters and the divider stay fixed. The original and modified columns follow one requested position, while each clamps at its own endpoint. The endpoint leaves four cells after the longest line, matching the pinned VS Code editor option. Positions are restored per file and a temporary wider resize does not discard the requested position.`]}),(0,h.jsx)(E,{id:`sbs-colours`,children:`Decorations`}),(0,h.jsx)(T,{children:`let decorations = alignment.decorations(diff_version, number);
 let (line, characters, numbers) =
     row_styles(theme, diff_version, &decorations);`}),(0,h.jsx)(`p`,{children:`Alignment preserves VS Code's whole-line, finite, line-break-filling, and empty decorations. SideBySide maps those roles to the active theme; syntax changes foreground colours only.`})]})}function be(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(`p`,{children:`The same diff as one column. The empty gutter tells you which version each row shows.`}),(0,h.jsx)(E,{id:`inline-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1   1 one
   2     two          ← deleted (no modified number)
@@ -147,10 +160,15 @@ pub fn SingleFile(
     scope: &mut Scope,
     content: Rc<pipeline::diff::DiffContent>,
 ) -> Node`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`DiffViewer`}),` supplies the exact content to render. The component reads the theme and `,(0,h.jsx)(`code`,{children:`SyntaxService`}),` from`,` `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),`. Navigation and syntax results are local state.`]}),(0,h.jsx)(E,{id:`single-body`,children:`Body`}),(0,h.jsx)(T,{children:`let line_count = single.lines.len() as u32;
-let (view, listeners) = use_diff_viewer_navigation(
+let horizontal_dimensions = HorizontalDimensions::Single {
+    longest_line_cells,
+    gutter_cells: gutter_width,
+};
+let (view, horizontal, listeners) = use_diff_viewer_navigation(
     scope,
     Some(single.file.path().as_str()),
     line_count,
+    horizontal_dimensions,
 );
 
 let syntax = use_syntax(
@@ -176,6 +194,7 @@ for (index, text) in single.lines.iter().enumerate()
             }
             CodeText {
                 text: text.as_str().into(),
+                first_cell: horizontal.first_cell(single.side()),
                 diff: Rc::from([]),
                 fill_from: None,
                 empty_markers: Rc::from([]),
@@ -186,7 +205,7 @@ for (index, text) in single.lines.iter().enumerate()
             }
         }
     }
-}`}),(0,h.jsx)(E,{id:`single-plain`,children:`No diff highlights`}),(0,h.jsx)(`p`,{children:`Added, untracked, and deleted files use the same presentation. Syntax changes the foreground only. There is no insertion, deletion, character, cursor-row, or selection highlight because there is no second file to compare.`}),(0,h.jsx)(E,{id:`single-numbering`,children:`Line numbers`}),(0,h.jsxs)(`p`,{children:[`Lines are indexed from zero in the vector and shown from one in the gutter. The pane uses the same gutter width and navigation rules as`,` `,(0,h.jsx)(`a`,{href:`#side-by-side`,children:`SideBySide`}),`.`]})]})}function Se(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`gutter-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1 one
+}`}),(0,h.jsx)(E,{id:`single-horizontal`,children:`Horizontal scroll`}),(0,h.jsxs)(`p`,{children:[`The same `,(0,h.jsx)(`code`,{children:`h`}),`, `,(0,h.jsx)(`code`,{children:`l`}),`, `,(0,h.jsx)(`code`,{children:`0`}),`, and`,` `,(0,h.jsx)(`code`,{children:`$`}),` navigation applies without moving the gutter. The right endpoint leaves four blank cells after the longest line, and the position is restored per file.`]}),(0,h.jsx)(E,{id:`single-plain`,children:`No diff highlights`}),(0,h.jsx)(`p`,{children:`Added, untracked, and deleted files use the same presentation. Syntax changes the foreground only. There is no insertion, deletion, character, cursor-row, or selection highlight because there is no second file to compare.`}),(0,h.jsx)(E,{id:`single-numbering`,children:`Line numbers`}),(0,h.jsxs)(`p`,{children:[`Lines are indexed from zero in the vector and shown from one in the gutter. The view uses the same gutter width and navigation rules as`,` `,(0,h.jsx)(`a`,{href:`#side-by-side`,children:`SideBySide`}),`.`]})]})}function Se(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`gutter-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1 one
 └┬─┘
  Gutter — cells 0 to 3`}),(0,h.jsx)(E,{id:`gutter-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
 pub fn Gutter(
@@ -209,18 +228,19 @@ pub fn Gutter(
     let at = area.width.saturating_sub(1)
                        .saturating_sub(digits);
     cells::write(paint.cells(), area, at, &label, style);
-})`}),(0,h.jsxs)(O,{children:[(0,h.jsx)(`code`,{children:`shrink: 0`}),` — keeps its width when the pane narrows.`]})]})}function Ce(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`text-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  2 two
+})`}),(0,h.jsxs)(O,{children:[(0,h.jsx)(`code`,{children:`shrink: 0`}),` — keeps its width when the view narrows.`]})]})}function Ce(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`text-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  2 two
     └───────┬───────┘
             CodeText — cells 4 to 20`}),(0,h.jsx)(E,{id:`text-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
 pub fn CodeText(
     scope: &mut Scope,
     text: Rc<str>,
+    first_cell: u32,
     decorations: Rc<[align::CharacterDecoration]>,
     syntax: Rc<[syntax::Span]>,
     unchanged_style: Style,
     changed_style: Style,
     selection: Option<Range<u32>>,
-) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`text`})}),(0,h.jsx)(`td`,{children:`the line from the file`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`decorations`})}),(0,h.jsx)(`td`,{children:`VS Code character decorations for this line`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`syntax`})}),(0,h.jsx)(`td`,{children:`language tokens for this line`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`unchanged_style`})}),(0,h.jsx)(`td`,{children:`background for the whole row`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`changed_style`})}),(0,h.jsx)(`td`,{children:`background for character decorations`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`selection`})}),(0,h.jsx)(`td`,{children:`which columns are selected on this line`})]})]}),(0,h.jsx)(E,{id:`text-body`,children:`Body`}),(0,h.jsx)(T,{children:`paint: Rc::new(move |paint: &mut Paint<'_>| {
+) -> Node`}),(0,h.jsxs)(`table`,{children:[(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`th`,{children:`Prop`}),(0,h.jsx)(`th`,{children:`What it is`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`text`})}),(0,h.jsx)(`td`,{children:`the line from the file`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`first_cell`})}),(0,h.jsx)(`td`,{children:`the first horizontal cell painted`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`decorations`})}),(0,h.jsx)(`td`,{children:`VS Code character decorations for this line`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`syntax`})}),(0,h.jsx)(`td`,{children:`language tokens for this line`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`unchanged_style`})}),(0,h.jsx)(`td`,{children:`background for the whole row`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`changed_style`})}),(0,h.jsx)(`td`,{children:`background for character decorations`})]}),(0,h.jsxs)(`tr`,{children:[(0,h.jsx)(`td`,{children:(0,h.jsx)(`code`,{children:`selection`})}),(0,h.jsx)(`td`,{children:`which columns are selected on this line`})]})]}),(0,h.jsx)(E,{id:`text-body`,children:`Body`}),(0,h.jsx)(T,{children:`paint: Rc::new(move |paint: &mut Paint<'_>| {
     let area = paint.area();
     cells::paint(
         paint.cells(), area, &text,
@@ -244,7 +264,7 @@ pub fn CodeText(
             cell.set_style(theme.selection);
         }
     }
-})`}),(0,h.jsx)(E,{id:`text-scroll`,children:`Horizontal scroll`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`first_cell`}),` is read from context. Finding which character sits on that cell means walking the string, counting tabs and double-width characters.`]}),(0,h.jsxs)(O,{children:[(0,h.jsx)(`code`,{children:`grow: 1`}),` — takes whatever width the gutter left.`]})]})}function we(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`filler-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  3 three            │  3 three
+})`}),(0,h.jsx)(E,{id:`text-scroll`,children:`Horizontal scroll`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`first_cell`}),` is a prop owned by the current diff view. Finding which character sits there counts tabs, grapheme clusters, and double-width characters. A cluster cut by the viewport becomes styled spaces rather than half a terminal character.`]}),(0,h.jsxs)(O,{children:[(0,h.jsx)(`code`,{children:`grow: 1`}),` — takes whatever width the gutter left.`]})]})}function we(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`filler-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  3 three            │  3 three
 ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱│  4 inserted
 └─────────┬─────────┘
           Filler — cells 0 to 20, gutter included`}),(0,h.jsx)(E,{id:`filler-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]

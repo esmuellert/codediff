@@ -13,6 +13,7 @@ const SCROLLOFF: u32 = 3;
 pub struct ScrollView {
     pub cursor: u32,
     pub top: u32,
+    pub width: u16,
     pub view_lines: Range<u32>,
     pub node_ref: Ref<Option<NodeHandle>>,
 }
@@ -109,6 +110,7 @@ pub fn use_scroll(scope: &mut Scope, key: Option<&str>) -> (ScrollView, ScrollHa
     let view = ScrollView {
         cursor,
         top,
+        width: size.width,
         view_lines: top..top + height,
         node_ref,
     };
