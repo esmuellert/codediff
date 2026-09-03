@@ -1,6 +1,6 @@
 //! Version-control operations requested by components.
 
-use file_types::File;
+use file_types::{RepoPath, Revs};
 
 pub struct VersionControlService;
 
@@ -9,18 +9,17 @@ impl VersionControlService {
         Self
     }
 
-    pub fn toggle_stage(&self, file: &File) {
-        let repository_root = file.path().root().to_path_buf();
-        let relative_path = file.path().as_str().to_owned();
-        let is_staged = file.revs().after == file_types::Rev::Index;
+    pub fn toggle_stage(&self, path: &RepoPath, revs: &Revs) {
+        let path = path.clone();
+        let revs = revs.clone();
         std::thread::spawn(move || {
-            let Ok(repository) = vcs::Repository::open(&repository_root) else {
+            let Ok(repository) = vcs::Repository::open(path.root()) else {
                 return;
             };
-            let _ = if is_staged {
-                repository.unstage(&relative_path)
+            let _ = if revs.after == file_types::Rev::Index {
+                repository.unstage(path.as_str())
             } else {
-                repository.stage(&relative_path)
+                repository.stage(path.as_str())
             };
         });
     }

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use file_types::File;
+use file_types::{File, RepoPath, Revs};
 
 /// What one line of the explorer is. Built by `tree()`, read by Explorer.
 #[derive(Clone)]
@@ -16,7 +16,8 @@ pub enum Node {
     Directory {
         indent: String,
         name: String,
-        path: String,
+        path: RepoPath,
+        revs: Revs,
         open: bool,
     },
     File {
@@ -63,6 +64,13 @@ impl<'a> Item<'a> {
 
     fn is_directory(&self) -> bool {
         matches!(self, Item::Directory { .. })
+    }
+
+    fn first_file(&self) -> &'a File {
+        match self {
+            Item::File { file, .. } => file,
+            Item::Directory { children, .. } => children[0].first_file(),
+        }
     }
 }
 
@@ -137,7 +145,7 @@ fn sort(items: &mut Vec<Item<'_>>) {
 fn walk(
     items: &[Item<'_>],
     ancestors: &[bool],
-    path_prefix: &str,
+    relative_prefix: &str,
     folded: &HashSet<String>,
     out: &mut Vec<Node>,
 ) {
@@ -149,24 +157,24 @@ fn walk(
 
         match item {
             Item::Directory { name, children } => {
-                let full_path = if path_prefix.is_empty() {
-                    name.clone()
-                } else {
-                    format!("{path_prefix}/{name}")
-                };
-                let open = !folded.contains(&full_path);
+                let relative_path = join_path(relative_prefix, name);
+                let first_file = item.first_file();
+                let path = RepoPath::new(relative_path.clone(), first_file.path().root());
+                let revs = first_file.revs();
+                let open = !folded.contains(&directory_key(&path, &revs));
 
                 out.push(Node::Directory {
                     indent,
                     name: name.clone(),
-                    path: full_path.clone(),
+                    path,
+                    revs,
                     open,
                 });
 
                 if open {
                     let mut next = ancestors.to_vec();
                     next.push(is_last);
-                    walk(children, &next, &full_path, folded, out);
+                    walk(children, &next, &relative_path, folded, out);
                 }
             }
             Item::File { name, file } => {
@@ -177,6 +185,17 @@ fn walk(
                 });
             }
         }
+    }
+}
+
+pub(super) fn directory_key(path: &RepoPath, revs: &Revs) -> String {
+    format!("{}/{}", revs.heading(), path.as_str())
+}
+
+fn join_path(prefix: &str, name: &str) -> String {
+    match prefix {
+        "" => name.to_owned(),
+        _ => format!("{prefix}/{name}"),
     }
 }
 
@@ -212,7 +231,7 @@ pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
         }
         flatten(&mut root);
         sort(&mut root);
-        walk(&root, &[], heading, folded, &mut out);
+        walk(&root, &[], "", folded, &mut out);
     }
     out
 }
