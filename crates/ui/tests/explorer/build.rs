@@ -38,8 +38,9 @@ fn a_deeper_file_carries_its_ancestors_line() {
     // Two files under src so the directory is not flattened.
     let rows = screen(&["src/app.rs", "src/view/tab.rs", "notes.txt"], 40, 7);
     // src has siblings below, so its line continues through view.
-    assert!(
-        rows[3].starts_with('│'),
+    assert_eq!(
+        rows[3].chars().nth(1),
+        Some('│'),
         "tab.rs sits under src: {:?}",
         rows[3]
     );

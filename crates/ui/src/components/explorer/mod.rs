@@ -146,8 +146,13 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         })
         .on_mouse_down(move |mouse| {
             let line = handle.click(mouse.local.y as u32, total);
+            let already_selected = line == view.cursor;
             if let Some(node) = nodes_click.get(line as usize) {
-                activate_node(node, set_folded, set_file);
+                let should_activate = matches!(node, Node::File { .. })
+                    || already_selected && matches!(node, Node::Directory { .. });
+                if should_activate {
+                    activate_node(node, set_folded, set_file);
+                }
             }
             Bubble::Stop
         });

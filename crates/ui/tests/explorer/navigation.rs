@@ -187,6 +187,24 @@ fn the_identity_tells_two_files_of_the_same_name_apart() {
 // ---- mouse ----
 
 #[test]
+fn a_directory_toggles_only_when_clicked_while_selected() {
+    let mut harness = harness(vec![file("src/a.rs"), file("src/b.rs")], 40, 6);
+
+    harness.click(0, 1).force_draw();
+    assert!(harness.screen().join("\n").contains("a.rs"));
+
+    harness.click(0, 1).force_draw();
+    assert!(!harness.screen().join("\n").contains("a.rs"));
+
+    harness.click(0, 0).force_draw();
+    harness.click(0, 1).force_draw();
+    assert!(!harness.screen().join("\n").contains("a.rs"));
+
+    harness.click(0, 1).force_draw();
+    assert!(harness.screen().join("\n").contains("a.rs"));
+}
+
+#[test]
 fn the_cursor_row_has_a_different_background() {
     let files: Vec<File> = ["src/app.rs", "notes.txt"]
         .iter()
