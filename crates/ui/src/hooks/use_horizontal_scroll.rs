@@ -91,23 +91,26 @@ impl HorizontalView {
 
 #[derive(Clone, Copy)]
 pub struct HorizontalHandle {
-    requested_first_cell: u32,
     requested_max: u32,
     set_requested_first_cell: SetState<u32>,
 }
 
 impl HorizontalHandle {
     pub fn left(self) {
-        let first_cell = self.requested_first_cell.saturating_sub(1);
-        (self.set_requested_first_cell)(&move |_| first_cell);
+        let requested_max = self.requested_max;
+        (self.set_requested_first_cell)(&move |first_cell| {
+            first_cell.min(requested_max).saturating_sub(1)
+        });
     }
 
     pub fn right(self) {
-        let first_cell = self
-            .requested_first_cell
-            .saturating_add(1)
-            .min(self.requested_max);
-        (self.set_requested_first_cell)(&move |_| first_cell);
+        let requested_max = self.requested_max;
+        (self.set_requested_first_cell)(&move |first_cell| {
+            first_cell
+                .min(requested_max)
+                .saturating_add(1)
+                .min(requested_max)
+        });
     }
 
     pub fn reset(self) {
@@ -163,7 +166,6 @@ pub fn use_horizontal_scroll(
         modified_first_cell: requested_first_cell.min(limits.modified),
     };
     let handle = HorizontalHandle {
-        requested_first_cell,
         requested_max: limits.requested_max(),
         set_requested_first_cell,
     };

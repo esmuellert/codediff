@@ -112,6 +112,30 @@ fn h_l_zero_and_dollar_move_the_horizontal_position() {
 }
 
 #[test]
+fn repeated_horizontal_keys_compose_before_a_draw() {
+    let mut harness = harness("a.rs");
+    harness
+        .press(crokey::key!(l))
+        .press(crokey::key!(l))
+        .press(crokey::key!(l))
+        .force_draw();
+
+    assert_eq!(state(&mut harness).2, 3);
+}
+
+#[test]
+fn repeated_vertical_keys_compose_before_a_draw() {
+    let mut harness = harness("a.rs");
+    harness
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .force_draw();
+
+    assert_eq!(state(&mut harness).0, 3);
+}
+
+#[test]
 fn horizontal_position_stops_at_the_vscode_endpoint() {
     let mut harness = navigation_harness("a.rs", 10, 20);
     for _ in 0..20 {
