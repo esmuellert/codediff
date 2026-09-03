@@ -38,9 +38,9 @@ pub fn tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
     flatten(&mut root);
     sort(&mut root);
 
-    let mut out = Vec::new();
-    walk(&root, &[], "", folded, &mut out);
-    out
+    let mut nodes = Vec::new();
+    build_nodes(&root, &[], "", folded, &mut nodes);
+    nodes
 }
 
 enum Item<'a> {
@@ -140,14 +140,14 @@ fn sort(items: &mut Vec<Item<'_>>) {
     }
 }
 
-/// Depth-first walk, producing the flat output. `ancestors[i]` is true when
-/// the ancestor at depth `i` was the last of its siblings.
-fn walk(
+/// Builds the flat node sequence. `ancestors[i]` is true when the ancestor at
+/// depth `i` was the last of its siblings.
+fn build_nodes(
     items: &[Item<'_>],
     ancestors: &[bool],
     relative_prefix: &str,
     folded: &HashSet<String>,
-    out: &mut Vec<Node>,
+    nodes: &mut Vec<Node>,
 ) {
     let last_index = items.len().saturating_sub(1);
 
@@ -163,7 +163,7 @@ fn walk(
                 let revs = first_file.revs();
                 let open = !folded.contains(&directory_key(&path, &revs));
 
-                out.push(Node::Directory {
+                nodes.push(Node::Directory {
                     indent,
                     name: name.clone(),
                     path,
@@ -174,11 +174,11 @@ fn walk(
                 if open {
                     let mut next = ancestors.to_vec();
                     next.push(is_last);
-                    walk(children, &next, &relative_path, folded, out);
+                    build_nodes(children, &next, &relative_path, folded, nodes);
                 }
             }
             Item::File { name, file } => {
-                out.push(Node::File {
+                nodes.push(Node::File {
                     indent,
                     name: name.to_string(),
                     file: (*file).clone(),
@@ -218,10 +218,10 @@ fn split_path(path: &str) -> (Vec<&str>, &str) {
 /// a heading node for each.
 pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
     let groups = group(files);
-    let mut out = Vec::new();
+    let mut nodes = Vec::new();
     for (heading, members) in &groups {
         let group_files: Vec<&File> = members.iter().map(|&i| &files[i]).collect();
-        out.push(heading_node(heading, &group_files));
+        nodes.push(heading_node(heading, &group_files));
 
         let mut root: Vec<Item<'_>> = Vec::new();
         for &file in &group_files {
@@ -231,30 +231,30 @@ pub fn grouped_tree(files: &[File], folded: &HashSet<String>) -> Vec<Node> {
         }
         flatten(&mut root);
         sort(&mut root);
-        walk(&root, &[], "", folded, &mut out);
+        build_nodes(&root, &[], "", folded, &mut nodes);
     }
-    out
+    nodes
 }
 
 /// Groups files by revision pair, lists each file by its full path.
 pub fn grouped_list(files: &[File]) -> Vec<Node> {
     let groups = group(files);
-    let mut out = Vec::new();
+    let mut nodes = Vec::new();
     for (heading, members) in &groups {
         let group_files: Vec<&File> = members.iter().map(|&i| &files[i]).collect();
-        out.push(heading_node(heading, &group_files));
+        nodes.push(heading_node(heading, &group_files));
 
         let mut sorted = group_files;
         sorted.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
         for file in sorted {
-            out.push(Node::File {
+            nodes.push(Node::File {
                 indent: "  ".to_string(),
                 name: file.path().as_str().to_string(),
                 file: file.clone(),
             });
         }
     }
-    out
+    nodes
 }
 
 fn heading_node(name: &'static str, files: &[&File]) -> Node {
