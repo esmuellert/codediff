@@ -30,7 +30,7 @@ sort_commits = "newest"
 commit_parsers = [
     { message = "^feat", group = "Features" },
     { message = "^fix", group = "Fixes" },
-    { message = "^refactor", skip = true },
+    { message = "^refactor", group = "Refactoring" },
     { message = "^docs", skip = true },
     { message = "^chore", skip = true },
     { message = "^build", skip = true },

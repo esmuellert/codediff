@@ -1,4 +1,4 @@
-//! Scroll, cursor, anchor across refresh, mouse, edge cases.
+//! Scroll, selection anchors, mouse behavior, and edge cases.
 
 use std::collections::HashSet;
 
@@ -11,8 +11,7 @@ use super::common::*;
 // ---- scroll ----
 
 #[test]
-fn j_and_k_move_the_cursor() {
-    use ui::hooks::use_scroll::scroll_top;
+fn j_and_k_move_the_selected_line() {
     let total = 5;
     assert_eq!(1u32.saturating_add(1).min(total - 1), 2, "j goes down");
     assert_eq!(2u32.saturating_sub(1), 1, "k goes up");
@@ -22,57 +21,12 @@ fn j_and_k_move_the_cursor() {
         4,
         "j at the end stays"
     );
-    let _ = scroll_top;
 }
 
-#[test]
-fn the_view_follows_the_cursor_down() {
-    use ui::hooks::use_scroll::scroll_top;
-    let top = scroll_top(15, 20, 10, 0);
-    assert!(top > 0, "the view moved to show row 15, got top {top}");
-    assert!(15 >= top && 15 < top + 10, "row 15 is on screen from {top}");
-}
+// ---- selection anchor ----
 
 #[test]
-fn the_view_keeps_a_margin_below_the_cursor() {
-    use ui::hooks::use_scroll::scroll_top;
-    let top = scroll_top(7, 20, 10, 0);
-    assert_eq!(top, 1, "three rows are kept past the cursor, got {top}");
-}
-
-#[test]
-fn the_view_never_scrolls_past_the_end() {
-    use ui::hooks::use_scroll::scroll_top;
-    let top = scroll_top(11, 12, 10, 0);
-    assert_eq!(top, 2, "the last row sits at the bottom, got {top}");
-}
-
-#[test]
-fn a_document_shorter_than_the_pane_never_scrolls() {
-    use ui::hooks::use_scroll::scroll_top;
-    assert_eq!(scroll_top(2, 3, 10, 0), 0);
-    assert_eq!(scroll_top(0, 1, 10, 0), 0);
-}
-
-#[test]
-fn the_view_follows_the_cursor_back_up() {
-    use ui::hooks::use_scroll::scroll_top;
-    let top = scroll_top(0, 20, 10, 12);
-    assert_eq!(top, 0, "the view came back with the cursor, got {top}");
-}
-
-#[test]
-fn scroll_moves_the_view() {
-    use ui::hooks::use_scroll::scroll_top;
-    let top = scroll_top(10, 20, 5, 0);
-    assert!(top > 0, "row 10 is not visible from the top, got {top}");
-    assert!(10 >= top && 10 < top + 5, "row 10 is on screen from {top}");
-}
-
-// ---- cursor anchor ----
-
-#[test]
-fn the_cursor_stays_when_the_file_list_rebuilds() {
+fn the_selected_line_stays_when_the_file_list_rebuilds() {
     let files_v1: Vec<File> = ["src/app.rs", "src/lib.rs", "notes.txt"]
         .iter()
         .map(|p| file(p))
@@ -97,7 +51,7 @@ fn the_cursor_stays_when_the_file_list_rebuilds() {
     let at_same_line = &nodes_v2[lib_line];
     match at_same_line {
         ui::components::explorer::build::Node::File { name, .. } => {
-            assert_eq!(name, "lib.rs", "the cursor still points at lib.rs");
+            assert_eq!(name, "lib.rs", "the selected line still points at lib.rs");
         }
         other => panic!(
             "expected lib.rs at line {lib_line}, got {:?}",
@@ -111,7 +65,7 @@ fn the_cursor_stays_when_the_file_list_rebuilds() {
 }
 
 #[test]
-fn the_cursor_follows_its_file_when_one_is_inserted_before_it() {
+fn the_selected_line_follows_its_file_when_one_is_inserted_before_it() {
     let before: Vec<File> = ["src/lib.rs", "notes.txt"]
         .iter()
         .map(|p| file(p))
@@ -138,19 +92,19 @@ fn the_cursor_follows_its_file_when_one_is_inserted_before_it() {
     assert!(
         matches!(&new[landed],
         ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"),
-        "the cursor is on notes.txt again"
+        "notes.txt is selected again"
     );
 }
 
 #[test]
-fn a_file_that_is_gone_leaves_the_cursor_where_it_was() {
+fn a_file_that_is_gone_leaves_the_selected_line_where_it_was() {
     let after: Vec<File> = ["a.rs"].iter().map(|p| file(p)).collect();
     let new = grouped_tree(&after, &HashSet::new());
 
     assert_eq!(
         find_by_identity(Some("gone.rs"), &new),
         None,
-        "nothing to move to, so the caller keeps the cursor"
+        "nothing to move to, so the caller keeps the selected line"
     );
 }
 
@@ -205,7 +159,7 @@ fn a_directory_toggles_only_when_clicked_while_selected() {
 }
 
 #[test]
-fn the_cursor_row_has_a_different_background() {
+fn the_selected_line_has_a_different_background() {
     let files: Vec<File> = ["src/app.rs", "notes.txt"]
         .iter()
         .map(|p| file(p))
@@ -214,12 +168,30 @@ fn the_cursor_row_has_a_different_background() {
     h1.force_draw();
     h1.press(crokey::key!(j));
     h1.force_draw();
-    let bg_cursor = h1.style_at(0, 1).bg;
-    let bg_other = h1.style_at(0, 2).bg;
+    let selected_background = h1.style_at(0, 1).bg;
+    let other_background = h1.style_at(0, 2).bg;
     assert_ne!(
-        bg_cursor, bg_other,
-        "the cursor row has a different background from other rows"
+        selected_background, other_background,
+        "the selected line has a different background from other rows"
     );
+}
+
+#[test]
+fn queued_j_keys_reveal_the_selected_line() {
+    let files: Vec<File> = (0..8)
+        .map(|index| file(&format!("file{index}.rs")))
+        .collect();
+    let mut harness = harness(files, 40, 6);
+    harness
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .force_draw();
+
+    assert!(harness.screen_row(0).contains("file0.rs"));
+    assert!(harness.screen_row(3).contains("file3.rs"));
+    assert_ne!(harness.style_at(0, 3).bg, harness.style_at(0, 2).bg);
 }
 
 // ---- edge cases ----
@@ -312,11 +284,11 @@ fn enter_on_a_file_sets_the_focused_file() {
     );
 }
 
-// ---- scroll vs cursor ----
+// ---- scroll vs selection ----
 
 #[test]
-fn wheel_scrolls_the_view_without_moving_the_cursor() {
-    // A list taller than the viewport. Cursor starts at 0 (the heading).
+fn wheel_scrolls_the_view_without_moving_the_selected_line() {
+    // A list taller than the viewport. The heading starts selected.
     let files: Vec<File> = (0..20).map(|i| file(&format!("file{i}.rs"))).collect();
     let mut h = harness(files, 40, 6);
     for _ in 0..5 {
@@ -336,33 +308,31 @@ fn wheel_scrolls_the_view_without_moving_the_cursor() {
     // The view should have changed (different rows visible).
     assert_ne!(before, after, "wheel should scroll the view");
 
-    // The cursor row (0) should NOT have moved — it may now be off screen,
-    // so the heading row that was at screen row 0 should no longer be there.
-    // Press j once — cursor goes to 1, not to wherever the scroll landed + 1.
+    // The selected line should not have moved, though it is now offscreen.
+    // Press j once: selection moves to 1, not to the scrolled row plus one.
     h.press(crokey::key!(j));
     for _ in 0..3 {
         h.force_draw();
     }
 
-    // Now press k — cursor goes back to 0.
+    // Now press k: selection goes back to 0.
     h.press(crokey::key!(k));
     for _ in 0..3 {
         h.force_draw();
     }
 
-    // The heading "Changes" should be visible again because j/k brought
-    // the view back to show the cursor at row 0.
+    // The heading is visible again because j/k revealed selected line 0.
     let final_screen = h.screen();
     let has_heading = final_screen.iter().any(|r| r.contains("Changes"));
     assert!(
         has_heading,
-        "after j then k, the cursor is at 0 and the heading is visible: {:?}",
+        "after j then k, line 0 is selected and the heading is visible: {:?}",
         final_screen
     );
 }
 
 #[test]
-fn j_moves_the_cursor_and_the_view_follows() {
+fn j_moves_the_selected_line_and_the_view_follows() {
     let files: Vec<File> = (0..20).map(|i| file(&format!("file{i}.rs"))).collect();
     let mut h = harness(files, 40, 6);
     for _ in 0..5 {
@@ -376,8 +346,7 @@ fn j_moves_the_cursor_and_the_view_follows() {
     }
 
     let screen = h.screen();
-    // The cursor row should be highlighted — the view followed the cursor.
-    // We can check that the screen shows rows that were not initially visible.
+    // The selected line is highlighted and the viewport followed it.
     let has_heading = screen.iter().any(|r| r.contains("Changes"));
     // The heading at row 0 should have scrolled off.
     assert!(
@@ -499,7 +468,7 @@ fn moving_to_a_file_opens_it() {
         h.force_draw();
     }
 
-    // Cursor starts on the heading. Move down to a.rs.
+    // Selection starts on the heading. Move down to a.rs.
     h.press(crokey::key!(j));
     for _ in 0..3 {
         h.force_draw();
