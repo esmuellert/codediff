@@ -7,16 +7,17 @@ use align::{DiffVersion, LineDecorations};
 use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope,
-    component, rsx, use_context,
+    component, rsx, use_context, use_memo,
 };
 use ratatui::style::Style;
 
-use super::code_text::{CodeText, CodeTextProps};
+use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::filler::Filler;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 
 use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
+use crate::hooks::use_horizontal_scroll::HorizontalDimensions;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
@@ -57,11 +58,30 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let alignment = &diff.alignment;
     let view_line_count = alignment.view_line_count(DiffType::SideBySide);
     let file_key = diff.file.path().as_str().to_string();
-    let (view, listeners) = use_diff_viewer_navigation(scope, Some(&file_key), view_line_count);
-    let original_lines = alignment.lines(DiffVersion::Original).len() as u32;
-    let modified_lines = alignment.lines(DiffVersion::Modified).len() as u32;
-    let original_gutter = width_for_line_count(original_lines);
-    let modified_gutter = width_for_line_count(modified_lines);
+    let original_line_count = alignment.lines(DiffVersion::Original).len() as u32;
+    let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
+    let original_gutter_width = width_for_line_count(original_line_count);
+    let modified_gutter_width = width_for_line_count(modified_line_count);
+    let content_id = Rc::as_ptr(content) as usize;
+    let maximum_line_cells = use_memo(scope, content_id, || {
+        (
+            longest_line_cells(alignment.lines(DiffVersion::Original)),
+            longest_line_cells(alignment.lines(DiffVersion::Modified)),
+        )
+    });
+    let horizontal_dimensions = HorizontalDimensions::SideBySide {
+        original_longest_line_cells: maximum_line_cells.0,
+        modified_longest_line_cells: maximum_line_cells.1,
+        original_gutter_cells: original_gutter_width,
+        modified_gutter_cells: modified_gutter_width,
+        divider_cells: 1,
+    };
+    let (view, horizontal, listeners) = use_diff_viewer_navigation(
+        scope,
+        Some(&file_key),
+        view_line_count,
+        horizontal_dimensions,
+    );
 
     let pairs: Vec<align::ViewLine> = alignment
         .view_lines_from(DiffType::SideBySide, view.view_lines.start)
@@ -81,7 +101,7 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let mut rows: Vec<Node> = Vec::with_capacity(pairs.len());
     for (offset, pair) in pairs.iter().enumerate() {
         let view_line = view.view_lines.start + offset as u32;
-        let make_side = |version: DiffVersion, slot: align::Slot, gw: u16| -> Vec<Node> {
+        let make_side = |version: DiffVersion, slot: align::Slot, gutter_width: u16| -> Vec<Node> {
             match slot.line() {
                 Some(number) => {
                     let decorations = alignment.decorations(version, number);
@@ -106,13 +126,14 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                                 number: Some(number),
                                 style: number_style,
                                 blank: number_style,
-                                width: gw,
+                                width: gutter_width,
                             }
                         },
                         rsx! {
                             CodeText {
                                 key: 1u32,
                                 text: Rc::from(text),
+                                first_cell: horizontal.first_cell(version),
                                 diff: Rc::from(diff_spans.as_slice()),
                                 fill_from: fill_from,
                                 empty_markers: Rc::from(decorations.empty_markers.as_slice()),
@@ -138,7 +159,7 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                                 number: None,
                                 style: blank,
                                 blank: blank,
-                                width: gw,
+                                width: gutter_width,
                             }
                         },
                         rsx! { Filler { key: 1u32 } },
@@ -147,8 +168,8 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             }
         };
 
-        let left = make_side(DiffVersion::Original, pair.original, original_gutter);
-        let right = make_side(DiffVersion::Modified, pair.modified, modified_gutter);
+        let left = make_side(DiffVersion::Original, pair.original, original_gutter_width);
+        let right = make_side(DiffVersion::Modified, pair.modified, modified_gutter_width);
 
         rows.push(rsx! {
             Row {

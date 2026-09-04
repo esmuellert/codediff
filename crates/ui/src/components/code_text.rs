@@ -9,12 +9,25 @@ use ratatui::style::Style;
 use super::cells::{self, Ink};
 use super::context::Ui;
 
-const DEFAULT_TAB_WIDTH: u8 = 4;
+const TAB_WIDTH: u8 = 4;
+
+fn width_in_cells(text: &str) -> u32 {
+    line_index::LineIndex::new(text, TAB_WIDTH).width().0
+}
+
+pub(super) fn longest_line_cells(lines: &[String]) -> u32 {
+    lines
+        .iter()
+        .map(|line| width_in_cells(line))
+        .max()
+        .unwrap_or(0)
+}
 
 #[component]
 pub fn CodeText(
     scope: &mut Scope,
     text: Rc<str>,
+    first_cell: u32,
     diff: Rc<[Range<u32>]>,
     fill_from: Option<u32>,
     empty_markers: Rc<[u32]>,
@@ -26,6 +39,7 @@ pub fn CodeText(
     let theme = use_context::<Ui>(scope).theme;
 
     let text = Rc::clone(text);
+    let first_cell = *first_cell;
     let diff = Rc::clone(diff);
     let fill_from = *fill_from;
     let empty_markers = Rc::clone(empty_markers);
@@ -39,10 +53,9 @@ pub fn CodeText(
             layout: Layout { grow: 1, basis: Basis::Length(1), shrink: 0, ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
-                let first_cell = 0u32;
                 cells::paint(
                     paint.cells(), area, &text,
-                    DEFAULT_TAB_WIDTH, first_cell,
+                    TAB_WIDTH, first_cell,
                     Ink {
                         base: unchanged_style,
                         emphasis: changed_style,
