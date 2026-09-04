@@ -146,7 +146,6 @@ human-readable artifact and the regression fixture are the same file.
 | `codediff debug status [dir] [-v]` | parsed status entries in the manifest's own format, so the two can be diffed | S5 |
 | `codediff debug show <rev>:<path> [--raw]` | a file at a revision; `--raw` writes the exact bytes, for `cmp` against `git show` | S6 |
 | `codediff debug diff-file <path> [-v]` | aligned diff of one file, worktree vs HEAD — the whole pipeline | S6 |
-| `codediff debug events` | the event log of a session, replayable | S14 |
 
 ## 4. xtask commands
 
