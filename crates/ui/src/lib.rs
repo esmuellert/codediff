@@ -78,7 +78,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     });
 
     #[cfg(unix)]
-    spawn_signals(events_tx.clone());
+    spawn_signals(events_tx.clone(), Event::Signal);
 
     #[cfg(debug_assertions)]
     let rebuild = Rc::new(Cell::new(false));
@@ -131,8 +131,10 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
     Ok(0)
 }
 
+/// Delivers process signals through the event loop that owns the terminal.
+#[doc(hidden)]
 #[cfg(unix)]
-fn spawn_signals(events_tx: Sender<Event>) {
+pub fn spawn_signals<E: Send + 'static>(events_tx: Sender<E>, wrap: fn(i32) -> E) {
     use signal_hook::consts::{SIGHUP, SIGQUIT, SIGTERM};
     use signal_hook::iterator::Signals;
 
@@ -141,7 +143,7 @@ fn spawn_signals(events_tx: Sender<Event>) {
         .name("signals".to_owned())
         .spawn(move || {
             for signal in signals.forever() {
-                if events_tx.send(Event::Signal(signal)).is_err() {
+                if events_tx.send(wrap(signal)).is_err() {
                     break;
                 }
             }

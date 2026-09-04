@@ -17,6 +17,10 @@ impl Fixture {
         Self { dir }
     }
 
+    fn write(&self, path: &str, text: &str) {
+        std::fs::write(self.dir.join(path), text).expect("writing a file");
+    }
+
     /// Runs the binary inside the fixture, as a user would.
     fn run(&self, args: &[&str]) -> String {
         let out = Command::new(env!("CARGO_BIN_EXE_codediff"))
@@ -72,6 +76,34 @@ fn blob_content_matches_git_show_byte_for_byte() {
         let theirs = fixture.git(&["show", &format!("HEAD:{path}")]);
         assert_eq!(ours, theirs, "{path} differs from git show");
     }
+}
+
+#[test]
+fn raw_diff_command_reports_engine_changes() {
+    let fixture = Fixture::new("debug-diff");
+    fixture.write("original.txt", "one\ntwo\n");
+    fixture.write("modified-copy.txt", "one\nTWO\n");
+
+    let out = fixture.run(&["debug", "diff", "original.txt", "modified-copy.txt"]);
+
+    assert!(out.contains("engine    libvscode-diff"), "{out}");
+    assert!(out.contains("1 change(s)"), "{out}");
+    assert!(out.contains("inner"), "{out}");
+}
+
+#[test]
+fn line_command_reports_distinct_coordinate_systems() {
+    let fixture = Fixture::new("debug-line");
+    fixture.write("unicode.txt", "\twide 界 emoji 👨‍👩‍👧‍👦 combining é\n");
+
+    let out = fixture.run(&["debug", "line", "unicode.txt"]);
+
+    assert!(out.contains('⇥'), "{out}");
+    assert!(out.contains('界'), "{out}");
+    assert!(out.contains("👨+👩+👧+👦"), "{out}");
+    assert!(out.contains("byte"), "{out}");
+    assert!(out.contains("utf16"), "{out}");
+    assert!(out.contains("column"), "{out}");
 }
 
 #[test]
@@ -232,6 +264,21 @@ fn awkward_paths_work_end_to_end() {
         let out = fixture.run(&["debug", "diff-file", path]);
         assert!(out.contains("change(s)"), "{path}:\n{out}");
     }
+}
+
+#[test]
+fn verbose_status_separates_long_paths_and_explanations() {
+    let fixture = Fixture::new("verbose-status");
+    let out = fixture.run(&["debug", "status", ".", "--verbose"]);
+
+    assert!(
+        out.contains("deep/only/one/chain/leaf.txt  untracked"),
+        "{out}"
+    );
+    assert!(
+        out.contains("renamed-from.txt  moved; both paths kept"),
+        "{out}"
+    );
 }
 
 #[test]

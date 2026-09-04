@@ -323,6 +323,42 @@ sequence a terminal *obeys*, and `U+202E` reorders a line so it reads as somethi
 than what it says. Both are replaced by a stand-in of the same width, in `line-index`,
 beside the code that measures them — so the substitution and the measurement cannot drift.
 
+## Component gallery
+
+The compiled binary can open deterministic fixtures around the production components:
+
+```sh
+codediff debug ui
+codediff debug ui --list
+codediff debug ui side-by-side/replacement
+```
+
+With no story ID, the binary opens a searchable catalog. `j`/`k` select, `/` filters, and
+`Enter` opens a full-screen preview. In a preview, `Esc` returns to the catalog, `[`/`]`
+move between stories, `r` resets the fixture, and `q` exits. A direct story ID remains the
+shortest reproducible path for a bug report.
+
+The catalog deliberately separates its visual roles: lavender group headings, blue Story IDs,
+muted descriptions, and a lavender selected ID over the cursor-line background. It uses no bold
+text; colour, background, and the `›` marker carry the hierarchy. Its navigation bar uses two
+rows so the current screen and its colour-coded key/action pairs cannot read as one long sentence.
+
+The same catalog drives `Harness` snapshots and PTY tests, so manual inspection and automation
+do not maintain separate mock renderers. For a pipeable text frame, use:
+
+```sh
+codediff debug ui side-by-side/replacement --snapshot --width 100 --height 24
+```
+
+Fixture construction stays in the `codediff` composition root. Typed builders create real
+`File` and `DiffContent` values; two-sided fixtures still pass through the production diff and
+alignment pipeline. Every SideBySide and SingleFile story receives a real `SyntaxService` and
+syntax worker; an empty file has the same service but naturally issues no request. Long-line
+fixtures are generated to at least 512 terminal cells, measured with `LineIndex`, so they still
+overflow a wide terminal. Small canonical stories isolate one behaviour, while `mixed-status`,
+`awkward-paths`, `edge-matrix`, `empty`, and `long-syntax-file` stories combine edge cases. Each story mounts `Explorer`, `SideBySide`, `SingleFile`,
+or `DiffViewer` from this crate rather than copying its drawing code.
+
 ## Checking it
 
 ```sh

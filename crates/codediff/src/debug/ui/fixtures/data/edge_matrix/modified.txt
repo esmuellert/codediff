@@ -1,0 +1,19 @@
+fn edge_matrix() {
+    shared header
+    whitespace only
+    inserted only
+    replace beta
+
+	let tabbed = "after";
+    let greeting = "您好 🦀";
+    let family = "👩‍👩‍👧‍👦";
+    let combining = "café";
+    uneven new one
+    move block one
+    move block two
+    move block three
+    uneven new two
+    uneven new three
+    shared footer
+    added at end
+}

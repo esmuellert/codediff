@@ -93,6 +93,24 @@ pub enum Debug {
         pathspec: Vec<String>,
     },
 
+    /// Open a deterministic production-component story
+    Ui {
+        /// Stable story ID; omit it to browse the catalog
+        story: Option<String>,
+        /// Print story IDs without taking over the terminal
+        #[arg(long, conflicts_with_all = ["story", "snapshot"])]
+        list: bool,
+        /// Print a deterministic text frame instead of opening the terminal
+        #[arg(long)]
+        snapshot: bool,
+        /// Width of a snapshot in terminal cells
+        #[arg(long, requires = "snapshot")]
+        width: Option<u16>,
+        /// Height of a snapshot in terminal cells
+        #[arg(long, requires = "snapshot")]
+        height: Option<u16>,
+    },
+
     /// Print what git says about a worktree
     Status {
         /// Defaults to the current directory

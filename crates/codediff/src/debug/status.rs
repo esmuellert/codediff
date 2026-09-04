@@ -104,6 +104,7 @@ fn line(file: &file_types::File, verbose: bool) -> String {
             ChangeType::Deleted => "deleted",
             ChangeType::Modified => "modified",
         };
+        out.push_str("  ");
         out.push_str(note);
     }
     out
