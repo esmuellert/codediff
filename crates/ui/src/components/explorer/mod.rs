@@ -19,6 +19,8 @@ use super::context::Ui;
 use crate::hooks::use_scroll::use_scroll;
 use crate::services::version_control::VersionControlService;
 
+const SCROLLOFF: u32 = 3;
+
 #[component]
 pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let ctx = use_context::<Ui>(scope);
@@ -63,7 +65,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             });
     });
 
-    let (view, handle) = use_scroll(scope, None);
+    let (selected_line, set_selected_line) = use_state(scope, || 0u32);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
     let (tree_mode, set_tree_mode) = use_state(scope, || true);
 
@@ -76,21 +78,22 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     };
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
+    let (view, scroll) = use_scroll(scope, None, total);
 
-    // When the file list changes, keep the cursor on the same item.
+    // When the file list changes, keep the selection on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&files));
     let saved_anchor = use_ref(scope, || None::<String>);
     let files_changed = !Rc::ptr_eq(&files, &*prev_files.current());
     if files_changed {
         if let Some(pos) = find_by_identity(saved_anchor.current().as_deref(), &nodes) {
-            handle.set(pos as u32);
+            set_selected_line(&move |_| pos as u32);
         }
         *prev_files.current() = Rc::clone(&files);
     } else {
-        *saved_anchor.current() = nodes.get(view.cursor as usize).map(identity);
+        *saved_anchor.current() = nodes.get(selected_line as usize).map(identity);
     }
 
-    let cursor_node = nodes.get(view.cursor as usize).cloned();
+    let selected_node = nodes.get(selected_line as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
     let nodes_keys = Rc::clone(&nodes);
     let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
@@ -99,23 +102,31 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let listeners = Listeners::new()
         .on_key(move |k| match k {
             k if k == key!(j) || k == key!(down) => {
-                handle.down(total);
-                let next = (view.cursor + 1).min(total.saturating_sub(1));
-                if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
-                    open_file(file, set_file);
-                }
+                let nodes = Rc::clone(&nodes_keys);
+                set_selected_line(&move |selected_line| {
+                    let next = selected_line.saturating_add(1).min(total.saturating_sub(1));
+                    scroll.keep_line_visible(next, SCROLLOFF);
+                    if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
+                        open_file(file, set_file);
+                    }
+                    next
+                });
                 Bubble::Stop
             }
             k if k == key!(k) || k == key!(up) => {
-                handle.up(total);
-                let next = view.cursor.saturating_sub(1);
-                if let Some(Node::File { file, .. }) = nodes_keys.get(next as usize) {
-                    open_file(file, set_file);
-                }
+                let nodes = Rc::clone(&nodes_keys);
+                set_selected_line(&move |selected_line| {
+                    let next = selected_line.saturating_sub(1);
+                    scroll.keep_line_visible(next, SCROLLOFF);
+                    if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
+                        open_file(file, set_file);
+                    }
+                    next
+                });
                 Bubble::Stop
             }
             k if k == key!(enter) => {
-                if let Some(ref node) = cursor_node {
+                if let Some(ref node) = selected_node {
                     activate_node(node, set_folded, set_file);
                 }
                 Bubble::Stop
@@ -129,7 +140,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 Bubble::Stop
             }
             k if k == key!(space) => {
-                if let Some(ref node) = cursor_node {
+                if let Some(ref node) = selected_node {
                     toggle_stage(node, version_control_service.as_deref());
                 }
                 Bubble::Stop
@@ -141,12 +152,13 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             _ => Bubble::Continue,
         })
         .on_wheel(move |delta| {
-            handle.wheel(delta, total);
+            scroll.scroll_by(delta.saturating_mul(3));
             Bubble::Stop
         })
         .on_mouse_down(move |mouse| {
-            let line = handle.click(mouse.local.y as u32, total);
-            let already_selected = line == view.cursor;
+            let line = (view.top + u32::from(mouse.local.y)).min(total.saturating_sub(1));
+            let already_selected = line == selected_line;
+            set_selected_line(&move |_| line);
             if let Some(node) = nodes_click.get(line as usize) {
                 let should_activate = matches!(node, Node::File { .. })
                     || already_selected && matches!(node, Node::Directory { .. });
@@ -166,7 +178,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                     Entry {
                         key: line,
                         node: node.clone(),
-                        selected: line == view.cursor,
+                        selected: line == selected_line,
                     }
                 }
             })

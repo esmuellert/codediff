@@ -11,18 +11,18 @@ pub fn use_diff_viewer_navigation(
     view_line_count: u32,
     horizontal_dimensions: HorizontalDimensions,
 ) -> (ScrollView, HorizontalView, Listeners) {
-    let (view, vertical_handle) = use_scroll(scope, file_key);
+    let (view, vertical_handle) = use_scroll(scope, file_key, view_line_count);
     let (horizontal, horizontal_handle) =
         use_horizontal_scroll(scope, file_key, view.width, horizontal_dimensions);
 
     let listeners = Listeners::new()
         .on_key(move |key| match key {
             key if key == crokey::key!(j) || key == crokey::key!(down) => {
-                vertical_handle.down(view_line_count);
+                vertical_handle.scroll_by(1);
                 Bubble::Stop
             }
             key if key == crokey::key!(k) || key == crokey::key!(up) => {
-                vertical_handle.up(view_line_count);
+                vertical_handle.scroll_by(-1);
                 Bubble::Stop
             }
             key if key == crokey::key!(h) => {
@@ -48,11 +48,7 @@ pub fn use_diff_viewer_navigation(
             _ => Bubble::Continue,
         })
         .on_wheel(move |delta| {
-            vertical_handle.wheel(delta, view_line_count);
-            Bubble::Stop
-        })
-        .on_mouse_down(move |mouse| {
-            vertical_handle.click(mouse.local.y as u32, view_line_count);
+            vertical_handle.scroll_by(delta.saturating_mul(3));
             Bubble::Stop
         });
     (view, horizontal, listeners)

@@ -133,7 +133,7 @@ fn a_late_response_from_the_previous_repository_is_ignored() {
 }
 
 #[test]
-fn refresh_keeps_the_cursor_on_the_same_file() {
+fn refresh_keeps_the_same_file_selected() {
     let (files_service, responses) = mock_files_service(vec![
         vec![file("a.rs"), file("b.rs"), file("c.rs")],
         vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],

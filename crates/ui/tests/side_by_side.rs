@@ -198,16 +198,14 @@ fn the_endpoint_keeps_four_cells_after_each_longest_line() {
 }
 
 #[test]
-fn j_scrolls_a_long_diff() {
+fn j_scrolls_one_line_immediately() {
     let lines: Vec<String> = (1..=20).map(|line| format!("line {line}")).collect();
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
     let mut h = harness(&lines, &lines, 40, 4);
     h.force_draw().force_draw();
     let before = h.screen();
 
-    for _ in 0..8 {
-        h.press(crokey::key!(j)).force_draw();
-    }
+    h.press(crokey::key!(j)).force_draw();
 
     assert_ne!(h.screen(), before);
 }
