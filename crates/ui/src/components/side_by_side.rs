@@ -16,8 +16,7 @@ use super::context::Ui;
 use super::filler::Filler;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 
-use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
-use crate::hooks::use_horizontal_scroll::HorizontalDimensions;
+use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 

@@ -18,7 +18,8 @@ mod tree;
 
 pub use component::Component;
 pub use event::{
-    Bubble, Focus, Listeners, Mouse, capture_pointer, focus_next, focus_previous, release_pointer,
+    Bubble, Focus, Listeners, Mouse, Wheel, capture_pointer, focus_next, focus_previous,
+    release_pointer,
 };
 /// What `context!`'s `Component::render` calls. Not API: the way to offer a
 /// value is to write the provider element.

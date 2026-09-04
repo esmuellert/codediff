@@ -7,7 +7,7 @@ use crokey::KeyCombination;
 use crossterm::event::{MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
 
-use super::{Bubble, Focus, Listeners, Mouse, hit};
+use super::{Bubble, Focus, Listeners, Mouse, Wheel, hit};
 use crate::node::NodeHandle;
 use crate::reconcile::RuntimeRef;
 use crate::runtime::Runtime;
@@ -175,17 +175,50 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
                     },
                 )
             }),
-            MouseEventKind::ScrollDown => step
-                .listeners
-                .wheel
-                .clone()
-                .map(|listen| fire(held, step.node, &*listen, 1)),
-            MouseEventKind::ScrollUp => step
-                .listeners
-                .wheel
-                .clone()
-                .map(|listen| fire(held, step.node, &*listen, -1)),
-            _ => None,
+            MouseEventKind::ScrollDown => step.listeners.wheel.clone().map(|listen| {
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Wheel {
+                        horizontal: 0,
+                        vertical: 1,
+                    },
+                )
+            }),
+            MouseEventKind::ScrollUp => step.listeners.wheel.clone().map(|listen| {
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Wheel {
+                        horizontal: 0,
+                        vertical: -1,
+                    },
+                )
+            }),
+            MouseEventKind::ScrollLeft => step.listeners.wheel.clone().map(|listen| {
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Wheel {
+                        horizontal: -1,
+                        vertical: 0,
+                    },
+                )
+            }),
+            MouseEventKind::ScrollRight => step.listeners.wheel.clone().map(|listen| {
+                fire(
+                    held,
+                    step.node,
+                    &*listen,
+                    Wheel {
+                        horizontal: 1,
+                        vertical: 0,
+                    },
+                )
+            }),
         };
 
         if bubble == Some(Bubble::Stop) {

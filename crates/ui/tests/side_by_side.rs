@@ -143,6 +143,22 @@ fn horizontal_scroll_keeps_gutters_and_divider_fixed() {
 }
 
 #[test]
+fn horizontal_wheel_scrolls_both_text_columns() {
+    let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 25, 2);
+    harness.force_draw().force_draw();
+
+    harness.wheel_horizontal(10, 1, 1).force_draw();
+
+    assert_eq!(symbols(&mut harness, 4, 12), "DEFGHIJK");
+    assert_eq!(symbols(&mut harness, 17, 25), "defghijk");
+
+    harness.wheel_horizontal(10, 1, -1).force_draw();
+
+    assert_eq!(symbols(&mut harness, 4, 12), "ABCDEFGH");
+    assert_eq!(symbols(&mut harness, 17, 25), "abcdefgh");
+}
+
+#[test]
 fn an_odd_text_cell_goes_to_the_original_side() {
     let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 26, 2);
     harness.force_draw().force_draw();

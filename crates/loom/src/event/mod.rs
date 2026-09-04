@@ -38,6 +38,14 @@ pub struct Focus {
     pub related: Option<NodeHandle>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Wheel {
+    /// Positive is right.
+    pub horizontal: i32,
+    /// Positive is down.
+    pub vertical: i32,
+}
+
 /// Every listener one host can carry.
 #[derive(Clone, Default)]
 pub struct Listeners {
@@ -45,7 +53,7 @@ pub struct Listeners {
     pub(crate) mouse_down: Option<Rc<dyn Fn(Mouse) -> Bubble>>,
     pub(crate) mouse_move: Option<Rc<dyn Fn(Mouse) -> Bubble>>,
     pub(crate) mouse_up: Option<Rc<dyn Fn(Mouse) -> Bubble>>,
-    pub(crate) wheel: Option<Rc<dyn Fn(i32) -> Bubble>>,
+    pub(crate) wheel: Option<Rc<dyn Fn(Wheel) -> Bubble>>,
     pub(crate) focus: Option<Rc<dyn Fn(Focus) -> Bubble>>,
     pub(crate) blur: Option<Rc<dyn Fn(Focus) -> Bubble>>,
 }
@@ -72,8 +80,7 @@ impl Listeners {
         self.mouse_up = Some(Rc::new(listen));
         self
     }
-    /// Positive is down.
-    pub fn on_wheel(mut self, listen: impl Fn(i32) -> Bubble + 'static) -> Self {
+    pub fn on_wheel(mut self, listen: impl Fn(Wheel) -> Bubble + 'static) -> Self {
         self.wheel = Some(Rc::new(listen));
         self
     }
