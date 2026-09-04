@@ -4,8 +4,7 @@ use loom::testing::Harness;
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component, rsx,
 };
-use ui::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
-use ui::hooks::use_horizontal_scroll::HorizontalDimensions;
+use ui::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 
 #[component]
 fn Probe(

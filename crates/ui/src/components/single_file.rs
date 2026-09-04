@@ -11,8 +11,7 @@ use loom::{
 use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
-use crate::hooks::use_horizontal_scroll::HorizontalDimensions;
+use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
