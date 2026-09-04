@@ -17,7 +17,7 @@ pub(super) enum CatalogRow {
     },
 }
 
-pub(super) fn rows(query: &str) -> Vec<CatalogRow> {
+pub(super) fn filtered_rows(query: &str) -> Vec<CatalogRow> {
     let query = query.to_lowercase();
     let mut rows = Vec::new();
     let mut index = 0usize;
@@ -26,7 +26,7 @@ pub(super) fn rows(query: &str) -> Vec<CatalogRow> {
         for definition in group.stories {
             let matches = query.is_empty()
                 || definition.id.to_lowercase().contains(&query)
-                || definition.summary.to_lowercase().contains(&query);
+                || definition.description.to_lowercase().contains(&query);
             if matches {
                 matching.push(CatalogRow::Story { index, definition });
             }
@@ -99,7 +99,7 @@ pub(super) fn story_row(
     } else {
         theme.tree.directory
     });
-    let summary = base.fg(if selected {
+    let description_style = base.fg(if selected {
         theme.tree.name
     } else {
         theme.tree.previous
@@ -131,8 +131,8 @@ pub(super) fn story_row(
             }
             Text {
                 key: 2u32,
-                text: Rc::from(definition.summary),
-                style: summary,
+                text: Rc::from(definition.description),
+                style: description_style,
                 layout: Layout { grow: 1, ..Default::default() },
                 ..
             }
@@ -146,21 +146,21 @@ mod tests {
 
     #[test]
     fn filtering_keeps_group_heading_and_global_story_index() {
-        let filtered = rows("comprehensive");
+        let filtered = filtered_rows("edge-matrix");
 
-        assert!(matches!(filtered[0], CatalogRow::Heading("SideBySide")));
+        assert!(matches!(filtered[0], CatalogRow::Heading("Side by side")));
         assert!(matches!(
             filtered[1],
             CatalogRow::Story {
                 index: 14,
                 definition
-            } if definition.id == "side-by-side/comprehensive"
+            } if definition.id == "side-by-side/edge-matrix"
         ));
     }
 
     #[test]
     fn navigation_skips_group_headings() {
-        let rows = rows("");
+        let rows = filtered_rows("");
         assert_eq!(first_story_line(&rows), 1);
         assert_eq!(next_story_line(&rows, 1), Some(3));
         assert_eq!(previous_story_line(&rows, 3), Some(1));

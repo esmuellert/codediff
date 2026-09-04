@@ -6,7 +6,7 @@ use anyhow::Result;
 use file_types::File;
 use pipeline::diff::{Diff, DiffContent};
 
-use super::{at, worktree_revs};
+use super::{repo_path, worktree_revs};
 
 pub struct DiffFixture {
     path: String,
@@ -37,14 +37,18 @@ impl DiffFixture {
         }
     }
 
-    pub fn changed(mut self, original: impl Into<String>, modified: impl Into<String>) -> Self {
+    pub fn with_line_pair(
+        mut self,
+        original: impl Into<String>,
+        modified: impl Into<String>,
+    ) -> Self {
         self.original.push(original.into());
         self.modified.push(modified.into());
         self
     }
 
-    pub fn pad_unchanged(mut self, prefix: &str, through: u32) -> Self {
-        for number in 1..=through {
+    pub fn with_unchanged_lines(mut self, prefix: &str, count: u32) -> Self {
+        for number in 1..=count {
             let line = format!("{prefix} {number:03}");
             self.original.push(line.clone());
             self.modified.push(line);
@@ -58,7 +62,7 @@ impl DiffFixture {
         let changed = pipeline::diff::compute(&original, &modified)?;
         let alignment = pipeline::diff::align(changed, &original, &modified)?;
         Ok(Rc::new(DiffContent::Diff(Diff {
-            file: File::unchanged_path(at(&self.path), worktree_revs()),
+            file: File::unchanged_path(repo_path(&self.path), worktree_revs()),
             alignment,
         })))
     }

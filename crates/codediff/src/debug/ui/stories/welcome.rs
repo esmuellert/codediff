@@ -1,16 +1,16 @@
 use anyhow::Result;
 
-use super::super::definition::{StoryDefinition, StoryFixture, StoryType};
+use super::super::definition::{StoryComponent, StoryDefinition, StoryFixture};
 
 pub const STORIES: &[StoryDefinition] = &[StoryDefinition {
     id: "welcome/default",
-    summary: "DiffViewer with no selected file",
-    story_type: StoryType::Welcome,
-    default_size: (100, 24),
-    setup: &[],
-    build: default,
+    description: "DiffViewer with no selected file",
+    component: StoryComponent::Welcome,
+    snapshot_size: (100, 24),
+    initial_keys: &[],
+    make_fixture: welcome_fixture,
 }];
 
-fn default() -> Result<StoryFixture> {
+fn welcome_fixture() -> Result<StoryFixture> {
     Ok(StoryFixture::Welcome)
 }

@@ -14,7 +14,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 #[cfg(unix)]
 use support::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, on_a_terminal, written};
 
-const STORIES: &[(&str, &[&str], &[&str])] = &[
+const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
     ("welcome/default", &["Select a file to review."], &[]),
     ("explorer/empty", &[], &["Changes"]),
     ("explorer/tree", &["src", "button.rs", "README.md"], &[]),
@@ -50,7 +50,7 @@ const STORIES: &[(&str, &[&str], &[&str])] = &[
         &[],
     ),
     (
-        "side-by-side/comprehensive",
+        "side-by-side/edge-matrix",
         &["whitespace only", "deleted only", "你好"],
         &[],
     ),
@@ -65,7 +65,7 @@ const STORIES: &[(&str, &[&str], &[&str])] = &[
         &["│", "╱"],
     ),
     (
-        "single-file/syntax",
+        "single-file/rust-syntax",
         &["fn highlighted", "let answer"],
         &["│", "╱"],
     ),
@@ -76,7 +76,7 @@ const STORIES: &[(&str, &[&str], &[&str])] = &[
     ),
     ("single-file/empty", &[], &["  1 ", "│", "╱"]),
     (
-        "single-file/large-syntax",
+        "single-file/long-syntax-file",
         &["generated_001", "generated_020"],
         &["│", "╱"],
     ),
@@ -115,7 +115,7 @@ fn list_names_every_story_in_order() {
         .expect("story list is utf-8")
         .lines()
         .collect();
-    let expected: Vec<&str> = STORIES.iter().map(|(name, _, _)| *name).collect();
+    let expected: Vec<&str> = EXPECTED_STORIES.iter().map(|(name, _, _)| *name).collect();
     assert_eq!(listed, expected);
 }
 
@@ -162,19 +162,19 @@ fn an_unknown_story_points_to_the_catalog() {
 #[test]
 fn every_story_opens_through_the_binary_with_its_expected_content() {
     let mut failures = Vec::new();
-    for (story, present, absent) in STORIES {
+    for (story, required_text, forbidden_text) in EXPECTED_STORIES {
         let screen = snapshot(story);
         let heading = screen.lines().next().unwrap_or_default();
         if !heading.contains("STORY") || !heading.contains(story) {
             failures.push(format!("{story}: missing gallery heading\n{screen}"));
             continue;
         }
-        for marker in *present {
+        for marker in *required_text {
             if !screen.contains(marker) {
                 failures.push(format!("{story}: missing {marker:?}\n{screen}"));
             }
         }
-        for marker in *absent {
+        for marker in *forbidden_text {
             if screen.contains(marker) {
                 failures.push(format!(
                     "{story}: unexpectedly contains {marker:?}\n{screen}"
@@ -208,13 +208,13 @@ fn every_story_draws_on_a_real_terminal() {
         ("side-by-side/insert-delete", "inserted modified"),
         ("side-by-side/tabs-unicode", "您"),
         ("side-by-side/long-lines", "MODIFIED"),
-        ("side-by-side/comprehensive", "whitespace only"),
+        ("side-by-side/edge-matrix", "whitespace only"),
         ("single-file/added", "newly_added"),
         ("single-file/deleted", "removed_file"),
-        ("single-file/syntax", "highlighted"),
+        ("single-file/rust-syntax", "highlighted"),
         ("single-file/long-lines", "SINGLE_LONG_PREFIX"),
         ("single-file/empty", "single-file/empty"),
-        ("single-file/large-syntax", "generated_001"),
+        ("single-file/long-syntax-file", "generated_001"),
     ];
 
     for (story, marker) in stories {

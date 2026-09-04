@@ -1,12 +1,12 @@
 use anyhow::Result;
 use loom::crokey::{KeyCombination, key};
 
-use super::super::definition::{StoryDefinition, StoryFixture, StoryType};
+use super::super::definition::{StoryComponent, StoryDefinition, StoryFixture};
 use super::super::fixtures::explorer::ExplorerFixture;
 
-const LIST_SETUP: &[KeyCombination] = &[key!(i)];
-const FOLDED_SETUP: &[KeyCombination] = &[key!(j), key!(enter)];
-const SELECTED_SETUP: &[KeyCombination] = &[key!(j), key!(j), key!(j)];
+const LIST_INITIAL_KEYS: &[KeyCombination] = &[key!(i)];
+const FOLDED_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(enter)];
+const SELECTED_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(j), key!(j)];
 
 pub const STORIES: &[StoryDefinition] = &[
     story("explorer/empty", "No changed files", &[], empty),
@@ -14,25 +14,25 @@ pub const STORIES: &[StoryDefinition] = &[
         "explorer/tree",
         "Nested changed files in tree mode",
         &[],
-        canonical,
+        standard_files,
     ),
     story(
         "explorer/list",
         "The same files in flat-list mode",
-        LIST_SETUP,
-        canonical,
+        LIST_INITIAL_KEYS,
+        standard_files,
     ),
     story(
         "explorer/folded",
         "A directory collapsed through Enter",
-        FOLDED_SETUP,
-        canonical,
+        FOLDED_INITIAL_KEYS,
+        standard_files,
     ),
     story(
         "explorer/selected",
         "A file selected through keyboard navigation",
-        SELECTED_SETUP,
-        canonical,
+        SELECTED_INITIAL_KEYS,
+        standard_files,
     ),
     story(
         "explorer/long-list",
@@ -56,17 +56,17 @@ pub const STORIES: &[StoryDefinition] = &[
 
 const fn story(
     id: &'static str,
-    summary: &'static str,
-    setup: &'static [KeyCombination],
-    build: fn() -> Result<StoryFixture>,
+    description: &'static str,
+    initial_keys: &'static [KeyCombination],
+    make_fixture: fn() -> Result<StoryFixture>,
 ) -> StoryDefinition {
     StoryDefinition {
         id,
-        summary,
-        story_type: StoryType::Explorer,
-        default_size: (100, 24),
-        setup,
-        build,
+        description,
+        component: StoryComponent::Explorer,
+        snapshot_size: (100, 24),
+        initial_keys,
+        make_fixture,
     }
 }
 
@@ -74,7 +74,7 @@ fn empty() -> Result<StoryFixture> {
     Ok(StoryFixture::Explorer(ExplorerFixture::new().build()))
 }
 
-fn canonical() -> Result<StoryFixture> {
+fn standard_files() -> Result<StoryFixture> {
     let files = ExplorerFixture::new()
         .changes(|group| {
             group

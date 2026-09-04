@@ -356,7 +356,7 @@ alignment pipeline. Every SideBySide and SingleFile story receives a real `Synta
 syntax worker; an empty file has the same service but naturally issues no request. Long-line
 fixtures are generated to at least 512 terminal cells, measured with `LineIndex`, so they still
 overflow a wide terminal. Small canonical stories isolate one behaviour, while `mixed-status`,
-`awkward-paths`, `comprehensive`, `empty`, and `large-syntax` stories combine edge cases. Each story mounts `Explorer`, `SideBySide`, `SingleFile`,
+`awkward-paths`, `edge-matrix`, `empty`, and `long-syntax-file` stories combine edge cases. Each story mounts `Explorer`, `SideBySide`, `SingleFile`,
 or `DiffViewer` from this crate rather than copying its drawing code.
 
 ## Checking it

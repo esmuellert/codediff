@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use super::super::definition::{StoryDefinition, StoryFixture, StoryType};
+use super::super::definition::{StoryComponent, StoryDefinition, StoryFixture};
 #[cfg(test)]
-use super::super::fixtures::LONG_LINE_MIN_CELLS;
+use super::super::fixtures::MIN_LONG_LINE_CELLS;
 use super::super::fixtures::diff::DiffFixture;
-use super::super::fixtures::long_rust_constant;
+use super::super::fixtures::long_rust_line;
 
 pub const STORIES: &[StoryDefinition] = &[
     story(
@@ -33,27 +33,27 @@ pub const STORIES: &[StoryDefinition] = &[
         long_lines,
     ),
     StoryDefinition {
-        id: "side-by-side/comprehensive",
-        summary: "Many diff edge cases with a three-digit gutter",
-        story_type: StoryType::SideBySide,
-        default_size: (120, 30),
-        setup: &[],
-        build: comprehensive,
+        id: "side-by-side/edge-matrix",
+        description: "Many diff edge cases with a three-digit gutter",
+        component: StoryComponent::SideBySide,
+        snapshot_size: (120, 30),
+        initial_keys: &[],
+        make_fixture: edge_matrix,
     },
 ];
 
 const fn story(
     id: &'static str,
-    summary: &'static str,
-    build: fn() -> Result<StoryFixture>,
+    description: &'static str,
+    make_fixture: fn() -> Result<StoryFixture>,
 ) -> StoryDefinition {
     StoryDefinition {
         id,
-        summary,
-        story_type: StoryType::SideBySide,
-        default_size: (100, 24),
-        setup: &[],
-        build,
+        description,
+        component: StoryComponent::SideBySide,
+        snapshot_size: (100, 24),
+        initial_keys: &[],
+        make_fixture,
     }
 }
 
@@ -121,14 +121,8 @@ fn tabs_unicode() -> Result<StoryFixture> {
 }
 
 fn long_lines() -> Result<StoryFixture> {
-    let mut original = vec![long_rust_constant(
-        "ORIGINAL_LONG_PREFIX",
-        "0123456789abcdef",
-    )];
-    let mut modified = vec![long_rust_constant(
-        "MODIFIED_LONG_PREFIX",
-        "fedcba9876543210",
-    )];
+    let mut original = vec![long_rust_line("ORIGINAL_LONG_PREFIX", "0123456789abcdef")];
+    let mut modified = vec![long_rust_line("MODIFIED_LONG_PREFIX", "fedcba9876543210")];
     for line in 2..=40 {
         original.push(format!(
             "// original row {line:02} with enough text to scroll"
@@ -144,17 +138,17 @@ fn long_lines() -> Result<StoryFixture> {
     ))
 }
 
-fn comprehensive() -> Result<StoryFixture> {
+fn edge_matrix() -> Result<StoryFixture> {
     let fixture = DiffFixture::from_text(
-        "comprehensive.rs",
-        include_str!("../fixtures/data/comprehensive/original.txt"),
-        include_str!("../fixtures/data/comprehensive/modified.txt"),
+        "edge-matrix.rs",
+        include_str!("../fixtures/data/edge_matrix/original.txt"),
+        include_str!("../fixtures/data/edge_matrix/modified.txt"),
     )
-    .changed(
-        long_rust_constant("ORIGINAL_EDGE_LONG_PREFIX", "original0123456789"),
-        long_rust_constant("MODIFIED_EDGE_LONG_PREFIX", "modified9876543210"),
+    .with_line_pair(
+        long_rust_line("ORIGINAL_EDGE_LONG_PREFIX", "original0123456789"),
+        long_rust_line("MODIFIED_EDGE_LONG_PREFIX", "modified9876543210"),
     )
-    .pad_unchanged("unchanged context line", 110);
+    .with_unchanged_lines("unchanged context line", 110);
     Ok(StoryFixture::SideBySide(fixture.build()?))
 }
 
@@ -179,15 +173,15 @@ mod tests {
                 .width()
                 .get();
             assert!(
-                cells >= LONG_LINE_MIN_CELLS,
+                cells >= MIN_LONG_LINE_CELLS,
                 "{version:?} has only {cells} cells"
             );
         }
     }
 
     #[test]
-    fn comprehensive_fixture_has_edge_content_and_three_digit_lines() {
-        let StoryFixture::SideBySide(content) = comprehensive().unwrap() else {
+    fn edge_matrix_has_edge_content_and_three_digit_lines() {
+        let StoryFixture::SideBySide(content) = edge_matrix().unwrap() else {
             unreachable!()
         };
         let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -205,11 +199,11 @@ mod tests {
             let long = lines
                 .iter()
                 .find(|line| line.contains("EDGE_LONG_PREFIX"))
-                .expect("comprehensive long line");
+                .expect("edge-matrix long line");
             let cells = line_index::LineIndex::new(long, line_index::DEFAULT_TAB_WIDTH)
                 .width()
                 .get();
-            assert!(cells >= LONG_LINE_MIN_CELLS);
+            assert!(cells >= MIN_LONG_LINE_CELLS);
         }
     }
 }

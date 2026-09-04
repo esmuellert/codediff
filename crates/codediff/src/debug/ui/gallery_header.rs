@@ -12,11 +12,11 @@ use ui::ratatui::style::Style;
 #[derive(Clone)]
 pub struct Shortcut {
     pub key: &'static str,
-    pub action: &'static str,
+    pub label: &'static str,
 }
 
 #[component]
-pub fn GalleryBar(
+pub fn GalleryHeader(
     scope: &mut Scope,
     title: Rc<str>,
     context: Rc<str>,
@@ -28,17 +28,17 @@ pub fn GalleryBar(
     let key_style = theme.status.fg(theme.tree.directory);
     let action_style = theme.status.fg(theme.tree.previous);
 
-    let mut heading = vec![part(0, format!(" {title}"), title_style)];
+    let mut heading = vec![text_segment(0, format!(" {title}"), title_style)];
     if !context.is_empty() {
-        heading.push(part(1, format!("  {context}"), context_style));
+        heading.push(text_segment(1, format!("  {context}"), context_style));
     }
     let mut commands = Vec::new();
     for (index, shortcut) in shortcuts.iter().enumerate() {
         let key = index as u32 * 2;
-        commands.push(part(key, format!(" {}", shortcut.key), key_style));
-        commands.push(part(
+        commands.push(text_segment(key, format!(" {}", shortcut.key), key_style));
+        commands.push(text_segment(
             key + 1,
-            format!(" {}  ", shortcut.action),
+            format!(" {}  ", shortcut.label),
             action_style,
         ));
     }
@@ -78,7 +78,7 @@ pub fn GalleryBar(
     }
 }
 
-fn part(key: u32, text: String, style: Style) -> Node {
+fn text_segment(key: u32, text: String, style: Style) -> Node {
     let width = line_index::LineIndex::new(&text, 1).width().0 as u16;
     rsx! {
         Text {
@@ -106,13 +106,13 @@ mod tests {
 
     #[test]
     fn title_keys_and_actions_have_separate_emphasis() {
-        let mut harness = Harness::new::<GalleryBar>(
-            GalleryBarProps {
+        let mut harness = Harness::new::<GalleryHeader>(
+            GalleryHeaderProps {
                 title: Rc::from("STORY"),
                 context: Rc::from("side-by-side/replacement"),
                 shortcuts: Rc::from([Shortcut {
                     key: "q",
-                    action: "Quit",
+                    label: "Quit",
                 }]),
             },
             80,

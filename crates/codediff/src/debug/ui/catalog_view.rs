@@ -17,16 +17,16 @@ use ui::ratatui::style::Modifier;
 
 use super::catalog;
 use super::catalog_rows::{
-    CatalogRow, first_story_line, heading_row, next_story_line, previous_story_line, rows,
+    CatalogRow, filtered_rows, first_story_line, heading_row, next_story_line, previous_story_line,
     story_row,
 };
-use super::chrome::{GalleryBar, GalleryBarProps, Shortcut};
+use super::gallery_header::{GalleryHeader, GalleryHeaderProps, Shortcut};
 
 #[component]
-pub(super) fn BrowserApp(
+pub(super) fn CatalogRoot(
     _scope: &mut Scope,
-    initial_story: usize,
-    open: Rc<dyn Fn(usize)>,
+    initial_story_index: usize,
+    open_story: Rc<dyn Fn(usize)>,
 ) -> Node {
     rsx! {
         Ui {
@@ -34,9 +34,9 @@ pub(super) fn BrowserApp(
                 theme: Rc::new(Theme::DARK),
                 ..UiContext::default()
             },
-            Browser {
-                initial_story: *initial_story,
-                open: Rc::clone(open),
+            CatalogView {
+                initial_story_index: *initial_story_index,
+                open_story: Rc::clone(open_story),
             }
         }
     }
@@ -46,10 +46,10 @@ pub(super) fn snapshot(width: u16, height: u16) -> Result<Vec<String>> {
     if width == 0 || height < 3 {
         bail!("the UI catalog needs a non-zero width and at least three rows");
     }
-    let mut harness = loom::testing::Harness::new::<BrowserApp>(
-        BrowserAppProps {
-            initial_story: 0,
-            open: Rc::new(|_| {}),
+    let mut harness = loom::testing::Harness::new::<CatalogRoot>(
+        CatalogRootProps {
+            initial_story_index: 0,
+            open_story: Rc::new(|_| {}),
         },
         width,
         height,
@@ -61,32 +61,40 @@ pub(super) fn snapshot(width: u16, height: u16) -> Result<Vec<String>> {
 }
 
 #[component]
-fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> Node {
+fn CatalogView(
+    scope: &mut Scope,
+    initial_story_index: usize,
+    open_story: Rc<dyn Fn(usize)>,
+) -> Node {
     let theme = use_context::<Ui>(scope).theme;
     let exit = use_exit(scope);
     let (query, set_query) = use_state(scope, String::new);
     let (searching, set_searching) = use_state(scope, || false);
-    let initial_rows = rows("");
+    let initial_rows = filtered_rows("");
     let initial_line = initial_rows
         .iter()
-        .position(|row| matches!(row, CatalogRow::Story { index, .. } if *index == *initial_story))
+        .position(
+            |row| matches!(row, CatalogRow::Story { index, .. } if *index == *initial_story_index),
+        )
         .unwrap_or_else(|| first_story_line(&initial_rows));
-    let nodes = Rc::new(rows(&query));
+    let catalog_rows = Rc::new(filtered_rows(&query));
     let (selected_line, set_selected_line) = use_state(scope, || initial_line as u32);
-    let total = nodes.len() as u32;
+    let total = catalog_rows.len() as u32;
     let (view, scroll) = use_scroll(scope, None, total);
     let initial_target = initial_line as u32;
     let viewport_rows = view.view_lines.len() as u32;
-    use_effect(scope, (*initial_story, viewport_rows), move || {
+    use_effect(scope, (*initial_story_index, viewport_rows), move || {
         scroll.keep_line_visible(initial_target, 2);
     });
-    let selected_story = nodes.get(selected_line as usize).and_then(|row| match row {
-        CatalogRow::Story { index, .. } => Some(*index),
-        CatalogRow::Heading(_) => None,
-    });
+    let selected_story_index = catalog_rows
+        .get(selected_line as usize)
+        .and_then(|row| match row {
+            CatalogRow::Story { index, .. } => Some(*index),
+            CatalogRow::Heading(_) => None,
+        });
 
-    let nodes_for_keys = Rc::clone(&nodes);
-    let open_key = Rc::clone(open);
+    let rows_for_keys = Rc::clone(&catalog_rows);
+    let open_selected_story = Rc::clone(open_story);
     let has_query = !query.is_empty();
     let listeners = Listeners::new().on_key(move |pressed| {
         if searching {
@@ -96,8 +104,8 @@ fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> 
             }
             if pressed == key!(enter) {
                 set_searching(&|_| false);
-                if let Some(index) = selected_story {
-                    open_key(index);
+                if let Some(index) = selected_story_index {
+                    open_selected_story(index);
                 }
                 return Bubble::Stop;
             }
@@ -134,25 +142,25 @@ fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> 
             set_searching(&|_| true);
             Bubble::Stop
         } else if pressed == key!(j) || pressed == key!(down) {
-            let nodes = Rc::clone(&nodes_for_keys);
+            let rows = Rc::clone(&rows_for_keys);
             set_selected_line(&move |line| {
-                let next = next_story_line(&nodes, line as usize).unwrap_or(line as usize) as u32;
+                let next = next_story_line(&rows, line as usize).unwrap_or(line as usize) as u32;
                 scroll.keep_line_visible(next, 2);
                 next
             });
             Bubble::Stop
         } else if pressed == key!(k) || pressed == key!(up) {
-            let nodes = Rc::clone(&nodes_for_keys);
+            let rows = Rc::clone(&rows_for_keys);
             set_selected_line(&move |line| {
                 let next =
-                    previous_story_line(&nodes, line as usize).unwrap_or(line as usize) as u32;
+                    previous_story_line(&rows, line as usize).unwrap_or(line as usize) as u32;
                 scroll.keep_line_visible(next, 2);
                 next
             });
             Bubble::Stop
         } else if pressed == key!(enter) {
-            if let Some(index) = selected_story {
-                open_key(index);
+            if let Some(index) = selected_story_index {
+                open_selected_story(index);
             }
             Bubble::Stop
         } else {
@@ -160,7 +168,7 @@ fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> 
         }
     });
 
-    let matching = nodes
+    let matching_story_count = catalog_rows
         .iter()
         .filter(|row| matches!(row, CatalogRow::Story { .. }))
         .count();
@@ -175,65 +183,65 @@ fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> 
             vec![
                 Shortcut {
                     key: "Enter",
-                    action: "Open",
+                    label: "Open",
                 },
                 Shortcut {
                     key: "Esc",
-                    action: "Stop filtering",
+                    label: "Stop filtering",
                 },
                 Shortcut {
                     key: "Backspace",
-                    action: "Delete",
+                    label: "Delete",
                 },
             ],
         )
     } else if !query.is_empty() {
         (
             "STORIES",
-            format!("{matching} matches · {query}"),
+            format!("{matching_story_count} matches · {query}"),
             vec![
                 Shortcut {
                     key: "j/k",
-                    action: "Select",
+                    label: "Select",
                 },
                 Shortcut {
                     key: "Enter",
-                    action: "Open",
+                    label: "Open",
                 },
                 Shortcut {
                     key: "/",
-                    action: "Edit filter",
+                    label: "Edit filter",
                 },
                 Shortcut {
                     key: "Esc",
-                    action: "Clear filter",
+                    label: "Clear filter",
                 },
                 Shortcut {
                     key: "q",
-                    action: "Quit",
+                    label: "Quit",
                 },
             ],
         )
     } else {
         (
             "STORIES",
-            catalog::len().to_string(),
+            catalog::story_count().to_string(),
             vec![
                 Shortcut {
                     key: "j/k",
-                    action: "Select",
+                    label: "Select",
                 },
                 Shortcut {
                     key: "Enter",
-                    action: "Open",
+                    label: "Open",
                 },
                 Shortcut {
                     key: "/",
-                    action: "Filter",
+                    label: "Filter",
                 },
                 Shortcut {
                     key: "q",
-                    action: "Quit",
+                    label: "Quit",
                 },
             ],
         )
@@ -242,7 +250,7 @@ fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> 
         .view_lines
         .clone()
         .filter_map(|line| {
-            nodes.get(line as usize).map(|row| match row {
+            catalog_rows.get(line as usize).map(|row| match row {
                 CatalogRow::Heading(label) => heading_row(line, label, *theme),
                 CatalogRow::Story { definition, .. } => {
                     story_row(line, definition, line == selected_line, *theme)
@@ -258,7 +266,7 @@ fn Browser(scope: &mut Scope, initial_story: usize, open: Rc<dyn Fn(usize)>) -> 
             listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
-            GalleryBar {
+            GalleryHeader {
                 key: 0u32,
                 title: Rc::from(bar_title),
                 context: Rc::from(bar_context),
@@ -292,10 +300,10 @@ mod tests {
 
     #[test]
     fn story_ids_and_descriptions_have_distinct_colours() {
-        let mut harness = loom::testing::Harness::new::<BrowserApp>(
-            BrowserAppProps {
-                initial_story: 0,
-                open: Rc::new(|_| {}),
+        let mut harness = loom::testing::Harness::new::<CatalogRoot>(
+            CatalogRootProps {
+                initial_story_index: 0,
+                open_story: Rc::new(|_| {}),
             },
             100,
             24,
@@ -318,10 +326,10 @@ mod tests {
 
     #[test]
     fn returning_to_the_catalog_keeps_a_late_story_visible() {
-        let mut harness = loom::testing::Harness::new::<BrowserApp>(
-            BrowserAppProps {
-                initial_story: catalog::len() - 1,
-                open: Rc::new(|_| {}),
+        let mut harness = loom::testing::Harness::new::<CatalogRoot>(
+            CatalogRootProps {
+                initial_story_index: catalog::story_count() - 1,
+                open_story: Rc::new(|_| {}),
             },
             100,
             8,
@@ -334,7 +342,7 @@ mod tests {
             harness
                 .screen()
                 .iter()
-                .any(|row| row.contains("single-file/large-syntax"))
+                .any(|row| row.contains("single-file/long-syntax-file"))
         );
     }
 }

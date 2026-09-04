@@ -1,4 +1,4 @@
-fn comprehensive() {
+fn edge_matrix() {
     shared header
         whitespace only
     deleted only

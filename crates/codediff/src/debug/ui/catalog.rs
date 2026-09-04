@@ -20,35 +20,35 @@ pub const GROUPS: &[StoryGroup] = &[
         stories: explorer::STORIES,
     },
     StoryGroup {
-        label: "SideBySide",
+        label: "Side by side",
         stories: side_by_side::STORIES,
     },
     StoryGroup {
-        label: "SingleFile",
+        label: "Single file",
         stories: single_file::STORIES,
     },
 ];
 
-pub fn all() -> impl Iterator<Item = &'static StoryDefinition> {
+pub fn stories() -> impl Iterator<Item = &'static StoryDefinition> {
     GROUPS.iter().flat_map(|group| group.stories.iter())
 }
 
-pub fn names() -> impl Iterator<Item = &'static str> {
-    all().map(|story| story.id)
+pub fn ids() -> impl Iterator<Item = &'static str> {
+    stories().map(|story| story.id)
 }
 
-pub fn named(name: &str) -> Result<&'static StoryDefinition> {
-    all()
-        .find(|story| story.id == name)
-        .ok_or_else(|| anyhow::anyhow!("unknown UI story {name:?}; use --list to see story names"))
+pub fn by_id(id: &str) -> Result<&'static StoryDefinition> {
+    stories()
+        .find(|story| story.id == id)
+        .ok_or_else(|| anyhow::anyhow!("unknown UI story {id:?}; use --list to see story IDs"))
 }
 
-pub fn at(index: usize) -> Option<&'static StoryDefinition> {
-    all().nth(index)
+pub fn by_index(index: usize) -> Option<&'static StoryDefinition> {
+    stories().nth(index)
 }
 
-pub fn len() -> usize {
-    all().count()
+pub fn story_count() -> usize {
+    stories().count()
 }
 
 #[cfg(test)]
@@ -59,8 +59,12 @@ mod tests {
 
     #[test]
     fn story_ids_are_unique() {
-        let ids: Vec<&str> = names().collect();
-        let unique: HashSet<&str> = ids.iter().copied().collect();
-        assert_eq!(ids.len(), unique.len(), "duplicate story ID in catalog");
+        let story_ids: Vec<&str> = ids().collect();
+        let unique: HashSet<&str> = story_ids.iter().copied().collect();
+        assert_eq!(
+            story_ids.len(),
+            unique.len(),
+            "duplicate story ID in catalog"
+        );
     }
 }

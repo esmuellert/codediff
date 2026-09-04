@@ -8,7 +8,7 @@ use loom::crokey::KeyCombination;
 use pipeline::diff::DiffContent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StoryType {
+pub enum StoryComponent {
     Welcome,
     Explorer,
     SideBySide,
@@ -17,18 +17,18 @@ pub enum StoryType {
 
 pub struct StoryDefinition {
     pub id: &'static str,
-    pub summary: &'static str,
-    pub story_type: StoryType,
-    pub default_size: (u16, u16),
-    pub setup: &'static [KeyCombination],
-    pub build: fn() -> Result<StoryFixture>,
+    pub description: &'static str,
+    pub component: StoryComponent,
+    pub snapshot_size: (u16, u16),
+    pub initial_keys: &'static [KeyCombination],
+    pub make_fixture: fn() -> Result<StoryFixture>,
 }
 
 impl StoryDefinition {
-    pub fn build(&self) -> Result<StoryFixture> {
-        let fixture = (self.build)()?;
-        if fixture.story_type() != self.story_type {
-            bail!("story {} built the wrong component type", self.id);
+    pub fn create_fixture(&self) -> Result<StoryFixture> {
+        let fixture = (self.make_fixture)()?;
+        if fixture.component() != self.component {
+            bail!("story {} built the wrong component", self.id);
         }
         Ok(fixture)
     }
@@ -42,12 +42,12 @@ pub enum StoryFixture {
 }
 
 impl StoryFixture {
-    pub const fn story_type(&self) -> StoryType {
+    pub const fn component(&self) -> StoryComponent {
         match self {
-            Self::Welcome => StoryType::Welcome,
-            Self::Explorer(_) => StoryType::Explorer,
-            Self::SideBySide(_) => StoryType::SideBySide,
-            Self::SingleFile(_) => StoryType::SingleFile,
+            Self::Welcome => StoryComponent::Welcome,
+            Self::Explorer(_) => StoryComponent::Explorer,
+            Self::SideBySide(_) => StoryComponent::SideBySide,
+            Self::SingleFile(_) => StoryComponent::SingleFile,
         }
     }
 
@@ -55,7 +55,7 @@ impl StoryFixture {
         matches!(self, Self::SideBySide(_) | Self::SingleFile(_))
     }
 
-    pub fn syntax_responses(&self) -> usize {
+    pub fn initial_syntax_response_count(&self) -> usize {
         match self {
             Self::SideBySide(content) => {
                 let DiffContent::Diff(diff) = content.as_ref() else {

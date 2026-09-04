@@ -13,11 +13,11 @@ use ui::components::side_by_side::{SideBySide, SideBySideProps};
 use ui::components::single_file::{SingleFile, SingleFileProps};
 use ui::components::{Context, Ui, UiProps};
 
-use super::chrome::{GalleryBar, GalleryBarProps, Shortcut};
-use super::definition::{StoryDefinition, StoryType};
+use super::definition::{StoryComponent, StoryDefinition};
+use super::gallery_header::{GalleryHeader, GalleryHeaderProps, Shortcut};
 
 #[derive(Clone, Copy)]
-pub(super) enum Navigation {
+pub(super) enum PreviewAction {
     Catalog,
     Previous,
     Next,
@@ -25,12 +25,12 @@ pub(super) enum Navigation {
 }
 
 #[component]
-pub(super) fn Gallery(
+pub(super) fn StoryPreview(
     scope: &mut Scope,
     definition: &'static StoryDefinition,
     base_context: Context,
     content: Option<Rc<DiffContent>>,
-    navigate: Option<Rc<dyn Fn(Navigation)>>,
+    navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
     let mut context = base_context.clone();
@@ -48,13 +48,13 @@ pub(super) fn Gallery(
             return Bubble::Continue;
         };
         let action = if key == loom::crokey::key!(esc) {
-            Navigation::Catalog
+            PreviewAction::Catalog
         } else if key == loom::crokey::key!('[') {
-            Navigation::Previous
+            PreviewAction::Previous
         } else if key == loom::crokey::key!(']') {
-            Navigation::Next
+            PreviewAction::Next
         } else if key == loom::crokey::key!(r) {
-            Navigation::Reset
+            PreviewAction::Reset
         } else {
             return Bubble::Continue;
         };
@@ -66,38 +66,38 @@ pub(super) fn Gallery(
         vec![
             Shortcut {
                 key: "Esc",
-                action: "Story list",
+                label: "Story list",
             },
             Shortcut {
                 key: "[",
-                action: "Previous",
+                label: "Previous",
             },
             Shortcut {
                 key: "]",
-                action: "Next",
+                label: "Next",
             },
             Shortcut {
                 key: "r",
-                action: "Restart",
+                label: "Restart",
             },
             Shortcut {
                 key: "q",
-                action: "Quit",
+                label: "Quit",
             },
         ]
     } else {
         vec![Shortcut {
             key: "q",
-            action: "Quit",
+            label: "Quit",
         }]
     };
-    let body = match definition.story_type {
-        StoryType::Welcome => rsx! { DiffViewer {} },
-        StoryType::Explorer => rsx! { Explorer {} },
-        StoryType::SideBySide => rsx! {
+    let body = match definition.component {
+        StoryComponent::Welcome => rsx! { DiffViewer {} },
+        StoryComponent::Explorer => rsx! { Explorer {} },
+        StoryComponent::SideBySide => rsx! {
             SideBySide { content: Rc::clone(content.as_ref().expect("side-by-side story content")) }
         },
-        StoryType::SingleFile => rsx! {
+        StoryComponent::SingleFile => rsx! {
             SingleFile { content: Rc::clone(content.as_ref().expect("single-file story content")) }
         },
     };
@@ -109,7 +109,7 @@ pub(super) fn Gallery(
                 listeners: listeners,
                 layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                 ..,
-                GalleryBar {
+                GalleryHeader {
                     key: 0u32,
                     title: Rc::from("STORY"),
                     context: Rc::from(definition.id),

@@ -1,15 +1,15 @@
 //! `codediff debug ui` — deterministic production-component stories.
 
-mod browse;
-mod browser;
 mod catalog;
 mod catalog_rows;
-mod chrome;
-mod component;
+mod catalog_view;
 mod definition;
 mod fixtures;
-mod session;
+mod gallery_controller;
+mod gallery_header;
+mod preview;
 mod stories;
+mod story_host;
 
 use anyhow::{Result, bail};
 
@@ -24,25 +24,25 @@ pub fn run(
         if story.is_some() || snapshot {
             bail!("--list cannot be combined with a story or --snapshot");
         }
-        for name in catalog::names() {
-            println!("{name}");
+        for story_id in catalog::ids() {
+            println!("{story_id}");
         }
         return Ok(());
     }
 
-    let Some(name) = story else {
+    let Some(story_id) = story else {
         if snapshot {
-            for row in browser::snapshot(width.unwrap_or(100), height.unwrap_or(24))? {
+            for row in catalog_view::snapshot(width.unwrap_or(100), height.unwrap_or(24))? {
                 println!("{row}");
             }
             return Ok(());
         }
-        return browse::run();
+        return gallery_controller::run();
     };
-    let definition = catalog::named(&name)?;
+    let definition = catalog::by_id(&story_id)?;
     if snapshot {
-        let (default_width, default_height) = definition.default_size;
-        for row in session::snapshot(
+        let (default_width, default_height) = definition.snapshot_size;
+        for row in story_host::snapshot(
             definition,
             width.unwrap_or(default_width),
             height.unwrap_or(default_height),
@@ -50,7 +50,7 @@ pub fn run(
             println!("{row}");
         }
     } else {
-        session::run(definition)?;
+        story_host::run(definition)?;
     }
     Ok(())
 }

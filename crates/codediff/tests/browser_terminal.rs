@@ -34,26 +34,26 @@ fn catalog_filters_opens_switches_resets_and_returns() {
     let mut writer = pty.master.take_writer().expect("writing to the pty");
     let search = send_and_wait(&mut writer, &output, b"/");
     assert!(search.contains("FILTER"), "filter did not open: {search:?}");
-    let filtered = send_and_wait(&mut writer, &output, b"comprehensive");
+    let filtered = send_and_wait(&mut writer, &output, b"edge-matrix");
     assert!(
-        filtered.contains("comprehensive"),
+        filtered.contains("edge-matrix"),
         "filter text did not arrive: {filtered:?}"
     );
 
     let opened = send_and_wait(&mut writer, &output, b"\r");
     assert!(
-        opened.contains("fn comprehensive()"),
+        opened.contains("fn edge_matrix()"),
         "story did not open: {opened:?}"
     );
 
     let next = send_and_wait(&mut writer, &output, b"]");
     assert!(
-        next.contains("file/added"),
+        next.contains("newly_added"),
         "next story did not open: {next:?}"
     );
     let previous = send_and_wait(&mut writer, &output, b"[");
     assert!(
-        previous.contains("comprehensive"),
+        previous.contains("edge_matrix"),
         "previous story did not open: {previous:?}"
     );
     let _ = send_and_wait(&mut writer, &output, b"r");

@@ -18,10 +18,10 @@ use ui::services::syntax::SyntaxService;
 
 #[cfg(test)]
 use super::catalog;
-use super::component::{Gallery, GalleryProps};
 use super::definition::{StoryDefinition, StoryFixture};
+use super::preview::{StoryPreview, StoryPreviewProps};
 
-enum Event {
+enum StoryEvent {
     Terminal(ui::crossterm::event::Event),
     #[cfg(unix)]
     Signal(i32),
@@ -29,20 +29,20 @@ enum Event {
     SyntaxReady(syntax::SyntaxResponse),
 }
 
-struct Session {
+struct StoryHost {
     definition: &'static StoryDefinition,
-    events_tx: Sender<Event>,
-    events_rx: Receiver<Event>,
+    events_tx: Sender<StoryEvent>,
+    events_rx: Receiver<StoryEvent>,
     files_service: Option<Rc<FilesService>>,
     syntax_service: Option<Rc<SyntaxService>>,
-    syntax_responses: usize,
+    initial_syntax_response_count: usize,
 }
 
-impl Session {
-    fn new(definition: &'static StoryDefinition) -> Result<(Self, GalleryProps)> {
-        let fixture = definition.build()?;
+impl StoryHost {
+    fn new(definition: &'static StoryDefinition) -> Result<(Self, StoryPreviewProps)> {
+        let fixture = definition.create_fixture()?;
         let syntax = fixture.needs_syntax();
-        let syntax_responses = fixture.syntax_responses();
+        let initial_syntax_response_count = fixture.initial_syntax_response_count();
         let (files, content) = match fixture {
             StoryFixture::Welcome => (None, None),
             StoryFixture::Explorer(files) => (Some(files), None),
@@ -55,18 +55,20 @@ impl Session {
         let files_service = files.map(|files| {
             let worker = pipeline::files::FilesWorker::mock(
                 vec![files],
-                channel::Emitter::new(events_tx.clone(), Event::FilesReady),
+                channel::Emitter::new(events_tx.clone(), StoryEvent::FilesReady),
             );
             Rc::new(FilesService::new(Rc::new(RefCell::new(worker)), Vec::new()))
         });
         let syntax_service = syntax.then(|| {
-            let worker =
-                syntax::Syntax::start(channel::Emitter::new(events_tx.clone(), Event::SyntaxReady));
+            let worker = syntax::Syntax::start(channel::Emitter::new(
+                events_tx.clone(),
+                StoryEvent::SyntaxReady,
+            ));
             Rc::new(SyntaxService::new(Rc::new(RefCell::new(worker))))
         });
-        let props = GalleryProps {
+        let props = StoryPreviewProps {
             definition,
-            base_context: context(&files_service, &syntax_service),
+            base_context: story_context(&files_service, &syntax_service),
             content,
             navigate: None,
         };
@@ -77,7 +79,7 @@ impl Session {
                 events_rx,
                 files_service,
                 syntax_service,
-                syntax_responses,
+                initial_syntax_response_count,
             },
             props,
         ))
@@ -85,7 +87,7 @@ impl Session {
 
     fn wait_for_files(&self) -> Result<pipeline::files::Response> {
         match self.events_rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(Event::FilesReady(response)) => Ok(response),
+            Ok(StoryEvent::FilesReady(response)) => Ok(response),
             Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
             Err(error) => Err(error).context("waiting for the story's file list"),
         }
@@ -93,7 +95,7 @@ impl Session {
 
     fn wait_for_syntax(&self) -> Result<syntax::SyntaxResponse> {
         match self.events_rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(Event::SyntaxReady(response)) => Ok(response),
+            Ok(StoryEvent::SyntaxReady(response)) => Ok(response),
             Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
             Err(error) => Err(error).context("waiting for the story's syntax colours"),
         }
@@ -105,12 +107,12 @@ impl Session {
             service.deliver(self.wait_for_files()?);
             settle_harness(harness);
         }
-        for &key in self.definition.setup {
+        for &key in self.definition.initial_keys {
             harness.press(key);
             settle_harness(harness);
         }
         if let Some(service) = &self.syntax_service {
-            for _ in 0..self.syntax_responses {
+            for _ in 0..self.initial_syntax_response_count {
                 service.deliver(self.wait_for_syntax()?);
                 settle_harness(harness);
             }
@@ -119,19 +121,19 @@ impl Session {
     }
 
     fn prepare_tree(&self, tree: &mut Tree) -> Result<()> {
-        settle_tree(tree);
+        settle_story_tree(tree);
         if let Some(service) = &self.files_service {
             service.deliver(self.wait_for_files()?);
-            settle_tree(tree);
+            settle_story_tree(tree);
         }
-        for &key in self.definition.setup {
+        for &key in self.definition.initial_keys {
             tree.press(key);
-            settle_tree(tree);
+            settle_story_tree(tree);
         }
         if let Some(service) = &self.syntax_service {
-            for _ in 0..self.syntax_responses {
+            for _ in 0..self.initial_syntax_response_count {
                 service.deliver(self.wait_for_syntax()?);
-                settle_tree(tree);
+                settle_story_tree(tree);
             }
         }
         tree.redraw_all();
@@ -144,51 +146,47 @@ pub fn snapshot(
     width: u16,
     height: u16,
 ) -> Result<Vec<String>> {
-    let mut harness = prepared_harness(definition, width, height)?;
+    let mut harness = story_harness(definition, width, height)?;
     Ok(harness.screen())
 }
 
-fn prepared_harness(
-    definition: &'static StoryDefinition,
-    width: u16,
-    height: u16,
-) -> Result<Harness> {
+fn story_harness(definition: &'static StoryDefinition, width: u16, height: u16) -> Result<Harness> {
     validate_dimensions(width, height)?;
-    let (session, props) = Session::new(definition)?;
-    let mut harness = Harness::new::<Gallery>(props, width, height);
-    session.prepare_harness(&mut harness)?;
+    let (host, props) = StoryHost::new(definition)?;
+    let mut harness = Harness::new::<StoryPreview>(props, width, height);
+    host.prepare_harness(&mut harness)?;
     Ok(harness)
 }
 
 pub fn run(definition: &'static StoryDefinition) -> Result<()> {
-    let (session, props) = Session::new(definition)?;
-    let mut tree = Tree::new::<Gallery>(props);
-    session.prepare_tree(&mut tree)?;
+    let (host, props) = StoryHost::new(definition)?;
+    let mut tree = Tree::new::<StoryPreview>(props);
+    host.prepare_tree(&mut tree)?;
 
     #[cfg(unix)]
-    ui::spawn_signals(session.events_tx.clone(), Event::Signal);
+    ui::spawn_signals(host.events_tx.clone(), StoryEvent::Signal);
 
-    let files_service = session.files_service;
-    let syntax_service = session.syntax_service;
+    let files_service = host.files_service;
+    let syntax_service = host.syntax_service;
     loom::run(
         &mut tree,
-        session.events_rx,
-        session.events_tx,
-        Event::Terminal,
+        host.events_rx,
+        host.events_tx,
+        StoryEvent::Terminal,
         move |event, tree| {
             match event {
-                Event::Terminal(event) => deliver_input(tree, &event),
+                StoryEvent::Terminal(event) => deliver_input(tree, &event),
                 #[cfg(unix)]
-                Event::Signal(signal) => {
+                StoryEvent::Signal(signal) => {
                     loom::restore();
                     std::process::exit(128 + signal);
                 }
-                Event::FilesReady(response) => {
+                StoryEvent::FilesReady(response) => {
                     if let Some(service) = &files_service {
                         service.deliver(response);
                     }
                 }
-                Event::SyntaxReady(response) => {
+                StoryEvent::SyntaxReady(response) => {
                     if let Some(service) = &syntax_service {
                         service.deliver(response);
                     }
@@ -200,7 +198,7 @@ pub fn run(definition: &'static StoryDefinition) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn context(
+pub(super) fn story_context(
     files_service: &Option<Rc<FilesService>>,
     syntax_service: &Option<Rc<SyntaxService>>,
 ) -> UiContext {
@@ -213,7 +211,7 @@ pub(super) fn context(
     }
 }
 
-pub(super) fn settle_tree(tree: &mut Tree) {
+pub(super) fn settle_story_tree(tree: &mut Tree) {
     let area = Rect::new(0, 0, 100, 24);
     for _ in 0..4 {
         let mut cells = Buffer::empty(area);
@@ -240,8 +238,8 @@ mod tests {
 
     #[test]
     fn selected_story_preselects_a_file() {
-        let story = catalog::named("explorer/selected").unwrap();
-        let mut harness = prepared_harness(story, 100, 24).unwrap();
+        let story = catalog::by_id("explorer/selected").unwrap();
+        let mut harness = story_harness(story, 100, 24).unwrap();
         let selected = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
 
         assert_eq!(harness.style_at(0, 5).bg, selected);
@@ -250,15 +248,15 @@ mod tests {
 
     #[test]
     fn every_nonempty_code_story_waits_for_syntax_colours() {
-        use super::super::definition::StoryType;
+        use super::super::definition::StoryComponent;
 
-        for story in catalog::all().filter(|story| {
+        for story in catalog::stories().filter(|story| {
             matches!(
-                story.story_type,
-                StoryType::SideBySide | StoryType::SingleFile
+                story.component,
+                StoryComponent::SideBySide | StoryComponent::SingleFile
             ) && story.id != "single-file/empty"
         }) {
-            let mut harness = prepared_harness(story, 100, 24).unwrap();
+            let mut harness = story_harness(story, 100, 24).unwrap();
             let normal = Theme::DARK.normal.fg;
             let cells = harness.cells();
             let coloured = |start: u16, end: u16| {
@@ -268,8 +266,8 @@ mod tests {
                     })
                 })
             };
-            match story.story_type {
-                StoryType::SideBySide => {
+            match story.component {
+                StoryComponent::SideBySide => {
                     let divider = (0..100)
                         .find(|&x| cells.cell((x, 2)).is_some_and(|cell| cell.symbol() == "│"))
                         .expect("side-by-side divider");
@@ -280,18 +278,18 @@ mod tests {
                         story.id
                     );
                 }
-                StoryType::SingleFile => {
+                StoryComponent::SingleFile => {
                     assert!(coloured(0, 100), "{} had no syntax-coloured text", story.id);
                 }
-                StoryType::Welcome | StoryType::Explorer => unreachable!(),
+                StoryComponent::Welcome | StoryComponent::Explorer => unreachable!(),
             }
         }
     }
 
     #[test]
     fn syntax_story_waits_for_colours() {
-        let story = catalog::named("single-file/syntax").unwrap();
-        let mut harness = prepared_harness(story, 100, 24).unwrap();
+        let story = catalog::by_id("single-file/rust-syntax").unwrap();
+        let mut harness = story_harness(story, 100, 24).unwrap();
 
         assert_ne!(harness.style_at(4, 2).fg, Theme::DARK.normal.fg);
         assert!(harness.screen_row(2).contains("fn highlighted"));
