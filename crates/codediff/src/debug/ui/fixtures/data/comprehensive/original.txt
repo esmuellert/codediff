@@ -1,0 +1,18 @@
+fn comprehensive() {
+    shared header
+        whitespace only
+    deleted only
+    replace alpha one
+    replace alpha two
+
+	let tabbed = "before";
+    let greeting = "你好 👋🏽";
+    let family = "👨‍👩‍👧‍👦";
+    let combining = "café";
+    move block one
+    move block two
+    move block three
+    uneven old one
+    uneven old two
+    shared footer
+}

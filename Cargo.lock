@@ -295,6 +295,7 @@ version = "0.22.0"
 dependencies = [
  "align",
  "anyhow",
+ "channel",
  "clap",
  "file-types",
  "fixtures",

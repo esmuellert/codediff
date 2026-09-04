@@ -1,8 +1,9 @@
-//! `codediff debug <command>` — one command per layer, printed as text.
+//! `codediff debug <command>` — one diagnostic command per layer.
 //!
 //! These ship. They are not scaffolding:
 //!
 //! - a bug report becomes "send me `codediff debug align` output";
+//! - `debug ui` opens deterministic production components for inspection;
 //! - the golden tests run these commands against the built binary, so what is
 //!   tested is what ships;
 //! - each one drives a single crate from outside, which is a standing check
@@ -20,6 +21,7 @@ mod list;
 mod parity;
 mod show;
 mod status;
+mod ui;
 
 pub use align::print as print_alignment;
 
@@ -50,5 +52,12 @@ pub fn run(command: Debug) -> Result<()> {
             pathspec,
         } => list::run(list::diff_type(&rev, staged), pathspec),
         Debug::Status { dir, verbose } => status::run(&dir, verbose),
+        Debug::Ui {
+            story,
+            list,
+            snapshot,
+            width,
+            height,
+        } => ui::run(story, list, snapshot, width, height),
     }
 }

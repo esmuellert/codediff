@@ -17,7 +17,11 @@ pub struct Emitter<T> {
 
 impl<T: Send + 'static> Emitter<T> {
     /// Creates an emitter that wraps `T` into `E` via `wrap`, then sends on `tx`.
-    pub fn new<E: Send + 'static>(tx: Sender<E>, wrap: fn(T) -> E) -> Self {
+    pub fn new<E, F>(tx: Sender<E>, wrap: F) -> Self
+    where
+        E: Send + 'static,
+        F: Fn(T) -> E + Send + 'static,
+    {
         Self {
             send: Box::new(move |value| tx.send(wrap(value)).is_ok()),
         }
