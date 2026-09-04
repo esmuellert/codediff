@@ -596,6 +596,13 @@ pub struct Focus {
     pub related: Option<NodeHandle>,
 }
 
+pub struct Wheel {
+    /// Positive is right.
+    pub horizontal: i32,
+    /// Positive is down.
+    pub vertical: i32,
+}
+
 /// Every listener one host can carry.
 #[derive(Clone, Default)]
 pub struct Listeners { /* private */ }
@@ -608,8 +615,8 @@ impl Listeners {
     /// is no separate drag event, `Mouse::button` is the difference.
     pub fn on_mouse_move(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
     pub fn on_mouse_up(self, listen: impl Fn(Mouse) -> Bubble + 'static) -> Self;
-    /// Positive is down. React's `onWheel`.
-    pub fn on_wheel(self, listen: impl Fn(i32) -> Bubble + 'static) -> Self;
+    /// React's `onWheel`, with both terminal scroll axes preserved.
+    pub fn on_wheel(self, listen: impl Fn(Wheel) -> Bubble + 'static) -> Self;
     /// Focus arrived, at this scope or at one inside it. React's `onFocus`.
     pub fn on_focus(self, listen: impl Fn(Focus) -> Bubble + 'static) -> Self;
     /// Focus left, from this scope or from one inside it. React's `onBlur`.
@@ -792,6 +799,7 @@ impl Harness {
     pub fn drag(&mut self, x: u16, y: u16) -> &mut Self;
     pub fn release(&mut self, x: u16, y: u16) -> &mut Self;
     pub fn wheel(&mut self, x: u16, y: u16, lines: i32) -> &mut Self;
+    pub fn wheel_horizontal(&mut self, x: u16, y: u16, cells: i32) -> &mut Self;
     pub fn resize(&mut self, width: u16, height: u16) -> &mut Self;
 
     /// The scope tree as indented text: name, key, rectangle.

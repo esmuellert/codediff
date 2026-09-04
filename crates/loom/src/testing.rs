@@ -149,6 +149,15 @@ impl Harness {
         self.mouse(x, y, kind)
     }
 
+    pub fn wheel_horizontal(&mut self, x: u16, y: u16, cells: i32) -> &mut Self {
+        let kind = if cells >= 0 {
+            crossterm::event::MouseEventKind::ScrollRight
+        } else {
+            crossterm::event::MouseEventKind::ScrollLeft
+        };
+        self.mouse(x, y, kind)
+    }
+
     fn mouse(&mut self, x: u16, y: u16, kind: crossterm::event::MouseEventKind) -> &mut Self {
         self.tree.mouse(crossterm::event::MouseEvent {
             kind,

@@ -151,8 +151,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             _ => Bubble::Continue,
         })
-        .on_wheel(move |delta| {
-            scroll.scroll_by(delta.saturating_mul(3));
+        .on_wheel(move |wheel| {
+            if wheel.vertical == 0 {
+                return Bubble::Continue;
+            }
+            scroll.scroll_by(wheel.vertical.saturating_mul(3));
             Bubble::Stop
         })
         .on_mouse_down(move |mouse| {

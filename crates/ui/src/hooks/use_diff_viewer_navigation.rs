@@ -148,8 +148,9 @@ pub fn use_diff_viewer_navigation(
             }
             _ => Bubble::Continue,
         })
-        .on_wheel(move |delta| {
-            vertical_handle.scroll_by(delta.saturating_mul(3));
+        .on_wheel(move |wheel| {
+            vertical_handle.scroll_by(wheel.vertical.saturating_mul(3));
+            horizontal_handle.scroll_by(wheel.horizontal.saturating_mul(3));
             Bubble::Stop
         });
     (view, horizontal, listeners)
