@@ -4,6 +4,22 @@ mod vscode;
 
 use anyhow::{Result, bail};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DiffLayout {
+    #[default]
+    SideBySide,
+    Inline,
+}
+
+impl DiffLayout {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SideBySide => "side-by-side",
+            Self::Inline => "inline",
+        }
+    }
+}
+
 pub fn run(args: &[String]) -> Result<()> {
     let mut repo = None;
     let mut files = 10usize;
@@ -11,6 +27,7 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut max_lines = 2_000usize;
     let mut pair_count = None;
     let mut ignore_trim_whitespace = false;
+    let mut layout = DiffLayout::default();
     let mut at = 0;
     while at < args.len() {
         match args[at].as_str() {
@@ -38,6 +55,10 @@ pub fn run(args: &[String]) -> Result<()> {
                 at += 1;
                 ignore_trim_whitespace = boolean(args, at, "--ignore-trim-whitespace")?;
             }
+            "--layout" => {
+                at += 1;
+                layout = parse_layout(args, at)?;
+            }
             arg if arg.starts_with('-') => bail!("unknown verify-vscode option: {arg}"),
             path if repo.is_none() => repo = Some(path.to_owned()),
             path => bail!("unexpected path: {path}"),
@@ -47,7 +68,8 @@ pub fn run(args: &[String]) -> Result<()> {
 
     let root = crate::workspace_root();
     let repo = history::repository(repo.as_deref());
-    output::clear(&root)?;
+    let paths = output::OutputPaths::new(&root, layout);
+    output::clear(&paths)?;
     let mut pairs = history::pairs(&repo, files, versions, max_lines)?;
     if let Some(count) = pair_count {
         if pairs.len() < count {
@@ -59,20 +81,20 @@ pub fn run(args: &[String]) -> Result<()> {
         pairs.truncate(count);
     }
     let binary = output::build(&root)?;
-    let workspace = root.join("target/vscode-parity/work");
-    let results = root.join("target/vscode-parity/vscode");
+    let workspace = &paths.workspace;
+    let results = &paths.vscode_results;
     let mut materialised = Vec::new();
     let mut manifest = String::new();
     for pair in &pairs {
-        let files = output::materialise(&root, pair)?;
+        let files = output::materialise(workspace, pair)?;
         let original = files
             .original
-            .strip_prefix(&workspace)?
+            .strip_prefix(workspace)?
             .to_string_lossy()
             .replace('\\', "/");
         let modified = files
             .modified
-            .strip_prefix(&workspace)?
+            .strip_prefix(workspace)?
             .to_string_lossy()
             .replace('\\', "/");
         manifest.push_str(&format!(
@@ -88,18 +110,17 @@ pub fn run(args: &[String]) -> Result<()> {
     std::fs::write(workspace.join("pairs.txt"), manifest)?;
     std::fs::write(
         workspace.join("options.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "ignore_trim_whitespace": ignore_trim_whitespace,
-        }))?,
+        web_options(layout, ignore_trim_whitespace)?,
     )?;
-    vscode::render(&root, &workspace, &results)?;
+    vscode::render(&root, workspace, results)?;
 
     let mut failures = Vec::new();
     let mut coverage = Coverage::default();
     println!(
-        "verify-vscode: {} historical pair(s) from {} (ignore trim whitespace: {})",
+        "verify-vscode: {} historical pair(s) from {} (layout: {}, ignore trim whitespace: {})",
         pairs.len(),
         repo.display(),
+        layout.as_str(),
         ignore_trim_whitespace,
     );
     for (index, (pair, files)) in pairs.iter().zip(&materialised).enumerate() {
@@ -107,11 +128,11 @@ pub fn run(args: &[String]) -> Result<()> {
         let expected_records = output::parse(&expected)?;
         coverage.read_trim_whitespace(pair)?;
         coverage.read(&expected_records);
-        let actual = output::codediff(&binary, files, ignore_trim_whitespace)?;
+        let actual = output::codediff(&binary, files, layout, ignore_trim_whitespace)?;
         if expected_records == output::parse(&actual)? {
             println!("  {:>3}/{}  PASS  {}", index + 1, pairs.len(), pair.path);
         } else {
-            let dir = output::save_mismatch(&root, pair, files, &expected, &actual)?;
+            let dir = output::save_mismatch(&paths.mismatches, pair, files, &expected, &actual)?;
             println!("  {:>3}/{}  FAIL  {}", index + 1, pairs.len(), pair.path);
             failures.push(dir);
         }
@@ -133,11 +154,27 @@ pub fn run(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn web_options(layout: DiffLayout, ignore_trim_whitespace: bool) -> Result<Vec<u8>> {
+    Ok(serde_json::to_vec_pretty(&serde_json::json!({
+        "ignore_trim_whitespace": ignore_trim_whitespace,
+        "layout": layout.as_str(),
+    }))?)
+}
+
 fn value(args: &[String], at: usize, option: &str) -> Result<usize> {
     let Some(value) = args.get(at) else {
         bail!("{option} needs a number")
     };
     Ok(value.parse()?)
+}
+
+fn parse_layout(args: &[String], at: usize) -> Result<DiffLayout> {
+    match args.get(at).map(String::as_str) {
+        Some("side-by-side") => Ok(DiffLayout::SideBySide),
+        Some("inline") => Ok(DiffLayout::Inline),
+        Some(value) => bail!("--layout needs side-by-side or inline, got {value:?}"),
+        None => bail!("--layout needs side-by-side or inline"),
+    }
 }
 
 fn boolean(args: &[String], at: usize, option: &str) -> Result<bool> {
@@ -223,5 +260,34 @@ impl Coverage {
         .map(|(name, seen)| format!("{name}={}", if seen { "yes" } else { "no" }))
         .collect::<Vec<_>>()
         .join(" ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_names_are_shared_with_the_cli_contract() {
+        let args = ["side-by-side".to_owned(), "inline".to_owned()];
+
+        assert_eq!(parse_layout(&args, 0).unwrap(), DiffLayout::SideBySide);
+        assert_eq!(parse_layout(&args, 1).unwrap(), DiffLayout::Inline);
+        assert_eq!(DiffLayout::default().as_str(), "side-by-side");
+    }
+
+    #[test]
+    fn web_options_carry_layout_and_whitespace_policy() {
+        let value: serde_json::Value =
+            serde_json::from_slice(&web_options(DiffLayout::Inline, true).unwrap()).unwrap();
+
+        assert_eq!(value["layout"], "inline");
+        assert_eq!(value["ignore_trim_whitespace"], true);
+    }
+
+    #[test]
+    fn layout_rejects_unknown_and_missing_values() {
+        assert!(parse_layout(&["stacked".to_owned()], 0).is_err());
+        assert!(parse_layout(&[], 0).is_err());
     }
 }

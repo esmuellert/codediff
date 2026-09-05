@@ -22,6 +22,9 @@ async function readOptions() {
   if (typeof options.ignore_trim_whitespace !== 'boolean') {
     throw new Error('ignore_trim_whitespace must be boolean');
   }
+  if (!['side-by-side', 'inline'].includes(options.layout)) {
+    throw new Error('layout must be side-by-side or inline');
+  }
   return options;
 }
 
@@ -46,11 +49,13 @@ async function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('codediffParity.next', () => open(current + 1)));
   const options = await readOptions();
   const global = vscode.ConfigurationTarget.Global;
-  await vscode.workspace.getConfiguration('diffEditor').update('renderSideBySide', true, global);
+  const sideBySide = options.layout === 'side-by-side';
+  await vscode.workspace.getConfiguration('diffEditor').update('renderSideBySide', sideBySide, global);
   await vscode.workspace.getConfiguration('diffEditor').update('useInlineViewWhenSpaceIsLimited', false, global);
   await vscode.workspace.getConfiguration('diffEditor').update('ignoreTrimWhitespace', options.ignore_trim_whitespace, global);
   await vscode.workspace.getConfiguration('diffEditor').update('maxComputationTime', 0, global);
   await vscode.workspace.getConfiguration('diffEditor').update('experimental.showMoves', false, global);
+  await vscode.workspace.getConfiguration('diffEditor').update('experimental.useTrueInlineView', false, global);
   await vscode.workspace.getConfiguration('diffEditor').update('hideUnchangedRegions.enabled', false, global);
   await vscode.workspace.getConfiguration('editor').update('wordWrap', 'off', global);
   await vscode.workspace.getConfiguration('editor').update('colorDecorators', false, global);

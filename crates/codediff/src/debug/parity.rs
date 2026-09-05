@@ -1,16 +1,18 @@
-//! `codediff debug parity` — final SideBySide cells as JSONL records.
+//! `codediff debug parity` — rendered diff cells as JSONL records.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use file_types::{DiffType, File, Oid, RepoPath, Revs};
 use loom::testing::Harness;
 use serde::Serialize;
 use ui::Theme;
 use ui::components::side_by_side::{SideBySide, SideBySideProps};
 use ui::components::{Context as UiContext, Ui};
+
+use crate::cli::DiffLayout;
 
 const MIN_WIDTH: u16 = 200;
 
@@ -62,7 +64,25 @@ enum Record {
     },
 }
 
-pub fn run(original_path: &str, modified_path: &str, ignore_trim_whitespace: bool) -> Result<()> {
+pub fn run(
+    original_path: &str,
+    modified_path: &str,
+    layout: DiffLayout,
+    ignore_trim_whitespace: bool,
+) -> Result<()> {
+    match layout {
+        DiffLayout::SideBySide => {
+            run_side_by_side(original_path, modified_path, ignore_trim_whitespace)
+        }
+        DiffLayout::Inline => bail!("inline renderer is not available yet"),
+    }
+}
+
+fn run_side_by_side(
+    original_path: &str,
+    modified_path: &str,
+    ignore_trim_whitespace: bool,
+) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
     let original = vscode_diff::editor_lines(&original_text);
@@ -84,7 +104,7 @@ pub fn run(original_path: &str, modified_path: &str, ignore_trim_whitespace: boo
         alignment,
     }));
     let theme = Theme::DARK;
-    let width = parity_width(&original, &modified)?;
+    let width = side_by_side_width(&original, &modified)?;
     let mut harness = Harness::new::<SideBySide>(SideBySideProps { content }, width, height)
         .provide::<Ui>(UiContext {
             theme: Rc::new(theme),
@@ -244,7 +264,7 @@ fn gutter_width(lines: u32) -> u16 {
     (digits as u16).max(3) + 1
 }
 
-fn parity_width(original: &[&str], modified: &[&str]) -> Result<u16> {
+fn side_by_side_width(original: &[&str], modified: &[&str]) -> Result<u16> {
     let content = original
         .iter()
         .chain(modified)
@@ -283,12 +303,12 @@ mod tests {
     }
 
     #[test]
-    fn parity_width_contains_the_longest_line_on_both_sides() {
+    fn side_by_side_width_contains_the_longest_line_on_both_sides() {
         let original = ["short"];
         let modified = [
             "a line which is longer than one hundred terminal cells ....................................................................",
         ];
 
-        assert!(parity_width(&original, &modified).unwrap() > 200);
+        assert!(side_by_side_width(&original, &modified).unwrap() > 200);
     }
 }

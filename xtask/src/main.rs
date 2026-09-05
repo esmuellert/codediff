@@ -53,7 +53,8 @@ cargo xtask <task>
 
 C engine
   verify-oracle                        compare our binding against the C diff tool
-  verify-vscode [repo] [--files N --versions N --max-lines N]
+  verify-vscode [repo] [--layout side-by-side|inline]
+                 [--files N --versions N --max-lines N]
                                        compare VS Code Web highlighting on Git history
 
 Architecture enforcement
