@@ -15,6 +15,11 @@ pub enum HorizontalDimensions {
         longest_line_cells: u32,
         gutter_cells: u16,
     },
+    Inline {
+        longest_line_cells: u32,
+        original_gutter_cells: u16,
+        modified_gutter_cells: u16,
+    },
     SideBySide {
         original_longest_line_cells: u32,
         modified_longest_line_cells: u32,
@@ -32,6 +37,22 @@ impl HorizontalDimensions {
                 gutter_cells,
             } => {
                 let text_cells = u32::from(width.saturating_sub(gutter_cells));
+                let maximum_first_cell = max_first_cell(longest_line_cells, text_cells);
+                HorizontalLimits {
+                    original: maximum_first_cell,
+                    modified: maximum_first_cell,
+                }
+            }
+            Self::Inline {
+                longest_line_cells,
+                original_gutter_cells,
+                modified_gutter_cells,
+            } => {
+                let text_cells = u32::from(
+                    width
+                        .saturating_sub(original_gutter_cells)
+                        .saturating_sub(modified_gutter_cells),
+                );
                 let maximum_first_cell = max_first_cell(longest_line_cells, text_cells);
                 HorizontalLimits {
                     original: maximum_first_cell,
@@ -164,6 +185,23 @@ mod tests {
     fn endpoint_is_line_plus_four_cells_minus_the_viewport() {
         assert_eq!(max_first_cell(20, 10), 14);
         assert_eq!(max_first_cell(10, 20), 0);
+    }
+
+    #[test]
+    fn inline_limit_uses_one_text_viewport_after_both_gutters() {
+        let dimensions = HorizontalDimensions::Inline {
+            longest_line_cells: 30,
+            original_gutter_cells: 4,
+            modified_gutter_cells: 5,
+        };
+
+        assert_eq!(
+            dimensions.limits(20),
+            HorizontalLimits {
+                original: 23,
+                modified: 23,
+            }
+        );
     }
 
     #[test]

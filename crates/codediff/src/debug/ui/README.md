@@ -2,8 +2,8 @@
 
 The Story catalog is part of the compiled `codediff` binary. It mounts production UI
 components with deterministic data; it does not copy their rendering code. Inline
-stories exercise the render-only Inline component, so input remains with the Story
-shell until Inline navigation is added to the application.
+stories exercise the component's keyboard, wheel, focus, resize, and viewport behaviour
+before layout switching is added to the application.
 
 ```text
 catalog.rs            explicit group order and lookup

@@ -237,7 +237,7 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
         })
         .expect("opening a pty");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codediff"));
-    command.args(["debug", "ui", "side-by-side/long-lines"]);
+    command.args(["debug", "ui", "inline/long-lines"]);
     command.env("TERM", "xterm-256color");
     let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
     drop(pty.slave);
@@ -284,11 +284,11 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
     assert!(output.contains(ENTER_ALT));
     let resized_frame = output.rsplit("\u{1b}[2J").next().unwrap_or(&output);
     assert!(
-        resized_frame.contains("row 32"),
+        resized_frame.contains("row 31"),
         "the vertical viewport never moved: {output:?}"
     );
     assert!(
-        resized_frame.contains("nal"),
+        resized_frame.contains("line row"),
         "the horizontal viewport never moved: {output:?}"
     );
     assert!(output.contains(LEAVE_ALT));

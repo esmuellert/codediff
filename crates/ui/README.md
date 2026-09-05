@@ -354,8 +354,8 @@ Fixture construction stays in the `codediff` composition root. Typed builders cr
 `File` and `DiffContent` values; two-sided fixtures still pass through the production diff and
 alignment pipeline. Every SideBySide, Inline, and SingleFile story receives a real
 `SyntaxService` and syntax worker; an empty file has the same service but naturally issues no
-request. Inline is currently render-only in the application crate: its Stories and VS Code
-verification exercise the production renderer without adding keyboard or mouse listeners.
+request. Inline uses the same vertical and horizontal navigation contract as the other code
+views; its long-line Story exercises keys, both wheel axes, focus, resize, and viewport history.
 Long-line fixtures are generated to at least 512 terminal cells, measured with `LineIndex`, so
 they still overflow a wide terminal. Small canonical stories isolate one behaviour, while
 `mixed-status`, `awkward-paths`, `edge-matrix`, `empty`, and `long-syntax-file` stories combine
@@ -369,9 +369,9 @@ codediff <path>
 ```
 
 `q` quits and `j`/`k` scroll the active production view. SideBySide remains the
-application's two-sided layout. Inline can be inspected through `codediff debug ui inline/...`
-and checked through `codediff debug parity --layout inline`; application input and layout
-switching are deliberately separate work.
+application's two-sided layout. Inline can be interacted with through `codediff debug ui inline/...`
+and checked through `codediff debug parity --layout inline`; routing it from DiffViewer and
+switching layouts are deliberately separate work.
 
 ```sh
 codediff <path> --theme basic-light

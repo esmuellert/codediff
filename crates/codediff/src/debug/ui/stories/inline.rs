@@ -29,7 +29,7 @@ pub const STORIES: &[StoryDefinition] = &[
     ),
     story(
         "inline/long-lines",
-        "Long original and modified lines without interaction",
+        "Long lines and rows for two-axis scrolling",
         long_lines,
     ),
     StoryDefinition {

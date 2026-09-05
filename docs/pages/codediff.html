@@ -141,26 +141,34 @@ orig mod              text`}),(0,h.jsx)(E,{id:`inline-signature`,children:`Signa
 pub fn Inline(
     scope: &mut Scope,
     content: Rc<DiffContent>,
-) -> Node`}),(0,h.jsxs)(`p`,{children:[`Reads the theme and optional `,(0,h.jsx)(`code`,{children:`SyntaxService`}),` from`,` `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),`. It accepts no input events and owns no scroll position.`]}),(0,h.jsx)(E,{id:`inline-body`,children:`Body`}),(0,h.jsx)(T,{children:`let lines = alignment
-    .view_lines_from(DiffType::Inline, 0)
-    .take(visible_lines.len());
+) -> Node`}),(0,h.jsxs)(`p`,{children:[`Reads the theme and optional `,(0,h.jsx)(`code`,{children:`SyntaxService`}),` from`,` `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),`. The component owns its viewport state through the shared diff-view navigation hook.`]}),(0,h.jsx)(E,{id:`inline-body`,children:`Body`}),(0,h.jsx)(T,{children:`let (view, horizontal, listeners) =
+    use_diff_viewer_navigation(
+        scope,
+        Some(&file_key),
+        view_line_count,
+        HorizontalDimensions::Inline { .. },
+    );
 
-let (version, number) = match (
-    line.modified.line(),
-    line.original.line(),
-) {
-    (Some(number), _) => (DiffVersion::Modified, number),
-    (None, Some(number)) => (DiffVersion::Original, number),
-    (None, None) => continue,
-};
+let view_lines = alignment
+    .view_lines_from(DiffType::Inline, view.view_lines.start)
+    .take(view.view_lines.len());
 
 rsx! {
-    Row { ..,
-        Gutter { number: line.original.line(), .. }
-        Gutter { number: line.modified.line(), .. }
-        CodeText { text, diff, syntax, first_cell: 0, .. }
+    Column {
+        ref: Some(view.node_ref),
+        focusable: true,
+        listeners,
+        ..,
+        Row { ..,
+            Gutter { number: view_line.original.line(), .. }
+            Gutter { number: view_line.modified.line(), .. }
+            CodeText {
+                first_cell: horizontal.first_cell(version),
+                ..
+            }
+        }
     }
-}`}),(0,h.jsx)(E,{id:`inline-gutter`,children:`The empty gutter`}),(0,h.jsx)(`p`,{children:`A changed row has one gutter empty, filled with the row colour. A deleted line's red runs from the screen edge through both gutters into the code. Replacements read as the deleted lines followed by the inserted lines, matching VS Code's classic Inline layout.`}),(0,h.jsx)(E,{id:`inline-render-only`,children:`Render-only boundary`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`Inline`}),` measures its available height and requests syntax for the visible rows, but it is not focusable and installs no key or wheel listeners. UI Stories and `,(0,h.jsx)(`code`,{children:`debug parity --layout inline`}),` mount this production renderer directly. Navigation and normal`,` `,(0,h.jsx)(`code`,{children:`DiffViewer`}),` routing are separate work.`]}),(0,h.jsx)(O,{children:`The component has two fixed gutters and one text column. Keeping input out of this stage lets the VS Code comparison check row projection and decoration semantics before viewport state is introduced.`})]})}function xe(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`single-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1 alpha
+}`}),(0,h.jsx)(E,{id:`inline-gutter`,children:`The empty gutter`}),(0,h.jsx)(`p`,{children:`A changed row has one gutter empty, filled with the row colour. A deleted line's red runs from the screen edge through both gutters into the code. Replacements read as the deleted lines followed by the inserted lines, matching VS Code's classic Inline layout.`}),(0,h.jsx)(E,{id:`inline-navigation`,children:`Viewport and input`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`j`}),`/`,(0,h.jsx)(`code`,{children:`k`}),` and the vertical wheel move visual rows.`,(0,h.jsx)(`code`,{children:`h`}),`/`,(0,h.jsx)(`code`,{children:`l`}),`, `,(0,h.jsx)(`code`,{children:`0`}),`/`,(0,h.jsx)(`code`,{children:`$`}),`, and the horizontal wheel move the one shared text viewport while both gutters stay fixed. The endpoint leaves four cells after the longest line across either version. Clicking focuses Inline; the left arrow returns to the previous focusable view. Positions are restored per file and survive a temporary resize clamp.`]}),(0,h.jsxs)(O,{children:[`UI Stories exercise this production interaction path directly. Normal`,` `,(0,h.jsx)(`code`,{children:`DiffViewer`}),` routing and SideBySide/Inline layout switching remain separate work.`]})]})}function xe(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`single-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1 alpha
   2 beta
   3 gamma
 └┬─┘└──────────────────────────────────┘

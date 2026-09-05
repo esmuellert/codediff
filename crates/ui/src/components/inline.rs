@@ -7,12 +7,13 @@ use align::DiffVersion;
 use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
-    use_measure,
+    use_memo,
 };
 
-use super::code_text::{self, CodeText, CodeTextProps};
+use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
+use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
@@ -29,23 +30,38 @@ pub fn Inline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
     let original_gutter_width = width_for_line_count(original_line_count);
     let modified_gutter_width = width_for_line_count(modified_line_count);
     let view_line_count = alignment.view_line_count(DiffType::Inline);
-    let (node_ref, size) = use_measure(scope);
-    let visible_view_lines = 0..u32::from(size.height).min(view_line_count);
+    let file_key = diff.file.path().as_str().to_string();
+    let content_id = Rc::as_ptr(content) as usize;
+    let maximum_line_cells = use_memo(scope, content_id, || {
+        longest_line_cells(alignment.lines(DiffVersion::Original))
+            .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
+    });
+    let (view, horizontal, listeners) = use_diff_viewer_navigation(
+        scope,
+        Some(&file_key),
+        view_line_count,
+        HorizontalDimensions::Inline {
+            longest_line_cells: *maximum_line_cells,
+            original_gutter_cells: original_gutter_width,
+            modified_gutter_cells: modified_gutter_width,
+        },
+    );
     let view_lines: Vec<align::ViewLine> = alignment
-        .view_lines_from(DiffType::Inline, visible_view_lines.start)
-        .take(visible_view_lines.len())
+        .view_lines_from(DiffType::Inline, view.view_lines.start)
+        .take(view.view_lines.len())
         .collect();
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
         Rc::clone(content),
         DiffType::Inline,
-        visible_view_lines,
+        view.view_lines.clone(),
     );
     let syntax = syntax.as_deref();
 
     let mut rows = Vec::with_capacity(view_lines.len());
     for (offset, view_line) in view_lines.iter().enumerate() {
+        let view_line_index = view.view_lines.start + offset as u32;
         let (version, line_number) = match (view_line.modified.line(), view_line.original.line()) {
             (Some(line_number), _) => (DiffVersion::Modified, line_number),
             (None, Some(line_number)) => (DiffVersion::Original, line_number),
@@ -69,7 +85,7 @@ pub fn Inline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
 
         rows.push(rsx! {
             Row {
-                key: offset as u32,
+                key: view_line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 ..,
                 Gutter {
@@ -89,7 +105,7 @@ pub fn Inline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
                 CodeText {
                     key: 2u32,
                     text: Rc::from(text),
-                    first_cell: 0,
+                    first_cell: horizontal.first_cell(version),
                     diff: Rc::from(changed_ranges.as_slice()),
                     fill_from: fill_from,
                     empty_markers: Rc::from(decorations.empty_markers.as_slice()),
@@ -109,7 +125,9 @@ pub fn Inline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
 
     rsx! {
         Column {
-            ref: Some(node_ref),
+            ref: Some(view.node_ref),
+            focusable: true,
+            listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
             { rows }
