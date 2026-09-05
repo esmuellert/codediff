@@ -1,7 +1,9 @@
-# UI gallery
+# UI Stories
 
-The gallery is part of the compiled `codediff` binary. It mounts production UI
-components with deterministic data; it does not copy their rendering code.
+The Story catalog is part of the compiled `codediff` binary. It mounts production UI
+components with deterministic data; it does not copy their rendering code. Inline
+stories exercise the render-only Inline component, so input remains with the Story
+shell until Inline navigation is added to the application.
 
 ```text
 catalog.rs            explicit group order and lookup
@@ -27,7 +29,8 @@ to enter the new component.
 1. Add a builder function and `StoryDefinition` in the matching `stories/`
    module.
 2. Build data through `fixtures/`; two-sided text must pass through the real
-   diff and alignment pipeline.
+   diff and alignment pipeline. SideBySide and Inline fixtures use the real syntax
+   worker for both versions.
 3. Add an independent expected-content row in `tests/stories.rs`.
 4. Run the story directly and through the PTY tests.
 

@@ -146,7 +146,7 @@ human-readable artifact and the regression fixture are the same file.
 | `codediff debug status [dir] [-v]` | parsed status entries in the manifest's own format, so the two can be diffed | S5 |
 | `codediff debug show <rev>:<path> [--raw]` | a file at a revision; `--raw` writes the exact bytes, for `cmp` against `git show` | S6 |
 | `codediff debug diff-file <path> [-v]` | aligned diff of one file, worktree vs HEAD — the whole pipeline | S6 |
-| `codediff debug parity <a> <b> [--layout side-by-side\|inline]` | final component cells as JSONL for comparison with VS Code; Inline names its missing renderer until that component lands | S2 |
+| `codediff debug parity <a> <b> [--layout side-by-side\|inline]` | final component cells as JSONL for comparison with VS Code | S2 |
 | `codediff debug ui [story]`, `codediff debug ui --list` | browse or directly open deterministic production components in the real terminal | current |
 
 ## 4. xtask commands
@@ -164,10 +164,9 @@ human-readable artifact and the regression fixture are the same file.
 `verify-vscode` selects highly revised files from real Git history. A pinned
 `@vscode/test-web` build renders every pair in headless Playwright Chromium;
 `codediff debug parity` renders the same pair through the selected production
-component. SideBySide is available now. The Inline VS Code oracle is available,
-while codediff reports a missing Inline renderer until that production component
-lands. Row pairing, fillers, line and gutter roles, character ranges, line-break
-fill and empty markers are compared exactly. The web tools form a pnpm workspace: its catalog
+component. Both SideBySide and Inline use the same semantic record schema. Row
+pairing, fillers, line and gutter roles, character ranges, line-break fill and
+empty markers are compared exactly. The web tools form a pnpm workspace: its catalog
 pins `@vscode/test-web` and Playwright, while the extension package owns both
 `engines.vscode` and the commit downloaded by the runner. Both renderers emit
 the JSONL records defined by `xtask/src/verify_vscode/schema.json`. The command

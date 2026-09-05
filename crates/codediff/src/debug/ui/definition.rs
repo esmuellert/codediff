@@ -12,6 +12,7 @@ pub enum StoryComponent {
     Welcome,
     Explorer,
     SideBySide,
+    Inline,
     SingleFile,
 }
 
@@ -38,6 +39,7 @@ pub enum StoryFixture {
     Welcome,
     Explorer(Vec<File>),
     SideBySide(Rc<DiffContent>),
+    Inline(Rc<DiffContent>),
     SingleFile(Rc<DiffContent>),
 }
 
@@ -47,17 +49,21 @@ impl StoryFixture {
             Self::Welcome => StoryComponent::Welcome,
             Self::Explorer(_) => StoryComponent::Explorer,
             Self::SideBySide(_) => StoryComponent::SideBySide,
+            Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,
         }
     }
 
     pub const fn needs_syntax(&self) -> bool {
-        matches!(self, Self::SideBySide(_) | Self::SingleFile(_))
+        matches!(
+            self,
+            Self::SideBySide(_) | Self::Inline(_) | Self::SingleFile(_)
+        )
     }
 
     pub fn initial_syntax_response_count(&self) -> usize {
         match self {
-            Self::SideBySide(content) => {
+            Self::SideBySide(content) | Self::Inline(content) => {
                 let DiffContent::Diff(diff) = content.as_ref() else {
                     unreachable!()
                 };

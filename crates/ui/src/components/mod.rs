@@ -9,6 +9,7 @@ pub mod diff_viewer;
 pub mod explorer;
 pub mod filler;
 pub mod gutter;
+pub mod inline;
 pub mod side_by_side;
 pub mod single_file;
 mod welcome;

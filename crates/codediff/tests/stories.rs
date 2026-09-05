@@ -54,6 +54,16 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &["whitespace only", "deleted only", "你好"],
         &[],
     ),
+    ("inline/unchanged", &["same in one column"], &["│", "╱"]),
+    ("inline/replacement", &["blue", "green"], &["│", "╱"]),
+    (
+        "inline/insert-delete",
+        &["removed", "inserted"],
+        &["│", "╱"],
+    ),
+    ("inline/tabs-unicode", &["你好", "您好"], &["│", "╱"]),
+    ("inline/long-lines", &["INLINE_ORIGINAL"], &["│", "╱"]),
+    ("inline/edge-matrix", &["whitespace", "你好"], &["│", "╱"]),
     (
         "single-file/added",
         &["newly_added", "added story"],
@@ -137,7 +147,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  21"));
+    assert_eq!(lines.next(), Some(" STORIES  27"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");
@@ -193,31 +203,17 @@ fn every_story_opens_through_the_binary_with_its_expected_content() {
 #[test]
 #[cfg(unix)]
 fn every_story_draws_on_a_real_terminal() {
-    let stories = [
-        ("welcome/default", "Select a file to review."),
-        ("explorer/empty", "explorer/empty"),
-        ("explorer/tree", "button.rs"),
-        ("explorer/list", "src/app.rs"),
-        ("explorer/folded", "explorer/folded"),
-        ("explorer/selected", "button.rs"),
-        ("explorer/long-list", "story-01.rs"),
-        ("explorer/mixed-status", "conflict.rs"),
-        ("explorer/awkward-paths", "with spaces.rs"),
-        ("side-by-side/unchanged", "same on both sides"),
-        ("side-by-side/replacement", "green"),
-        ("side-by-side/insert-delete", "inserted modified"),
-        ("side-by-side/tabs-unicode", "您"),
-        ("side-by-side/long-lines", "MODIFIED"),
-        ("side-by-side/edge-matrix", "whitespace only"),
-        ("single-file/added", "newly_added"),
-        ("single-file/deleted", "removed_file"),
-        ("single-file/rust-syntax", "highlighted"),
-        ("single-file/long-lines", "SINGLE_LONG_PREFIX"),
-        ("single-file/empty", "single-file/empty"),
-        ("single-file/long-syntax-file", "generated_001"),
-    ];
-
-    for (story, marker) in stories {
+    for (story, required_text, _) in EXPECTED_STORIES {
+        let marker = match *story {
+            "explorer/empty"
+            | "side-by-side/long-lines"
+            | "inline/long-lines"
+            | "single-file/empty" => *story,
+            "explorer/awkward-paths" => "with spaces.rs",
+            "side-by-side/tabs-unicode" | "inline/tabs-unicode" => "您",
+            "single-file/rust-syntax" => "highlighted",
+            _ => required_text[0],
+        };
         let (output, ok) = on_a_terminal(&["debug", "ui", story], None, b"q");
         assert!(ok, "{story} exited unsuccessfully:\n{output}");
         assert!(output.contains(ENTER_ALT), "{story} never took the screen");

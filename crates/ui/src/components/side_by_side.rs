@@ -3,49 +3,20 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use align::{DiffVersion, LineDecorations};
+use align::DiffVersion;
 use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope,
     component, rsx, use_context, use_memo,
 };
-use ratatui::style::Style;
 
-use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
+use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::filler::Filler;
-use super::gutter::{Gutter, GutterProps, width_for_line_count};
-
+use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
-
-fn row_styles(
-    theme: &crate::theme::Theme,
-    version: DiffVersion,
-    decorations: &LineDecorations,
-) -> (Style, Style, Style) {
-    let base = theme.normal;
-    let role = match version {
-        DiffVersion::Original => theme.deleted,
-        DiffVersion::Modified => theme.inserted,
-    };
-    let line = if decorations.line_background {
-        base.patch(role)
-    } else {
-        base
-    };
-    let gutter = if decorations.gutter_background {
-        base.patch(role)
-    } else {
-        base
-    };
-    let characters = match version {
-        DiffVersion::Original => base.patch(theme.deleted_text),
-        DiffVersion::Modified => base.patch(theme.inserted_text),
-    };
-    (line, characters, gutter.patch(theme.line_number))
-}
 
 #[component]
 pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
@@ -104,8 +75,10 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             match slot.line() {
                 Some(number) => {
                     let decorations = alignment.decorations(version, number);
-                    let (unchanged, changed, number_style) =
-                        row_styles(theme, version, &decorations);
+                    let code_styles =
+                        code_text::diff_styles(theme, version, decorations.line_background);
+                    let number_style =
+                        gutter::diff_style(theme, version, decorations.gutter_background);
                     let text = alignment.line(version, number).unwrap_or("");
                     let diff_spans: Vec<Range<u32>> = decorations
                         .characters
@@ -142,8 +115,8 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                                         .unwrap_or_default()
                                         .as_slice()
                                 ),
-                                unchanged_style: unchanged,
-                                changed_style: changed,
+                                unchanged_style: code_styles.base,
+                                changed_style: code_styles.changed,
                                 selection: None,
                             }
                         },

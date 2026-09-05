@@ -9,6 +9,7 @@ use loom::{
 use pipeline::diff::DiffContent;
 use ui::components::diff_viewer::DiffViewer;
 use ui::components::explorer::Explorer;
+use ui::components::inline::{Inline, InlineProps};
 use ui::components::side_by_side::{SideBySide, SideBySideProps};
 use ui::components::single_file::{SingleFile, SingleFileProps};
 use ui::components::{Context, Ui, UiProps};
@@ -96,6 +97,9 @@ pub(super) fn StoryPreview(
         StoryComponent::Explorer => rsx! { Explorer {} },
         StoryComponent::SideBySide => rsx! {
             SideBySide { content: Rc::clone(content.as_ref().expect("side-by-side story content")) }
+        },
+        StoryComponent::Inline => rsx! {
+            Inline { content: Rc::clone(content.as_ref().expect("inline story content")) }
         },
         StoryComponent::SingleFile => rsx! {
             SingleFile { content: Rc::clone(content.as_ref().expect("single-file story content")) }

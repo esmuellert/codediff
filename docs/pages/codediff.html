@@ -126,7 +126,7 @@ let syntax = use_syntax(
     }
 }`}),(0,h.jsxs)(`p`,{children:[`A missing slot becomes a Filler. Both sides come from one aligned view line, so their vertical positions cannot drift. `,(0,h.jsx)(`code`,{children:`j`}),` and`,` `,(0,h.jsx)(`code`,{children:`k`}),` scroll that shared viewport directly; the mouse wheel scrolls it in three-line steps.`]}),(0,h.jsx)(E,{id:`sbs-horizontal`,children:`Horizontal scroll`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`h`}),` and `,(0,h.jsx)(`code`,{children:`l`}),` move one requested cell,`,` `,(0,h.jsx)(`code`,{children:`0`}),` returns to the start, and `,(0,h.jsx)(`code`,{children:`$`}),` moves to the end. Native horizontal wheel or trackpad events move three cells. Gutters and the divider stay fixed. The original and modified columns follow one requested position, while each clamps at its own endpoint. The endpoint leaves four cells after the longest line, matching the pinned VS Code editor option. Positions are restored per file and a temporary wider resize does not discard the requested position.`]}),(0,h.jsx)(E,{id:`sbs-colours`,children:`Decorations`}),(0,h.jsx)(T,{children:`let decorations = alignment.decorations(diff_version, number);
 let (line, characters, numbers) =
-    row_styles(theme, diff_version, &decorations);`}),(0,h.jsx)(`p`,{children:`Alignment preserves VS Code's whole-line, finite, line-break-filling, and empty decorations. SideBySide maps those roles to the active theme; syntax changes foreground colours only.`})]})}function be(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(`p`,{children:`The same diff as one column. The empty gutter tells you which version each row shows.`}),(0,h.jsx)(E,{id:`inline-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1   1 one
+    row_styles(theme, diff_version, &decorations);`}),(0,h.jsx)(`p`,{children:`Alignment preserves VS Code's whole-line, finite, line-break-filling, and empty decorations. SideBySide maps those roles to the active theme; syntax changes foreground colours only.`})]})}function be(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(`p`,{children:`The same diff as one column. The empty gutter tells you which version each changed row belongs to.`}),(0,h.jsx)(E,{id:`inline-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1   1 one
   2     two          ← deleted (no modified number)
       2 TWO          ← inserted (no original number)
   3   3 three
@@ -134,26 +134,29 @@ let (line, characters, numbers) =
   4   5 four
 └──┘└──┘└──────────────────────────────────┘
 orig mod              text`}),(0,h.jsx)(E,{id:`inline-signature`,children:`Signature`}),(0,h.jsx)(T,{children:`#[component]
-pub fn Inline(scope: &mut Scope) -> Node`}),(0,h.jsxs)(`p`,{children:[`No props. Reads `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`context`}),` for the file, cursor, scroll position. Text selection is internal state.`]}),(0,h.jsx)(E,{id:`inline-body`,children:`Body`}),(0,h.jsx)(T,{children:`let (diff_version, number) =
-    match (pair.modified, pair.original) {
-        (Slot::Line(n), _) => (DiffVersion::Modified, n),
-        (_, Slot::Line(n)) => (DiffVersion::Original, n),
-        _ => continue,
-    };
+pub fn Inline(
+    scope: &mut Scope,
+    content: Rc<DiffContent>,
+) -> Node`}),(0,h.jsxs)(`p`,{children:[`Reads the theme and optional `,(0,h.jsx)(`code`,{children:`SyntaxService`}),` from`,` `,(0,h.jsx)(`a`,{href:`#ui-context`,children:`ui::Context`}),`. It accepts no input events and owns no scroll position.`]}),(0,h.jsx)(E,{id:`inline-body`,children:`Body`}),(0,h.jsx)(T,{children:`let lines = alignment
+    .view_lines_from(DiffType::Inline, 0)
+    .take(visible_lines.len());
 
-let (unchanged, changed, numbers) =
-    row_styles(&theme, pair.kind, diff_version, moved, is_cursor);
+let (version, number) = match (
+    line.modified.line(),
+    line.original.line(),
+) {
+    (Some(number), _) => (DiffVersion::Modified, number),
+    (None, Some(number)) => (DiffVersion::Original, number),
+    (None, None) => continue,
+};
 
 rsx! {
-    Row { key: offset, ..,
-        Gutter { number: pair.original.line(), width: g_left,
-                 style: numbers, blank: unchanged }
-        Gutter { number: pair.modified.line(), width: g_right,
-                 style: numbers, blank: unchanged }
-        CodeText { text, diff, syntax, unchanged_style: unchanged,
-                   changed_style: changed, first_cell, selection }
+    Row { ..,
+        Gutter { number: line.original.line(), .. }
+        Gutter { number: line.modified.line(), .. }
+        CodeText { text, diff, syntax, first_cell: 0, .. }
     }
-}`}),(0,h.jsx)(E,{id:`inline-gutter`,children:`The empty gutter`}),(0,h.jsx)(`p`,{children:`A changed row has one gutter empty, filled with the row colour. A deleted line's red runs from the screen edge through both gutters into the code.`}),(0,h.jsx)(E,{id:`inline-width`,children:`Text width`}),(0,h.jsxs)(`p`,{children:[`One column of `,(0,h.jsx)(`code`,{children:`width − 8`}),` (two four-cell gutters) versus two columns of `,(0,h.jsx)(`code`,{children:`(width − 1) / 2 − 4`}),`.`]}),(0,h.jsxs)(O,{children:[`The callbacks report `,(0,h.jsx)(`code`,{children:`(u32, u32)`}),`. SideBySide's report`,` `,(0,h.jsx)(`code`,{children:`(DiffVersion, u32, u32)`}),` because the column says which version.`]})]})}function xe(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`single-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1 alpha
+}`}),(0,h.jsx)(E,{id:`inline-gutter`,children:`The empty gutter`}),(0,h.jsx)(`p`,{children:`A changed row has one gutter empty, filled with the row colour. A deleted line's red runs from the screen edge through both gutters into the code. Replacements read as the deleted lines followed by the inserted lines, matching VS Code's classic Inline layout.`}),(0,h.jsx)(E,{id:`inline-render-only`,children:`Render-only boundary`}),(0,h.jsxs)(`p`,{children:[(0,h.jsx)(`code`,{children:`Inline`}),` measures its available height and requests syntax for the visible rows, but it is not focusable and installs no key or wheel listeners. UI Stories and `,(0,h.jsx)(`code`,{children:`debug parity --layout inline`}),` mount this production renderer directly. Navigation and normal`,` `,(0,h.jsx)(`code`,{children:`DiffViewer`}),` routing are separate work.`]}),(0,h.jsx)(O,{children:`The component has two fixed gutters and one text column. Keeping input out of this stage lets the VS Code comparison check row projection and decoration semantics before viewport state is introduced.`})]})}function xe(){return(0,h.jsxs)(h.Fragment,{children:[(0,h.jsx)(E,{id:`single-draws`,children:`On screen`}),(0,h.jsx)(T,{flow:!0,children:`  1 alpha
   2 beta
   3 gamma
 └┬─┘└──────────────────────────────────┘

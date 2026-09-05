@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use super::definition::StoryDefinition;
-use super::stories::{explorer, side_by_side, single_file, welcome};
+use super::stories::{explorer, inline, side_by_side, single_file, welcome};
 
 pub struct StoryGroup {
     pub label: &'static str,
@@ -22,6 +22,10 @@ pub const GROUPS: &[StoryGroup] = &[
     StoryGroup {
         label: "Side by side",
         stories: side_by_side::STORIES,
+    },
+    StoryGroup {
+        label: "Inline",
+        stories: inline::STORIES,
     },
     StoryGroup {
         label: "Single file",

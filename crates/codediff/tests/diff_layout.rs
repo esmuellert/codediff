@@ -62,7 +62,7 @@ fn explicit_side_by_side_is_the_unchanged_default() {
 }
 
 #[test]
-fn inline_names_the_missing_production_renderer() {
+fn inline_emits_unified_rendering_records() {
     let fixture = Fixture::new("inline");
     let output = fixture.run(&[
         "debug",
@@ -73,12 +73,36 @@ fn inline_names_the_missing_production_renderer() {
         "modified.txt",
     ]);
 
-    assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
-    let error = String::from_utf8_lossy(&output.stderr);
     assert!(
-        error.contains("inline renderer is not available yet"),
-        "{error}"
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let records: Vec<serde_json::Value> = std::str::from_utf8(&output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        records,
+        [
+            serde_json::json!({"type":"row","index":0,"original":1,"modified":1}),
+            serde_json::json!({"type":"row","index":1,"original":2,"modified":null}),
+            serde_json::json!({"type":"row","index":2,"original":null,"modified":2}),
+            serde_json::json!({"type":"row","index":3,"original":3,"modified":3}),
+            serde_json::json!({
+                "type":"highlight","side":"original","line":2,
+                "line_background":"delete","gutter_background":"delete",
+                "characters":[{"start":0,"end":null,"fill_to_edge":true}],
+                "empty_markers":[]
+            }),
+            serde_json::json!({
+                "type":"highlight","side":"modified","line":2,
+                "line_background":"insert","gutter_background":"insert",
+                "characters":[{"start":0,"end":null,"fill_to_edge":true}],
+                "empty_markers":[]
+            }),
+        ]
     );
 }
 

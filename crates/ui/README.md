@@ -323,7 +323,7 @@ sequence a terminal *obeys*, and `U+202E` reorders a line so it reads as somethi
 than what it says. Both are replaced by a stand-in of the same width, in `line-index`,
 beside the code that measures them — so the substitution and the measurement cannot drift.
 
-## Component gallery
+## UI Stories
 
 The compiled binary can open deterministic fixtures around the production components:
 
@@ -352,12 +352,15 @@ codediff debug ui side-by-side/replacement --snapshot --width 100 --height 24
 
 Fixture construction stays in the `codediff` composition root. Typed builders create real
 `File` and `DiffContent` values; two-sided fixtures still pass through the production diff and
-alignment pipeline. Every SideBySide and SingleFile story receives a real `SyntaxService` and
-syntax worker; an empty file has the same service but naturally issues no request. Long-line
-fixtures are generated to at least 512 terminal cells, measured with `LineIndex`, so they still
-overflow a wide terminal. Small canonical stories isolate one behaviour, while `mixed-status`,
-`awkward-paths`, `edge-matrix`, `empty`, and `long-syntax-file` stories combine edge cases. Each story mounts `Explorer`, `SideBySide`, `SingleFile`,
-or `DiffViewer` from this crate rather than copying its drawing code.
+alignment pipeline. Every SideBySide, Inline, and SingleFile story receives a real
+`SyntaxService` and syntax worker; an empty file has the same service but naturally issues no
+request. Inline is currently render-only in the application crate: its Stories and VS Code
+verification exercise the production renderer without adding keyboard or mouse listeners.
+Long-line fixtures are generated to at least 512 terminal cells, measured with `LineIndex`, so
+they still overflow a wide terminal. Small canonical stories isolate one behaviour, while
+`mixed-status`, `awkward-paths`, `edge-matrix`, `empty`, and `long-syntax-file` stories combine
+edge cases. Each story mounts `Explorer`, `SideBySide`, `Inline`, `SingleFile`, or `DiffViewer`
+from this crate rather than copying its drawing code.
 
 ## Checking it
 
@@ -365,8 +368,10 @@ or `DiffViewer` from this crate rather than copying its drawing code.
 codediff <path>
 ```
 
-`q` quits, `j`/`k` scroll, `]c`/`[c` step through changes, `t` switches between side by
-side and inline, `>`/`<` drag the divider, `Ctrl-Z` suspends. The screen must match `codediff debug diff-file <path>` row for row.
+`q` quits and `j`/`k` scroll the active production view. SideBySide remains the
+application's two-sided layout. Inline can be inspected through `codediff debug ui inline/...`
+and checked through `codediff debug parity --layout inline`; application input and layout
+switching are deliberately separate work.
 
 ```sh
 codediff <path> --theme basic-light

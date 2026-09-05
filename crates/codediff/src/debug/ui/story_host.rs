@@ -46,9 +46,9 @@ impl StoryHost {
         let (files, content) = match fixture {
             StoryFixture::Welcome => (None, None),
             StoryFixture::Explorer(files) => (Some(files), None),
-            StoryFixture::SideBySide(content) | StoryFixture::SingleFile(content) => {
-                (None, Some(content))
-            }
+            StoryFixture::SideBySide(content)
+            | StoryFixture::Inline(content)
+            | StoryFixture::SingleFile(content) => (None, Some(content)),
         };
 
         let (events_tx, events_rx) = mpsc::channel();
@@ -253,7 +253,7 @@ mod tests {
         for story in catalog::stories().filter(|story| {
             matches!(
                 story.component,
-                StoryComponent::SideBySide | StoryComponent::SingleFile
+                StoryComponent::SideBySide | StoryComponent::Inline | StoryComponent::SingleFile
             ) && story.id != "single-file/empty"
         }) {
             let mut harness = story_harness(story, 100, 24).unwrap();
@@ -278,7 +278,7 @@ mod tests {
                         story.id
                     );
                 }
-                StoryComponent::SingleFile => {
+                StoryComponent::Inline | StoryComponent::SingleFile => {
                     assert!(coloured(0, 100), "{} had no syntax-coloured text", story.id);
                 }
                 StoryComponent::Welcome | StoryComponent::Explorer => unreachable!(),
