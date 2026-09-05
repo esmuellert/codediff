@@ -10,14 +10,16 @@ use ui::Theme;
 use ui::components::inline::{Inline, InlineProps};
 use ui::components::{Context as UiContext, Ui};
 
-use super::{MIN_WIDTH, Record, Side, gutter_width, highlight, number, render_content};
+use super::{
+    MIN_WIDTH, Record, Side, gutter_width, highlight_record, line_number, load_diff_content,
+};
 
 pub(super) fn run(
     original_path: &str,
     modified_path: &str,
     ignore_trim_whitespace: bool,
 ) -> Result<()> {
-    let content = render_content(original_path, modified_path, ignore_trim_whitespace)?;
+    let content = load_diff_content(original_path, modified_path, ignore_trim_whitespace)?;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!()
     };
@@ -27,8 +29,8 @@ pub(super) fn run(
         diff.alignment.lines(DiffVersion::Modified),
     )?;
     let file = diff.file.clone();
-    let original_lines = diff.alignment.lines(DiffVersion::Original).len() as u32;
-    let modified_lines = diff.alignment.lines(DiffVersion::Modified).len() as u32;
+    let original_line_count = diff.alignment.lines(DiffVersion::Original).len() as u32;
+    let modified_line_count = diff.alignment.lines(DiffVersion::Modified).len() as u32;
     let theme = Theme::DARK;
     let mut harness = Harness::new::<Inline>(
         InlineProps {
@@ -45,76 +47,77 @@ pub(super) fn run(
     for _ in 0..4 {
         harness.force_draw();
     }
-    records(
+    print_records(
         &mut harness,
-        original_lines,
-        modified_lines,
+        original_line_count,
+        modified_line_count,
         theme,
         width,
         height,
     )
 }
 
-fn records(
+fn print_records(
     harness: &mut Harness,
-    original_lines: u32,
-    modified_lines: u32,
+    original_line_count: u32,
+    modified_line_count: u32,
     theme: Theme,
     width: u16,
     height: u16,
 ) -> Result<()> {
-    let original_gutter = gutter_width(original_lines);
-    let modified_gutter = gutter_width(modified_lines);
-    let code_start = original_gutter + modified_gutter;
-    let mut original = BTreeMap::new();
-    let mut modified = BTreeMap::new();
-    let mut rows = Vec::new();
+    let original_gutter_width = gutter_width(original_line_count);
+    let modified_gutter_width = gutter_width(modified_line_count);
+    let code_start = original_gutter_width + modified_gutter_width;
+    let mut original_highlights = BTreeMap::new();
+    let mut modified_highlights = BTreeMap::new();
+    let mut row_records = Vec::new();
     let cells = harness.cells();
 
-    for y in 0..height {
-        let original_line = number(cells, 0, original_gutter, y);
-        let modified_line = number(cells, original_gutter, modified_gutter, y);
-        rows.push(Record::Row {
-            index: u32::from(y),
-            original: original_line,
-            modified: modified_line,
+    for row in 0..height {
+        let original_line_number = line_number(cells, 0, original_gutter_width, row);
+        let modified_line_number =
+            line_number(cells, original_gutter_width, modified_gutter_width, row);
+        row_records.push(Record::Row {
+            index: u32::from(row),
+            original: original_line_number,
+            modified: modified_line_number,
         });
-        if let Some(line) = original_line
-            && let Some(record) = highlight(
+        if let Some(line_number) = original_line_number
+            && let Some(record) = highlight_record(
                 cells,
-                y,
+                row,
                 0,
                 code_start,
                 width,
-                line,
+                line_number,
                 Side::Original,
                 theme.normal.patch(theme.deleted).bg,
                 theme.normal.patch(theme.deleted_text).bg,
             )
         {
-            original.insert(line, record);
+            original_highlights.insert(line_number, record);
         }
-        if let Some(line) = modified_line
-            && let Some(record) = highlight(
+        if let Some(line_number) = modified_line_number
+            && let Some(record) = highlight_record(
                 cells,
-                y,
+                row,
                 0,
                 code_start,
                 width,
-                line,
+                line_number,
                 Side::Modified,
                 theme.normal.patch(theme.inserted).bg,
                 theme.normal.patch(theme.inserted_text).bg,
             )
         {
-            modified.insert(line, record);
+            modified_highlights.insert(line_number, record);
         }
     }
 
-    for record in rows
+    for record in row_records
         .into_iter()
-        .chain(original.into_values())
-        .chain(modified.into_values())
+        .chain(original_highlights.into_values())
+        .chain(modified_highlights.into_values())
     {
         println!("{}", serde_json::to_string(&record)?);
     }
@@ -122,7 +125,7 @@ fn records(
 }
 
 fn render_width<T: AsRef<str>>(original: &[T], modified: &[T]) -> Result<u16> {
-    let content = original
+    let longest_line_width = original
         .iter()
         .chain(modified)
         .map(|line| {
@@ -132,9 +135,9 @@ fn render_width<T: AsRef<str>>(original: &[T], modified: &[T]) -> Result<u16> {
         })
         .max()
         .unwrap_or(0);
-    let gutters = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
-    let width = content
-        .checked_add(u32::from(gutters))
+    let gutter_cells = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
+    let width = longest_line_width
+        .checked_add(u32::from(gutter_cells))
         .and_then(|width| width.checked_add(1))
         .context("inline render width overflowed")?;
     Ok(u16::try_from(width)?.max(MIN_WIDTH))

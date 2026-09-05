@@ -73,14 +73,14 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
         let view_line = view.view_lines.start + offset as u32;
         let make_side = |version: DiffVersion, slot: align::Slot, gutter_width: u16| -> Vec<Node> {
             match slot.line() {
-                Some(number) => {
-                    let decorations = alignment.decorations(version, number);
+                Some(line_number) => {
+                    let decorations = alignment.decorations(version, line_number);
                     let code_styles =
-                        code_text::diff_styles(theme, version, decorations.line_background);
-                    let number_style =
-                        gutter::diff_style(theme, version, decorations.gutter_background);
-                    let text = alignment.line(version, number).unwrap_or("");
-                    let diff_spans: Vec<Range<u32>> = decorations
+                        code_text::styles_for_diff(theme, version, decorations.line_background);
+                    let gutter_style =
+                        gutter::style_for_diff(theme, version, decorations.gutter_background);
+                    let text = alignment.line(version, line_number).unwrap_or("");
+                    let changed_ranges: Vec<Range<u32>> = decorations
                         .characters
                         .iter()
                         .map(|character| character.bytes.clone())
@@ -95,9 +95,9 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                         rsx! {
                             Gutter {
                                 key: 0u32,
-                                number: Some(number),
-                                style: number_style,
-                                blank: number_style,
+                                number: Some(line_number),
+                                style: gutter_style,
+                                blank: gutter_style,
                                 width: gutter_width,
                             }
                         },
@@ -106,16 +106,16 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                                 key: 1u32,
                                 text: Rc::from(text),
                                 first_cell: horizontal.first_cell(version),
-                                diff: Rc::from(diff_spans.as_slice()),
+                                diff: Rc::from(changed_ranges.as_slice()),
                                 fill_from: fill_from,
                                 empty_markers: Rc::from(decorations.empty_markers.as_slice()),
                                 syntax: Rc::from(
                                     syntax
-                                        .map(|store| SyntaxService::line_spans(store, &diff.file, version, number))
+                                        .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
                                         .unwrap_or_default()
                                         .as_slice()
                                 ),
-                                unchanged_style: code_styles.base,
+                                unchanged_style: code_styles.unchanged,
                                 changed_style: code_styles.changed,
                                 selection: None,
                             }
@@ -140,8 +140,8 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             }
         };
 
-        let left = make_side(DiffVersion::Original, pair.original, original_gutter_width);
-        let right = make_side(DiffVersion::Modified, pair.modified, modified_gutter_width);
+        let original_nodes = make_side(DiffVersion::Original, pair.original, original_gutter_width);
+        let modified_nodes = make_side(DiffVersion::Modified, pair.modified, modified_gutter_width);
 
         rows.push(rsx! {
             Row {
@@ -152,7 +152,7 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     key: 0u32,
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,
-                    { left }
+                    { original_nodes }
                 }
                 Divider {
                     key: 1u32,
@@ -165,7 +165,7 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     key: 2u32,
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,
-                    { right }
+                    { modified_nodes }
                 }
             }
         });

@@ -12,31 +12,31 @@ use super::context::Ui;
 
 const TAB_WIDTH: u8 = 4;
 
-pub(crate) struct DiffStyles {
-    pub base: Style,
+pub(crate) struct DiffTextStyles {
+    pub unchanged: Style,
     pub changed: Style,
 }
 
-pub(crate) fn diff_styles(
+pub(crate) fn styles_for_diff(
     theme: &crate::theme::Theme,
     version: DiffVersion,
     line_background: bool,
-) -> DiffStyles {
-    let line = match version {
+) -> DiffTextStyles {
+    let line_change = match version {
         DiffVersion::Original => theme.deleted,
         DiffVersion::Modified => theme.inserted,
     };
-    let changed = match version {
+    let changed_text = match version {
         DiffVersion::Original => theme.deleted_text,
         DiffVersion::Modified => theme.inserted_text,
     };
-    DiffStyles {
-        base: if line_background {
-            theme.normal.patch(line)
+    DiffTextStyles {
+        unchanged: if line_background {
+            theme.normal.patch(line_change)
         } else {
             theme.normal
         },
-        changed: theme.normal.patch(changed),
+        changed: theme.normal.patch(changed_text),
     }
 }
 

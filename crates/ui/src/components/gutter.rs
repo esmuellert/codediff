@@ -8,21 +8,21 @@ use ratatui::style::Style;
 
 use super::cells;
 
-pub(crate) fn diff_style(
+pub(crate) fn style_for_diff(
     theme: &crate::theme::Theme,
     version: DiffVersion,
-    background: bool,
+    change_background: bool,
 ) -> Style {
-    let change = match version {
+    let change_style = match version {
         DiffVersion::Original => theme.deleted,
         DiffVersion::Modified => theme.inserted,
     };
-    let base = if background {
-        theme.normal.patch(change)
+    let style = if change_background {
+        theme.normal.patch(change_style)
     } else {
         theme.normal
     };
-    base.patch(theme.line_number)
+    style.patch(theme.line_number)
 }
 
 /// Digits + one trailing space, at least 4 columns.

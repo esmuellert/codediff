@@ -30,32 +30,32 @@ pub fn Inline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
     let modified_gutter_width = width_for_line_count(modified_line_count);
     let view_line_count = alignment.view_line_count(DiffType::Inline);
     let (node_ref, size) = use_measure(scope);
-    let visible_lines = 0..u32::from(size.height).min(view_line_count);
-    let lines: Vec<align::ViewLine> = alignment
-        .view_lines_from(DiffType::Inline, visible_lines.start)
-        .take(visible_lines.len())
+    let visible_view_lines = 0..u32::from(size.height).min(view_line_count);
+    let view_lines: Vec<align::ViewLine> = alignment
+        .view_lines_from(DiffType::Inline, visible_view_lines.start)
+        .take(visible_view_lines.len())
         .collect();
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
         Rc::clone(content),
         DiffType::Inline,
-        visible_lines,
+        visible_view_lines,
     );
     let syntax = syntax.as_deref();
 
-    let mut rows = Vec::with_capacity(lines.len());
-    for (view_line, line) in lines.iter().enumerate() {
-        let (version, number) = match (line.modified.line(), line.original.line()) {
-            (Some(number), _) => (DiffVersion::Modified, number),
-            (None, Some(number)) => (DiffVersion::Original, number),
+    let mut rows = Vec::with_capacity(view_lines.len());
+    for (offset, view_line) in view_lines.iter().enumerate() {
+        let (version, line_number) = match (view_line.modified.line(), view_line.original.line()) {
+            (Some(line_number), _) => (DiffVersion::Modified, line_number),
+            (None, Some(line_number)) => (DiffVersion::Original, line_number),
             (None, None) => continue,
         };
-        let decorations = alignment.decorations(version, number);
-        let code_styles = code_text::diff_styles(theme, version, decorations.line_background);
-        let number_style = gutter::diff_style(theme, version, decorations.gutter_background);
-        let text = alignment.line(version, number).unwrap_or("");
-        let diff_spans: Vec<Range<u32>> = decorations
+        let decorations = alignment.decorations(version, line_number);
+        let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
+        let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);
+        let text = alignment.line(version, line_number).unwrap_or("");
+        let changed_ranges: Vec<Range<u32>> = decorations
             .characters
             .iter()
             .map(|character| character.bytes.clone())
@@ -69,37 +69,37 @@ pub fn Inline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
 
         rows.push(rsx! {
             Row {
-                key: view_line as u32,
+                key: offset as u32,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 ..,
                 Gutter {
                     key: 0u32,
-                    number: line.original.line(),
-                    style: number_style,
-                    blank: number_style,
+                    number: view_line.original.line(),
+                    style: gutter_style,
+                    blank: gutter_style,
                     width: original_gutter_width,
                 }
                 Gutter {
                     key: 1u32,
-                    number: line.modified.line(),
-                    style: number_style,
-                    blank: number_style,
+                    number: view_line.modified.line(),
+                    style: gutter_style,
+                    blank: gutter_style,
                     width: modified_gutter_width,
                 }
                 CodeText {
                     key: 2u32,
                     text: Rc::from(text),
                     first_cell: 0,
-                    diff: Rc::from(diff_spans.as_slice()),
+                    diff: Rc::from(changed_ranges.as_slice()),
                     fill_from: fill_from,
                     empty_markers: Rc::from(decorations.empty_markers.as_slice()),
                     syntax: Rc::from(
                         syntax
-                            .map(|store| SyntaxService::line_spans(store, &diff.file, version, number))
+                            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
                             .unwrap_or_default()
                             .as_slice()
                     ),
-                    unchanged_style: code_styles.base,
+                    unchanged_style: code_styles.unchanged,
                     changed_style: code_styles.changed,
                     selection: None,
                 }
