@@ -1,8 +1,4 @@
-//! Applying the rules.
-//!
-//! One function per rule in [`super::rules`], each pushing a sentence onto
-//! `failures` rather than returning early, so a single run reports everything
-//! that is wrong instead of the first thing.
+//! Applies architecture rules.
 
 use anyhow::Result;
 use std::path::Path;
@@ -56,10 +52,7 @@ pub fn pending_names(root: &Path) -> Result<Vec<String>> {
 pub fn check_clock_free(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     for (dir, why) in CLOCK_FREE_DIRS {
         let path = root.join(dir);
-        // A missing directory is a failure, not a skip. It used to be a skip,
-        // and renaming `display` to `ui` therefore switched this whole rule
-        // off in silence — which is the exact failure the rule exists to
-        // prevent, turned on the rule itself.
+        // A missing directory is an error, not a skip.
         if !path.is_dir() {
             failures.push(format!(
                 "{dir} does not exist, so the rule that {why} is checking nothing"
@@ -273,8 +266,7 @@ pub fn check_threads(root: &Path, failures: &mut Vec<String>) -> Result<()> {
             continue;
         }
         for file in rust_files(&base)? {
-            // Tests may start one: proving that two things do not block each
-            // other takes two things. And the rule may name what it forbids.
+            // Test files may start threads.
             let is_test = file
                 .components()
                 .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "benches");
@@ -333,11 +325,7 @@ pub fn check_blind_dirs(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// Refuses anything that waits, where the loop can reach it.
-///
-/// The companion to [`check_threads`]: that one says slow work happens on a
-/// worker, this one says the drawing thread never does it. Both are needed —
-/// a worker nobody uses prevents nothing.
+/// Refuses blocking calls on paths reachable from the event loop.
 pub fn check_non_blocking(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     for name in NON_BLOCKING_FILES {
         let file = root.join(name);
@@ -363,8 +351,7 @@ pub fn check_non_blocking(root: &Path, failures: &mut Vec<String>) -> Result<()>
 /// Reports every blocking call in one file, naming the rule that caught it.
 fn blocking_calls(root: &Path, file: &Path, place: &str, failures: &mut Vec<String>) -> Result<()> {
     let text = std::fs::read_to_string(file)?;
-    // Tests may wait: proving that a worker answered means waiting for it.
-    // What must not block is what a frame reaches.
+    // Tests may wait for worker results.
     let Some(code) = text.split("#[cfg(test)]").next() else {
         return Ok(());
     };
@@ -387,11 +374,9 @@ fn blocking_calls(root: &Path, file: &Path, place: &str, failures: &mut Vec<Stri
     Ok(())
 }
 
-/// Refuses a word from [`BANNED_NAMES`] used as a whole identifier.
+/// Refuses banned words used as whole identifiers.
 ///
-/// String literals are removed first, so the prose in a message or in this
-/// crate's own rule table is not mistaken for a name. Comments are skipped for
-/// the same reason.
+/// String literals and comments are ignored.
 pub fn check_banned_names(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     for dir in ["crates", "xtask"] {
         let base = root.join(dir);
@@ -425,12 +410,7 @@ pub fn check_banned_names(root: &Path, failures: &mut Vec<String>) -> Result<()>
     Ok(())
 }
 
-/// The line with every double-quoted span removed, and any trailing comment
-/// cut off.
-///
-/// Both matter, and in that order: these are ordinary English words, so a
-/// message or a note at the end of a line will contain them as prose. A URL in
-/// a string would otherwise look like the start of a comment.
+/// Removes string literals and trailing comments from a line.
 fn without_strings(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut inside = false;

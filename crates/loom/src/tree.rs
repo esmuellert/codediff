@@ -62,8 +62,7 @@ impl Tree {
         });
     }
 
-    /// Reconcile, lay out, paint, run effects. The only entry point that
-    /// writes cells.
+    /// Reconciles, lays out, paints, and runs effects.
     pub fn draw(&mut self, cells: &mut Cells, area: Rect) {
         if area != self.area {
             self.area = area;

@@ -68,10 +68,7 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-/// Whether the first line says a program wrote the file.
-///
-/// A generated table cannot be split by noun and nobody reads it end to end,
-/// so the cap has nothing to say about it — the same reason tests are exempt.
+/// Whether the first line marks the file as generated.
 fn is_generated(text: &str) -> bool {
     text.lines()
         .next()

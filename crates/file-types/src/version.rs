@@ -1,8 +1,6 @@
 //! Original vs modified: which version of a file.
 
-/// Which version of a file a line, a column or a lookup refers to.
-///
-/// Not `Left`/`Right` — inline view puts both versions in one column.
+/// A file version used by a diff lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DiffVersion {
     Original,

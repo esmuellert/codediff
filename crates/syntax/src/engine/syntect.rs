@@ -71,12 +71,12 @@ impl Engine {
             .map(Grammar)
     }
 
-    /// What the engine calls this grammar, for tests and for a status line.
+    /// Returns the grammar name.
     pub fn name(&self, grammar: Grammar) -> &str {
         &self.syntaxes.syntaxes()[grammar.0].name
     }
 
-    /// Begins engine_state a file from its first line.
+    /// Starts parser state for a file.
     pub fn start(&self, grammar: Grammar, palette: &Palette) -> SyntectState {
         let syntax = &self.syntaxes.syntaxes()[grammar.0];
         let highlighter = Highlighter::new(&palette.theme);
@@ -87,9 +87,7 @@ impl Engine {
         }
     }
 
-    /// Reads the given lines in order, appending the spans for each.
-    ///
-    /// Reads a batch so the theme matcher is constructed once per request.
+    /// Reads lines in order and appends their spans.
     pub fn read(
         &self,
         engine_state: &mut SyntectState,

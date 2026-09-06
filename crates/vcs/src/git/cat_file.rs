@@ -43,7 +43,7 @@ impl Batch {
     /// Reads `path` at `rev`. Returns `Ok(None)` if the object doesn't exist
     /// (file added or deleted relative to that revision).
     pub fn read(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
-        // `cat-file` expects `rev:path`, with a repository-relative path.
+        // `cat-file` expects a repository-relative `rev:path`.
         writeln!(self.stdin, "{rev}:{path}").map_err(Self::broken)?;
         self.stdin.flush().map_err(Self::broken)?;
 
@@ -71,7 +71,7 @@ impl Batch {
 
         let mut content = vec![0u8; size];
         std::io::Read::read_exact(&mut self.stdout, &mut content).map_err(Self::broken)?;
-        // Every object is followed by a newline the caller did not ask for.
+        // Consume the newline after the object.
         let mut newline = [0u8; 1];
         std::io::Read::read_exact(&mut self.stdout, &mut newline).map_err(Self::broken)?;
 
@@ -88,22 +88,20 @@ impl Batch {
 
 impl Drop for Batch {
     fn drop(&mut self) {
-        // Closing stdin makes cat-file exit; reaping it stops a zombie.
+        // Stop and reap the child process.
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
-/// Reads a blob through checkout filters (CRLF, smudge).
+/// Reads a blob through checkout filters.
 ///
-/// Runs `cat-file --filters`. Returns `None` if the object doesn't exist.
-/// Not batched — `--batch --filters` reports pre-filter size, which breaks
-/// stream framing.
+/// This uses an unbatched command because filtered batch sizes break framing.
 pub fn read_filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
     let spec = format!("{rev}:{path}");
     match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
         Ok(bytes) => Ok(Some(bytes)),
-        // Do not hide corrupt objects or filter failures as missing files.
+        // Preserve corruption and filter errors.
         Err(Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
         Err(other) => Err(other),
     }

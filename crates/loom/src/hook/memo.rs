@@ -11,10 +11,7 @@ pub(crate) struct MemoSlot {
     pub value: Rc<dyn Any>,
 }
 
-/// A value recomputed only when `deps` changes.
-///
-/// Returns the same `Rc` otherwise, for as long as the component lives, so
-/// the identity is something you may rely on.
+/// Recomputes a value when `deps` changes and preserves its `Rc` otherwise.
 #[track_caller]
 pub fn use_memo<D, T>(scope: &mut Scope, deps: D, compute: impl FnOnce() -> T) -> Rc<T>
 where

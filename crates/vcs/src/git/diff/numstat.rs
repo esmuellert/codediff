@@ -64,9 +64,7 @@ fn parse(bytes: &[u8]) -> Counts {
         } else {
             path.to_owned()
         };
-        // `-` where a number should be means git did not count the lines,
-        // which is what it prints for a binary file. Zero would claim a
-        // measurement that was never made, so the file is left out entirely.
+        // Git uses `-` for uncountable files; omit those records.
         let (Ok(added), Ok(removed)) = (added.parse(), removed.parse()) else {
             continue;
         };
@@ -102,8 +100,7 @@ mod tests {
 
     #[test]
     fn a_file_git_could_not_count_is_left_out() {
-        // A picture. Recording zero would say it did not change, which is the
-        // one thing that is certainly false about a file in this list.
+        // Uncountable files are omitted.
         let counts = parse(b"-\t-\tpicture.png\0");
         assert!(counts.is_empty());
     }

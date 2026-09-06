@@ -30,8 +30,7 @@ impl Icon {
 /// A file neither table knows.
 pub const FILE: Icon = Icon::new('\u{f15b}', 0x6d8086);
 
-/// A directory. Upstream ships no folder icons; these are nvim-tree's, in the
-/// colour its `NvimTreeFolderIcon` group uses.
+/// A directory icon.
 pub const FOLDER_CLOSED: Icon = Icon::new('\u{e5ff}', 0x8094b4);
 pub const FOLDER_OPEN: Icon = Icon::new('\u{e5fe}', 0x8094b4);
 
@@ -39,11 +38,9 @@ pub const fn folder(open: bool) -> Icon {
     if open { FOLDER_OPEN } else { FOLDER_CLOSED }
 }
 
-/// The icon for a path, or `None` if neither table names it.
+/// Looks up an icon by file name, then by longest extension.
 ///
-/// The whole file name is tried first, then each extension from the longest
-/// down: `Button.spec.tsx` matches `spec.tsx` before `tsx`. Any directory part
-/// is dropped, and ASCII case is ignored.
+/// Directory components are ignored and ASCII case is folded.
 pub fn lookup(path: &str) -> Option<Icon> {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     if let Some(icon) = find(FILENAMES, name) {
@@ -60,7 +57,7 @@ pub fn lookup(path: &str) -> Option<Icon> {
     None
 }
 
-/// The same, falling back to [`FILE`].
+/// Looks up an icon, falling back to [`FILE`].
 pub fn file(path: &str) -> Icon {
     lookup(path).unwrap_or(FILE)
 }
@@ -83,7 +80,7 @@ mod tests {
 
     const RUST: Icon = Icon::new('\u{e68b}', 0xdea584);
 
-    /// What [`find`] assumes, and cannot check for itself.
+    /// Preconditions for the binary-search tables.
     #[test]
     fn both_tables_are_lowercase_and_byte_ordered() {
         for table in [FILENAMES, EXTENSIONS] {
@@ -99,7 +96,6 @@ mod tests {
     #[test]
     fn nothing_was_trimmed_on_the_way_across() {
         assert_eq!(FILENAMES.len(), 217);
-        // Upstream has 493, of which `R` folds onto `r`.
         assert_eq!(EXTENSIONS.len(), 492);
     }
 
@@ -111,7 +107,6 @@ mod tests {
 
     #[test]
     fn a_whole_name_beats_the_extension_it_ends_in() {
-        // `.yml` would match too, and says something less specific.
         assert_ne!(lookup(".gitlab-ci.yml"), lookup("deploy.yml"));
         assert_eq!(lookup("CMakeLists.txt"), lookup("cmakelists.txt"));
         assert_ne!(lookup("CMakeLists.txt"), lookup("readme.txt"));

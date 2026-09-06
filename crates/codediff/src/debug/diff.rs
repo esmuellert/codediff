@@ -1,9 +1,4 @@
-//! `codediff debug diff <a> <b>` — the raw diff, as text.
-//!
-//! Exists for three reasons: it makes a headless milestone checkable by a
-//! human, it turns a bug report into "send me this output", and it keeps the
-//! layering honest, since a command that can drive `vscode-diff` on its own
-//! proves the crate does not need the rest of the application to be useful.
+//! Prints raw line and character diff data.
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -13,9 +8,7 @@ pub fn run(original_path: &str, modified_path: &str) -> Result<()> {
     let original_text = read(original_path)?;
     let modified_text = read(modified_path)?;
 
-    // Split on '\n' only, keeping a trailing empty line, which is how the
-    // engine and JavaScript both model a file. `str::lines` discards the
-    // trailing empty line and strips '\r', which would shift every range.
+    // Preserve trailing empty lines and carriage returns.
     let original = vscode_diff::lines(&original_text);
     let modified = vscode_diff::lines(&modified_text);
 

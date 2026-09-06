@@ -50,9 +50,9 @@ impl Palette {
     }
 }
 
-/// Neovim metadata captures (`@spell`, `@none`, `@conceal`) that must be
-/// stripped from queries. An unrecognised capture wins over recognised ones
-/// and resolves to nothing, which would leave matched regions uncoloured.
+/// Metadata captures (`@spell`, `@none`, `@conceal`) stripped from queries.
+///
+/// Unknown captures resolve to no style.
 const IGNORED: &[&str] = &["spell", "nospell", "conceal", "none"];
 
 /// The query with its metadata captures taken out.

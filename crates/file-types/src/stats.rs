@@ -1,9 +1,4 @@
-//! How much of a file changed.
-//!
-//! Here rather than in `vcs` or `explorer` because both must name it and
-//! neither may name the other: a backend counts the lines, a list of files
-//! shows the count. Lines, not bytes — a reviewer asks "how big is this
-//! change", and the answer is in the units the review is read in.
+//! Added and removed line counts.
 
 /// Lines added and removed in one file, or summed over several.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -17,11 +12,7 @@ impl Stats {
         Self { added, removed }
     }
 
-    /// Whether there is anything worth showing.
-    ///
-    /// A binary file counts as nothing changed, because git reports `-` for
-    /// both sides rather than a number, and drawing `+0 -0` beside it would
-    /// claim a measurement that was never made.
+    /// Whether both counts are zero.
     pub fn is_empty(self) -> bool {
         self.added == 0 && self.removed == 0
     }

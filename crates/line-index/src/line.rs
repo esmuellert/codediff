@@ -1,9 +1,6 @@
-//! Positional queries about a single line of text.
+//! Positional queries for one line of text.
 //!
-//! A [`LineIndex`] indexes one line once, then answers conversions between
-//! byte offsets, UTF-16 columns and terminal cells by binary search. Walking a
-//! line rather than querying it lives in [`crate::grapheme`], and needs no
-//! index.
+//! `LineIndex` converts between byte, UTF-16, and terminal-cell positions.
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -13,9 +10,7 @@ use crate::width::{grapheme_width, tab_advance};
 
 #[derive(Debug, Clone)]
 enum Index {
-    /// Printable ASCII with no tabs: byte, char, UTF-16 and cell are all the
-    /// same number, so no table is needed. This is the common case by a wide
-    /// margin, and it is also why confusing the coordinates goes unnoticed.
+    /// Printable ASCII without tabs; all coordinate values are equal.
     Trivial { len: u32 },
     /// One entry per grapheme boundary, plus a terminal entry, so that every
     /// query is a binary search.
@@ -33,9 +28,7 @@ pub struct LineIndex<'a> {
 impl<'a> LineIndex<'a> {
     /// Indexes `text`, which must be a single line without its terminator.
     ///
-    /// Building the index costs an allocation on any line that is not plain
-    /// ASCII. Code that only walks a line to draw it should call
-    /// [`crate::graphemes`] instead and leave this for positional queries.
+    /// Use [`crate::graphemes`] when drawing a line without positional queries.
     pub fn new(text: &'a str, tab_width: u8) -> Self {
         let index = if is_trivial(text) {
             Index::Trivial { len: len32(text) }
@@ -72,10 +65,8 @@ impl<'a> LineIndex<'a> {
 
     /// Byte offset of a UTF-16 column.
     ///
-    /// Columns past the end clamp to the end of the line. A column landing
-    /// inside a character — the second half of a surrogate pair — clamps to
-    /// that character's start, so a highlight covers the whole character
-    /// rather than half of one.
+    /// Columns past the end clamp to the line end; columns inside a character
+    /// clamp to that character's start.
     pub fn utf16_to_byte(&self, col: Utf16Col) -> ByteOff {
         match &self.index {
             Index::Trivial { len } => ByteOff(col.get().min(*len)),

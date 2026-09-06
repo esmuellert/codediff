@@ -16,9 +16,9 @@ use crate::node::NodeHandle;
 /// What a listener says about an event it was given.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Bubble {
-    /// Dealt with. Nothing above sees it.
+    /// The event was handled; stop bubbling.
     Stop,
-    /// Not mine. Offer it to my parent.
+    /// Continue bubbling to the parent.
     Continue,
 }
 

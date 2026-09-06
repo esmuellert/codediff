@@ -1,9 +1,9 @@
 #![doc = include_str!("../README.md")]
 //!
-//! Index conventions (inherited from the C engine, which mirrors VSCode):
+//! Index conventions:
 //!
 //! - lines are 1-based, ranges are end-exclusive
-//! - columns are 1-based in UTF-16 code units
+//! - columns are 1-based UTF-16 code units
 
 /// A range of lines: 1-based, `start_line` inclusive, `end_line` exclusive.
 ///
@@ -71,8 +71,7 @@ impl DetailedLineRangeMapping {
     }
 }
 
-/// A block of lines the engine judged to have moved rather than been deleted
-/// and re-added. The engine options decide whether move data is produced.
+/// Lines the engine marked as moved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MovedText {
     pub original: LineRange,
@@ -84,9 +83,7 @@ pub struct MovedText {
 pub struct LinesDiff {
     pub changes: Vec<DetailedLineRangeMapping>,
     pub moves: Vec<MovedText>,
-    /// True when the engine stopped early because it exceeded its computation
-    /// budget. The diff is still valid,
-    /// but coarser than it would otherwise have been.
+    /// True when the engine stopped at its computation budget; results may be coarser.
     pub hit_timeout: bool,
 }
 

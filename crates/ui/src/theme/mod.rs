@@ -35,7 +35,7 @@ pub struct Theme {
     /// The characters within such a line that actually differ.
     pub deleted_text: Style,
     pub inserted_text: Style,
-    /// A block the engine judged to have moved rather than been rewritten.
+    /// A block marked as moved.
     pub moved: Style,
 
     /// The `╱` hatching where one side has no line at all.
@@ -48,7 +48,7 @@ pub struct Theme {
     pub status: Style,
     /// Patched over `status` for the file name.
     pub status_path: Style,
-    /// Patched over `status` for something the reader must not miss.
+    /// Warning style over the status style.
     pub warning: Style,
 
     /// Mouse text selection highlight.
@@ -113,7 +113,7 @@ impl Theme {
         }
     }
 
-    /// The same, reading the real environment.
+    /// Detects a theme from the process environment.
     pub fn from_environment() -> Self {
         Self::detect(|key| std::env::var(key).ok())
     }

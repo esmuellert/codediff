@@ -73,8 +73,7 @@ impl<T: 'static> SetState<T> {
     }
 }
 
-/// Taking the closure by reference is what lets a write borrow whatever is in
-/// scope; nothing is boxed and nothing needs `'static`.
+/// Provides access to the state writer.
 impl<T: 'static> Deref for SetState<T> {
     type Target = StateWriter<T>;
     fn deref(&self) -> &Self::Target {
@@ -103,7 +102,6 @@ fn write_slot<T: Clone + PartialEq + 'static>(
     })
     .flatten();
 
-    // P4.3
     let Some(now) = now else {
         panic!("a SetState was used after {name} was removed");
     };

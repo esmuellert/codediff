@@ -85,8 +85,7 @@ pub fn repo(dir: &Path) -> Result<()> {
         "last line still has no newline",
     )?;
 
-    // Added and deleted files are where the engine's empty-side handling is
-    // exercised for real: one side has no lines at all.
+    // Exercise empty-side handling.
     write(dir, "gains-a-line.txt", "one\ntwo\nthree\n")?;
     write_bytes(dir, "picture.png", &{
         let mut edited = PNG.to_vec();
@@ -100,9 +99,7 @@ pub fn repo(dir: &Path) -> Result<()> {
         "untracked-dir/inside.txt",
         "in an untracked directory\n",
     )?;
-    // A chain of directories with nothing to choose between, so a flattened
-    // tree and an unflattened one are different pictures. Without it the two
-    // cannot be told apart, and a broken flattener passes every test.
+    // Exercise a single-child directory chain.
     write(
         dir,
         "deep/only/one/chain/leaf.txt",
@@ -123,8 +120,7 @@ pub fn repo(dir: &Path) -> Result<()> {
 
 pub const MANIFEST: &str = "MANIFEST.txt";
 
-/// Ninety percent similar to its source, so git reports a rename rather than an
-/// unrelated add and delete.
+/// Fixture content for Git rename detection.
 const RENAME_BODY: &str = "\
 fn moved() {
     // this body is long enough that git scores the move as a rename
@@ -135,10 +131,7 @@ fn moved() {
 }
 ";
 
-/// What `git status --porcelain=v2` should report, written by hand.
-///
-/// Hand-written on purpose: a manifest generated from our own output would only
-/// prove the parser is consistent with itself.
+/// Expected `git status --porcelain=v2` output for this repository.
 fn manifest(dir: &Path) -> Result<()> {
     let text = "\
 # What `codediff debug status` must print for this repository.
@@ -177,8 +170,7 @@ M  M  staged-then-edited.txt
     Ok(())
 }
 
-/// The first bytes of a real PNG, including the zero byte that makes every
-/// tool call it binary.
+/// PNG header bytes containing a NUL.
 const PNG: &[u8] = &[
     0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, b'I', b'H', b'D', b'R',
 ];

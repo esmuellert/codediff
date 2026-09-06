@@ -8,10 +8,7 @@ use file_types::RepoPath;
 ///
 /// The path already carries its absolute filesystem spelling.
 pub fn read(path: &RepoPath) -> Result<Option<Vec<u8>>> {
-    // A symlink's content, to git, is where it points — a short line of text,
-    // stored as a blob. Reading through it would compare the *target* file
-    // against that line, which makes an unchanged link look like a whole file
-    // rewritten. `symlink_metadata` is what does not follow.
+    // Git stores a symlink's target; metadata avoids reading through the link.
     match std::fs::symlink_metadata(path.as_path()) {
         Ok(meta) if meta.is_symlink() => {
             return match std::fs::read_link(path.as_path()) {
@@ -22,9 +19,7 @@ pub fn read(path: &RepoPath) -> Result<Option<Vec<u8>>> {
                 }),
             };
         }
-        // A directory here is a submodule, whose content is a commit id rather
-        // than bytes. Answered as absent, so the reviewer says the file cannot
-        // be shown instead of failing to read a directory.
+        // A submodule directory has no file bytes to read.
         Ok(meta) if meta.is_dir() => return Ok(None),
         _ => {}
     }

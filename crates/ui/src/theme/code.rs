@@ -89,12 +89,7 @@ impl Code {
     }
 }
 
-/// Catppuccin's own mapping, which is the same for all four flavours — only
-/// the values differ.
-///
-/// Every line below is `catppuccin/nvim`'s. Where its treesitter table and its
-/// base table disagree, the treesitter one wins, because that is the one that
-/// runs on the languages people read.
+/// Catppuccin foreground mapping for all flavours.
 pub const fn catppuccin(p: Palette) -> Code {
     const fn c(Rgb(r, g, b): Rgb) -> Color {
         Color::Rgb(r, g, b)
@@ -141,8 +136,7 @@ mod tests {
 
     #[test]
     fn a_pen_resolves_to_the_colour_its_group_asked_for() {
-        // Which pen is which group is `syntax`'s to say; this only checks that
-        // a theme answers for whatever it says.
+        // The syntax table owns pen-to-group mapping.
         let code = Theme::DARK.code;
         for rule in syntax::rules() {
             let pen = rule.style.pen.expect("every rule carries its pen");
@@ -160,17 +154,12 @@ mod tests {
 
     #[test]
     fn every_theme_gives_every_token_a_colour_that_is_not_the_background() {
-        // A theme that resolved a token to its own background would have
-        // written a rule that erases text.
+        // A token must not resolve to the background.
         for theme in Theme::ALL {
             for token in Group::ALL {
                 let colour = theme.code.colour(token);
                 if colour == Color::Reset {
-                    // Not a colour: "whatever this terminal uses for text".
-                    // It equals `normal.bg`, which is also `Reset`, but the
-                    // two mean opposite ends of the terminal's own contrast —
-                    // `basic` is built entirely on that, and comparing the
-                    // enum values here would read it backwards.
+                    // Reset is the terminal's foreground, not a fixed colour.
                     continue;
                 }
                 assert_ne!(

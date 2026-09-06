@@ -1,12 +1,6 @@
-//! The twelve oracle pairs, checked against their source files.
+//! Checks aligned rows against the oracle files.
 //!
-//! The governing property: **read the left column top to bottom and you have
-//! the original file; read the right and you have the modified one.** Fillers
-//! contribute nothing. If that holds, the pairing is right — nothing else about
-//! alignment can be wrong while it does.
-//!
-//! Content is pulled in with `include_str!`, so these tests do no IO and the
-//! crate stays provably pure.
+//! Filler rows contribute no file content.
 
 use align::{Alignment, DiffVersion, ViewLineType};
 use file_types::DiffType;
@@ -22,8 +16,7 @@ macro_rules! pairs {
     };
 }
 
-/// Every pair in `libvscode-diff/tests/oracle`. Most exercise move detection,
-/// which is the hardest case for a pairing to get right.
+/// Oracle pairs used by alignment tests.
 const PAIRS: &[(&str, &str, &str)] = pairs![
     adjacent_move,
     block_moved_down,
@@ -50,9 +43,6 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 }
 
 /// Runs a check over every oracle pair.
-///
-/// The alignment borrows the line vectors, so they have to outlive it here
-/// rather than being returned.
 fn for_each_pair(mut check: impl FnMut(&str, &Alignment)) {
     for (name, original_text, modified_text) in PAIRS {
         let original = split(original_text);
@@ -276,8 +266,7 @@ fn moves_are_found_by_line_number() {
     );
 }
 
-/// The refusal in `lines.rs` only earns its place if the engine really does hold
-/// to the shape it checks for.
+/// The engine must produce diffs accepted by `Alignment`.
 #[test]
 fn the_engine_never_produces_a_malformed_diff() {
     for (name, original_text, modified_text) in PAIRS {

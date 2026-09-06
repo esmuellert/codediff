@@ -1,6 +1,6 @@
 //! Architecture rules and their failure messages.
 
-/// Edges that must never exist, with the reason reported on failure.
+/// Forbidden dependency edges and their diagnostics.
 pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
     (
         "ui",

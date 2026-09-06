@@ -1,8 +1,6 @@
 //! Incremental syntax progress for one file snapshot.
 //!
-//! The matcher carries parser state between requests. The parser may complete
-//! the whole file on its first request. Spans are appended to the caller's
-//! buffer; this type keeps the progress and engine state.
+//! Parser state and spans are retained between requests.
 
 use crate::engine::{Engine, EngineState, Grammar, Palette};
 use crate::limits;
@@ -12,8 +10,7 @@ use crate::style::Span;
 pub struct Highlighted {
     /// How many lines from the top have been read.
     lines_coloured: u32,
-    /// Where the engine got to, or `None` once there is nothing more to do —
-    /// either the file is finished, or it was never worth starting.
+    /// Parser state, or `None` when reading is complete or disabled.
     engine_state: Option<Box<EngineState>>,
 }
 
@@ -93,8 +90,7 @@ impl Highlighted {
         engine.colour(engine_state, palette, lines, from..target, into);
         self.lines_coloured += (into.len() - before) as u32;
         if self.lines_coloured as usize >= lines.len() {
-            // Nothing left to carry forward. Dropping it returns the grammar's
-            // context stack, which for a deeply nested file is not nothing.
+            // Release parser state after the last line.
             self.engine_state = None;
         }
     }

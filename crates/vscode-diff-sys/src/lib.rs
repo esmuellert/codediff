@@ -95,12 +95,12 @@ pub struct LinesDiff {
 unsafe extern "C" {
     /// Computes a diff and returns an allocation owned by the caller.
     ///
-    /// Empty files must be passed as `[""]`.
+    /// Empty inputs use `[""]`.
     ///
     /// # Safety
     ///
-    /// Both line arrays must contain the stated number of live, NUL-terminated
-    /// pointers. `options` must be valid.
+    /// Each array contains `count` valid NUL-terminated pointers, and `options`
+    /// is valid.
     pub fn compute_diff(
         original_lines: *const *const c_char,
         original_count: c_int,

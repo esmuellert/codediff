@@ -23,21 +23,13 @@ pub struct Change {
     pub untracked: Color,
     pub conflicted: Color,
 
-    /// Lines gained, and lines lost.
-    ///
-    /// Here rather than beside the six because they count *within* a change
-    /// rather than naming one — but for the same reason: `+4 -1` means the
-    /// same wherever it is written.
+    /// Colours for added and removed lines.
     pub gained: Color,
     pub lost: Color,
 }
 
 impl Change {
-    /// The colour for one change.
-    ///
-    /// Here rather than at each caller, so a seventh kind of change is a
-    /// field and one arm rather than a search for everywhere the six were
-    /// spelled out.
+    /// Returns the colour for a file change.
     pub fn of(&self, change: ChangeType) -> Color {
         match change {
             ChangeType::Added => self.added,
@@ -49,11 +41,7 @@ impl Change {
         }
     }
 
-    /// The Catppuccin assignment, for any of its flavours.
-    ///
-    /// Green for what arrived and red for what went, following the diff's own
-    /// colours, so a file's letter and the file itself agree about what green
-    /// means.
+    /// Catppuccin colours for file changes.
     pub const fn catppuccin(p: &Palette) -> Self {
         const fn c(rgb: Rgb) -> Color {
             Color::Rgb(rgb.0, rgb.1, rgb.2)
@@ -72,11 +60,7 @@ impl Change {
     }
 }
 
-/// The same assignment on the sixteen colours every terminal has.
-///
-/// Several land together, as in [`Code`](super::Code): a palette a quarter the
-/// size cannot keep six of these apart *and* keep them meaning what they mean.
-/// What must stay distinct is added against deleted, which it does.
+/// Basic-terminal colours for file changes.
 pub const BASIC_DARK: Change = Change {
     added: Color::Green,
     modified: Color::Yellow,
@@ -105,8 +89,7 @@ pub const BASIC_LIGHT: Change = Change {
 mod tests {
     use super::*;
 
-    /// Every way a file can have changed, so a new one cannot be forgotten
-    /// here: adding a variant fails to compile until it is listed.
+    /// Every declared file-change kind.
     const EVERY: [ChangeType; 6] = [
         ChangeType::Added,
         ChangeType::Modified,
@@ -118,10 +101,7 @@ mod tests {
 
     #[test]
     fn no_two_changes_look_alike_in_any_theme() {
-        // The column of letters is what a reviewer scans, so two changes
-        // sharing a colour makes the screen readable only a word at a time.
-        // Checked for every theme: this used to be asserted for `basic-dark`
-        // alone, and a wrong Catppuccin colour was caught by nothing.
+        // Every theme must distinguish file-change kinds.
         for theme in crate::theme::Theme::ALL {
             let colours: Vec<Color> = EVERY.iter().map(|&c| theme.change.of(c)).collect();
             for (index, colour) in colours.iter().enumerate() {

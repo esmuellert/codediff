@@ -1,4 +1,4 @@
-//! Reading something that changes on its own.
+//! External store subscriptions.
 
 use std::any::Any;
 use std::rc::Rc;
@@ -7,17 +7,15 @@ use super::{Slot, use_hook};
 use crate::scope::Scope;
 
 pub(crate) struct StoreSlot {
-    /// Dropped on unmount, which is what ends the subscription.
+    /// Released on unmount.
     pub subscription: Subscription,
-    /// The last `Snapshot<T>`, compared with the next by `Rc::ptr_eq`.
+    /// Last snapshot, compared by `Rc` identity.
     pub snapshot: Box<dyn Any>,
 }
 
-/// Something outside the tree that changes on its own — a worker, a file
-/// watcher, a clock.
+/// A value source outside the component tree.
 ///
-/// `snapshot` must hand back the same `Snapshot` until something changes, and
-/// a different one when it does.
+/// `snapshot` returns the same snapshot until the value changes.
 pub trait ExternalStore {
     type Value: ?Sized + 'static;
 
@@ -29,10 +27,7 @@ pub trait ExternalStore {
     fn snapshot(&self) -> Snapshot<Self::Value>;
 }
 
-/// A value read from a store, compared by identity.
-///
-/// A store that hands back a new `Rc` has changed; one that hands back the
-/// same `Rc` has not.
+/// A store snapshot compared by `Rc` identity.
 pub struct Snapshot<T: ?Sized>(Rc<T>);
 
 impl<T: ?Sized> Clone for Snapshot<T> {
@@ -52,7 +47,7 @@ impl<T: ?Sized> std::ops::Deref for Snapshot<T> {
         &self.0
     }
 }
-/// A new `Rc` is a new reading; the same `Rc` is the same reading.
+/// Converts an `Rc` into a snapshot.
 impl<T: ?Sized> From<Rc<T>> for Snapshot<T> {
     fn from(value: Rc<T>) -> Self {
         Self(value)
@@ -65,8 +60,7 @@ impl<T: ?Sized> From<Rc<T>> for Snapshot<T> {
 pub struct Notify(Rc<dyn Fn()>);
 
 impl Notify {
-    /// Marks the component that subscribed for redraw. Does nothing once that
-    /// component has gone away.
+    /// Marks the subscribed component for redraw.
     pub fn changed(&self) {
         (self.0)();
     }
@@ -89,11 +83,9 @@ impl Drop for Subscription {
     }
 }
 
-/// Subscribe to a store, and read it.
+/// Subscribes to a store and returns its current snapshot.
 ///
-/// Asks the store for a snapshot on every render and compares it with the
-/// last. Subscribes on mount and unsubscribes on unmount, so `store` must be
-/// the same store for the component's life.
+/// The store must remain the same for the component's lifetime.
 #[track_caller]
 pub fn use_sync_external_store<S: ExternalStore>(
     scope: &mut Scope,

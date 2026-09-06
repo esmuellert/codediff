@@ -55,8 +55,7 @@ const DARK_CODE: Code = Code {
     kind: Color::LightYellow,
     function: Color::LightBlue,
     library: Color::Yellow,
-    // The terminal's own foreground: an ordinary name should look ordinary,
-    // which is the same argument as `normal` above.
+    // Preserve the terminal's foreground.
     variable: Color::Reset,
     builtin: Color::LightRed,
     parameter: Color::Red,
@@ -78,7 +77,7 @@ const DARK_CODE: Code = Code {
     deleted: Color::LightRed,
 };
 
-/// The same groups for a light terminal. See [`DARK_CODE`].
+/// Syntax colours for a light terminal.
 const LIGHT_CODE: Code = Code {
     comment: Color::DarkGray,
     string: Color::Green,
@@ -118,9 +117,7 @@ pub const DARK: Theme = Theme {
     name: "basic-dark",
     dark: true,
 
-    // `Reset` means "whatever the terminal already uses", so an unchanged line
-    // is indistinguishable from the surrounding shell — which is what makes
-    // this theme fit in anywhere.
+    // Reset uses the terminal's own foreground and background.
     normal: Style::new().fg(Color::Reset).bg(Color::Reset),
 
     deleted: over(cube::DARK_RED),
@@ -194,8 +191,7 @@ mod tests {
 
     #[test]
     fn nothing_here_names_a_24_bit_colour() {
-        // The entire reason this theme exists. One `Color::Rgb` and it would
-        // fail on exactly the terminals it is meant for.
+        // Basic themes must not use 24-bit colours.
         for theme in [DARK, LIGHT] {
             for style in theme.styles() {
                 for colour in [style.fg, style.bg] {
@@ -206,8 +202,7 @@ mod tests {
                     );
                 }
             }
-            // Syntax colours too: they are the largest table here, and the
-            // one most easily filled in by copying a 24-bit theme.
+            // Check syntax colours as well.
             for token in syntax::Group::ALL {
                 assert!(
                     !matches!(theme.code.colour(token), Color::Rgb(..)),
@@ -237,7 +232,6 @@ mod tests {
 
     #[test]
     fn the_two_variants_do_not_share_a_single_colour() {
-        // If they did, one of them was not thought about.
         assert_ne!(DARK.inserted.bg, LIGHT.inserted.bg);
         assert_ne!(DARK.cursor_line.bg, LIGHT.cursor_line.bg);
         assert_ne!(DARK.status.bg, LIGHT.status.bg);

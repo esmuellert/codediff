@@ -16,7 +16,7 @@ fn m(text: &str) -> LineIndex<'_> {
 
 #[test]
 fn ascii_agrees_in_every_coordinate_system() {
-    // The reason coordinate bugs survive testing: here they are all equal.
+    // ASCII uses the same value in every coordinate system.
     let line = m("let x = 1;");
     assert_eq!(line.byte_len().get(), 10);
     assert_eq!(line.utf16_len().get(), 10);
@@ -194,16 +194,7 @@ fn a_cell_past_a_line_ending_in_a_zero_width_cluster_clamps_to_the_end() {
 
 #[test]
 fn an_emoji_zwj_sequence_is_one_grapheme_of_two_cells() {
-    // A known point of genuine disagreement, pinned rather than solved.
-    //
-    // "man + ZWJ + woman + ZWJ + girl" is one grapheme cluster. Unicode TR51
-    // says it renders as a single glyph, so `unicode-width` measures it as two
-    // columns and so do we. Counting the components separately would give six,
-    // and some terminals do exactly that.
-    //
-    // No implementation is universally right. If a terminal is found where the
-    // difference is visible in practice, the fix belongs in a per-terminal
-    // width override, not here.
+    // Keep the Unicode grapheme width used by this crate.
     let line = m("👨\u{200d}👩\u{200d}👧");
     assert_eq!(line.graphemes().count(), 1);
     assert_eq!(line.byte_len().get(), 18);

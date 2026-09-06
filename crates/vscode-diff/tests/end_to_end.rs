@@ -1,9 +1,4 @@
-//! End-to-end use of the public API.
-//!
-//! This file is an integration test, so it compiles against `vscode-diff` the
-//! way any other crate would: only `pub` items are visible, and there is no
-//! `unsafe`, no marshalling and no manual free. If these pass, Rust code can
-//! use the C engine directly.
+//! Integration tests for the safe public API.
 
 use vscode_diff::{DiffVersion, Error, Options, compute};
 

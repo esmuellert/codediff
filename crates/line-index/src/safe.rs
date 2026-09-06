@@ -23,10 +23,7 @@ fn safe_char(c: char) -> char {
     }
 }
 
-/// Text with anything the terminal would act on replaced by a safe printable character.
-///
-/// Returns the input unchanged when there is nothing to do, which is almost
-/// always, so ordinary lines cost one scan and no allocation beyond the copy.
+/// Replaces terminal controls and bidi characters with printable text.
 pub fn sanitize(text: &str) -> String {
     if !text.chars().any(is_dangerous) {
         return text.to_owned();
@@ -61,8 +58,7 @@ mod tests {
 
     #[test]
     fn every_substitution_keeps_the_width_the_measurement_promised() {
-        // The reason this module is in this crate. If a picture were ever wider
-        // or narrower than what it replaces, every column after it would shift.
+        // Replacements must preserve measured width.
         for c in [
             '\u{0}', '\u{1b}', '\u{7f}', '\u{85}', '\u{202e}', '\u{2066}',
         ] {
@@ -75,8 +71,7 @@ mod tests {
 
     #[test]
     fn a_zero_width_joiner_is_left_alone() {
-        // It builds emoji and reorders nothing; replacing it would break
-        // legitimate text to no benefit.
+        // Preserve emoji joiners and variation selectors.
         assert!(!is_dangerous('\u{200d}'));
         assert!(!is_dangerous('\u{fe0f}'));
     }

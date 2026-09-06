@@ -36,8 +36,7 @@ impl<T> std::fmt::Debug for Ref<T> {
 impl<T: 'static> Ref<T> {
     /// The value in the slot. Writing through it is silent.
     ///
-    /// The guard lasts to the end of the statement. Two of them on the same
-    /// ref at once panic (P4.5).
+    /// The borrow lasts to the end of the statement; overlapping borrows panic.
     pub fn current(self) -> RefMut<'static, T> {
         super::require_runtime();
         self.cell

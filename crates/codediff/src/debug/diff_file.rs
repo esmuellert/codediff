@@ -1,8 +1,4 @@
-//! `codediff debug diff-file <path>` — one file, both sides found through git.
-//!
-//! The text-mode twin of the interface. Both go through the same pipeline, so
-//! a disagreement between what this prints and what the screen shows would
-//! have to come from drawing, not from the data.
+//! Prints one repository file with both versions.
 
 use anyhow::Result;
 use file_types::File;
@@ -13,10 +9,7 @@ use crate::text::sanitize;
 use pipeline::diff::Runner;
 use pipeline::files;
 
-/// Finds a file through the same list pipeline used by the UI.
-///
-/// Unchanged files are compared with themselves for debugging, even though the
-/// review UI does not list them.
+/// Finds a changed file, or an existing file for self-comparison.
 fn find(path: &str) -> Result<file_types::File> {
     let cwd = std::env::current_dir()?;
     let git = vcs::Repository::open(&cwd)?;
@@ -31,8 +24,7 @@ fn find(path: &str) -> Result<file_types::File> {
     }
     let repo_path = file_types::RepoPath::new(path, &root);
     if repo_path.as_path().exists() {
-        // Against itself, which is what "unchanged" means and what the
-        // ordinary worktree comparison would have said had it been listed.
+        // Use identical revisions for an unchanged file.
         let revs = file_types::Revs::worktree_against(file_types::Oid::new("HEAD"));
         return Ok(file_types::File::unchanged_path(repo_path, revs));
     }
@@ -44,23 +36,18 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     let contents = &runner.contents;
     header(&contents.file, &contents.original, &contents.modified);
 
-    // Nothing to align: a picture has no lines, and saying so is the answer
-    // rather than a failure.
+    // Binary files have no line diff.
     if runner.is_binary() {
         println!("binary file — no line diff");
         return Ok(());
     }
 
-    // A file that exists on only one side is not compared against anything, so
-    // there is no diff to print — only the file. This is what the interface
-    // shows too, in one pane rather than two.
+    // One-sided files are shown in one pane.
     if let Some(version) = runner.is_one_sided() {
         return one_sided(&runner, version);
     }
 
-    // The same content the interface is given, read rather than drawn. Any
-    // disagreement between this and the screen would have to come from
-    // drawing, since there is only one source for both.
+    // Print the aligned diff.
     let content = runner.compute_diff()?;
     let DiffContent::Diff(diff) = &content else {
         unreachable!("two sides were read, so this is a diff");
@@ -80,8 +67,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
 
 /// Prints the one side that exists, numbered and unmarked.
 ///
-/// No `+` or `-`: nothing here changed relative to anything, because there is
-/// no other side to be relative to.
+/// Prints the existing side with line numbers.
 fn one_sided(runner: &Runner, present: DiffVersion) -> Result<()> {
     let what = match present {
         DiffVersion::Modified => "added — no original to compare against",

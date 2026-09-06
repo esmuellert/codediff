@@ -1,10 +1,7 @@
-//! VS Code diff decorations resolved for one terminal line.
+//! Resolves diff mappings into decorations for one terminal line.
 //!
-//! This is the fixed-width counterpart of `DiffEditorDecorations` at the VS
-//! Code revision pinned by the parity verifier. Line and gutter backgrounds
-//! come from each non-empty side of a line mapping. Character decorations are
-//! whole-line for pure insertions/deletions and otherwise come from the
-//! mapping's inner ranges.
+//! Line and gutter backgrounds follow line mappings. Character decorations use
+//! inner ranges, or the whole line for one-sided changes.
 
 use std::ops::Range;
 
@@ -26,7 +23,7 @@ pub struct LineDecorations {
     pub line_background: bool,
     pub gutter_background: bool,
     pub characters: Vec<CharacterDecoration>,
-    /// Byte positions where VS Code draws its three-pixel empty-range marker.
+    /// Byte positions for empty-range markers.
     pub empty_markers: Vec<u32>,
 }
 
@@ -62,8 +59,7 @@ pub(crate) fn decorations(
 
         for inner in &change.inner_changes {
             let range = char_range(inner, version);
-            // DiffEditorDecorations deliberately tests the range's start, not
-            // every line it covers, before adding the model decoration.
+            // Check the mapping's start line before adding the decoration.
             if !contains(changed, range.start_line) {
                 continue;
             }

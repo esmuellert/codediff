@@ -35,8 +35,7 @@ pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     }
 
     for (revs, files) in groups {
-        // The revisions, not only the name: a name is a label a human reads,
-        // and what the group *is* is the pair.
+        // Print the revision pair represented by this group.
         println!(
             "group {:?} {} -> {}",
             revs.heading(),

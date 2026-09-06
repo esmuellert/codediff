@@ -1,4 +1,4 @@
-//! CSS flexbox, in whole cells.
+//! Layout primitives for rows, columns, and stacks.
 
 use ratatui::style::Style;
 
@@ -6,10 +6,7 @@ mod flex;
 
 pub(crate) use flex::{Item, assign};
 
-/// CSS flexbox, in whole cells, minus the parts nothing here uses.
-///
-/// Every field is a flexbox property under its CSS name, so "two `grow: 1`
-/// beside one `Length(40)`" has an answer you can look up.
+/// Flex layout properties for a node.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Layout {
     // As an item of its parent.
@@ -39,12 +36,11 @@ pub struct Layout {
     pub fill: Option<Style>,
     /// `overflow: hidden` — children get rectangles no larger than this node's.
     pub clip: bool,
-    /// `display: none`, except that the scope and its hooks stay alive:
-    /// out of layout, unpainted, unhittable, still remembering.
+    /// Removes the node from layout and paint while retaining its scope.
     pub hidden: bool,
 }
 
-/// CSS's defaults: `flex: 0 1 auto`.
+/// Default layout values.
 impl Default for Layout {
     fn default() -> Self {
         Self {
@@ -69,8 +65,7 @@ pub enum Basis {
     /// As much as the content measures. CSS `flex-basis: auto`.
     #[default]
     Auto,
-    /// Exactly this many cells. `Length`, because `Cells` is already this
-    /// crate's name for the cell grid.
+    /// A fixed number of cells.
     Length(u16),
     /// A share of the container's inner size on the main axis.
     Percent(u16),

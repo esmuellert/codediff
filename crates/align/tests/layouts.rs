@@ -1,15 +1,4 @@
-//! What the two layouts must agree about.
-//!
-//! Inline and side by side lay a diff out differently on purpose, so almost
-//! nothing about them is comparable — line counts differ, and line *n* of one is
-//! not line *n* of the other. Exactly one thing has to hold, and it is the
-//! thing that makes a second layout trustworthy: **each version reads back
-//! as its own file, in order, in either layout.**
-//!
-//! That single property catches essentially every plausible mistake in a
-//! walk — a line emitted twice, one skipped, deletions and insertions
-//! interleaved wrongly, an unchanged run mispaired, a change's lines counted
-//! against the wrong side.
+//! Checks that both view layouts preserve each file's line order.
 
 use align::{Alignment, DiffVersion, ViewLineType};
 use file_types::DiffType;
@@ -52,11 +41,7 @@ macro_rules! oracle_pairs {
     };
 }
 
-/// The twelve oracle pairs, plus edge shapes they do not cover.
-///
-/// The oracle pairs stress move detection, which produces the most awkward
-/// change ranges; the hand-written ones cover the
-/// boundaries — empty files, a change touching the very first or last line.
+/// Oracle pairs plus hand-written boundary cases.
 fn pairs() -> Vec<(&'static str, &'static str, &'static str)> {
     let mut pairs: Vec<_> = oracle_pairs![
         adjacent_move,
@@ -123,8 +108,7 @@ fn a_counted_layout_is_as_tall_as_it_walks() {
 
 #[test]
 fn inline_is_never_shorter_than_side_by_side() {
-    // A change costs the sum of its sides inline and the taller of them side
-    // by side, and the two are equal only when one side is empty.
+    // Inline uses both sides' rows; side-by-side uses the taller side.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         assert!(
@@ -137,8 +121,7 @@ fn inline_is_never_shorter_than_side_by_side() {
 
 #[test]
 fn no_inline_row_holds_both_versions_unless_they_agree() {
-    // The defining property of the layout: a line belongs to one version, and
-    // the only exception is an unchanged line, which both versions share.
+    // Only unchanged rows contain both versions.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         for line in alignment.view_lines(DiffType::Inline) {
@@ -189,8 +172,7 @@ fn a_view_line_maps_to_a_file_line_and_back_within_its_own_layout() {
 
 #[test]
 fn a_file_line_keeps_its_place_when_the_layout_changes() {
-    // What the layout toggle relies on: the line number is meaningless in the
-    // other layout, but the line it shows is not.
+    // File line numbers survive a layout change.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         for view_line in 0..alignment.view_line_count(DiffType::SideBySide) {
@@ -223,8 +205,7 @@ fn blocks_cover_every_changed_row_and_nothing_else() {
                 .map(|(i, _)| i as u32)
                 .collect();
             assert_eq!(covered, changed, "{name}, {layout:?}");
-            // Adjacent lines belong to one block, or navigation would stop
-            // twice inside a single edit.
+            // Adjacent changed rows share one block.
             for pair in blocks.windows(2) {
                 assert!(
                     pair[1].start > pair[0].end,

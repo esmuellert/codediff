@@ -12,8 +12,7 @@ macro_rules! coordinate {
         impl $name {
             pub const ZERO: Self = Self(0);
 
-            /// The underlying number. Verbose on purpose: reaching for this
-            /// is how a coordinate ends up used as the wrong kind.
+            /// Returns the underlying value.
             pub const fn get(self) -> u32 {
                 self.0
             }
@@ -48,9 +47,7 @@ coordinate! {
 coordinate! {
     /// An offset in UTF-16 code units.
     ///
-    /// This is what the diff engine reports, because it mirrors VSCode and
-    /// JavaScript strings are UTF-16. Characters outside the Basic
-    /// Multilingual Plane count as two: `🎉` is one char but two UTF-16 units.
+    /// A UTF-16 column used by the diff engine. Astral characters count as two units.
     Utf16Col
 }
 
@@ -62,8 +59,7 @@ coordinate! {
 impl Utf16Col {
     /// Converts a one-based column as reported by the diff engine.
     ///
-    /// Column 0 is treated as column 1; the engine does not emit it, but
-    /// clamping is preferable to underflow.
+    /// Converts column 0 to the first column by saturating subtraction.
     pub const fn from_engine(column: u32) -> Self {
         Self(column.saturating_sub(1))
     }

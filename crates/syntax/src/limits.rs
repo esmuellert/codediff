@@ -1,12 +1,12 @@
-//! VS Code's size limits for syntax highlighting.
+//! File-size limits for syntax highlighting.
 
-/// VS Code's `LARGE_FILE_SIZE_THRESHOLD`.
+/// Byte threshold for large files.
 pub const MAX_BYTES: usize = 20 * 1024 * 1024;
 
-/// VS Code's `LARGE_FILE_LINE_COUNT_THRESHOLD`.
+/// Line-count threshold for large files.
 pub const MAX_LINES: usize = 300_000;
 
-/// VS Code's `editor.maxTokenizationLineLength`.
+/// Maximum line length for highlighting.
 pub const MAX_LINE_CHARS: usize = 20_000;
 
 /// Whether a file is below both limits.

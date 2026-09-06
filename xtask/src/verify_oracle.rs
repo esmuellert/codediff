@@ -9,7 +9,7 @@ use std::process::Command;
 use crate::oracle_output::{self, OracleChange, OracleInner};
 use vscode_diff::{LinesDiff, Options, compute};
 
-/// Mirrors DIFF_CORE_SOURCES; see crates/vscode-diff-sys/build.rs.
+/// C sources compiled into the oracle.
 const SOURCES: &[&str] = &[
     "default_lines_diff_computer.c",
     "src/char_level.c",
@@ -115,13 +115,11 @@ fn compare(tool: &Path, pair: &Path) -> Result<()> {
 
     let original = std::fs::read_to_string(&original_path)?;
     let modified = std::fs::read_to_string(&modified_path)?;
-    // diff_tool splits on '\n' only and keeps a trailing empty line, matching
-    // JavaScript's String.split. `str::lines` does neither, so it must not be
-    // used here or the two sides would see different input.
+    // Match `diff_tool`'s newline splitting, including trailing empty lines.
     let original = vscode_diff::lines(&original);
     let modified = vscode_diff::lines(&modified);
 
-    // diff_tool computes moves and uses a 5s budget; match it exactly.
+    // Match the oracle's move detection and time budget.
     let options = Options::default().with_moves().with_time_budget_ms(5_000);
     let actual = compute(&original, &modified, &options)?;
 
@@ -230,10 +228,7 @@ fn change_mismatch(
     None
 }
 
-/// Compiles `diff_tool` from the canonical C sources into `target/oracle/`.
-///
-/// Built here rather than by a build script because it is a development tool,
-/// not part of any shipped crate.
+/// Compiles `diff_tool` into `target/oracle/`.
 fn build_oracle(root: &Path) -> Result<PathBuf> {
     let engine = root.join("libvscode-diff");
     let out_dir = root.join("target").join("oracle");

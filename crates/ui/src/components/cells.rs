@@ -20,7 +20,7 @@ pub struct Ink<'a> {
     pub spans: &'a [Emphasis],
     /// Byte position where a range begins and continues through the line break.
     pub fill_from: Option<u32>,
-    /// Byte positions carrying VS Code's empty-range marker.
+    /// Byte positions carrying empty-range markers.
     pub empty_markers: &'a [u32],
     /// Syntax spans in byte order.
     pub syntax: &'a [syntax::Span],

@@ -8,7 +8,7 @@ use file_types::File;
 
 /// What one request produced.
 pub struct Response {
-    /// Which request this answers — used to drop late responses.
+    /// Request file used to match the response.
     pub file: File,
     pub content: Result<DiffContent, String>,
 }
@@ -67,7 +67,7 @@ impl Worker for DiffWorker {
     fn received(&mut self, _response: &Self::Response) {}
 }
 
-/// Runs the four stages. Nothing is cached between calls. See D51.
+/// Runs the four stages without caching between calls.
 fn compare(file: &File) -> Result<DiffContent, String> {
     let path = file.path().as_str().to_owned();
     let runner = Runner::new(file).map_err(|why| format!("{path}: {why:#}"))?;

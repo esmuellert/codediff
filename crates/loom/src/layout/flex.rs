@@ -48,8 +48,7 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
 
     let main = resolve(axis, room, children, &shown);
 
-    // R5.5.1 — the cross axis is the container's, clamped by the child's own
-    // bounds. `align-items: stretch`, and the only alignment there is.
+    // Stretch the cross axis within the child's bounds.
     let mut areas = vec![Rect::ZERO; children.len()];
     let mut at = if axis == Axis::Across {
         inner.x
@@ -61,8 +60,7 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
 
     for &i in &shown {
         let layout = children[i].layout;
-        // A child never reaches past the container. Where CSS overflows, this
-        // cuts, and the cut is what R5.6.1 sees.
+        // Clip each child to the remaining main-axis space.
         let size = main[i].min(left);
         let cross = clamp(
             cross_room,
@@ -86,7 +84,7 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
             }
         };
 
-        // R5.6.1 — short of its minimum because shrinking ran out of room.
+        // Record children that fall below their minimums.
         if areas[i].width < layout.min_width || areas[i].height < layout.min_height {
             too_small = true;
         }
@@ -98,7 +96,7 @@ pub(crate) fn assign(axis: Axis, inner: Rect, gap: u16, children: &[Item]) -> As
     Assigned { areas, too_small }
 }
 
-/// R5.5.4 — `Stack` gives every child the whole inner rectangle.
+/// Assigns the inner rectangle to every visible child.
 fn over(inner: Rect, children: &[Item]) -> Assigned {
     let mut areas = vec![Rect::ZERO; children.len()];
     let mut too_small = false;
@@ -114,12 +112,12 @@ fn over(inner: Rect, children: &[Item]) -> Assigned {
     Assigned { areas, too_small }
 }
 
-/// §5.4 — CSS's *resolve flexible lengths*, in `u16`, one line, no wrap.
+/// Resolves flexible sizes without wrapping.
 fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16> {
     let mut size = vec![0u16; children.len()];
     let mut frozen = vec![false; children.len()];
 
-    // R5.4.1 — the hypothetical size, clamped to the child's own bounds.
+    // Clamp each child's hypothetical size to its bounds.
     for &i in shown {
         let layout = children[i].layout;
         let hypothetical_size = match layout.basis {
@@ -135,7 +133,7 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
         );
     }
 
-    // R5.4.5 — each round freezes at least one child, so this ends.
+    // Each round freezes a bounded child, so the loop terminates.
     for _ in 0..=shown.len() {
         let taken: u32 = shown.iter().map(|&i| u32::from(size[i])).sum();
         let free = i64::from(room) - i64::from(taken);
@@ -165,11 +163,10 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
             .iter()
             .map(|&i| {
                 if free > 0 {
-                    // R5.4.3 — in proportion to `grow`.
+                    // Grow in proportion to the grow factors.
                     u32::from(children[i].layout.grow)
                 } else {
-                    // R5.4.4 — CSS's scaled shrink factor, so a wide child
-                    // gives up more than a narrow one at the same `shrink`.
+                    // Shrink in proportion to the scaled shrink factors.
                     u32::from(children[i].layout.shrink) * u32::from(size[i])
                 }
             })
@@ -194,9 +191,7 @@ fn resolve(axis: Axis, room: u16, children: &[Item], shown: &[usize]) -> Vec<u16
             let _ = i;
         }
 
-        // R5.4.7 — the remainder goes a cell at a time to the largest
-        // fractional parts, ties to the earlier child, so the same split comes
-        // out every frame.
+        // Give remainder cells to the largest fractional parts, in child order on ties.
         remainders.sort_by(|a, b| b.0.cmp(&a.0).then(a.2.cmp(&b.2)));
         let mut left = moving.saturating_sub(handed);
         for &(_, _, n) in &remainders {

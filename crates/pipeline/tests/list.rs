@@ -27,9 +27,7 @@ impl Drop for Fixture {
 
 #[test]
 fn a_file_staged_and_edited_again_carries_a_count_per_comparison() {
-    // What each explorer row draws. `staged-then-edited.txt` gained a line in
-    // the working tree and swapped one in the index; both rows used to show
-    // the staged pair.
+    // Each comparison has its own line counts.
     let fixture = Fixture::new("counts");
     let files = files::get_files(&Request::worktree(&fixture.dir)).expect("listing");
 

@@ -33,7 +33,7 @@ pub fn run(cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-/// The same, for commands whose output is a single line of text.
+/// Runs Git and returns a trimmed UTF-8 line.
 pub fn run_line(cwd: &Path, args: &[&str]) -> Result<String> {
     let out = run(cwd, args)?;
     let text = String::from_utf8(out).map_err(|_| Error::NotUtf8 {

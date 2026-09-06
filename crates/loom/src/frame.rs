@@ -1,9 +1,4 @@
-//! The seven steps of a frame: render, lay out, run layout effects, paint,
-//! run effects.
-//!
-//! The runtime is borrowed in short bursts. Nothing here holds it across a
-//! component's function, a listener, an effect body or a painter, because all
-//! four reach the runtime themselves.
+//! Builds frames without holding runtime borrows across callbacks.
 
 use ratatui::buffer::Buffer as Cells;
 use ratatui::layout::Rect;
@@ -16,8 +11,7 @@ use crate::reconcile::{Fiber, HostDesc, RuntimeRef};
 use crate::runtime::Runtime;
 use crate::scope::ScopeId;
 
-/// One host that got a rectangle. Flat, deepest last, so painting is a walk
-/// forward and hit-testing is a walk back.
+/// A laid-out host in paint order.
 #[derive(Clone)]
 pub(crate) struct FrameNode {
     pub scope: ScopeId,
@@ -32,8 +26,7 @@ pub(crate) struct FrameNode {
     pub auto_focus: bool,
 }
 
-/// R5.8.2 — a layout effect may write state, which re-renders and re-lays
-/// out. Four rounds is far above anything that settles.
+/// Maximum redraw rounds caused by layout effects.
 const ROUNDS: usize = 4;
 
 /// Reconcile, lay out, run layout effects, paint, run effects.
@@ -60,13 +53,12 @@ pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
         }
         held.borrow_mut().placed = placed;
 
-        // R5.8 — every `ref` holds its node before a layout effect runs.
+        // Refs are written before layout effects run.
         write_refs(held);
         auto_focus(held);
         run_effects(held, true);
 
-        // A layout effect that wrote state gets another round before anything
-        // reaches the screen.
+        // State writes from layout effects trigger another round.
         if !held.borrow().needs_draw() || rounds >= ROUNDS {
             break;
         }
@@ -79,8 +71,7 @@ pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
         paint_one(held, at, cells);
     }
 
-    // Effects run after the frame is on screen. What they mark belongs to
-    // the next one, so nothing is cleared after this.
+    // Post-frame effects schedule the next draw.
     run_effects(held, false);
 }
 
@@ -97,9 +88,8 @@ fn commit_state(rt: &mut Runtime) {
 
 /// Lays one host out, then its children, appending to `placed`.
 ///
-/// Answers whether this node could not fit its children. A container that
-/// cannot paints its own `too_small` node instead; one with nothing to say
-/// passes the condition to its parent (R5.6.2).
+/// Returns whether this node cannot fit its children. A container uses its
+/// `too_small` node or passes the condition to its parent.
 fn lay_out(
     node: &Fiber,
     area: Rect,
@@ -126,9 +116,9 @@ fn lay_out(
         auto_focus: node.host_desc.auto_focus,
     });
 
-    // R5.5.2 — padding comes off before the children.
+    // Remove padding before laying out children.
     let inner = inset(area, layout.pad);
-    // R5.5.3 — a clipping parent shrinks what its children may reach.
+    // Clip children to the parent's inner area.
     let inner_clip = if layout.clip {
         clip.intersection(inner)
     } else {
@@ -153,7 +143,7 @@ fn lay_out(
     let mut short = out.too_small;
     if !short {
         for (child, child_area) in node.children.iter().zip(out.areas) {
-            // I5 — every rectangle handed to a child lies inside its parent's.
+            // Child rectangles stay inside the parent.
             let child_area = child_area.intersection(inner);
             short |= lay_out(
                 child,
@@ -169,9 +159,7 @@ fn lay_out(
         return false;
     }
 
-    // R5.6.2 — a container that cannot fit its children assigns nothing below
-    // it and paints its `too_small` node instead. One with nothing to say
-    // passes the condition up.
+    // Replace children with the `too_small` fallback when they do not fit.
     placed.truncate(below);
     let Some(message) = &node.too_small else {
         return true;
@@ -182,11 +170,11 @@ fn lay_out(
     false
 }
 
-/// R5.3 — only `Basis::Auto` needs measuring, and only `Text` answers.
+/// Measures auto-sized children and text.
 fn measure(node: &Fiber, axis: Axis, room: Rect) -> u16 {
     let layout = node.host_desc.layout;
     match layout.basis {
-        // R5.3.3 — a fixed child measures as its size.
+        // Fixed-size children measure as their size.
         Basis::Length(n) => return n,
         // What a percentage is a share of is not known until the flex pass.
         Basis::Percent(_) => return 0,
@@ -198,8 +186,7 @@ fn measure(node: &Fiber, axis: Axis, room: Rect) -> u16 {
         return if axis == Axis::Down { down } else { across };
     }
 
-    // R5.3.2 — a container measures as the sum of its children along its main
-    // axis, plus the gaps, plus padding.
+    // Containers measure from their children, gaps, and padding.
     if node.children.is_empty() {
         return 0;
     }
@@ -233,7 +220,7 @@ fn measure(node: &Fiber, axis: Axis, room: Rect) -> u16 {
     }
 }
 
-/// R5.8 — every `ref` holds its node before a layout effect runs.
+/// Writes refs before layout effects run.
 fn write_refs(held: &RuntimeRef) {
     let writes: Vec<(crate::hook::Ref<Option<NodeHandle>>, NodeHandle)> = held
         .borrow()
@@ -256,8 +243,7 @@ fn write_refs(held: &RuntimeRef) {
     }
 }
 
-/// Runs one queue of effects: the old cleanup first, then the body, then the
-/// new cleanup into the slot.
+/// Runs queued effects and installs their cleanups.
 fn run_effects(held: &RuntimeRef, before_paint: bool) {
     let queued = {
         let mut rt = held.borrow_mut();
@@ -269,15 +255,14 @@ fn run_effects(held: &RuntimeRef, before_paint: bool) {
     };
 
     for effect in queued {
-        // R9.3.3 — a reply from a previous run is refused, so the generation
-        // has to still match.
+        // Ignore replies from previous effect generations.
         let undo = {
             let mut rt = held.borrow_mut();
             let current = generation_of(&rt, effect.scope, effect.slot);
             if current != Some(effect.generation) {
                 continue;
             }
-            // I11 — a cleanup runs before its next setup.
+            // Run cleanup before the next setup.
             rt.hooks
                 .get_mut(&effect.scope)
                 .and_then(|h| h.slots.get_mut(effect.slot as usize))
@@ -317,7 +302,7 @@ fn generation_of(rt: &Runtime, scope: ScopeId, slot: u16) -> Option<u64> {
         })
 }
 
-/// R7.1 — the walk. Fill first, then the node's own ink.
+/// Paints fill first, then the node's own content.
 fn paint_one(held: &RuntimeRef, at: usize, cells: &mut Cells) {
     let (desc, area, clip, focused) = {
         let rt = held.borrow();
@@ -355,8 +340,7 @@ fn paint_one(held: &RuntimeRef, at: usize, cells: &mut Cells) {
         ratatui::widgets::Widget::render(line, clip, cells);
     }
 
-    // The runtime is not borrowed here, so a painter may read a ref or a
-    // store while it writes cells.
+    // Painters can read refs and stores while writing cells.
     if let Some(paint) = &desc.paint {
         let mut brush = Paint::new(cells, area, clip, focused);
         paint(&mut brush);
@@ -372,9 +356,7 @@ fn inset(area: Rect, pad: crate::layout::Edges) -> Rect {
     }
 }
 
-/// Focuses the first node with `auto_focus: true`, once. After that first
-/// focus, `auto_focus` on the same node is inert — loom does not steal focus
-/// back on every render.
+/// Focuses the first eligible auto-focus node once.
 fn auto_focus(held: &RuntimeRef) {
     if held.borrow().focused.is_some() {
         return;

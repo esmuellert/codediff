@@ -42,8 +42,7 @@ impl<F: FnOnce() + 'static> Cleanup for F {
     }
 }
 
-/// Deps that never compare equal, so the effect runs after every paint. This
-/// is what React means by leaving the dependency array out.
+/// Dependencies that never compare equal.
 #[derive(Clone, Copy, Debug)]
 pub struct Always;
 
@@ -69,13 +68,10 @@ where
     queue(scope, deps, run, false);
 }
 
-/// The same, run before the frame is painted rather than after.
+/// Runs after layout and before painting.
 ///
-/// Layout has finished, so every `ref` holds its node and `NodeHandle::area`
-/// answers this frame's rectangle. A state write here re-renders and re-lays
-/// out before anything reaches the screen.
-///
-/// Prefer `use_effect`. This one holds the frame up.
+/// Refs are current, and state writes trigger another layout pass. This blocks
+/// the frame; prefer [`use_effect`] when possible.
 #[track_caller]
 pub fn use_layout_effect<D, C>(scope: &mut Scope, deps: D, run: impl FnOnce() -> C + 'static)
 where

@@ -22,10 +22,7 @@ pub struct Parser {
     pub shebangs: &'static [&'static str],
 }
 
-/// Rules appended after a grammar's own query.
-///
-/// Later patterns win in tree-sitter, so appending is how we override.
-/// Each fixes a case the matcher already gets right.
+/// Rules appended after a grammar's own query; later patterns take precedence.
 mod overrides {
     /// JSON keys need a more specific capture than strings.
     pub const JSON: &str = "(pair key: (_) @string.special.key)";
@@ -33,7 +30,7 @@ mod overrides {
     /// Restore the function capture for Go methods.
     pub const GO: &str = "(method_declaration name: (field_identifier) @function.method)";
 
-    /// Capture decorator names rather than the whole decorator expression.
+    /// Capture decorator names.
     pub const PYTHON: &str = r#"
         (decorator (identifier) @attribute)
         (decorator (attribute) @attribute)

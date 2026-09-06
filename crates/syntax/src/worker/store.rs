@@ -68,8 +68,7 @@ impl Store {
 
     /// The colours for one file, if any have arrived.
     ///
-    /// Does not count as a use. Drawing asks for this many times a frame; the
-    /// request path records which file is wanted for cache eviction.
+    /// Does not update LRU order; requests mark wanted files.
     pub fn get_colours(&self, key: &str) -> Option<&Colours> {
         self.entries.get(key)
     }
@@ -230,8 +229,7 @@ mod tests {
 
     #[test]
     fn a_piece_out_of_order_is_refused() {
-        // The worker sends in order. A piece that does not continue where the
-        // last ended is stale, and taking it would misplace every line after.
+        // Accept only the next contiguous piece.
         let mut store = Store::new();
         let a = key("a.rs");
         store.ensure_cache(&a, Version(1));

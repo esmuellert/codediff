@@ -1,9 +1,4 @@
-//! Finding crates and reading manifests.
-//!
-//! Deliberately string-matching rather than parsing: the questions asked are
-//! narrow enough that a TOML parser would be a dependency bought for four
-//! lookups, and a rule that silently stops matching is caught by the tests
-//! that sabotage it.
+//! Finds crates and reads manifests.
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};

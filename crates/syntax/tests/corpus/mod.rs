@@ -1,14 +1,6 @@
-//! Real source, in every language the scope table makes a claim about.
+//! Source snippets for syntax-scope tests.
 //!
-//! Not fixtures for one assertion — a shared corpus. Every selector in
-//! `theme::code::SCOPES` has to claim something *here*, so a language is
-//! present because some scope needs it: C for the preprocessor and `goto`,
-//! YAML for anchors, `.patch` for `markup.inserted`. Adding a scope usually
-//! means adding the construct that produces it.
-//!
-//! Idiomatic rather than minimal, because a grammar's scopes depend on
-//! context: a `class` keyword is scoped differently when it is followed by a
-//! name the grammar recognises.
+//! Each snippet contains constructs required by the scope table.
 
 /// `(path, source)`. The path is all the detector gets, so it has to be the
 /// name a real file would have.
@@ -413,9 +405,7 @@ index 1234567..89abcde 100644
 "#,
     ),
     (
-        // Broken on purpose. A reviewer sees more of this than anyone —
-        // half-finished agent output is the reason this program exists — and
-        // a grammar that says "this is wrong" is worth showing.
+        // Invalid syntax should receive the invalid group.
         "src/legacy.py",
         r#"# Python 2 leftovers a grammar refuses.
 def compare(a, b):

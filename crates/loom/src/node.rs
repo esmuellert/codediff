@@ -17,12 +17,7 @@ pub type MeasureFn<T> = fn(&T, u16) -> (u16, u16);
 pub type RenderFn = fn(&dyn Any, &mut Scope) -> Node;
 pub type PropsEqualFn = fn(&dyn Any, &dyn Any) -> bool;
 
-/// One entry in the description of a frame.
-///
-/// Built by `rsx!` and thrown away after reconciliation. What survives a frame
-/// is the scope tree. `Clone` is cheap: every piece inside is an `Rc`, a
-/// function pointer or a `Copy` value, and it is what lets a component render
-/// the children it was handed by reference.
+/// A frame node description, flattened during reconciliation.
 #[derive(Clone)]
 pub enum Node {
     /// An `if` with no `else`, or a component that decided to show nothing.
@@ -49,7 +44,7 @@ pub struct Host {
     pub auto_focus: bool,
     /// Where to write this node's handle once it has a rectangle.
     pub node_ref: Option<Ref<Option<NodeHandle>>>,
-    /// Painted instead of the children when they cannot meet their minimums.
+    /// Fallback painted when children cannot meet their minimums.
     pub too_small: Option<Box<Node>>,
     pub children: Vec<Node>,
     /// Which way this host arranges its children.
@@ -121,7 +116,7 @@ impl Node {
         }))
     }
 
-    /// The same, for a component whose props are compared before it re-runs.
+    /// Builds a component node with props equality.
     pub fn memo_part<C>(props: C::Props, key: Option<Key>) -> Node
     where
         C: Component,

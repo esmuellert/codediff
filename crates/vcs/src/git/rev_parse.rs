@@ -20,8 +20,7 @@ pub fn find_repo(path: &Path) -> Result<Repo> {
     }
 
     let root = run::run_line(&start, &["rev-parse", "--show-toplevel"]).map_err(|e| match e {
-        // git's own message here is long and mentions "not a git repository";
-        // ours says which path we were asked about.
+        // Report the path supplied by the caller.
         Error::Git { .. } => Error::NoRepository {
             path: path.to_path_buf(),
         },
@@ -55,8 +54,7 @@ fn unborn(repo: &Repo) -> bool {
 }
 
 pub fn resolve(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
-    // `--verify` makes git fail on an ambiguous or unknown name instead of
-    // echoing it back, and `^{commit}` peels a tag to what it points at.
+    // `--verify` rejects ambiguous and unknown names.
     let text = run::run_line(&repo.root, &["rev-parse", "--verify", "--quiet", rev]).map_err(
         |e| match e {
             Error::Git { .. } => Error::UnknownRevision {

@@ -1,10 +1,6 @@
 //! A git object id.
 
-/// A git object id, kept as text.
-///
-/// Never parsed into bytes: it is only handed back to git or compared, and git
-/// prints abbreviated ids of varying length. An id is a content hash, which is
-/// what makes [`Rev::Commit`](crate::Rev::Commit) an identity and not a name.
+/// A Git object ID stored as text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Oid(String);
 
@@ -42,8 +38,7 @@ mod tests {
 
     #[test]
     fn an_empty_id_is_not_the_null_id() {
-        // Git prints the zeroes; an empty string is a parse that went wrong,
-        // and calling it "no object" would hide that.
+        // An empty string is not Git's null object ID.
         assert!(!Oid::new("").is_null());
     }
 }

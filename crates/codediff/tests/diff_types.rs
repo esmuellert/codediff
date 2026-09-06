@@ -1,8 +1,4 @@
-//! Every way of asking what to compare, against a real repository.
-//!
-//! The point of the shape: a way to compare is one arm of `vcs::DiffType` and
-//! one arm of `git::plan`, and nothing between them learns about it. These tests are what says that is true rather than
-//! intended — each runs the whole thing, from the command line to the rows.
+//! Exercises every comparison mode through the binary.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -78,9 +74,7 @@ fn built(name: &str) -> Repo {
     repo.write("staged.txt", "staged\n");
     repo.git(&["add", "staged.txt"]);
     repo.write("dirty.txt", "not staged\n");
-    // A *tracked* file edited and not staged. Without one, `--cached` and no
-    // `--cached` list the same files and nothing tells them apart — which is
-    // how the first version of this passed with `--cached` removed.
+    // Keep a tracked unstaged change to distinguish the worktree comparisons.
     repo.write("kept.txt", "edited but not staged\n");
     repo
 }
@@ -97,9 +91,7 @@ fn the_working_tree_is_two_comparisons() {
 
 #[test]
 fn two_revisions_are_one_comparison() {
-    // The case the Neovim plugin could not express: neither side is the index
-    // or the working tree, so it belongs to no fixed category. If our groups
-    // were still a fixed pair of lists this is where it would show.
+    // Revisions not involving the index or worktree form one group.
     let repo = built("between");
     let out = repo.list(&["--rev", "HEAD~1", "HEAD"]);
     assert_eq!(out.matches("group ").count(), 1, "one group:\n{out}");
@@ -114,9 +106,7 @@ fn one_revision_is_against_the_file_on_disk() {
     let out = repo.list(&["--rev", "HEAD"]);
     assert_eq!(out.matches("group ").count(), 1, "one group:\n{out}");
     assert!(out.contains("staged.txt"), "{out}");
-    // Not `dirty.txt`: `git diff` does not report an untracked file, whatever
-    // it is compared against, and the plugin's `:CodeDiff <rev>` runs the same
-    // command and shows the same list.
+    // Git diff does not list untracked files.
     assert!(!out.contains("dirty.txt"), "{out}");
 }
 
@@ -145,8 +135,7 @@ fn three_dots_compare_against_where_the_branches_parted() {
     repo.git(&["add", "-A"]);
     repo.git(&["commit", "-qm", "main"]);
 
-    // Against `side` directly, both branches' files differ. Against where they
-    // parted, only what `side` added does — which is what `...` is for.
+    // `HEAD...side` compares the target with the merge base.
     let out = repo.list(&["--rev", "HEAD...side"]);
     assert!(out.contains("only-on-side.txt"), "{out}");
     assert!(
@@ -157,8 +146,7 @@ fn three_dots_compare_against_where_the_branches_parted() {
 
 #[test]
 fn a_group_says_which_two_versions_it_compares() {
-    // The whole model in one assertion: a group is a revision pair, so every
-    // file in it carries that pair and the heading is only a name for it.
+    // Each group carries the revision pair it compares.
     let repo = built("revs");
     let out = repo.list(&[]);
     assert!(out.contains("staged -> working tree"), "{out}");
