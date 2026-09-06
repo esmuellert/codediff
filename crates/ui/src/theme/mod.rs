@@ -20,7 +20,7 @@ pub use tree::Tree;
 /// Every style the interface draws with.
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
-    /// What `--theme` calls this one.
+    /// Stable name used by diagnostics and theme lookup.
     pub name: &'static str,
     /// Whether it expects a dark terminal. Used only to pick a default.
     pub dark: bool,
@@ -75,7 +75,7 @@ impl Theme {
     /// Catppuccin Latte.
     pub const LIGHT: Self = catppuccin::theme(Flavour::Latte);
 
-    /// Every theme, in the order `--theme` lists them.
+    /// Every built-in theme.
     pub const ALL: [Self; 6] = [
         catppuccin::theme(Flavour::Mocha),
         catppuccin::theme(Flavour::Macchiato),
@@ -94,7 +94,7 @@ impl Theme {
         "basic-light",
     ];
 
-    /// Looks a theme up by the name `--theme` uses.
+    /// Looks up a built-in theme by name.
     pub fn named(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|theme| theme.name == name)
     }

@@ -22,8 +22,7 @@ pub struct Scope {
 impl Scope {
     /// The emphasis this entry carries, with no pen in it yet.
     ///
-    /// The pen is added by [`palette`](super::palette), which is the only
-    /// place that knows what number this entry has.
+    /// The engine layer adds the pen after the table's position is known.
     pub(super) const fn emphasis(&self) -> Style {
         Style {
             pen: None,
@@ -65,7 +64,7 @@ impl Scope {
 
 /// Every scope rule handed to the engine.
 ///
-/// A [`Pen`] is an index into this table, so entries must not be reordered.
+/// A syntax pen is an index into this table, so entries must not be reordered.
 pub const SCOPES: &[Scope] = {
     use Group as T;
     &[

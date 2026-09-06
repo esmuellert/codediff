@@ -13,7 +13,7 @@ use crate::scope::{Scope, ScopeId};
 /// ```ignore
 /// view.current().scroll(3);
 /// let top = view.current().top();
-/// *view.current() = Viewport::new();
+/// *view.current() = Model::new();
 /// ```
 pub struct Ref<T: 'static> {
     scope: ScopeId,

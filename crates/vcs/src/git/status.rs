@@ -2,8 +2,7 @@
 //!
 //! This module keeps git's words — `XY` codes, the index, object ids — because
 //! forcing them into neutral names would either lose meaning or invent a
-//! concept other systems do not share. [`super::to_change`] is the single place
-//! they are translated.
+//! concept other systems do not share. The repository layer translates them.
 //!
 //! The format is documented in `git-status(1)`. Records are NUL-terminated and
 //! there are five kinds:
@@ -96,10 +95,8 @@ pub struct Xy {
 /// One record of `git status --porcelain=v2`.
 ///
 /// Paths are plain strings, as git spelled them: parsing has no repository
-/// root to resolve them against. They become a [`RepoPath`] in
-/// [`to_file_diff`](crate::git::to_file_diff), which does.
-///
-/// [`RepoPath`]: file_types::RepoPath
+/// root to resolve them against. The repository layer turns them into
+/// `file_types::RepoPath` values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub xy: Xy,

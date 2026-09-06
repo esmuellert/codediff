@@ -16,7 +16,7 @@ use crate::style::{Capture, Style};
 ///
 /// A query is compiled against a *list of names*, so it cannot be built until
 /// the caller has said which captures it recognises — which is why the
-/// compiled configurations live here and not in the [`Engine`].
+/// compiled configurations live here rather than in the engine facade.
 ///
 /// Compiled on first use and kept: it is 22 ms for Rust and 36 ms for Ruby,
 /// which is worth paying once and not worth paying for a language the reader

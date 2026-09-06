@@ -72,7 +72,8 @@ fn take() -> io::Result<()> {
     Ok(())
 }
 
-/// Undoes [`take`]. Ignores errors: it runs from `Drop` and from a panic.
+/// Restores the terminal. Errors are ignored because this runs during drop
+/// and panic handling.
 pub fn restore() {
     let mut stdout = io::stdout();
     // End any synchronized update in progress, or the terminal stays frozen.

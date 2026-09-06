@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "codediff",
     version,
-    about = "A standalone, read-only terminal diff reviewer",
+    about = "A standalone terminal diff reviewer",
     disable_help_subcommand = true
 )]
 pub struct Cli {

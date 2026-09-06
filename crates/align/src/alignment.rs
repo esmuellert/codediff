@@ -124,9 +124,7 @@ impl Alignment {
 
     /// Blocks the engine judged to have moved rather than been rewritten.
     ///
-    /// Empty unless the diff was computed with [`Options::with_moves`].
-    ///
-    /// [`Options::with_moves`]: vscode_diff::Options::with_moves
+    /// Empty unless the diff was computed with `vscode_diff::Options::with_moves`.
     pub fn moves(&self) -> &[MovedText] {
         &self.diff.moves
     }

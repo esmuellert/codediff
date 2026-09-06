@@ -30,7 +30,7 @@ fn safe_char(c: char) -> char {
     }
 }
 
-/// Text with anything the terminal would act on replaced by its [`safe_char`].
+/// Text with anything the terminal would act on replaced by a safe printable character.
 ///
 /// Returns the input unchanged when there is nothing to do, which is almost
 /// always, so ordinary lines cost one scan and no allocation beyond the copy.

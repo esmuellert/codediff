@@ -83,7 +83,7 @@ mod overrides {
     pub const RUST: &str = "(char_literal) @character";
 }
 
-/// Every language we parse. A [`Grammar`] is an index into this table.
+/// Every language we parse. The engine stores a parser index into this table.
 ///
 /// Adding one: add the crate dependency and a row here.
 pub static LANGUAGES: &[Parser] = &[

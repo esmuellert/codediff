@@ -1,8 +1,8 @@
 //! `cargo xtask lint-arch`
 //!
 //! Cargo enforces exactly one architectural rule for free: crate dependencies
-//! must be acyclic. Every other rule in docs/plan is project-specific and has
-//! to be encoded somewhere. This is that somewhere.
+//! must be acyclic. Every other rule is project-specific and has to be encoded
+//! somewhere. This module is that enforcement layer.
 //!
 //! Split three ways so the tables can be read without the machinery:
 //!

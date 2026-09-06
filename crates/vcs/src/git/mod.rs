@@ -11,7 +11,8 @@
 //! ```
 //!
 //! Each file runs a command and parses its output in git's vocabulary.
-//! Translation to the reviewer's types happens in `repository/changed_file.rs`.
+//! Translation to the reviewer's types happens in `repository/list.rs` and
+//! `repository/read.rs`.
 
 pub mod cat_file;
 pub mod diff;

@@ -5,7 +5,7 @@
 //! system: `cargo build` and `build.rs` compile everything, including the C
 //! engine. These are the chores cargo has no opinion about.
 //!
-//! The lint tasks turn the rules in docs/plan into build failures.
+//! The lint tasks turn the repository's architecture rules into build failures.
 
 #[cfg(test)]
 mod attribution;

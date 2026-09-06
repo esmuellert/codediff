@@ -109,7 +109,7 @@ pub const INHERITED_PACKAGE_FIELDS: &[&str] = &[
 pub const REQUIRED_PACKAGE_FIELDS: &[&str] = &["version"];
 
 /// A syntax engine may only be named inside this directory, so that swapping
-/// engines touches nothing else. See docs/plan/05-decisions.md D17.
+/// engines touches nothing else.
 pub const ENGINE_CRATES: &[&str] = &["syntect", "tree_sitter"];
 pub const ENGINE_DIR: &str = "crates/syntax/src/engine";
 

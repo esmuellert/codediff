@@ -72,7 +72,7 @@ impl DetailedLineRangeMapping {
 }
 
 /// A block of lines the engine judged to have moved rather than been deleted
-/// and re-added. Only produced when [`crate::Options::compute_moves`] is set.
+/// and re-added. The engine options decide whether move data is produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MovedText {
     pub original: LineRange,
@@ -84,8 +84,8 @@ pub struct MovedText {
 pub struct LinesDiff {
     pub changes: Vec<DetailedLineRangeMapping>,
     pub moves: Vec<MovedText>,
-    /// True when the engine stopped early because it exceeded
-    /// [`crate::Options::max_computation_time_ms`]. The diff is still valid,
+    /// True when the engine stopped early because it exceeded its computation
+    /// budget. The diff is still valid,
     /// but coarser than it would otherwise have been.
     pub hit_timeout: bool,
 }

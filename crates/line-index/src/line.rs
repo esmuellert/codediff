@@ -34,8 +34,8 @@ impl<'a> LineIndex<'a> {
     /// Indexes `text`, which must be a single line without its terminator.
     ///
     /// Building the index costs an allocation on any line that is not plain
-    /// ASCII. Code that only walks a line to draw it should call [`graphemes`]
-    /// instead and leave this for positional queries.
+    /// ASCII. Code that only walks a line to draw it should call
+    /// [`crate::graphemes`] instead and leave this for positional queries.
     pub fn new(text: &'a str, tab_width: u8) -> Self {
         let index = if is_trivial(text) {
             Index::Trivial { len: len32(text) }
@@ -128,7 +128,7 @@ impl<'a> LineIndex<'a> {
     /// Start rounds down, end rounds up — a partly covered character is
     /// covered whole. An empty span stays empty.
     ///
-    /// To widen to grapheme cluster boundaries, use [`graphemes`] on the result.
+    /// To widen to grapheme cluster boundaries, use [`crate::graphemes`] on the result.
     pub fn utf16_range_to_bytes(
         &self,
         cols: std::ops::Range<Utf16Col>,

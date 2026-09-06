@@ -95,9 +95,8 @@ impl Store {
 
     /// The colours for one file, if any have arrived.
     ///
-    /// Does not count as a use. Drawing asks for this many times a frame, and
-    /// what should keep an entry alive is a reader looking at the file, which
-    /// is what [`want`](Self::want) records.
+    /// Does not count as a use. Drawing asks for this many times a frame; the
+    /// request path records which file is wanted for cache eviction.
     pub fn get_colours(&self, key: &str) -> Option<&Colours> {
         self.entries.get(key)
     }

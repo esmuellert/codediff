@@ -77,8 +77,9 @@ impl Highlighted {
     /// the caller already has.
     ///
     /// May read further than asked. The parser has no range API, so it
-    /// answers with the whole file however little was wanted;
-    /// [`lines_coloured`](Self::lines_coloured) says what actually happened.
+    /// answers with the whole file however little was wanted. `into` receives
+    /// the spans produced by this call, and `get_lines_coloured` reports how
+    /// far the reader has progressed.
     pub fn read_colours_to_line(
         &mut self,
         engine: &Engine,

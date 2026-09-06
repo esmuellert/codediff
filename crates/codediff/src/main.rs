@@ -1,9 +1,7 @@
-//! `codediff` — a standalone, read-only terminal diff reviewer.
+//! `codediff` — the command-line entry point and composition root.
 //!
-//! This crate is the composition root: it parses arguments, loads
-//! configuration, constructs concrete backends and wires them together. It is
-//! the only place in the workspace that names concrete implementations, and
-//! nothing depends on it.
+//! It parses arguments and dispatches the application, diagnostics, and debug
+//! commands. The UI owns worker and service construction.
 
 mod cli;
 mod debug;
