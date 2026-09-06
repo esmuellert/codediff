@@ -23,6 +23,12 @@ pub struct ScrollHandle {
 }
 
 impl ScrollHandle {
+    /// Move the viewport to an absolute row.
+    pub fn scroll_to(self, top: u32) {
+        let last_top = self.total.saturating_sub(self.height);
+        (self.set_top)(&move |_| top.min(last_top));
+    }
+
     /// Move the viewport by a signed number of rows.
     pub fn scroll_by(self, rows: i32) {
         let last_top = self.total.saturating_sub(self.height);

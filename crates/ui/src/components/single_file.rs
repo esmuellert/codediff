@@ -12,6 +12,8 @@ use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
+use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
+use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
@@ -26,15 +28,19 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let gutter_width = width_for_line_count(line_count);
     let content_id = Rc::as_ptr(content) as usize;
     let maximum_line_cells = use_memo(scope, content_id, || longest_line_cells(&single.lines));
-    let (view, horizontal, listeners) = use_diff_viewer_navigation(
+    let (view, vertical_handle) = use_scroll(scope, Some(&file_key), line_count);
+    let horizontal_limits = HorizontalDimensions::Single {
+        longest_line_cells: *maximum_line_cells,
+        gutter_cells: gutter_width,
+    }
+    .limits(view.width);
+    let (horizontal_view, horizontal_handle) = use_horizontal_scroll(
         scope,
         Some(&file_key),
-        line_count,
-        HorizontalDimensions::Single {
-            longest_line_cells: *maximum_line_cells,
-            gutter_cells: gutter_width,
-        },
+        horizontal_limits.maximum_first_cell(),
     );
+    let horizontal = horizontal_limits.view(horizontal_view.first_cell);
+    let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),

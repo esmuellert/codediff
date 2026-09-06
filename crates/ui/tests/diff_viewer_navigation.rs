@@ -2,9 +2,12 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use loom::{
-    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component, rsx,
+    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component,
+    rsx, use_layout_effect,
 };
-use ui::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
+use ui::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
+use ui::hooks::use_horizontal_scroll::use_horizontal_scroll;
+use ui::hooks::use_scroll::use_scroll;
 
 #[component]
 fn Probe(
@@ -13,17 +16,23 @@ fn Probe(
     total: u32,
     longest_line_cells: u32,
     auto_focus: bool,
+    initial_top: u32,
+    initial_first_cell: u32,
 ) -> Node {
-    let (view, horizontal, listeners) = use_diff_viewer_navigation(
-        scope,
-        Some(file_key),
-        *total,
-        HorizontalDimensions::Single {
-            longest_line_cells: *longest_line_cells,
-            gutter_cells: 0,
-        },
-    );
-    let state: Rc<str> = format!("{} {}", view.top, horizontal.requested_first_cell).into();
+    let (view, vertical_handle) = use_scroll(scope, Some(file_key), *total);
+    let maximum_first_cell = longest_line_cells
+        .saturating_add(4)
+        .saturating_sub(u32::from(view.width));
+    let (horizontal, horizontal_handle) =
+        use_horizontal_scroll(scope, Some(file_key), maximum_first_cell);
+    let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
+    let initial_top = *initial_top;
+    let initial_first_cell = *initial_first_cell;
+    use_layout_effect(scope, (), move || {
+        vertical_handle.scroll_to(initial_top);
+        horizontal_handle.scroll_to(initial_first_cell);
+    });
+    let state: Rc<str> = format!("{} {}", view.top, horizontal.first_cell).into();
     rsx! {
         Column {
             ref: Some(view.node_ref),
@@ -48,6 +57,8 @@ fn navigation_harness(key: &str, width: u16, longest_line_cells: u32) -> Harness
             total: 20,
             longest_line_cells,
             auto_focus: true,
+            initial_top: 0,
+            initial_first_cell: 0,
         },
         width,
         4,
@@ -60,6 +71,28 @@ fn state(harness: &mut Harness) -> (u32, u32) {
     let row = harness.screen_row(0);
     let mut values = row.split_whitespace().map(|value| value.parse().unwrap());
     (values.next().unwrap(), values.next().unwrap())
+}
+
+#[test]
+fn absolute_positions_can_be_set_on_mount() {
+    let mut harness = Harness::new::<Probe>(
+        ProbeProps {
+            file_key: "a.rs".into(),
+            total: 20,
+            longest_line_cells: 40,
+            auto_focus: true,
+            initial_top: 6,
+            initial_first_cell: 5,
+        },
+        20,
+        4,
+    );
+    harness.force_draw().force_draw();
+
+    assert_eq!(state(&mut harness), (6, 5));
+    harness.press(crokey::key!(j)).force_draw();
+    harness.press(crokey::key!(l)).force_draw();
+    assert_eq!(state(&mut harness), (7, 6));
 }
 
 #[test]
@@ -167,6 +200,8 @@ fn changing_files_restores_each_position() {
         total: 20,
         longest_line_cells: 40,
         auto_focus: true,
+        initial_top: 0,
+        initial_first_cell: 0,
     });
     harness.force_draw().force_draw();
     assert_eq!(state(&mut harness), (0, 0));
@@ -180,6 +215,8 @@ fn changing_files_restores_each_position() {
         total: 20,
         longest_line_cells: 40,
         auto_focus: true,
+        initial_top: 0,
+        initial_first_cell: 0,
     });
     harness.force_draw().force_draw();
     assert_eq!(state(&mut harness), saved);
@@ -206,7 +243,14 @@ fn FocusPair(scope: &mut Scope) -> Node {
             layout: Layout { grow: 1, ..Default::default() },
             ..,
             Previous {}
-            Probe { file_key: "a.rs".into(), total: 20, longest_line_cells: 40, auto_focus: true }
+            Probe {
+                file_key: "a.rs".into(),
+                total: 20,
+                longest_line_cells: 40,
+                auto_focus: true,
+                initial_top: 0,
+                initial_first_cell: 0,
+            }
         }
     }
 }

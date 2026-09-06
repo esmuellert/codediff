@@ -15,6 +15,8 @@ use super::context::Ui;
 use super::filler::Filler;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
+use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
+use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
@@ -39,19 +41,22 @@ pub fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             longest_line_cells(alignment.lines(DiffVersion::Modified)),
         )
     });
-    let horizontal_dimensions = HorizontalDimensions::SideBySide {
+    let (view, vertical_handle) = use_scroll(scope, Some(&file_key), view_line_count);
+    let horizontal_limits = HorizontalDimensions::SideBySide {
         original_longest_line_cells: maximum_line_cells.0,
         modified_longest_line_cells: maximum_line_cells.1,
         original_gutter_cells: original_gutter_width,
         modified_gutter_cells: modified_gutter_width,
         divider_cells: 1,
-    };
-    let (view, horizontal, listeners) = use_diff_viewer_navigation(
+    }
+    .limits(view.width);
+    let (horizontal_view, horizontal_handle) = use_horizontal_scroll(
         scope,
         Some(&file_key),
-        view_line_count,
-        horizontal_dimensions,
+        horizontal_limits.maximum_first_cell(),
     );
+    let horizontal = horizontal_limits.view(horizontal_view.first_cell);
+    let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
 
     let pairs: Vec<align::ViewLine> = alignment
         .view_lines_from(DiffType::SideBySide, view.view_lines.start)

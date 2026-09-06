@@ -16,6 +16,12 @@ pub struct HorizontalHandle {
 }
 
 impl HorizontalHandle {
+    /// Move the viewport to an absolute cell.
+    pub fn scroll_to(self, first_cell: u32) {
+        let maximum_first_cell = self.maximum_first_cell;
+        (self.set_requested_first_cell)(&move |_| first_cell.min(maximum_first_cell));
+    }
+
     /// Move the viewport by a signed number of cells.
     pub fn scroll_by(self, cells: i32) {
         let maximum_first_cell = self.maximum_first_cell;
@@ -32,12 +38,11 @@ impl HorizontalHandle {
     }
 
     pub fn scroll_to_start(self) {
-        (self.set_requested_first_cell)(&|_| 0);
+        self.scroll_to(0);
     }
 
     pub fn scroll_to_end(self) {
-        let first_cell = self.maximum_first_cell;
-        (self.set_requested_first_cell)(&move |_| first_cell);
+        self.scroll_to(self.maximum_first_cell);
     }
 }
 

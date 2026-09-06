@@ -1,10 +1,10 @@
-//! Navigation shared by the views inside DiffViewer.
+//! Shared navigation and geometry for the views inside DiffViewer.
 
 use file_types::DiffVersion;
-use loom::{Bubble, Listeners, Scope};
+use loom::{Bubble, Listeners};
 
-use super::use_horizontal_scroll::use_horizontal_scroll;
-use super::use_scroll::{ScrollView, use_scroll};
+use super::use_horizontal_scroll::HorizontalHandle;
+use super::use_scroll::ScrollHandle;
 
 // Registered default in the pinned VS Code source.
 const SCROLL_BEYOND_LAST_COLUMN: u32 = 4;
@@ -30,7 +30,7 @@ pub enum HorizontalDimensions {
 }
 
 impl HorizontalDimensions {
-    fn limits(self, width: u16) -> HorizontalLimits {
+    pub(crate) fn limits(self, width: u16) -> HorizontalLimits {
         match self {
             Self::Single {
                 longest_line_cells,
@@ -84,17 +84,17 @@ impl HorizontalDimensions {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct HorizontalLimits {
+pub(crate) struct HorizontalLimits {
     original: u32,
     modified: u32,
 }
 
 impl HorizontalLimits {
-    fn maximum_first_cell(self) -> u32 {
+    pub(crate) fn maximum_first_cell(self) -> u32 {
         self.original.max(self.modified)
     }
 
-    fn view(self, first_cell: u32) -> HorizontalView {
+    pub(crate) fn view(self, first_cell: u32) -> HorizontalView {
         HorizontalView {
             requested_first_cell: first_cell,
             original_first_cell: first_cell.min(self.original),
@@ -125,19 +125,12 @@ fn max_first_cell(longest_line_cells: u32, text_viewport_cells: u32) -> u32 {
         .saturating_sub(text_viewport_cells)
 }
 
+/// Connects code-view input to already-created viewport handles.
 pub fn use_diff_viewer_navigation(
-    scope: &mut Scope,
-    file_key: Option<&str>,
-    view_line_count: u32,
-    horizontal_dimensions: HorizontalDimensions,
-) -> (ScrollView, HorizontalView, Listeners) {
-    let (view, vertical_handle) = use_scroll(scope, file_key, view_line_count);
-    let horizontal_limits = horizontal_dimensions.limits(view.width);
-    let (horizontal_scroll, horizontal_handle) =
-        use_horizontal_scroll(scope, file_key, horizontal_limits.maximum_first_cell());
-    let horizontal = horizontal_limits.view(horizontal_scroll.first_cell);
-
-    let listeners = Listeners::new()
+    vertical_handle: ScrollHandle,
+    horizontal_handle: HorizontalHandle,
+) -> Listeners {
+    Listeners::new()
         .on_key(move |key| match key {
             key if key == crokey::key!(j) || key == crokey::key!(down) => {
                 vertical_handle.scroll_by(1);
@@ -173,8 +166,7 @@ pub fn use_diff_viewer_navigation(
             vertical_handle.scroll_by(wheel.vertical.saturating_mul(3));
             horizontal_handle.scroll_by(wheel.horizontal.saturating_mul(3));
             Bubble::Stop
-        });
-    (view, horizontal, listeners)
+        })
 }
 
 #[cfg(test)]
