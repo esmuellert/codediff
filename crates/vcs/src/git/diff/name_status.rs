@@ -1,12 +1,7 @@
-//! `git diff --name-status` — what differs between two things git can name.
+//! Parses `git diff --name-status -z`.
 //!
-//! The format every comparison but the working tree reads. `git status` has a
-//! format of its own — two codes, three record types — because it describes
-//! three things at once; a diff describes two, so one letter is enough.
-//!
-//! Read with `-z`, so a path holding a space, a quote or a newline arrives as
-//! itself rather than in git's quoted spelling. Fields are NUL-separated, and
-//! a rename spends three of them: `R100`, the old path, the new path.
+//! Fields are NUL-separated. A rename or copy contains its score, new path,
+//! and original path.
 
 use crate::Repo;
 use crate::error::Result;

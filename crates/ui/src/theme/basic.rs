@@ -1,26 +1,13 @@
-//! A theme that works on a terminal we know nothing about.
+//! Basic dark and light themes for terminals without true colour.
 //!
-//! Catppuccin names exact colours, which requires the terminal to accept
-//! 24-bit escapes. Not all do: `tmux` without `-2`, an old `TERM`, a
-//! conservative SSH session. Where they are unavailable the terminal quantises
-//! them, and Catppuccin's diff backgrounds — eighteen percent of an accent —
-//! are exactly the colours that collapse into the background when it does.
-//!
-//! So this theme names nothing exactly. Its background is the terminal's own,
-//! and its diff colours come from the 256-colour cube, which every terminal
-//! from the last twenty years has. It looks like part of whatever colour
-//! scheme the reader already runs, which is the point.
+//! Backgrounds inherit the terminal. Diff accents use indexed colours.
 
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::theme::Theme;
 use crate::theme::code::Code;
 
-/// Indices into the 6×6×6 colour cube that starts at 16.
-///
-/// `16 + 36r + 6g + 6b`, each component 0..=5. Chosen dark enough to sit under
-/// text rather than compete with it — the same job Catppuccin's 18% does, done
-/// with the resolution available.
+/// Selected indices from the terminal's 6×6×6 colour cube.
 mod cube {
     /// `r0 g1 b0` — the faintest green in the cube.
     pub const DARK_GREEN: u8 = 22;

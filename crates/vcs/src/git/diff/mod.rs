@@ -1,13 +1,6 @@
-//! `git diff` — which files differ, and by how many lines.
+//! Git diff parsers for file status and line counts.
 //!
-//! Two output formats of the same command:
-//!
-//! ```text
-//! name_status   --name-status -z    which files, and what happened
-//! numstat       --numstat -z        how many lines each gained and lost
-//! ```
-//!
-//! Rename detection is forced in both so they agree about what is a rename.
+//! Rename detection is forced in both formats.
 
 pub mod name_status;
 pub mod numstat;

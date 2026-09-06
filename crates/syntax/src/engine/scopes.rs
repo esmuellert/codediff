@@ -1,10 +1,6 @@
-//! Which TextMate scope path maps to which [`Group`].
+//! TextMate scope selectors mapped to syntax groups.
 //!
-//! One shared table — which scopes are keywords is a fact about TextMate, not
-//! a theme choice. Precedence is the engine's (deeper + more specific wins).
-//!
-//! Every selector is tested against real source in seventeen languages; a typo
-//! that matches nothing fails the build.
+//! The table is shared by all themes and follows TextMate specificity.
 
 use crate::group::Group;
 use crate::style::Style;
@@ -69,27 +65,14 @@ pub const SCOPES: &[Scope] = {
     use Group as T;
     &[
         // --- comments ---
-        // Colour only. Catppuccin slants comments and ships `no_italic` to
-        // undo it; VS Code's Dark+ leaves them upright. Colour lands a frame
-        // or two after the text does, and a slant makes that landing a change
-        // of shape rather than of hue, which is the one the eye catches.
         scope("comment", T::Comment),
-        // The `//` belongs to the comment, not to the punctuation. Without
-        // this every comment in the file starts with two grey characters.
+        // Comment punctuation uses the comment group too.
         scope("punctuation.definition.comment", T::Comment),
         // --- strings ---
         scope("string", T::String),
-        // Its quotes, and only its quotes. A bare `punctuation.definition
-        // .string` would claim the delimiters of a regular expression and of
-        // a character literal too, because those are scoped as strings —
-        // naming the enclosing scope is the only way to tell them apart, and
-        // the engine scores the longer path higher, which is what makes the
-        // three rules resolve in the order written.
+        // Restrict string punctuation to string scopes.
         scope("string punctuation.definition.string", T::String),
-        // A character literal, only in the languages that have a character
-        // type. `string.quoted.single` alone would repaint every ordinary
-        // Python and JavaScript string, which use the same quotes for the
-        // same thing.
+        // Character literals need language-qualified selectors.
         scope(
             "string.quoted.single.c, string.quoted.single.c++, \
              string.quoted.single.rust, string.quoted.single.java, \
@@ -108,10 +91,7 @@ pub const SCOPES: &[Scope] = {
         scope("constant.character.escape", T::Escape),
         scope("constant.other.placeholder", T::Escape),
         scope("string.regexp", T::Regexp),
-        // The delimiters of a regular expression are part of it, and are
-        // scoped as string punctuation, which the rule above would otherwise
-        // claim. The enclosing scope is the only thing that can tell them
-        // apart, which is what a descendant selector is for.
+        // Regex punctuation must stay in the regex group.
         scope("string.regexp punctuation.definition.string", T::Regexp),
         scope("string.regexp keyword", T::Regexp),
         scope("string.regexp constant", T::Regexp),
@@ -124,18 +104,7 @@ pub const SCOPES: &[Scope] = {
         scope("keyword.control.import", T::Keyword),
         scope("keyword.operator", T::Operator),
         scope("keyword.declaration", T::Keyword),
-        // `storage` is every type-ish reserved word: `let`, `int`, `u32`,
-        // `struct`, `func`, `static`, `class`. All keywords, and both
-        // references agree — VS Code's `dark_plus` gives `storage.type` the
-        // same blue as `keyword.control`, and Catppuccin sends
-        // `@type.builtin` to Mauve. What earns the *type* colour below is a
-        // type's name, which is `entity.name.type` and `support.type`.
-        //
-        // One rule, not eight. Every `storage.type.*` a grammar spells —
-        // Rust's `.struct` and `.impl`, Go's `.keyword.func`, Java's
-        // `.primitive` — resolves here, and a row per grammar would say
-        // nothing this does not. Add one back the day a theme wants `struct`
-        // to differ from `int`.
+        // Reserved words use the keyword group, including storage scopes.
         scope("storage", T::Keyword),
         scope("meta.preprocessor", T::Preprocessor),
         // --- names ---
@@ -150,9 +119,7 @@ pub const SCOPES: &[Scope] = {
         scope("support.class", T::Type),
         scope("entity.name.function", T::Function),
         scope("variable.function", T::Function),
-        // Not `meta.function-call`: it spans the arguments as well as the
-        // name, so it would colour `a` and `b` in `f(a, b)` as functions.
-        // VS Code's `dark_plus` leaves it out for the same reason.
+        // Function calls must not include their arguments.
         scope("support.function", T::Library),
         scope("support.macro", T::Library),
         scope("entity.name.namespace", T::Namespace),
@@ -174,20 +141,14 @@ pub const SCOPES: &[Scope] = {
         scope("meta.decorator", T::Attribute),
         scope("variable.annotation", T::Attribute),
         scope("punctuation.definition.annotation", T::Attribute),
-        // The name in `@sealed` is scoped as an ordinary variable; only the
-        // enclosing decorator says otherwise.
+        // The enclosing decorator supplies the attribute group.
         scope("meta.annotation variable", T::Attribute),
         scope("meta.decorator variable", T::Attribute),
         // --- punctuation ---
         scope("punctuation", T::Punctuation),
         scope("punctuation.separator", T::Punctuation),
         scope("punctuation.terminator", T::Punctuation),
-        // --- interpolation: code inside a string is code ---
-        //
-        // Without these, the whole of `` `hello ${user.name}` `` is one shade
-        // of green. `meta.template.expression` exists for exactly this, and
-        // leaving it out is the single most visible thing a small theme gets
-        // wrong.
+        // --- interpolation: expressions use code groups ---
         scope("meta.interpolation", T::Variable),
         scope("meta.template.expression", T::Variable),
         scope("punctuation.section.interpolation", T::Escape),
@@ -196,18 +157,15 @@ pub const SCOPES: &[Scope] = {
         scope("entity.name.tag", T::Tag),
         scope("support.type.property-name", T::Property),
         scope("meta.mapping.key", T::Property),
-        // JSON spells a key as a string and YAML spells it as a tag; in both
-        // the enclosing scope is the only thing that says it is a key.
+        // The enclosing mapping scope distinguishes keys from string values.
         scope("meta.mapping.key string", T::Property),
         scope(
             "meta.mapping.key string punctuation.definition.string",
             T::Property,
         ),
-        // YAML has no `meta.mapping.key` at all: it spells a key as a tag
-        // inside an unquoted string, so the language has to be named. This is
-        // the one place where `entity.name.tag` does not mean markup.
+        // YAML keys use a language-qualified tag scope.
         scope("entity.name.tag.yaml", T::Property),
-        // --- markup, because a reviewer reads a great deal of it ---
+        // --- markup ---
         scope("markup.heading", T::Heading).bold(),
         scope("punctuation.definition.heading", T::Heading).bold(),
         scope("entity.name.section", T::Heading).bold(),
@@ -226,8 +184,7 @@ pub const SCOPES: &[Scope] = {
         scope("meta.link", T::Reference),
         scope("markup.inserted", T::Inserted),
         scope("markup.deleted", T::Deleted),
-        // The `+` and `-` belong to the line they mark, and are scoped as
-        // punctuation inside it — the same shape as a comment's `//`.
+        // Patch markers use the surrounding inserted/deleted group.
         scope("markup.inserted punctuation", T::Inserted),
         scope("markup.deleted punctuation", T::Deleted),
         // --- what the grammar thinks is broken ---
@@ -242,8 +199,7 @@ mod tests {
 
     #[test]
     fn no_two_scopes_name_the_same_selector() {
-        // Two entries for one selector means the later silently wins, and one
-        // of the two colours is unreachable.
+        // Duplicate selectors make one entry unreachable.
         for (n, s) in SCOPES.iter().enumerate() {
             assert!(
                 !SCOPES[..n]
@@ -257,8 +213,7 @@ mod tests {
 
     #[test]
     fn every_group_is_claimed_by_some_scope() {
-        // A group nothing reaches is a colour nobody can ever see. The compiler
-        // cannot say so, because an unused struct field is legal.
+        // Every group must have at least one selector.
         for expected in Group::ALL {
             assert!(
                 SCOPES.iter().any(|s| s.group == expected),

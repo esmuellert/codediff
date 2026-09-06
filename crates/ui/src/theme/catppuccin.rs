@@ -1,13 +1,6 @@
-//! Catppuccin.
+//! Catppuccin palettes and derived UI themes.
 //!
-//! Four flavours, reproduced by their *arithmetic*. The palette below is the
-//! published one; every colour the interface uses is derived from it by
-//! [`blend`] at the opacities `catppuccin/nvim` uses for its own highlight
-//! groups. Nothing here is a hex value copied out of a screenshot, so a
-//! flavour is 26 numbers and a shared derivation rather than 26 numbers and
-//! fourteen more that have to be kept in step with them.
-//!
-//! Source: <https://github.com/catppuccin/nvim> `lua/catppuccin/palettes/`.
+//! Diff colours are blended from the published palette values.
 
 use ratatui::style::{Modifier, Style};
 

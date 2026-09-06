@@ -1,11 +1,4 @@
-//! `codediff doctor` — what this binary is, and what it found.
-//!
-//! Two jobs. It is how S1 proves the FFI works from the shipped binary rather
-//! than only from a test: printing the engine version requires a successful
-//! call through the C ABI. And it is the thing to ask for in a bug report, so
-//! that "which build, which engine, which compiler" never costs a round trip.
-//!
-//! Environment checks arrive with the subsystems they test.
+//! Reports build information, engine linkage, and terminal detection.
 
 pub fn run() {
     println!("codediff {}", env!("CARGO_PKG_VERSION"));

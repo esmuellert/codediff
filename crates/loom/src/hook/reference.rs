@@ -5,21 +5,13 @@ use std::cell::{RefCell, RefMut};
 use super::{Slot, use_hook};
 use crate::scope::{Scope, ScopeId};
 
-/// A mutable value that survives renders without causing one.
+/// Mutable storage that survives renders without scheduling one.
 ///
-/// The Rust form of React's `useRef`. `current()` is `ref.current`: read
-/// through it, call methods on it, or assign over it.
-///
-/// ```ignore
-/// view.current().scroll(3);
-/// let top = view.current().top();
-/// *view.current() = Model::new();
-/// ```
+/// `current()` returns a mutable borrow of the stored value.
 pub struct Ref<T: 'static> {
     scope: ScopeId,
     slot: u16,
-    /// Made when the component mounts and kept for the run of the program,
-    /// which is what keeps `Ref<T>` `Copy`.
+    /// Storage for the value held by this ref.
     cell: &'static RefCell<T>,
 }
 

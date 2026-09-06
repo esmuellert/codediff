@@ -458,19 +458,10 @@ fn without_strings(line: &str) -> String {
     }
 }
 
-/// Whether `word` appears as a whole identifier, not as part of a longer one.
+/// Whether `word` appears as a complete identifier.
 ///
-/// `code` is lowercased by the caller, so `Comparison` and `comparison` are
-/// one name: a type is CamelCase and a binding is not, and both are banned.
-///
-/// A field read or a method call is caught like anything else. That is
-/// deliberate: it is how a use of our own banned field is found. It also means
-/// no word may be banned here while somebody else's API uses it — `kind` is
-/// the one that was tried and refused, since `std::io::Error::kind` and
-/// crossterm's `KeyEvent::kind` are not ours to rename. `Kind` stays banned in
-/// [`BANNED_TYPE_WORDS`], which checks only types we declare.
-///
-/// [`BANNED_TYPE_WORDS`]: super::rules::BANNED_TYPE_WORDS
+/// The caller lowercases source before checking. Type-name restrictions are
+/// handled separately by `BANNED_TYPE_WORDS`.
 fn names(code: &str, word: &str) -> bool {
     let is_part = |c: char| c.is_alphanumeric() || c == '_';
     let mut from = 0;

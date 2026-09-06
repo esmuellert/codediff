@@ -1,11 +1,4 @@
-//! Making text safe to put on a terminal.
-//!
-//! Here rather than in a renderer on purpose. [`width::grapheme_width`] gives
-//! control and bidirectional characters one column precisely because they
-//! are drawn as a placeholder; if the substitution lived somewhere else, one
-//! could change without the other and every column after it would be wrong.
-//!
-//! [`width::grapheme_width`]: crate::grapheme_width
+//! Replaces terminal control and bidi formatting characters with safe text.
 
 use crate::width::is_bidi_control;
 

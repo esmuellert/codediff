@@ -110,14 +110,7 @@ impl Alignment {
         })
     }
 
-    /// The changed blocks, in order.
-    ///
-    /// These and the two below are the engine's result, borrowed rather than
-    /// restated: `Alignment` holds a `&LinesDiff` and reads through it. VSCode
-    /// unpacks the same four values into its `DiffState` and drops the result,
-    /// so a caller there writes `state.movedTexts` and there is no diff object
-    /// left to reach into. Borrowing is free where copying is not, so the
-    /// surface matches without the copy.
+    /// The engine's changed line mappings, in order.
     pub fn changes(&self) -> &[DetailedLineRangeMapping] {
         &self.diff.changes
     }
@@ -313,15 +306,8 @@ fn contains(range: LineRange, line: u32) -> bool {
     line >= range.start_line && line < range.end_line
 }
 
-/// An empty file, as the engine models it.
-///
-/// `vscode_diff::compute` turns `&[]` into `&[""]` before handing it to the
-/// engine, so a diff of an empty file talks about line 1. An `Alignment` given
-/// the un-normalised `&[]` would hold a file with no line 1 and disagree with
-/// its own diff, so it normalises identically. Found by `proptest`, which
-/// shrank to `original = []`.
-/// Copies the caller's lines in, standing an absent file up as the engine's
-/// representation of an empty one: a single empty line.
+/// Copies the lines and normalizes an empty side to one empty line, matching
+/// the engine's document model.
 fn normalise(lines: &[&str]) -> Vec<String> {
     if lines.is_empty() {
         return vec![String::new()];

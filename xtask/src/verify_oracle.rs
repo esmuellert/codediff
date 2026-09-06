@@ -1,12 +1,6 @@
 //! `cargo xtask verify-oracle`
 //!
-//! Builds `diff_tool` from the canonical C engine, runs it and our Rust
-//! binding over the same fixtures, and compares the results structurally.
-//!
-//! This is the differential test that catches marshalling mistakes the unit
-//! tests cannot: arrays passed in the wrong order, an off-by-one in a range, a
-//! misread field. The fixtures are upstream's, deliberately — an oracle we
-//! chose the questions for would prove much less.
+//! Builds the C oracle and compares its output with the Rust binding.
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};

@@ -1,27 +1,7 @@
-//! `git status --porcelain=v2 -z`, in git's own vocabulary.
+//! Parses `git status --porcelain=v2 -z`.
 //!
-//! This module keeps git's words — `XY` codes, the index, object ids — because
-//! forcing them into neutral names would either lose meaning or invent a
-//! concept other systems do not share. The repository layer translates them.
-//!
-//! The format is documented in `git-status(1)`. Records are NUL-terminated and
-//! there are five kinds:
-//!
-//! ```text
-//! 1 XY sub mH mI mW hH hI path                  ordinary change
-//! 2 XY sub mH mI mW hH hI Xscore path NUL orig  rename or copy
-//! u XY sub m1 m2 m3 mW h1 h2 h3 path            unmerged
-//! ? path                                        untracked
-//! ! path                                        ignored
-//! ```
-//!
-//! A rename record spans two NUL-terminated fields. Splitting the stream on
-//! NUL and treating every piece as a record silently turns one rename into a
-//! record plus a garbage entry, so the parser consumes fields in order.
-//!
-//! `-z` is not optional. Without it git quotes any path containing a layout,
-//! a quote or a non-ASCII byte, and a path containing a newline breaks the
-//! format outright.
+//! Records are NUL-terminated; rename and copy records consume a second path.
+//! Record kinds are `1`, `2`, `u`, `?`, and `!`.
 
 use crate::error::{Error, Result};
 
@@ -58,12 +38,7 @@ impl Code {
         })
     }
 
-    /// Git's own letter for this code.
-    ///
-    /// The inverse of the parse above, and only the manifest check needs it:
-    /// nothing draws an `XY` code, because nothing outside this crate can see
-    /// one. It stays because the manifest is written in these letters and a
-    /// check that restated them in our words would be checking itself.
+    /// Git's letter for this code, used by parser tests.
     #[cfg(test)]
     pub fn letter(self) -> char {
         match self {
@@ -81,11 +56,7 @@ impl Code {
     }
 }
 
-/// The two codes git reports per file.
-///
-/// Git compares three things, not two: `HEAD`, the index and the working tree.
-/// `index` is `HEAD` against the index — what committing now would record —
-/// and `worktree` is the index against what is on disk.
+/// Git's index and worktree status codes for one path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Xy {
     pub index: Code,

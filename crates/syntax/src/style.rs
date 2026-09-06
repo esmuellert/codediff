@@ -1,24 +1,15 @@
-//! Pen, Style, Span, Rule, Capture — the types that cross the crate boundary.
+//! Types exchanged by syntax engines and their caller.
 //!
-//! The two travel in opposite directions. A [`Rule`] goes in: `ui` says
-//! "anything matching `keyword.control` is mauve and italic". A [`Span`] comes
-//! out: "bytes 4..9 of this line wear that style".
-//!
-//! Neither names an engine, and neither is a colour this crate chose.
+//! Rules and captures configure an engine. Spans report styled byte ranges.
+//! Pens identify theme entries without storing terminal colours here.
 
 use std::ops::Range;
 
-/// An index into the caller's colour table.
-///
-/// Not a colour — `ui` maps pens to colours per theme. This keeps spans
-/// valid across theme changes and lets terminals without 24-bit colour
-/// use indexed colours.
+/// Index into the caller's theme table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pen(pub u16);
 
-/// How a run of text looks: a pen and independent flags.
-///
-/// No background — the diff owns backgrounds. Syntax only tints foreground.
+/// Syntax style for a span. Backgrounds belong to the diff renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {
     pub pen: Option<Pen>,
@@ -62,10 +53,7 @@ impl Style {
     }
 }
 
-/// One theme rule: a TextMate scope selector and the style it produces.
-///
-/// Matching is by prefix: `keyword` claims `keyword.control.rust` unless a
-/// more specific rule exists. `'static` because the table is a constant.
+/// TextMate selector and style.
 #[derive(Debug, Clone, Copy)]
 pub struct Rule {
     pub selector: &'static str,
@@ -78,14 +66,7 @@ impl Rule {
     }
 }
 
-/// One tree-sitter rule: which capture it claims, and how it looks.
-///
-/// The twin of [`Rule`], and a separate type rather than a reuse of it because
-/// the two strings are matched by completely different machinery. A `Rule`'s
-/// selector is a *path* resolved with TextMate precedence; a `Capture`'s name
-/// is what a grammar's own `highlights.scm` wrote down, matched by
-/// longest-dotted-prefix. Sharing one type would invite writing a scope
-/// selector where a capture name belongs, which nothing would catch.
+/// Tree-sitter capture name and style.
 #[derive(Debug, Clone, Copy)]
 pub struct Capture {
     pub name: &'static str,
@@ -98,14 +79,7 @@ impl Capture {
     }
 }
 
-/// A run of one line that shares a style.
-///
-/// Byte offsets into that line, half-open, so the range slices the line
-/// directly and cannot land inside a character. Byte offsets rather than
-/// columns on purpose: a tab is one byte and several columns, and the renderer
-/// already knows how to map one to the other. `delta` expands tabs *before*
-/// highlighting because it works in strings; we do not have to, because we
-/// work in ranges.
+/// Half-open byte range and syntax style for one line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub bytes: Range<u32>,
@@ -118,11 +92,7 @@ impl Span {
     }
 }
 
-/// Merges neighbouring spans that wear the same style.
-///
-/// A grammar happily reports six adjacent runs of plain text; a renderer would
-/// rather have one. Also drops runs that ask for nothing, since the caller
-/// already paints an unstyled line.
+/// Merges adjacent equal spans and removes empty or plain spans.
 pub fn coalesce(spans: Vec<Span>) -> Vec<Span> {
     let mut out: Vec<Span> = Vec::with_capacity(spans.len());
     for span in spans {
@@ -164,15 +134,14 @@ mod tests {
 
     #[test]
     fn runs_that_ask_for_nothing_are_dropped() {
-        // The caller has already painted the line in the ordinary colour, so a
-        // span saying "ordinary" is work with no effect.
+        // Plain spans add no information after the base style is applied.
         assert!(coalesce(vec![Span::new(0..9, Style::PLAIN)]).is_empty());
         assert!(coalesce(vec![Span::new(4..4, RED)]).is_empty(), "empty");
     }
 
     #[test]
     fn a_style_can_carry_a_flag_and_no_pen() {
-        // `markup.bold` is exactly this, and dropping it would lose the rule.
+        // Modifiers can be present without a pen.
         let bold = Style::PLAIN.bold();
         assert!(!bold.is_plain());
         assert_eq!(bold.pen, None);

@@ -1,15 +1,4 @@
-//! The diff worker thread — diffs one file at a time off the drawing thread.
-//!
-//! ```text
-//!  drawing thread                        diff worker thread
-//!  ──────────────                        ──────────────────
-//!  send_diff_request(file) ────────────────────────►  recv(file)
-//!  draw (still showing previous file)    read, diff, align
-//!  loop {                                send(result) ───┐
-//!    poll() ◄────────────────────────────────────────────┘
-//!    install, draw
-//!  }
-//! ```
+//! Computes one file diff on a worker thread and returns the result to the UI.
 
 use std::thread;
 

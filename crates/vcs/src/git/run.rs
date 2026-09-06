@@ -1,8 +1,4 @@
-//! Running `git` and collecting what it prints.
-//!
-//! Deliberately dumb: it knows how to start a process and how to fail, and
-//! nothing about status codes, revisions or paths. Every decision about *which*
-//! arguments to pass belongs to the module that needs them.
+//! Runs Git commands and returns their stdout or a typed error.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -11,12 +7,7 @@ use crate::error::{Error, Result};
 
 /// Runs `git` in `cwd` and returns stdout.
 ///
-/// `--no-optional-locks` is passed before the subcommand, where git accepts
-/// it — as a subcommand flag it is rejected. It tells git to skip the optional
-/// index refresh that read-only queries perform, which would take
-/// `.git/index.lock`. Without it a status running while the user stages a hunk
-/// makes the staging command fail, and our own lock file wakes the watcher that
-/// asked for the status.
+/// Read-only commands use `--no-optional-locks` to avoid refreshing the index.
 pub fn run(cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
         .arg("--no-optional-locks")

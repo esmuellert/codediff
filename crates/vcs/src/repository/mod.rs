@@ -1,14 +1,4 @@
-//! The public API: open, list changes, count lines, read a file.
-//!
-//! ```text
-//! mod.rs    Repository — open, repo_path, and private helpers
-//! list.rs   get_changed_files, get_line_stats
-//! read.rs   get_file_content, get_raw_content
-//! ```
-//!
-//! Split by what the caller is asking for. "What changed?" and "Show me this
-//! file" use different git commands, hold different state, and are called at
-//! different times. That is two reasons to change, so two files.
+//! Public repository operations: open, list changes, count lines, and read content.
 
 mod diff_type;
 pub(crate) mod list;

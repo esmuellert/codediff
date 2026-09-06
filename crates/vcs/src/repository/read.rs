@@ -7,10 +7,7 @@ use crate::git;
 use super::Repository;
 
 impl Repository {
-    /// One side of one file.
-    ///
-    /// Takes the whole [`File`] rather than a path so that a move reads its
-    /// old path without the caller having to know that rule.
+    /// Reads one side of a file, including the old path of a rename.
     pub fn get_file_content(
         &mut self,
         file: &File,
@@ -24,13 +21,9 @@ impl Repository {
         git::read(&self.repo, blobs, file, version)
     }
 
-    /// One path as it was at one revision, exactly.
+    /// Reads raw bytes at a revision for verification.
     ///
-    /// Not part of reviewing anything — [`get_file_content`](Self::get_file_content) is what
-    /// a review uses. This is for checking that what we read is byte for byte
-    /// what the backend holds.
-    ///
-    /// `None` when nothing is there at that revision.
+    /// Returns `None` when the path is absent.
     pub fn get_raw_content(
         &mut self,
         rev: &str,

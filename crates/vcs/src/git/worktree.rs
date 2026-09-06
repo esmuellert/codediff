@@ -1,8 +1,4 @@
-//! Reading the working tree — the checkout on disk.
-//!
-//! Not a git command: it is `std::fs`. It lives here because the working tree
-//! is one of the two sides of the default comparison, and belongs behind the
-//! same interface as the side that does come from the object store.
+//! Reads file content from the working tree.
 
 use crate::error::{Error, Result};
 use file_types::RepoPath;
@@ -10,9 +6,7 @@ use file_types::RepoPath;
 /// A file's current content. `None` when it is not on disk — a deletion, or a
 /// path that only exists in the revision being compared against.
 ///
-/// Takes no root: a [`RepoPath`] already carries its absolute form, which is
-/// the reason it carries one. Passing the two separately is how they come to
-/// disagree.
+/// The path already carries its absolute filesystem spelling.
 pub fn read(path: &RepoPath) -> Result<Option<Vec<u8>>> {
     // A symlink's content, to git, is where it points — a short line of text,
     // stored as a blob. Reading through it would compare the *target* file

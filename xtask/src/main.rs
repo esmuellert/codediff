@@ -1,11 +1,6 @@
-//! Repository automation.
+//! Repository maintenance commands that complement Cargo and CMake.
 //!
-//! Rust rather than shell so that it is cross-platform without duplication,
-//! type-checked, and able to use the workspace crates. This is not a build
-//! system: `cargo build` and `build.rs` compile everything, including the C
-//! engine. These are the chores cargo has no opinion about.
-//!
-//! The lint tasks turn the repository's architecture rules into build failures.
+//! The tasks cover architecture checks, fixture creation, and parity tests.
 
 #[cfg(test)]
 mod attribution;

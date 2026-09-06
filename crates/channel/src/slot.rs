@@ -1,6 +1,4 @@
-//! A single waiting seat between the main thread and a background worker.
-//!
-//! New requests evict old ones — only the newest matters.
+//! Latest-value slot shared by a caller and a worker.
 
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -11,24 +9,17 @@ struct Inner<T> {
     busy: Mutex<bool>,
 }
 
-/// One waiting seat between the main thread and a background worker.
+/// A slot where a newer request replaces a waiting request.
 ///
-/// New requests evict old ones — only the newest matters. The worker takes
-/// the value when it finishes its current work.
-///
-/// This is the half the main thread holds. The worker gets a loop closure
-/// from [`Slot::new`] that blocks until a value arrives, calls the job,
-/// and repeats.
+/// The worker loop blocks until a value arrives and then runs the job.
 pub struct Slot<T> {
     inner: Arc<Inner<T>>,
 }
 
 impl<T: Send + 'static> Slot<T> {
-    /// Creates a slot and a worker loop that runs `job` on each value.
+    /// Creates a slot and a worker loop for `job`.
     ///
-    /// The returned closure is meant for `thread::spawn`. It blocks until a
-    /// value is placed, runs `job`, and repeats. It stops when `job` returns
-    /// `false` or the `Slot` is dropped.
+    /// The loop stops when `job` returns `false` or the slot is dropped.
     pub fn new<F>(mut job: F) -> (Self, impl FnOnce() + Send + 'static)
     where
         F: FnMut(T) -> bool + Send + 'static,

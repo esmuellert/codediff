@@ -6,13 +6,8 @@ use crate::coord::CellCol;
 
 /// Terminal columns occupied by one grapheme cluster.
 ///
-/// Combining marks contribute zero, so `e` followed by U+0301 measures one.
-/// East Asian wide and fullwidth characters measure two.
-///
-/// Control characters other than tab are treated as one column: they are
-/// rendered as a placeholder rather than being allowed to move the cursor. So
-/// are the bidirectional controls, for the same reason — see
-/// [`is_bidi_control`].
+/// Combining marks have width zero; wide characters have width two. Control
+/// and bidi characters use one placeholder cell.
 pub fn grapheme_width(grapheme: &str) -> u32 {
     debug_assert!(!grapheme.is_empty(), "a grapheme cluster is never empty");
 

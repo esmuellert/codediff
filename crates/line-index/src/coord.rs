@@ -1,14 +1,7 @@
-//! Distinct types for the four ways of indexing a line of text.
+//! Zero-based byte, character, UTF-16, and terminal-cell coordinates.
 //!
-//! On ASCII these are all the same number, which is exactly why confusing them
-//! is such a durable bug: everything works until someone opens a file with a
-//! Chinese comment or an emoji in a string literal.
-//!
-//! In `a日🎉b`, the position of `b` is byte 8, char 3, UTF-16 unit 4, cell 5.
-//!
-//! All four are zero-based. The diff engine reports columns one-based, so
-//! [`Utf16Col::from_engine`] and [`Utf16Col::to_engine`] are the only places
-//! that adjustment happens.
+//! The diff engine's one-based UTF-16 boundary conversion lives on
+//! `Utf16Col`.
 
 macro_rules! coordinate {
     ($(#[$meta:meta])* $name:ident) => {

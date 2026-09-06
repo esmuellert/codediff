@@ -1,21 +1,7 @@
-//! Pen-to-colour mapping for syntax highlighting.
+//! Maps syntax groups and pens to theme foreground colours.
 //!
-//! ---
-//!
-//! Taste, and only taste. What a stretch of text *is* — that `keyword.control`
-//! is a keyword — is a fact about an engine, so [`syntax::Group`] and the two
-//! tables that produce it live in that crate. This file says what a keyword
-//! *looks like*, which every theme answers differently.
-//!
-//! Between them sits [`syntax::Pen`], a number. `syntax` hands back "bytes
-//! 4..9 are pen 12" and answers which group pen 12 is; only a [`Code`] knows
-//! that a keyword is mauve. That is why a terminal with no 24-bit colour can
-//! still be highlighted, and why changing theme does not re-read a line.
-//!
-//! A [`Code`] holds `Color`, not `Style`. Not a detail: syntax may only
-//! tint the letters, because a diff owns the background of every line it
-//! touches and a syntax background would hide which lines changed. Storing a
-//! colour rather than a style means a theme *cannot* express the mistake.
+//! Diff backgrounds are supplied separately by the renderer; this table only
+//! provides syntax foregrounds and modifiers.
 
 use ratatui::style::Color;
 use syntax::{Group, Pen};
@@ -23,12 +9,7 @@ use syntax::{Group, Pen};
 use super::catppuccin::Palette;
 use super::colour::Rgb;
 
-/// The colour a theme gives each [`Group`].
-///
-/// Colours, not styles — see the module note. Bold and italic arrive from the
-/// scope table instead, because they are structural: a heading is bold in
-/// every theme, and a theme that made it plain would be wrong rather than
-/// different.
+/// Foreground colours for syntax groups.
 #[derive(Debug, Clone, Copy)]
 pub struct Code {
     pub comment: Color,
@@ -65,10 +46,7 @@ pub struct Code {
 }
 
 impl Code {
-    /// The colour of one token.
-    ///
-    /// An exhaustive match rather than an array, so adding a [`Group`] fails
-    /// to compile until every theme has said what it looks like.
+    /// Returns the foreground colour for a syntax group.
     pub const fn colour(&self, token: Group) -> Color {
         match token {
             Group::Comment => self.comment,
@@ -105,15 +83,7 @@ impl Code {
         }
     }
 
-    /// The colour a span asks for, or nothing if no rule claimed it.
-    ///
-    /// Either engine's pen. The two tables share one numbering — scope
-    /// selectors first, capture names after — so this resolves a span without
-    /// knowing which engine produced it.
-    ///
-    /// A pen out of range is not an error worth failing a frame over — it can
-    /// only mean spans outlived the palette that made them — so it draws
-    /// plainly, which is what an unhighlighted line does anyway.
+    /// Resolves a syntax pen to a foreground colour.
     pub fn pen(&self, pen: Option<Pen>) -> Option<Color> {
         Some(self.colour(syntax::group(pen?)?))
     }

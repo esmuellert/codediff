@@ -1,13 +1,4 @@
-//! `git cat-file --batch` — reading file content out of the object store.
-//!
-//! Blobs come from one long-lived `git cat-file --batch` child rather than a
-//! process per file. Opening a sixty-file diff means a hundred and twenty
-//! reads, and at a few milliseconds of spawn each that is most of a second
-//! spent on `fork`.
-//!
-//! The child is stateful — you write a request to its stdin and read the
-//! response from its stdout — so it gets its own thread rather than a slot in a
-//! pool sized for computation.
+//! Reads stored Git objects through `git cat-file --batch`.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -52,8 +43,7 @@ impl Batch {
     /// Reads `path` at `rev`. Returns `Ok(None)` if the object doesn't exist
     /// (file added or deleted relative to that revision).
     pub fn read(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
-        // The `rev:path` spelling is what cat-file expects for a path inside a
-        // tree, and the path is relative to the root.
+        // `cat-file` expects `rev:path`, with a repository-relative path.
         writeln!(self.stdin, "{rev}:{path}").map_err(Self::broken)?;
         self.stdin.flush().map_err(Self::broken)?;
 
@@ -113,19 +103,13 @@ pub fn read_filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<V
     let spec = format!("{rev}:{path}");
     match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
         Ok(bytes) => Ok(Some(bytes)),
-        // Only match git's "object not found" message. Treating all errors as
-        // "missing" would hide real failures (corrupt objects, broken filters).
+        // Do not hide corrupt objects or filter failures as missing files.
         Err(Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
         Err(other) => Err(other),
     }
 }
 
-/// Whether git's complaint means the object does not exist.
-///
-/// Matched on the message because `cat-file` exits 128 for everything. The
-/// wordings are git's own, and a wording we do not know is treated as a real
-/// failure — the safe way round, since the cost is an error the reader can
-/// read rather than a diff that quietly lies.
+/// Whether Git's error text indicates a missing object.
 fn is_missing(stderr: &str) -> bool {
     stderr.contains("does not exist")
         || stderr.contains("Not a valid object name")

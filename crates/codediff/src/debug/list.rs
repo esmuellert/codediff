@@ -1,17 +1,9 @@
-//! `codediff debug list` — the groups a request produces.
-//!
-//! The list pipeline, printed. `debug status` shows what git said; this shows
-//! what the interface will be handed, grouped the way the interface groups it,
-//! which is the only place the two can be compared.
-//!
-//! Machine-readable on purpose: one line per group and one per file, so a test
-//! can assert on it without a terminal.
+//! Prints the groups and files produced by a list request.
 
 use anyhow::Result;
 use vcs::DiffType;
 
-/// Parses `debug list` arguments into a diff type. Only this subcommand
-/// uses it — the main command line takes no revision arguments.
+/// Converts list flags and revisions into a VCS comparison type.
 pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
     use DiffType as Type;
     match (staged, rev.first().cloned(), rev.get(1).cloned()) {
@@ -27,11 +19,7 @@ pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
     }
 }
 
-/// Prints every group, and every file in it.
-///
-/// The pipeline answers flat, so the grouping happens here — by the revision
-/// pair each file carries, which is the same read the interface makes and the
-/// reason neither can disagree with the other.
+/// Prints each revision group and its files.
 pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = vcs::Repository::open(&cwd)?.repo_path().root.clone();

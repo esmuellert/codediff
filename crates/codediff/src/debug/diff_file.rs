@@ -13,25 +13,15 @@ use crate::text::sanitize;
 use pipeline::diff::Runner;
 use pipeline::files;
 
-/// The file at `path`, as the list found it.
+/// Finds a file through the same list pipeline used by the UI.
 ///
-/// The list pipeline is the search, narrowed by a pathspec — the same one the
-/// interface uses, so this prints what the screen would show. A path in two
-/// groups gives two; the first is what is on disk, which is what a reader
-/// naming a file means.
-///
-/// A file that has *not* changed is in no group at all, and is compared with
-/// itself. That is a debugging answer rather than a review: the interface
-/// refuses it, because a screen of unmarked text says nothing.
+/// Unchanged files are compared with themselves for debugging, even though the
+/// review UI does not list them.
 fn find(path: &str) -> Result<file_types::File> {
     let cwd = std::env::current_dir()?;
     let git = vcs::Repository::open(&cwd)?;
     let root = git.repo_path().root.clone();
-    // The whole list, and the path matched here rather than by git. Narrowing
-    // the status to one path costs the rename: git pairs a deletion with an
-    // addition to spot one, and a pathspec that names only the new path hides
-    // the deletion, so `R100 renamed-to.txt` comes back as `A. renamed-to.txt`
-    // instead. Either of a moved file's names has to find it.
+    // Search the full list so either side of a rename can match.
     let request = pipeline::files::Request::worktree(root.clone());
     let listed = files::get_files(&request)?.into_iter().find(|file| {
         file.path().as_str() == path || file.previous_path().is_some_and(|was| was.as_str() == path)

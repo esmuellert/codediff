@@ -1,12 +1,4 @@
-//! Character-level changes, resolved from the engine's columns to byte ranges.
-//!
-//! The engine reports an inner change as a pair of [`CharRange`]s, each a
-//! two-dimensional position pair — `(line, column)` to `(line, column)`,
-//! like a selection dragged across an editor. One inner change can therefore
-//! cover the tail of one line, several whole lines, and the head of another.
-//!
-//! Columns are UTF-16 code units, one-based and end-exclusive. Rust needs byte
-//! offsets, so every span goes through [`line_index`].
+//! Converts the engine's UTF-16 character ranges into per-line byte spans.
 
 use diff_types::CharRange;
 use line_index::{DEFAULT_TAB_WIDTH, LineIndex, Utf16Col};
@@ -20,11 +12,7 @@ pub struct Span {
     pub bytes: std::ops::Range<u32>,
 }
 
-/// Splits a range into one span per line it touches.
-///
-/// Empty spans are dropped. An inner change can be a bare position — an
-/// insertion point carries `C1-C1` — and there is no such thing as
-/// highlighting zero characters.
+/// Splits a range into non-empty spans, one per affected line.
 pub fn spans<S: AsRef<str>>(range: &CharRange, lines: &[S]) -> Vec<Span> {
     spans_with_tab_width(range, lines, DEFAULT_TAB_WIDTH)
 }

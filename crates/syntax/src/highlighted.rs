@@ -1,13 +1,8 @@
-//! Progress state for colouring one file top-to-bottom.
+//! Incremental syntax progress for one file snapshot.
 //!
-//! Two fields: the engine's position and how far it got. Nothing is
-//! invalidated — a file under review is a snapshot. Line 40's answer never
-//! changes, so a prefix once read is read for good.
-//!
-//! Spans go straight to the caller; only the engine's position is held here.
-//!
-//! Both engines fit: the matcher resumes from where it stopped, the parser
-//! reads the whole file on the first ask. `read_colours_to_line`/`lines_coloured` is the interface.
+//! The matcher carries parser state between requests. The parser may complete
+//! the whole file on its first request. Spans are appended to the caller's
+//! buffer; this type keeps the progress and engine state.
 
 use crate::engine::{Engine, EngineState, Grammar, Palette};
 use crate::limits;
@@ -23,8 +18,7 @@ pub struct Highlighted {
 }
 
 impl std::fmt::Debug for Highlighted {
-    /// Written out rather than derived because `EngineState` is a grammar's
-    /// context stack, which no failing test is easier to read for.
+    /// Avoid exposing the engine's internal parser state.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Highlighted")
             .field("lines_coloured", &self.lines_coloured)
@@ -34,12 +28,7 @@ impl std::fmt::Debug for Highlighted {
 }
 
 impl Highlighted {
-    /// A file nobody will colour.
-    ///
-    /// What an unrecognised language, a binary file and a database dump all
-    /// get. Not an error: every caller must already cope with having no spans
-    /// for a line, because the first frame is drawn before the whole file has
-    /// been read.
+    /// Creates an empty progress value for a file with no syntax engine.
     pub fn none() -> Self {
         Self {
             lines_coloured: 0,
@@ -47,7 +36,7 @@ impl Highlighted {
         }
     }
 
-    /// Begins colouring a file, if it is worth colouring.
+    /// Begins colouring a file when it is within the highlighting limits.
     pub fn new(engine: &Engine, grammar: Grammar, palette: &Palette, lines: &[String]) -> Self {
         let bytes = lines.iter().map(|line| line.len() + 1).sum();
         if !limits::worth_highlighting(bytes, lines.len()) {
@@ -69,17 +58,9 @@ impl Highlighted {
         self.engine_state.is_none()
     }
 
-    /// Reads until `line` has been coloured, appending to `into`.
+    /// Reads through `line` and appends newly produced spans to `into`.
     ///
-    /// `into` receives one entry per line read by *this* call, so a caller
-    /// draining it between calls gets each line exactly once. EngineState back
-    /// costs nothing because it does not happen: a line already read is a line
-    /// the caller already has.
-    ///
-    /// May read further than asked. The parser has no range API, so it
-    /// answers with the whole file however little was wanted. `into` receives
-    /// the spans produced by this call, and `get_lines_coloured` reports how
-    /// far the reader has progressed.
+    /// A parser may read beyond the requested line because it has no range API.
     pub fn read_colours_to_line(
         &mut self,
         engine: &Engine,
@@ -106,9 +87,7 @@ impl Highlighted {
         let Some(engine_state) = self.engine_state.as_mut() else {
             return;
         };
-        // The range is what we *want*. One engine parses whole files and has
-        // no way to do less, so it may come back having read everything —
-        // which is why the check below is `>=` and not `==`.
+        // The parser may satisfy the request by reading the complete file.
         let before = into.len();
         let from = self.lines_coloured as usize;
         engine.colour(engine_state, palette, lines, from..target, into);
@@ -128,9 +107,7 @@ mod tests {
     use crate::style::{Capture, Pen, Rule, Style};
 
     fn palette() -> Palette {
-        // `storage` as well as `keyword`, because Rust's `fn` is
-        // `storage.type.function` — the kind of thing a scope path knows and a
-        // fixed list of token names does not.
+        // Rust uses both storage and keyword scopes for `fn`.
         let word = Style::pen(Pen(0));
         Palette::from_tables(
             &[Rule::new("keyword", word), Rule::new("storage", word)],
@@ -202,8 +179,7 @@ mod tests {
 
     #[test]
     fn what_is_handed_back_matches_what_was_read() {
-        // The count and the spans must agree, because the caller uses the
-        // count to decide where the spans belong.
+        // The caller uses the count to place the returned spans.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
         case.reach(2);
         assert_eq!(
@@ -214,8 +190,7 @@ mod tests {
 
     #[test]
     fn a_line_is_handed_back_once_and_only_once() {
-        // Two calls covering overlapping ranges must not repeat a line, or
-        // the caller would install it twice at two different places.
+        // Overlapping requests must not append a line twice.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
         case.reach(0);
         let after_first = case.spans.len();
@@ -255,9 +230,7 @@ mod tests {
 
     #[test]
     fn reading_may_go_further_than_asked_but_never_less() {
-        // The parser has no range API and answers with the whole file however
-        // little was wanted, so a caller must look at `done` rather than
-        // assume it got what it asked for.
+        // A parser may return more lines than requested.
         let mut case = rust(&["fn a() {}", "fn b() {}", "fn c() {}"]);
         case.reach(0);
         assert!(

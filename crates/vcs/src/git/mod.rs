@@ -1,18 +1,7 @@
-//! The git backend: one file per command.
+//! Git command runners and parsers.
 //!
-//! ```text
-//! run             spawn git, capture output
-//! rev_parse       --show-toplevel | --absolute-git-dir | --verify
-//! status          --porcelain=v2 -z
-//! diff/           --name-status -z, --numstat -z
-//! merge_base      git merge-base
-//! cat_file        git cat-file --batch | --filters
-//! worktree        std::fs — the working tree
-//! ```
-//!
-//! Each file runs a command and parses its output in git's vocabulary.
-//! Translation to the reviewer's types happens in `repository/list.rs` and
-//! `repository/read.rs`.
+//! Each module handles one Git command. The repository layer converts parsed
+//! records into the shared `file-types` vocabulary.
 
 pub mod cat_file;
 pub mod diff;
@@ -53,8 +42,7 @@ pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> 
             revs: Revs::new(commit(a)?, commit(b)?),
         },
         DiffType::MergeBase(base, target) => {
-            // Where the two parted, which is what `a...b` means and the only
-            // reason this is its own way of comparing rather than a spelling.
+            // `a...b` compares the target with the merge base.
             let base = merge_base::run(repo, base, target)?;
             GitCommand::Diff {
                 args: vec![base.as_str().to_owned(), target.clone()],
