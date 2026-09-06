@@ -1,26 +1,13 @@
-//! A theme that works on a terminal we know nothing about.
+//! Basic dark and light themes for terminals without true colour.
 //!
-//! Catppuccin names exact colours, which requires the terminal to accept
-//! 24-bit escapes. Not all do: `tmux` without `-2`, an old `TERM`, a
-//! conservative SSH session. Where they are unavailable the terminal quantises
-//! them, and Catppuccin's diff backgrounds — eighteen percent of an accent —
-//! are exactly the colours that collapse into the background when it does.
-//!
-//! So this theme names nothing exactly. Its background is the terminal's own,
-//! and its diff colours come from the 256-colour cube, which every terminal
-//! from the last twenty years has. It looks like part of whatever colour
-//! scheme the reader already runs, which is the point.
+//! Backgrounds inherit the terminal. Diff accents use indexed colours.
 
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::theme::Theme;
 use crate::theme::code::Code;
 
-/// Indices into the 6×6×6 colour cube that starts at 16.
-///
-/// `16 + 36r + 6g + 6b`, each component 0..=5. Chosen dark enough to sit under
-/// text rather than compete with it — the same job Catppuccin's 18% does, done
-/// with the resolution available.
+/// Selected indices from the terminal's 6×6×6 colour cube.
 mod cube {
     /// `r0 g1 b0` — the faintest green in the cube.
     pub const DARK_GREEN: u8 = 22;
@@ -68,8 +55,7 @@ const DARK_CODE: Code = Code {
     kind: Color::LightYellow,
     function: Color::LightBlue,
     library: Color::Yellow,
-    // The terminal's own foreground: an ordinary name should look ordinary,
-    // which is the same argument as `normal` above.
+    // Preserve the terminal's foreground.
     variable: Color::Reset,
     builtin: Color::LightRed,
     parameter: Color::Red,
@@ -91,7 +77,7 @@ const DARK_CODE: Code = Code {
     deleted: Color::LightRed,
 };
 
-/// The same groups for a light terminal. See [`DARK_CODE`].
+/// Syntax colours for a light terminal.
 const LIGHT_CODE: Code = Code {
     comment: Color::DarkGray,
     string: Color::Green,
@@ -131,9 +117,7 @@ pub const DARK: Theme = Theme {
     name: "basic-dark",
     dark: true,
 
-    // `Reset` means "whatever the terminal already uses", so an unchanged line
-    // is indistinguishable from the surrounding shell — which is what makes
-    // this theme fit in anywhere.
+    // Reset uses the terminal's own foreground and background.
     normal: Style::new().fg(Color::Reset).bg(Color::Reset),
 
     deleted: over(cube::DARK_RED),
@@ -207,8 +191,7 @@ mod tests {
 
     #[test]
     fn nothing_here_names_a_24_bit_colour() {
-        // The entire reason this theme exists. One `Color::Rgb` and it would
-        // fail on exactly the terminals it is meant for.
+        // Basic themes must not use 24-bit colours.
         for theme in [DARK, LIGHT] {
             for style in theme.styles() {
                 for colour in [style.fg, style.bg] {
@@ -219,8 +202,7 @@ mod tests {
                     );
                 }
             }
-            // Syntax colours too: they are the largest table here, and the
-            // one most easily filled in by copying a 24-bit theme.
+            // Check syntax colours as well.
             for token in syntax::Group::ALL {
                 assert!(
                     !matches!(theme.code.colour(token), Color::Rgb(..)),
@@ -250,7 +232,6 @@ mod tests {
 
     #[test]
     fn the_two_variants_do_not_share_a_single_colour() {
-        // If they did, one of them was not thought about.
         assert_ne!(DARK.inserted.bg, LIGHT.inserted.bg);
         assert_ne!(DARK.cursor_line.bg, LIGHT.cursor_line.bg);
         assert_ne!(DARK.status.bg, LIGHT.status.bg);

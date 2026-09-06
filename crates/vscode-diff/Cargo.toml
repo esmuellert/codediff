@@ -17,7 +17,7 @@ file-types.workspace = true
 
 # Not `workspace = true`: the conversion from C to owned Rust must dereference
 # raw pointers, so this crate denies rather than forbids and carries a single
-# narrow `#[allow(unsafe_code)]` on `convert`. See docs/plan/05-decisions.md D14.
+# narrow `#[allow(unsafe_code)]` on `convert`.
 [lints.rust]
 unsafe_code = "deny"
 

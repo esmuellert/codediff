@@ -49,8 +49,7 @@ pub fn run<E: Send + 'static>(
             return Ok(());
         };
 
-        // Drain everything already waiting before the next draw. A burst
-        // of clicks costs one frame, so input cannot outrun the screen.
+        // Drain queued events before drawing the next frame.
         let mut next = Some(event);
         while let Some(event) = next.take() {
             match respond(event, tree) {

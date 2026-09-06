@@ -6,13 +6,8 @@ use crate::coord::CellCol;
 
 /// Terminal columns occupied by one grapheme cluster.
 ///
-/// Combining marks contribute zero, so `e` followed by U+0301 measures one.
-/// East Asian wide and fullwidth characters measure two.
-///
-/// Control characters other than tab are treated as one column: they are
-/// rendered as a placeholder rather than being allowed to move the cursor. So
-/// are the bidirectional controls, for the same reason — see
-/// [`is_bidi_control`].
+/// Combining marks have width zero; wide characters have width two. Control
+/// and bidi characters use one placeholder cell.
 pub fn grapheme_width(grapheme: &str) -> u32 {
     debug_assert!(!grapheme.is_empty(), "a grapheme cluster is never empty");
 
@@ -49,9 +44,7 @@ pub fn is_bidi_control(c: char) -> bool {
 
 /// Columns a tab occupies when it begins at `from`.
 ///
-/// A tab advances to the next multiple of `tab_width`, so its width depends on
-/// everything before it: the same tab is four columns wide at column 0 and one
-/// column wide at column 3.
+/// Returns the columns a tab advances to the next tab stop.
 pub fn tab_advance(from: CellCol, tab_width: u8) -> u32 {
     let tab_width = u32::from(tab_width.max(1));
     tab_width - (from.get() % tab_width)
@@ -93,9 +86,7 @@ mod tests {
 
     #[test]
     fn bidi_controls_occupy_a_column_so_a_placeholder_can_be_drawn() {
-        // Unicode gives these zero width. Measuring them that way would leave a
-        // renderer no room for the stand-in it must draw instead of passing
-        // them through, and every column after them would shift.
+        // Reserve one cell for the replacement character.
         for c in [
             '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}',
             '\u{2068}', '\u{2069}', '\u{200e}', '\u{200f}', '\u{061c}',

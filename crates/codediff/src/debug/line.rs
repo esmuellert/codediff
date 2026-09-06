@@ -1,8 +1,4 @@
-//! `codediff debug line <file>` — where each character of a line sits.
-//!
-//! Lists only the characters whose byte, UTF-16 and column positions differ.
-//! Plain ASCII is skipped: for it all three are the same number, which is
-//! precisely why nothing interesting happens there.
+//! Prints byte, UTF-16, and terminal-cell positions.
 
 use anyhow::{Context, Result};
 use line_index::{CellCol, DEFAULT_TAB_WIDTH, Grapheme, LineIndex};
@@ -40,9 +36,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
         } else {
             notable
         };
-        // Size the label column to this line's widest character, so a lone
-        // emoji does not sit eight columns from its numbers just because some
-        // other line contains a joined sequence.
+        // Align labels to this line's widest grapheme.
         let label_width = lines
             .iter()
             .map(|g| display_width(&name(g)))
@@ -77,28 +71,20 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// Characters where the coordinate systems part company. A one-byte,
-/// one-column ASCII character teaches nothing.
-///
-/// Control characters are included even though their coordinates agree: a byte
-/// that draws nothing, or that the terminal would obey, is precisely what a
-/// reviewer needs pointed out.
+/// Returns graphemes with nontrivial coordinates or terminal controls.
 fn is_notable(g: &Grapheme<'_>) -> bool {
     g.is_tab() || g.width != 1 || g.text.len() != 1 || g.text.chars().any(char::is_control)
 }
 
 fn name(g: &Grapheme<'_>) -> String {
-    // A label of "tab" would be indistinguishable from a line whose text is
-    // the word "tab", which fixture line 13 actually is. These are the
-    // symbols editors use when displaying whitespace.
+    // Use visible labels for whitespace.
     if g.is_tab() {
         return "⇥".to_owned();
     }
     if g.text == " " {
         return "␣".to_owned();
     }
-    // A ZWJ sequence printed raw would look like a single emoji and hide why
-    // its byte count is so large, so show its joiners.
+    // Show joiners in multi-codepoint graphemes.
     if g.text.chars().count() > 2 {
         return g
             .text

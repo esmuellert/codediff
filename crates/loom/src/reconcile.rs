@@ -1,7 +1,4 @@
-//! Matching this frame's description against the live scope tree.
-//!
-//! The runtime is borrowed in short bursts and never across a component's own
-//! function, because that function calls hooks that reach the runtime too.
+//! Reconciles frame descriptions with the live scope tree.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,16 +10,13 @@ use crate::scope::{Scope, ScopeId};
 /// The runtime, as everything here holds it.
 pub(crate) type RuntimeRef = Rc<RefCell<Runtime>>;
 
-/// A host that survived reconciliation, with the scope that produced it.
-///
-/// `Rc` throughout, so a clean component's subtree is handed back by cloning
-/// rather than by running the component again.
+/// A host that survived reconciliation.
 #[derive(Clone)]
 pub(crate) struct Fiber {
     pub scope: ScopeId,
     pub host_desc: Rc<HostDesc>,
     pub children: Vec<Fiber>,
-    /// Painted instead of the children when they cannot meet their minimums.
+    /// Fallback painted when children cannot meet their minimums.
     pub too_small: Option<Rc<Vec<Fiber>>>,
 }
 
@@ -58,8 +52,7 @@ pub(crate) fn frame(held: &RuntimeRef, root: ScopeId) -> Vec<Fiber> {
 
 /// Runs one component, or hands back what it produced last frame.
 fn run(held: &RuntimeRef, scope: ScopeId) -> Vec<Fiber> {
-    // R6.3 / I12 — a component runs when its props changed, its own state
-    // changed, or its parent ran. Otherwise last frame's subtree stands.
+    // Run dirty components; reuse clean subtrees.
     let ready = {
         let rt = held.borrow();
         match rt.scopes.get(scope) {
@@ -91,8 +84,7 @@ fn run(held: &RuntimeRef, scope: ScopeId) -> Vec<Fiber> {
         *rt.renders_by_name.entry(name).or_insert(0) += 1;
     }
 
-    // Nothing is borrowed here, so the component's hooks can reach the
-    // runtime while its own function is on the stack.
+    // Release the runtime borrow before calling the component.
     let mut token = Scope { id: scope };
     let produced = render(props.as_ref(), &mut token);
 
@@ -112,7 +104,7 @@ fn run(held: &RuntimeRef, scope: ScopeId) -> Vec<Fiber> {
 
     {
         let mut rt = held.borrow_mut();
-        // R6.2 — anything this frame did not name is gone, deepest first.
+        // Unmount children not produced this frame.
         for gone in old {
             if !cursor.used.contains(&gone) {
                 rt.unmount(gone);
@@ -205,7 +197,7 @@ fn host_into(held: &RuntimeRef, mut host: Host, owner: ScopeId, cursor: &mut Cur
     }
 }
 
-/// R5.3.1 — the one `measure` in the crate.
+/// Measures a text host.
 fn measure_text(desc: &HostDesc, _room: u16) -> (u16, u16) {
     match &desc.text {
         Some(text) => (
@@ -216,7 +208,7 @@ fn measure_text(desc: &HostDesc, _room: u16) -> (u16, u16) {
     }
 }
 
-/// R6.1.1 — a key names one child wherever it moved to.
+/// Matches keyed children by key and type.
 fn keyed(rt: &Runtime, cursor: &Cursor, key: &Key, type_id: std::any::TypeId) -> Option<ScopeId> {
     cursor.old.iter().copied().find(|&id| {
         !cursor.used.contains(&id)
@@ -227,7 +219,7 @@ fn keyed(rt: &Runtime, cursor: &Cursor, key: &Key, type_id: std::any::TypeId) ->
     })
 }
 
-/// R6.1.2 — without a key, the nth unkeyed child.
+/// Matches unkeyed children by position.
 fn positional(rt: &Runtime, cursor: &mut Cursor, type_id: std::any::TypeId) -> Option<ScopeId> {
     let at = cursor.position;
     cursor.position += 1;
@@ -237,7 +229,7 @@ fn positional(rt: &Runtime, cursor: &mut Cursor, type_id: std::any::TypeId) -> O
         .copied()
         .filter(|&id| rt.scopes.get(id).is_some_and(|m| m.key.is_none()))
         .nth(at)
-        // R6.1.3 — a different component at the same place starts fresh.
+        // A type change starts a new scope.
         .filter(|&id| rt.scopes.get(id).is_some_and(|m| m.type_id == type_id))
         .filter(|id| !cursor.used.contains(id))
 }

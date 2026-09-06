@@ -2,8 +2,7 @@
 
 use crate::node::{PropsEqualFn, RenderFn};
 
-/// Names one live component. The generation is bumped when a slab entry is
-/// reused, so a stale handle fails a check instead of reading a stranger.
+/// Identifies a live component and its generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ScopeId {
     pub(crate) index: u32,
@@ -55,8 +54,7 @@ pub(crate) enum Cell {
     Free { next: Option<u32> },
 }
 
-/// The slab of live scopes. The generation beside each cell is what makes a
-/// stale `ScopeId` fail a check instead of reading whoever moved in.
+/// Slab of live scopes with generation checks.
 pub(crate) struct Scopes {
     cells: Vec<Cell>,
     generations: Vec<u32>,

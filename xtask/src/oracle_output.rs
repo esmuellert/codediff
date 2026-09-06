@@ -1,8 +1,4 @@
-//! Parses `diff_tool`'s human-readable output into comparable values.
-//!
-//! Comparing text would couple our output format to upstream's. Comparing
-//! structure asks the question that matters: given the same input, does the
-//! engine report the same changes through our binding as through theirs?
+//! Parses `diff_tool` output into comparable values.
 
 use anyhow::{Context, Result, bail};
 
@@ -35,18 +31,7 @@ pub struct OracleDiff {
     pub hit_timeout: bool,
 }
 
-/// Parses output of the form:
-///
-/// ```text
-///   Changes: 1 line mapping(s)
-///     [0] Lines 2-2 -> Lines 2-3 (1 inner change)
-///          Inner: L2:C1-L2:C3 -> L2:C1-L3:C4
-///
-///   Moves: 0 move(s)
-/// ```
-///
-/// `diff_tool` prints the end line **inclusive**; ranges are converted back to
-/// end-exclusive here so both sides speak the same language.
+/// Parses `diff_tool` output and converts inclusive line ends to exclusive.
 pub fn parse(output: &str) -> Result<OracleDiff> {
     let mut changes: Vec<OracleChange> = Vec::new();
     let mut moves = Vec::new();

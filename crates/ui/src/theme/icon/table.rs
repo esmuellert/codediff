@@ -1,10 +1,8 @@
 // @generated from nvim-web-devicons 2ae6958df7ced50baac5035cec0c15799eedfbf7, files
 // lua/nvim-web-devicons/default/icons_by_filename.lua and icons_by_file_extension.lua.
-//! The glyph and colour nvim-web-devicons gives each file name and extension.
+//! Generated file-name and extension icon tables.
 //!
-//! Keys are lowercase and byte-ordered, which is what the binary search in
-//! [`lookup`](super::lookup) needs. Upstream folds a key onto its lowercase
-//! form when both exist, so `R` is absent and `r` says the same thing.
+//! Keys are lowercase and byte-ordered for binary search.
 
 use super::Icon;
 

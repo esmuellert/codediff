@@ -45,7 +45,7 @@ impl<'a> Paint<'a> {
         self.focused
     }
 
-    /// Writes one cell, when it lies inside the clip. I4 is what this keeps.
+    /// Writes one cell if it lies inside the clip.
     pub fn set(&mut self, x: u16, y: u16, symbol: &str, style: ratatui::style::Style) {
         if !self.clip.contains(ratatui::layout::Position { x, y }) {
             return;

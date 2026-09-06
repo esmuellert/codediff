@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 # Cargo enforces that only one package in a dependency graph may link a given
-# native library. See docs/plan/05-decisions.md D14.
+# native library.
 links = "vscode_diff"
 
 # This crate does NOT use `[lints] workspace = true`: it is the one place in the

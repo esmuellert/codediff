@@ -1,13 +1,6 @@
-//! Catppuccin.
+//! Catppuccin palettes and derived UI themes.
 //!
-//! Four flavours, reproduced by their *arithmetic*. The palette below is the
-//! published one; every colour the interface uses is derived from it by
-//! [`blend`] at the opacities `catppuccin/nvim` uses for its own highlight
-//! groups. Nothing here is a hex value copied out of a screenshot, so a
-//! flavour is 26 numbers and a shared derivation rather than 26 numbers and
-//! fourteen more that have to be kept in step with them.
-//!
-//! Source: <https://github.com/catppuccin/nvim> `lua/catppuccin/palettes/`.
+//! Diff colours are blended from the published palette values.
 
 use ratatui::style::{Modifier, Style};
 
@@ -198,17 +191,13 @@ pub const MOCHA: Palette = Palette {
     crust: Rgb(0x11, 0x11, 0x1b),
 };
 
-/// The opacities `catppuccin/nvim` gives its own highlight groups.
-///
-/// Named rather than written inline so that the relationship between them —
-/// `DiffText` being four times `DiffChange`, and stronger than either line
-/// colour — is visible in one place.
+/// Opacities used by the Catppuccin diff groups.
 mod opacity {
     /// `DiffAdd` and `DiffDelete`: a line that changed.
     pub const LINE: u32 = 18;
     /// `DiffText`: the characters within it that actually differ.
     pub const TEXT: u32 = 30;
-    /// `DiffChange`: deliberately faint, since a moved block is not an edit.
+    /// `DiffChange`: moved blocks.
     pub const MOVED: u32 = 7;
     /// `CursorLine`.
     pub const CURSOR: u32 = 64;
@@ -219,9 +208,7 @@ pub const fn theme(flavour: Flavour) -> Theme {
     let p = flavour.palette();
     let base = p.base;
 
-    // A `const fn` cannot call `Style`'s builders, which are not const, so the
-    // structs are written out. Verbose, but it keeps a theme a compile-time
-    // constant rather than something computed at startup.
+    // Build styles directly because the builders are not const.
     const fn on(fg: Rgb, bg: Rgb) -> Style {
         Style::new().fg(colour(fg)).bg(colour(bg))
     }
@@ -238,9 +225,7 @@ pub const fn theme(flavour: Flavour) -> Theme {
 
         normal: on(p.text, base),
 
-        // A modification is red on the original side and green on the
-        // modified one. There is no third "changed" colour, because each side
-        // says what happened to *it*.
+        // Red marks the original side; green marks the modified side.
         deleted: over(blend(p.red, base, opacity::LINE)),
         inserted: over(blend(p.green, base, opacity::LINE)),
         deleted_text: over(blend(p.red, base, opacity::TEXT)),
@@ -300,23 +285,19 @@ mod tests {
 
     #[test]
     fn mocha_derives_exactly_the_colours_catppuccin_publishes() {
-        // `DiffAdd`, `DiffDelete`, `DiffChange` and `DiffText`, as
-        // `catppuccin/nvim` computes them.
+        // Published Mocha diff colours.
         let t = theme(Flavour::Mocha);
         assert_eq!(t.inserted.bg, Some(colour(Rgb(0x36, 0x41, 0x43))));
         assert_eq!(t.deleted.bg, Some(colour(Rgb(0x44, 0x32, 0x44))));
         assert_eq!(t.moved.bg, Some(colour(Rgb(0x25, 0x29, 0x3c))));
-        // `DiffText` is blue over base at 30%; ours is the same ratio applied
-        // to whichever side's accent, so the *strength* matches even though
-        // the hue deliberately does not.
+        // Character changes use a stronger blend than line changes.
         assert_eq!(
             t.inserted_text.bg,
             Some(colour(blend(MOCHA.green, MOCHA.base, 30)))
         );
     }
 
-    /// The colour a style actually carries, for tests that assert on the
-    /// derived theme rather than on the formula that derived it.
+    /// Returns a style's RGB background.
     fn background(style: Style) -> Rgb {
         match style.bg {
             Some(ratatui::style::Color::Rgb(r, g, b)) => Rgb(r, g, b),
@@ -326,8 +307,7 @@ mod tests {
 
     #[test]
     fn every_flavour_keeps_changed_characters_stronger_than_their_line() {
-        // The property the two opacities exist for. Checked on all four,
-        // because Latte blends towards white and could easily invert it.
+        // Check every flavour, including the light variant.
         for flavour in Flavour::ALL {
             let t = theme(flavour);
             let base = flavour.palette().base;

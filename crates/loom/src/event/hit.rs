@@ -16,7 +16,7 @@ pub(crate) fn at(rt: &Runtime, at: Position) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
-/// The chain from a node up to the root, nearest first. What bubbling walks.
+/// Returns node and ancestor indices, nearest first.
 pub(crate) fn upward(rt: &Runtime, from: usize) -> Vec<usize> {
     let mut chain = vec![from];
     let mut up = rt.placed[from].parent;

@@ -26,8 +26,7 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
         bail!("{path} does not exist at {rev}");
     };
 
-    // For comparing against `git show` with `cmp`: exactly the bytes, nothing
-    // else on stdout.
+    // Raw mode emits only file bytes.
     if raw {
         use std::io::Write;
         std::io::stdout().write_all(&bytes)?;
@@ -35,8 +34,7 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
     }
 
     let size = bytes.len();
-    // Classified here rather than through the trait: this command names an
-    // arbitrary revision, which is not one of the two sides of a change.
+    // Read arbitrary revisions directly.
     let text = String::from_utf8(bytes).ok();
     println!("{} at {}", sanitize(path), sanitize(rev));
     println!("{size} byte(s)");
@@ -45,9 +43,7 @@ pub fn run(spec: &str, raw: bool) -> Result<()> {
     match text.as_deref().filter(|t| !t.contains('\0')) {
         Some(text) => {
             for (number, line) in text.split('\n').enumerate() {
-                // Control characters and bidi overrides are rendered as
-                // pictures: a file being reviewed must not be able to steer the
-                // terminal showing it.
+                // Escape controls and bidi overrides before printing.
                 println!("{:>5} │ {}", number + 1, sanitize(line));
             }
         }

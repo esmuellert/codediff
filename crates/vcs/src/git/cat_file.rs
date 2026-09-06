@@ -1,13 +1,4 @@
-//! `git cat-file --batch` — reading file content out of the object store.
-//!
-//! Blobs come from one long-lived `git cat-file --batch` child rather than a
-//! process per file. Opening a sixty-file diff means a hundred and twenty
-//! reads, and at a few milliseconds of spawn each that is most of a second
-//! spent on `fork`.
-//!
-//! The child is stateful — you write a request to its stdin and read the
-//! response from its stdout — so it gets its own thread rather than a slot in a
-//! pool sized for computation.
+//! Reads stored Git objects through `git cat-file --batch`.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -52,8 +43,7 @@ impl Batch {
     /// Reads `path` at `rev`. Returns `Ok(None)` if the object doesn't exist
     /// (file added or deleted relative to that revision).
     pub fn read(&mut self, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
-        // The `rev:path` spelling is what cat-file expects for a path inside a
-        // tree, and the path is relative to the root.
+        // `cat-file` expects a repository-relative `rev:path`.
         writeln!(self.stdin, "{rev}:{path}").map_err(Self::broken)?;
         self.stdin.flush().map_err(Self::broken)?;
 
@@ -81,7 +71,7 @@ impl Batch {
 
         let mut content = vec![0u8; size];
         std::io::Read::read_exact(&mut self.stdout, &mut content).map_err(Self::broken)?;
-        // Every object is followed by a newline the caller did not ask for.
+        // Consume the newline after the object.
         let mut newline = [0u8; 1];
         std::io::Read::read_exact(&mut self.stdout, &mut newline).map_err(Self::broken)?;
 
@@ -98,34 +88,26 @@ impl Batch {
 
 impl Drop for Batch {
     fn drop(&mut self) {
-        // Closing stdin makes cat-file exit; reaping it stops a zombie.
+        // Stop and reap the child process.
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
-/// Reads a blob through checkout filters (CRLF, smudge).
+/// Reads a blob through checkout filters.
 ///
-/// Runs `cat-file --filters`. Returns `None` if the object doesn't exist.
-/// Not batched — `--batch --filters` reports pre-filter size, which breaks
-/// stream framing.
+/// This uses an unbatched command because filtered batch sizes break framing.
 pub fn read_filtered(repo: &Repo, rev: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
     let spec = format!("{rev}:{path}");
     match run::run(&repo.root, &["cat-file", "--filters", &spec]) {
         Ok(bytes) => Ok(Some(bytes)),
-        // Only match git's "object not found" message. Treating all errors as
-        // "missing" would hide real failures (corrupt objects, broken filters).
+        // Preserve corruption and filter errors.
         Err(Error::Git { stderr, .. }) if is_missing(&stderr) => Ok(None),
         Err(other) => Err(other),
     }
 }
 
-/// Whether git's complaint means the object does not exist.
-///
-/// Matched on the message because `cat-file` exits 128 for everything. The
-/// wordings are git's own, and a wording we do not know is treated as a real
-/// failure — the safe way round, since the cost is an error the reader can
-/// read rather than a diff that quietly lies.
+/// Whether Git's error text indicates a missing object.
 fn is_missing(stderr: &str) -> bool {
     stderr.contains("does not exist")
         || stderr.contains("Not a valid object name")

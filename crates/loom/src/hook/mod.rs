@@ -87,8 +87,7 @@ impl Hooks {
     }
 }
 
-/// Bumps the index, pushes on the first render, checks the discriminant
-/// otherwise, and panics naming both call sites when they disagree (P4.1).
+/// Registers a hook on first use and checks its kind on later renders.
 #[track_caller]
 pub(crate) fn use_hook<H>(
     scope: &mut Scope,
@@ -151,7 +150,7 @@ pub(crate) fn use_hook<H>(
     .expect("hooks run inside a component")
 }
 
-/// The count check at the end of a render. P4.2.
+/// Verifies that a render used the same number of hooks.
 pub(crate) fn finish_render(name: &'static str, hooks: &mut Hooks) {
     let called = hooks.index;
     if let Some(last) = hooks.used
@@ -165,7 +164,7 @@ pub(crate) fn finish_render(name: &'static str, hooks: &mut Hooks) {
     hooks.used = Some(called);
 }
 
-/// P4.4 — a setter or ref used with no runtime entered.
+/// Requires a current runtime for setters and refs.
 pub(crate) fn require_runtime() {
     assert!(
         crate::current::inside(),

@@ -123,7 +123,7 @@ impl Engine {
         self.textmate.find(clues).map(Grammar::TextMate)
     }
 
-    /// What the engine calls this grammar, for tests and for a status line.
+    /// Returns the grammar name.
     pub fn name(&self, grammar: Grammar) -> &str {
         match grammar {
             Grammar::Tree(g) => self.trees.name(g),
@@ -131,7 +131,7 @@ impl Engine {
         }
     }
 
-    /// Begins engine_state a file from its first line.
+    /// Starts parser state for a file.
     pub fn start(&self, grammar: Grammar, palette: &Palette) -> EngineState {
         match grammar {
             Grammar::Tree(g) => EngineState::Tree(g),

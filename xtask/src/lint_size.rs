@@ -1,12 +1,8 @@
 //! `cargo xtask lint-size`
 //!
-//! Fails if a source file exceeds the hard cap. Without this the line limit in
-//! docs/plan is a sentence nobody enforces, and files grow into junk drawers —
-//! the failure that produced a 674-line `explorer/render.lua` upstream.
+//! Fails if a source file exceeds the hard cap.
 //!
-//! Test code is not counted. Otherwise the cap would punish writing tests, and
-//! the natural response would be to move tests out of the file to stay under
-//! it, defeating both rules at once.
+//! Test code is excluded so the limit does not discourage local tests.
 
 use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
@@ -72,10 +68,7 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-/// Whether the first line says a program wrote the file.
-///
-/// A generated table cannot be split by noun and nobody reads it end to end,
-/// so the cap has nothing to say about it — the same reason tests are exempt.
+/// Whether the first line marks the file as generated.
 fn is_generated(text: &str) -> bool {
     text.lines()
         .next()

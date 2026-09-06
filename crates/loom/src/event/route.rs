@@ -1,7 +1,4 @@
-//! Routing a key, a click or a wheel turn to the node that answers it.
-//!
-//! The runtime is never borrowed across a listener call, because a listener
-//! writes state and reads refs, which reach the runtime themselves.
+//! Routes events without holding runtime borrows across listeners.
 
 use crokey::KeyCombination;
 use crossterm::event::{MouseEvent, MouseEventKind};
@@ -51,7 +48,7 @@ fn fire<T>(held: &RuntimeRef, node: NodeHandle, listen: &dyn Fn(T) -> Bubble, ev
     bubble
 }
 
-/// R8.3 — a key goes to the focused node, then upward.
+/// Sends a key to the focused node, then its ancestors.
 pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
     let start = {
         let rt = held.borrow();
@@ -60,9 +57,7 @@ pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
                 .placed
                 .iter()
                 .position(|p| p.scope == node.scope && p.nth == node.nth),
-            // With nothing focused, a key is offered to every node from
-            // the deepest up, the way a browser sends Tab to the first
-            // focusable element.
+            // Without focus, start at the deepest node with a key listener.
             None => rt
                 .placed
                 .iter()
@@ -86,7 +81,7 @@ pub(crate) fn key(held: &RuntimeRef, press: KeyCombination) -> bool {
     false
 }
 
-/// R8.1 and R8.4 — hit-test unless the pointer is captured, then bubble.
+/// Hit-tests mouse events or uses the captured node, then bubbles.
 pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
     let at = Position {
         x: event.column,
@@ -234,9 +229,7 @@ pub(crate) fn mouse(held: &RuntimeRef, event: MouseEvent) -> bool {
     stopped
 }
 
-/// R8.2 — the blur fires before the focus, each with the other node.
-///
-/// Both events bubble to ancestors, like React's `onFocus` / `onBlur`.
+/// Sends blur before focus; both events bubble to ancestors.
 pub(crate) fn move_focus(held: &RuntimeRef, to: Option<NodeHandle>) {
     let from = held.borrow().focused;
     if from == to {

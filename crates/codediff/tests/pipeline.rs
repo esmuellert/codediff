@@ -1,7 +1,4 @@
-//! The whole pipeline on a real repository: git finds a file, reads its two
-//! sides, the engine compares them, `align` pairs them up.
-//!
-//! Runs the built binary, so what is tested is what ships.
+//! End-to-end tests for the repository-to-diff pipeline.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -165,9 +162,7 @@ fn a_binary_file_is_reported_rather_than_diffed() {
 
 #[test]
 fn a_deleted_file_shows_what_was_removed_and_calls_it_deleted() {
-    // Not a diff at all. There is no "after" to compare against, so the file
-    // is simply printed — which is what the interface does too, in one pane.
-    // VSCode does the same, for the same reason. See D23.
+    // A one-sided file is displayed in one pane.
     let fixture = Fixture::new("deleted");
     let out = fixture.run(&["debug", "diff-file", "deleted.txt"]);
 
@@ -199,9 +194,7 @@ fn an_untracked_file_shows_its_content_and_calls_it_added() {
 
 #[test]
 fn an_empty_file_is_still_compared_properly() {
-    // The distinction the whole thing turns on: a file that exists and is
-    // empty has a side to compare against, so it is a real two-sided diff. A
-    // file that does not exist has none. Both look like "no lines".
+    // Empty and absent files are distinct states.
     let fixture = Fixture::new("empty");
     std::fs::write(fixture.dir.join("modified.txt"), "").expect("emptying a tracked file");
     let out = fixture.run(&["debug", "diff-file", "modified.txt"]);
@@ -288,11 +281,7 @@ fn every_changed_file_can_be_diffed_without_failing() {
     let fixture = Fixture::new("all");
     let status = fixture.run(&["debug", "status"]);
 
-    // `  X  path`, which is two spaces, the status letter, two more, then the
-    // path — and the path may itself contain spaces, so it is what is left
-    // rather than a field. Slicing at a fixed offset is what made this test
-    // read `flict.txt`: the line used to carry two letters and now carries
-    // one.
+    // Parse the status rows without splitting paths on spaces.
     let paths: Vec<String> = status
         .lines()
         .filter_map(|line| line.strip_prefix("  ")?.split_once("  "))
@@ -320,9 +309,7 @@ fn every_changed_file_can_be_diffed_without_failing() {
 
 #[test]
 fn exit_codes_tell_misuse_apart_from_failure() {
-    // Two different things a caller may want to act on: 2 means the command
-    // line was wrong, 1 means the command ran and could not do the job. This
-    // is clap's convention, and git's.
+    // Exit code 2 denotes invalid arguments; 1 denotes a command failure.
     let fixture = Fixture::new("exits");
     let code = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_codediff"))
@@ -342,7 +329,7 @@ fn exit_codes_tell_misuse_apart_from_failure() {
 
 #[test]
 fn the_debug_commands_are_absent_from_the_main_help() {
-    // Plumbing, in git's sense: they ship, but a reviewer never needs them.
+    // Debug commands are hidden from the main help.
     let fixture = Fixture::new("help");
     let main = fixture.run(&["--help"]);
     assert!(main.contains("doctor"), "{main}");
@@ -360,7 +347,7 @@ fn the_debug_commands_are_absent_from_the_main_help() {
     assert!(listed.contains("diff-file"), "{listed}");
 }
 
-/// Not a fixture test: this repository, which is a real one.
+/// Runs the command against the workspace repository.
 #[test]
 fn it_works_on_this_repository() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))

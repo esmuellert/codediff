@@ -33,7 +33,7 @@ pub(crate) fn with_mut<T>(write: impl FnOnce(&mut Runtime) -> T) -> Option<T> {
     Some(write(&mut borrowed))
 }
 
-/// Whether this thread is inside a runtime at all. What P4.4 tests.
+/// Whether this thread has a current runtime.
 pub(crate) fn inside() -> bool {
     CURRENT.with(|slot| slot.borrow().is_some())
 }

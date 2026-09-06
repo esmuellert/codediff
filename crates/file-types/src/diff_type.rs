@@ -11,10 +11,7 @@ pub enum DiffType {
     SideBySide,
     /// One version per view line: what was deleted, then what replaced it.
     Inline,
-    /// The one version there is.
-    ///
-    /// An added, untracked or deleted file exists on a single side, so there
-    /// is nothing to pair it against and no empty column to draw. See D23.
+    /// A file that exists on one side only.
     Single,
 }
 

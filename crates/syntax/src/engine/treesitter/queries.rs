@@ -1,8 +1,4 @@
-//! Compiling a grammar's query for the highlight engine.
-//!
-//! Compilation costs 16 ms (Rust) to 247 ms (Haskell), is indivisible, and
-//! cannot be serialized ([tree-sitter#1942](https://github.com/tree-sitter/tree-sitter/issues/1942)).
-//! Done on first use and kept for the life of the process.
+//! Compiling and caching Tree-sitter highlight queries.
 
 use std::sync::OnceLock;
 
@@ -12,16 +8,7 @@ use super::Grammar;
 use super::languages::{LANGUAGES, Parser};
 use crate::style::{Capture, Style};
 
-/// The caller's capture names, and the queries compiled against them.
-///
-/// A query is compiled against a *list of names*, so it cannot be built until
-/// the caller has said which captures it recognises — which is why the
-/// compiled configurations live here and not in the [`Engine`].
-///
-/// Compiled on first use and kept: it is 22 ms for Rust and 36 ms for Ruby,
-/// which is worth paying once and not worth paying for a language the reader
-/// never opens. (An issue from 2022 reports 500 ms for Ruby; on 0.26 it is
-/// 36 ms, measured.)
+/// Capture names and compiled configurations for each parser language.
 pub struct Palette {
     names: Vec<&'static str>,
     styles: Vec<Style>,
@@ -37,32 +24,25 @@ impl Palette {
         }
     }
 
-    /// How the caller said this capture looks.
+    /// Style assigned to one capture index.
     pub(super) fn style(&self, index: usize) -> Style {
         self.styles.get(index).copied().unwrap_or(Style::PLAIN)
     }
 
-    /// The compiled query for a language, building it on first use.
-    ///
-    /// Compilation is 16–180 ms per language and cannot be done ahead of time
-    /// (opaque C struct, no serialization). Runs on the worker thread.
+    /// Returns the compiled configuration, building it on first use.
     pub(super) fn config(&self, grammar: Grammar) -> Option<&HighlightConfiguration> {
         self.configs[grammar.0]
             .get_or_init(|| build(&LANGUAGES[grammar.0], &self.names))
             .as_ref()
     }
 
-    /// The configuration an injected language needs.
-    ///
-    /// What a fenced code block in Markdown, or `<script>` in HTML, resolves
-    /// to. An unknown name simply gets no colour rather than failing the file.
+    /// Returns the configuration named by an injection, if known.
     pub(super) fn config_named(&self, name: &str) -> Option<&HighlightConfiguration> {
         let at = LANGUAGES.iter().position(|p| p.name == name)?;
         self.config(Grammar(at))
     }
 
-    /// How many languages compiled, for a test that would otherwise never
-    /// notice a query the engine refused.
+    /// Number of language configurations that compiled successfully.
     pub fn compiled(&self) -> usize {
         (0..LANGUAGES.len())
             .filter(|n| self.config(Grammar(*n)).is_some())
@@ -70,9 +50,9 @@ impl Palette {
     }
 }
 
-/// Neovim metadata captures (`@spell`, `@none`, `@conceal`) that must be
-/// stripped from queries. An unrecognised capture wins over recognised ones
-/// and resolves to nothing, which would leave matched regions uncoloured.
+/// Metadata captures (`@spell`, `@none`, `@conceal`) stripped from queries.
+///
+/// Unknown captures resolve to no style.
 const IGNORED: &[&str] = &["spell", "nospell", "conceal", "none"];
 
 /// The query with its metadata captures taken out.
@@ -129,8 +109,7 @@ mod tests {
 
     #[test]
     fn every_language_in_the_table_compiles_its_query() {
-        // A query the engine refuses is dropped silently and that language
-        // simply has no colour, which nothing else here would notice.
+        // Every configured language should compile.
         assert_eq!(palette().compiled(), LANGUAGES.len());
     }
 
@@ -141,7 +120,7 @@ mod tests {
             "(comment) @comment"
         );
         assert_eq!(without_metadata("(x) @spell"), "(x)");
-        // Not a prefix match: `@spelling` is somebody's real capture.
+        // Similar capture names are not metadata.
         assert_eq!(without_metadata("(x) @spelling"), "(x) @spelling");
         assert_eq!(
             without_metadata("(x) @comment.documentation"),

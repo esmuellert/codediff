@@ -6,11 +6,11 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "codediff",
     version,
-    about = "A standalone, read-only terminal diff reviewer",
+    about = "A standalone terminal diff reviewer",
     disable_help_subcommand = true
 )]
 pub struct Cli {
-    /// Narrow to one file (used by tests, not advertised).
+    /// Narrow to one file.
     #[arg(hide = true)]
     pub path: Option<String>,
 
@@ -57,7 +57,7 @@ pub enum Debug {
         verbose: bool,
     },
 
-    /// Print side-by-side rows and highlight roles for VS Code comparison
+    /// Print side-by-side rows with syntax and diff roles
     Parity {
         original: String,
         modified: String,

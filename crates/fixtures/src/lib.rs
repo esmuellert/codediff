@@ -1,17 +1,7 @@
-//! Git repositories in known states, for tests and for looking at by hand.
+//! Builds Git repositories with deterministic changed-file fixtures.
 //!
-//! Built by `cargo xtask fixture-repo <dir>`, and used directly by `vcs`'s
-//! tests. It lives in its own crate with no workspace dependencies so that
-//! any crate can dev-depend on it without forming a cycle.
-//!
-//! Emits the repository *and* a manifest of what git should say about it, so a
-//! test compares parsed output against a file a human wrote rather than against
-//! output the code produced.
-//!
-//! Every case here is one that has broken a real diff tool: a rename that looks
-//! like an add plus a delete, a path with a layout, a path outside ASCII, a file
-//! both staged and edited again, an unresolved merge, CRLF, and a file with no
-//! trailing newline.
+//! `cargo xtask fixture-repo <dir>` creates the repository and writes a
+//! hand-maintained manifest for parser tests.
 
 use std::path::Path;
 use std::process::Command;
@@ -28,7 +18,7 @@ pub fn repo(dir: &Path) -> Result<()> {
     git(dir, &["config", "user.email", "fixture@codediff.test"])?;
     git(dir, &["config", "user.name", "codediff fixtures"])?;
     git(dir, &["config", "core.autocrlf", "false"])?;
-    // Renames are only reported when git looks for them.
+    // Make rename detection deterministic.
     git(dir, &["config", "diff.renames", "true"])?;
 
     // ---- the committed state -------------------------------------------
@@ -43,8 +33,7 @@ pub fn repo(dir: &Path) -> Result<()> {
     write(dir, "crlf.txt", "one\r\ntwo\r\n")?;
     write(dir, "no-trailing-newline.txt", "last line has no newline")?;
     write(dir, "conflict.txt", "base\n")?;
-    // A file that is not text: `before`/`after` hand back bytes, and a picture
-    // has no lines to align.
+    // Binary content exercises classification without line alignment.
     write_bytes(dir, "picture.png", PNG)?;
     write(dir, "gains-a-line.txt", "one\ntwo\n")?;
     write(
@@ -62,7 +51,7 @@ pub fn repo(dir: &Path) -> Result<()> {
     git(dir, &["checkout", "-q", "main"])?;
     write(dir, "conflict.txt", "ours\n")?;
     git(dir, &["commit", "-qam", "ours"])?;
-    // Expected to fail: that is the point.
+    // Leave the repository conflicted.
     let _ = Command::new("git")
         .args(["merge", "other", "-q"])
         .current_dir(dir)
@@ -78,8 +67,7 @@ pub fn repo(dir: &Path) -> Result<()> {
     git(dir, &["add", "staged-then-edited.txt"])?;
     write(dir, "staged-then-edited.txt", "second\nand third\n")?;
 
-    // The awkward paths have to be *changed* to appear in status at all —
-    // an unchanged file proves nothing about parsing NUL-separated output.
+    // Change awkward paths so status must parse their names.
     write(
         dir,
         "with spaces.txt",
@@ -97,8 +85,7 @@ pub fn repo(dir: &Path) -> Result<()> {
         "last line still has no newline",
     )?;
 
-    // Added and deleted files are where the engine's empty-side handling is
-    // exercised for real: one side has no lines at all.
+    // Exercise empty-side handling.
     write(dir, "gains-a-line.txt", "one\ntwo\nthree\n")?;
     write_bytes(dir, "picture.png", &{
         let mut edited = PNG.to_vec();
@@ -112,9 +99,7 @@ pub fn repo(dir: &Path) -> Result<()> {
         "untracked-dir/inside.txt",
         "in an untracked directory\n",
     )?;
-    // A chain of directories with nothing to choose between, so a flattened
-    // tree and an unflattened one are different pictures. Without it the two
-    // cannot be told apart, and a broken flattener passes every test.
+    // Exercise a single-child directory chain.
     write(
         dir,
         "deep/only/one/chain/leaf.txt",
@@ -135,8 +120,7 @@ pub fn repo(dir: &Path) -> Result<()> {
 
 pub const MANIFEST: &str = "MANIFEST.txt";
 
-/// Ninety percent similar to its source, so git reports a rename rather than an
-/// unrelated add and delete.
+/// Fixture content for Git rename detection.
 const RENAME_BODY: &str = "\
 fn moved() {
     // this body is long enough that git scores the move as a rename
@@ -147,10 +131,7 @@ fn moved() {
 }
 ";
 
-/// What `git status --porcelain=v2` should report, written by hand.
-///
-/// Hand-written on purpose: a manifest generated from our own output would only
-/// prove the parser is consistent with itself.
+/// Expected `git status --porcelain=v2` output for this repository.
 fn manifest(dir: &Path) -> Result<()> {
     let text = "\
 # What `codediff debug status` must print for this repository.
@@ -189,8 +170,7 @@ M  M  staged-then-edited.txt
     Ok(())
 }
 
-/// The first bytes of a real PNG, including the zero byte that makes every
-/// tool call it binary.
+/// PNG header bytes containing a NUL.
 const PNG: &[u8] = &[
     0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, b'I', b'H', b'D', b'R',
 ];

@@ -39,15 +39,9 @@ impl<T: Clone + PartialEq + 'static> PendingState for StateSlot<T> {
     }
 }
 
-/// Writes one state slot. Called like a function.
+/// Handle for updating one state slot.
 ///
-/// The closure is given the value the slot will hold when the next render
-/// starts, and answers what to put there.
-///
-/// ```ignore
-/// set_cursor(&|_| 5);
-/// set_cursor(&|cursor| cursor + 1);
-/// ```
+/// The closure receives the pending value and returns the next value.
 pub struct SetState<T: 'static> {
     scope: ScopeId,
     slot: u16,
@@ -79,8 +73,7 @@ impl<T: 'static> SetState<T> {
     }
 }
 
-/// Taking the closure by reference is what lets a write borrow whatever is in
-/// scope; nothing is boxed and nothing needs `'static`.
+/// Provides access to the state writer.
 impl<T: 'static> Deref for SetState<T> {
     type Target = StateWriter<T>;
     fn deref(&self) -> &Self::Target {
@@ -109,7 +102,6 @@ fn write_slot<T: Clone + PartialEq + 'static>(
     })
     .flatten();
 
-    // P4.3
     let Some(now) = now else {
         panic!("a SetState was used after {name} was removed");
     };

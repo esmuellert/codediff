@@ -87,7 +87,7 @@ pub(crate) fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
             type Props = #props_name;
             const NAME: &'static str = #text;
             fn render(props: &Self::Props, #scope: #scope_type) -> #answers {
-                // By reference, so a prop is borrowed rather than cloned.
+                // Borrow props during render.
                 let #props_name { #(#names,)* } = props;
                 #body
             }

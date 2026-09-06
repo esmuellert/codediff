@@ -1,15 +1,4 @@
-//! The diff worker thread — diffs one file at a time off the drawing thread.
-//!
-//! ```text
-//!  drawing thread                        diff worker thread
-//!  ──────────────                        ──────────────────
-//!  send_diff_request(file) ────────────────────────►  recv(file)
-//!  draw (still showing previous file)    read, diff, align
-//!  loop {                                send(result) ───┐
-//!    poll() ◄────────────────────────────────────────────┘
-//!    install, draw
-//!  }
-//! ```
+//! Computes one file diff on a worker thread and returns the result to the UI.
 
 use std::thread;
 
@@ -19,7 +8,7 @@ use file_types::File;
 
 /// What one request produced.
 pub struct Response {
-    /// Which request this answers — used to drop late responses.
+    /// Request file used to match the response.
     pub file: File,
     pub content: Result<DiffContent, String>,
 }
@@ -78,7 +67,7 @@ impl Worker for DiffWorker {
     fn received(&mut self, _response: &Self::Response) {}
 }
 
-/// Runs the four stages. Nothing is cached between calls. See D51.
+/// Runs the four stages without caching between calls.
 fn compare(file: &File) -> Result<DiffContent, String> {
     let path = file.path().as_str().to_owned();
     let runner = Runner::new(file).map_err(|why| format!("{path}: {why:#}"))?;

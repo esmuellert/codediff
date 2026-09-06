@@ -1,17 +1,6 @@
-//! `codediff debug <command>` — one diagnostic command per layer.
+//! Diagnostic commands for individual application layers.
 //!
-//! These ship. They are not scaffolding:
-//!
-//! - a bug report becomes "send me `codediff debug align` output";
-//! - `debug ui` opens deterministic production components for inspection;
-//! - the golden tests run these commands against the built binary, so what is
-//!   tested is what ships;
-//! - each one drives a single crate from outside, which is a standing check
-//!   that the layering holds. If `debug align` ever cannot be written without
-//!   reaching for git, the architecture has already broken.
-//!
-//! They are absent from `codediff --help` for the same reason git's plumbing
-//! is absent from `git --help`: `codediff debug` lists them.
+//! They are hidden from the main help and are available under `codediff debug`.
 
 mod align;
 mod diff;

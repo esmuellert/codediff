@@ -1,18 +1,10 @@
-//! Turning file content into something safe to print.
-//!
-//! Shared by every `debug` subcommand. The substitution itself lives in
-//! `line-index`, beside the code that measures those characters as one column,
-//! so the two cannot disagree; what is here is the padding and fitting that
-//! only a text-mode command needs.
+//! Text formatting shared by debug commands.
 
 use line_index::{DEFAULT_TAB_WIDTH, LineIndex};
 
 pub use line_index::sanitize;
 
-/// Tabs replaced by the spaces they expand to, and controls by their replacement.
-///
-/// A raw tab would use the *terminal's* tab stops rather than the ones we
-/// measured with, so the two would disagree about where anything sits.
+/// Expands tabs and sanitizes control characters.
 pub fn expand(line: &LineIndex<'_>) -> String {
     let mut out = String::with_capacity(line.text().len());
     for g in line.graphemes() {
@@ -25,7 +17,7 @@ pub fn expand(line: &LineIndex<'_>) -> String {
     out
 }
 
-/// The same, straight from a string.
+/// Expands and sanitizes a string.
 pub fn expand_str(text: &str) -> String {
     expand(&LineIndex::new(text, DEFAULT_TAB_WIDTH))
 }
@@ -35,8 +27,7 @@ pub fn display_width(text: &str) -> u32 {
     LineIndex::new(text, DEFAULT_TAB_WIDTH).width().get()
 }
 
-/// Pads to terminal columns rather than characters, so a double-width
-/// character does not shift the rest of the row.
+/// Pads text to terminal columns.
 pub fn pad(text: &str, columns: u32) -> String {
     let mut out = text.to_owned();
     out.extend(std::iter::repeat_n(

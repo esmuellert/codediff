@@ -1,10 +1,4 @@
-//! Hunks: nearby changes grouped, with an identity that survives a refresh.
-//!
-//! A reviewer marks a hunk as read. The file is then saved, re-diffed, and
-//! every `DetailedLineRangeMapping` in it is a fresh object at a possibly different line number.
-//! [`HunkId`] is derived from the hunk's own text, so a hunk that did not change
-//! keeps its identity and its mark, while one that did gets a new id and comes
-//! back unread — which is the behaviour you want.
+//! Groups nearby changes into hunks with stable content-based IDs.
 
 use std::collections::HashMap;
 
@@ -13,7 +7,7 @@ use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff};
 /// Unchanged lines allowed inside one hunk before it splits in two.
 pub const DEFAULT_CONTEXT: u32 = 3;
 
-/// Identity of a hunk, derived from its content rather than its position.
+/// Stable hunk identity derived from its content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HunkId(pub u64);
 
@@ -141,12 +135,7 @@ fn slice<S>(lines: &[S], range: LineRange) -> &[S] {
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
-/// FNV-1a, spelled out rather than taken from `DefaultHasher`.
-///
-/// `DefaultHasher`'s algorithm is explicitly unspecified and may change between
-/// Rust releases. A `HunkId` is printed into the golden snapshots and is the
-/// obvious key for review state that might one day outlive a process, so it has
-/// to mean the same thing next year as it does today.
+/// Deterministic FNV-1a hash used for hunk IDs.
 fn fnv1a(bytes: &[u8], mut hash: u64) -> u64 {
     for byte in bytes {
         hash ^= u64::from(*byte);

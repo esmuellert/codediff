@@ -1,9 +1,4 @@
-//! Checks the measurement fixture against its hand-verified reference table.
-//!
-//! `codediff debug measure` shows cell widths, which a human can check against
-//! what the terminal actually draws. It cannot show byte or UTF-16 offsets —
-//! those are invisible on screen, and they are the ones the diff engine
-//! depends on. This test covers them.
+//! Checks byte, UTF-16, cell, and grapheme measurements on fixture data.
 
 use line_index::{ByteOff, DEFAULT_TAB_WIDTH, LineIndex, Utf16Col};
 
@@ -97,11 +92,7 @@ fn every_fixture_line_is_internally_consistent() {
     }
 }
 
-/// An independent byte-to-UTF-16 table for one line, built from `std` alone.
-///
-/// `LineIndex` indexes by grapheme cluster and binary-searches; this walks
-/// characters and accumulates `char::len_utf16`. The two share nothing but the
-/// input, so agreement is evidence rather than restatement.
+/// Builds an independent byte-to-UTF-16 table for one line.
 fn utf16_oracle(text: &str) -> Vec<(u32, u32)> {
     let mut table = Vec::new();
     let mut utf16 = 0u32;
@@ -150,9 +141,7 @@ fn every_character_boundary_agrees_with_an_independent_oracle() {
 
 #[test]
 fn every_engine_range_over_the_fixture_yields_sliceable_bytes() {
-    // What S4 will do with the engine's inner-change spans: convert a column
-    // range to a byte range and slice the line with it. A range that is not on
-    // character boundaries panics; one that collapses highlights nothing.
+    // Engine ranges must convert to valid, non-empty byte ranges.
     for (index, text) in FIXTURE.lines().enumerate() {
         let line = LineIndex::new(text, DEFAULT_TAB_WIDTH);
         let units = line.utf16_len().get();

@@ -1,4 +1,4 @@
-//! What changed: the list of files, and how many lines each gained.
+//! Lists changed files and their line counts.
 
 use std::collections::HashMap;
 
@@ -11,12 +11,9 @@ use crate::git::{self, GitCommand};
 
 use super::Repository;
 
-/// How many lines each file gained and lost, one set of counts per comparison.
+/// Line counts keyed by the comparison's ending revision.
 ///
-/// Keyed by the revision a comparison ends at — the working tree for what is
-/// unstaged, the index for what is staged. One map per comparison, because a
-/// path that is staged and then edited again has a count in each, and a single
-/// map keyed by path could hold only whichever was written last.
+/// Each comparison has its own map, so staged and unstaged versions stay separate.
 #[derive(Debug, Clone, Default)]
 pub struct LineStats {
     counts: HashMap<Rev, Counts>,
@@ -29,10 +26,7 @@ impl LineStats {
         }
     }
 
-    /// What this file gained and lost in its own comparison.
-    ///
-    /// `None` when nothing counted it: a binary file, or a file from a
-    /// comparison these counts are not of.
+    /// Returns this file's counts, or `None` when they are unavailable.
     pub fn of(&self, file: &File) -> Option<Stats> {
         self.counts
             .get(file.rev(DiffVersion::Modified))?
@@ -42,13 +36,9 @@ impl LineStats {
 }
 
 impl Repository {
-    /// Every file that differs, each carrying the two revisions it compares.
+    /// Returns each changed file with its comparison revisions.
     ///
-    /// A path that is staged and then edited again appears twice — one per
-    /// comparison, each carrying its own revision pair.
-    ///
-    /// A flat list. What a repository owes its caller is the files; how
-    /// they are grouped, ordered or drawn is not its question.
+    /// A path can occur twice when it is staged and edited again.
     pub fn get_changed_files(
         &mut self,
         diff_type: &super::DiffType,
@@ -71,10 +61,7 @@ impl Repository {
         }
     }
 
-    /// How many lines each file gained and lost, per comparison.
-    ///
-    /// A failure to count is not a failure to review — the list is correct
-    /// without the numbers — so this is the caller's to ignore.
+    /// Returns line counts for each comparison; uncountable files are omitted.
     pub fn get_line_stats(
         &mut self,
         diff_type: &super::DiffType,
@@ -96,10 +83,7 @@ impl Repository {
 
 // --- Turning git's output into files ---
 
-/// Every comparison a `git status` describes, as files.
-///
-/// Unstaged first, because that is the order a reader reviews in and nothing
-/// downstream knows it.
+/// Converts status entries to files, with unstaged entries first.
 fn from_status(entries: Vec<Entry>, root: &std::path::Path, commit: Rev) -> Vec<File> {
     let (mut unstaged, mut staged) = (Vec::new(), Vec::new());
     for entry in entries {
@@ -165,11 +149,9 @@ fn from_diff_entry(change: Change, root: &std::path::Path, revs: Revs) -> File {
     file
 }
 
-/// What the working tree is compared against on the unstaged side.
+/// Returns the before revision for an unstaged entry.
 ///
-/// The index, except for an unresolved merge — which has no index. Git holds
-/// three versions of a conflicted path, at stages 1, 2 and 3, and none at
-/// stage 0. Stage 2 is what the reader is merging *into*.
+/// Conflicted paths use stage 2; other paths use the index.
 fn unstaged_before(entry: &Entry) -> Rev {
     if is_conflicted(entry) {
         return Rev::Conflict(Stage::Ours);

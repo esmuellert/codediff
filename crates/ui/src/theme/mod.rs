@@ -20,7 +20,7 @@ pub use tree::Tree;
 /// Every style the interface draws with.
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
-    /// What `--theme` calls this one.
+    /// Stable name used by diagnostics and theme lookup.
     pub name: &'static str,
     /// Whether it expects a dark terminal. Used only to pick a default.
     pub dark: bool,
@@ -35,7 +35,7 @@ pub struct Theme {
     /// The characters within such a line that actually differ.
     pub deleted_text: Style,
     pub inserted_text: Style,
-    /// A block the engine judged to have moved rather than been rewritten.
+    /// A block marked as moved.
     pub moved: Style,
 
     /// The `╱` hatching where one side has no line at all.
@@ -48,7 +48,7 @@ pub struct Theme {
     pub status: Style,
     /// Patched over `status` for the file name.
     pub status_path: Style,
-    /// Patched over `status` for something the reader must not miss.
+    /// Warning style over the status style.
     pub warning: Style,
 
     /// Mouse text selection highlight.
@@ -75,7 +75,7 @@ impl Theme {
     /// Catppuccin Latte.
     pub const LIGHT: Self = catppuccin::theme(Flavour::Latte);
 
-    /// Every theme, in the order `--theme` lists them.
+    /// Every built-in theme.
     pub const ALL: [Self; 6] = [
         catppuccin::theme(Flavour::Mocha),
         catppuccin::theme(Flavour::Macchiato),
@@ -94,7 +94,7 @@ impl Theme {
         "basic-light",
     ];
 
-    /// Looks a theme up by the name `--theme` uses.
+    /// Looks up a built-in theme by name.
     pub fn named(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|theme| theme.name == name)
     }
@@ -113,7 +113,7 @@ impl Theme {
         }
     }
 
-    /// The same, reading the real environment.
+    /// Detects a theme from the process environment.
     pub fn from_environment() -> Self {
         Self::detect(|key| std::env::var(key).ok())
     }

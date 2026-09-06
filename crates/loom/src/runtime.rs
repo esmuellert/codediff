@@ -102,8 +102,7 @@ impl Runtime {
         id
     }
 
-    /// R6.2 — deepest first, so a child's cleanup sees a parent that is still
-    /// there.
+    /// Unmounts descendants before their parent.
     pub fn unmount(&mut self, id: ScopeId) {
         let children = self
             .scopes
@@ -144,12 +143,7 @@ impl Runtime {
         self.scopes.is_alive(id)
     }
 
-    /// Marks a scope, and every ancestor, so the next frame reaches it.
-    ///
-    /// A parent that is not marked hands back last frame's subtree without
-    /// looking inside it, so a child that changed would never be reached. A
-    /// memoised child whose props still match is left clean and keeps its own
-    /// subtree, which is what stops this walking the whole tree.
+    /// Marks a scope and its ancestors for the next frame.
     pub fn mark(&mut self, id: ScopeId) {
         if !self.scopes.is_alive(id) {
             return;
@@ -171,8 +165,7 @@ impl Runtime {
         }
     }
 
-    /// R6.3 — a marked scope's ancestors are walked so the frame reaches it,
-    /// but they are not themselves re-run.
+    /// Marks all scopes for the next frame.
     pub fn mark_all(&mut self) {
         if let Some(root) = self.root {
             self.mark_subtree(root);

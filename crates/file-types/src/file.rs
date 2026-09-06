@@ -13,14 +13,14 @@ pub enum ChangeType {
     Deleted,
     /// The same file under a different path.
     Moved,
-    /// Not under version control at all, so there is no original.
+    /// Not under version control.
     Untracked,
     /// Left unresolved by a merge.
     Conflicted,
 }
 
 impl ChangeType {
-    /// True when only one version exists, so there is nothing to pair against.
+    /// Whether only one version exists.
     pub fn is_one_sided(self) -> bool {
         matches!(
             self,
@@ -237,13 +237,13 @@ impl File {
         self
     }
 
-    /// The same file, with what it gained and lost.
+    /// Returns this file with line statistics.
     pub fn set_stats(mut self, stats: Stats) -> Self {
         self.stats = Some(stats);
         self
     }
 
-    /// What this file gained and lost, or `None` when nothing counted it.
+    /// Returns line statistics, if available.
     pub fn get_stats(&self) -> Option<Stats> {
         self.stats
     }

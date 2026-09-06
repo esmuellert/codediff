@@ -1,14 +1,7 @@
-//! Distinct types for the four ways of indexing a line of text.
+//! Zero-based byte, character, UTF-16, and terminal-cell coordinates.
 //!
-//! On ASCII these are all the same number, which is exactly why confusing them
-//! is such a durable bug: everything works until someone opens a file with a
-//! Chinese comment or an emoji in a string literal.
-//!
-//! In `a日🎉b`, the position of `b` is byte 8, char 3, UTF-16 unit 4, cell 5.
-//!
-//! All four are zero-based. The diff engine reports columns one-based, so
-//! [`Utf16Col::from_engine`] and [`Utf16Col::to_engine`] are the only places
-//! that adjustment happens.
+//! The diff engine's one-based UTF-16 boundary conversion lives on
+//! `Utf16Col`.
 
 macro_rules! coordinate {
     ($(#[$meta:meta])* $name:ident) => {
@@ -19,8 +12,7 @@ macro_rules! coordinate {
         impl $name {
             pub const ZERO: Self = Self(0);
 
-            /// The underlying number. Verbose on purpose: reaching for this
-            /// is how a coordinate ends up used as the wrong kind.
+            /// Returns the underlying value.
             pub const fn get(self) -> u32 {
                 self.0
             }
@@ -55,9 +47,7 @@ coordinate! {
 coordinate! {
     /// An offset in UTF-16 code units.
     ///
-    /// This is what the diff engine reports, because it mirrors VSCode and
-    /// JavaScript strings are UTF-16. Characters outside the Basic
-    /// Multilingual Plane count as two: `🎉` is one char but two UTF-16 units.
+    /// A UTF-16 column used by the diff engine. Astral characters count as two units.
     Utf16Col
 }
 
@@ -69,8 +59,7 @@ coordinate! {
 impl Utf16Col {
     /// Converts a one-based column as reported by the diff engine.
     ///
-    /// Column 0 is treated as column 1; the engine does not emit it, but
-    /// clamping is preferable to underflow.
+    /// Converts column 0 to the first column by saturating subtraction.
     pub const fn from_engine(column: u32) -> Self {
         Self(column.saturating_sub(1))
     }

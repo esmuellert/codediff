@@ -1,8 +1,4 @@
-//! `codediff debug align <old> <new>` — the two files paired up, as plain text.
-//!
-//! This is the check for the `align` crate and its regression format at once:
-//! the left column must read as exactly the original file and the right as
-//! exactly the modified one, which a human can confirm by looking.
+//! Prints two files as aligned rows.
 
 use ::align::{Alignment, DiffVersion, Slot, ViewLine, ViewLineType};
 use anyhow::{Context, Result};
@@ -19,7 +15,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
     let original = vscode_diff::lines(&original_text);
     let modified = vscode_diff::lines(&modified_text);
 
-    // Moves are part of what this layer has to get right, so ask for them.
+    // Include move detection.
     let options = vscode_diff::Options::default().with_moves();
     let diff =
         vscode_diff::compute(&original, &modified, &options).context("computing the diff")?;
@@ -36,10 +32,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
     Ok(())
 }
 
-/// The lines, and optionally everything the grid cannot show.
-///
-/// Shared with `debug diff-file`, which finds its two sides through git rather
-/// than being handed them, but renders the result identically.
+/// Prints aligned rows and optional details.
 pub fn print(alignment: &Alignment, verbose: bool) {
     for line in alignment.view_lines(DiffType::SideBySide) {
         println!("{}", rendered(alignment, &line));
@@ -101,10 +94,7 @@ fn rendered(alignment: &Alignment, line: &ViewLine) -> String {
         .to_owned()
 }
 
-/// Where a moved block begins, and where its other end is.
-///
-/// Only on the line the block starts at. Repeating it down every line of a
-/// forty-line move says nothing new and buries the text.
+/// Formats a move marker at the start of a moved block.
 fn move_note(alignment: &Alignment, line: &ViewLine) -> String {
     if let Some(n) = line.original.line()
         && let Some(moved) = alignment.moved(DiffVersion::Original, n)

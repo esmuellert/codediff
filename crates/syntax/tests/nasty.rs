@@ -1,15 +1,7 @@
-//! Input a grammar was not written for.
+//! Edge cases for syntax spans and highlighting limits.
 //!
-//! Everything here is a problem `bat` or `delta` hit in production. Where the
-//! two disagree we follow `bat`, because its answers preserve the parse state
-//! and `delta`'s corrupt it.
-//!
-//! Note what is *not* here: control characters, bidirectional overrides and
-//! grapheme widths. Those are `line-index`'s, applied when a line is drawn,
-//! and a span is a byte range so it never has to know about them. That is the
-//! benefit of returning ranges rather than styled strings — `delta` must
-//! expand tabs before highlighting because it works in text, and gets column
-//! alignment wrong as a result.
+//! Spans use source byte ranges; terminal safety and display width belong to
+//! `line-index`.
 
 use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style, limits};
 
@@ -60,9 +52,7 @@ fn well_formed(spans: &[Span], line: &str) {
 
 #[test]
 fn tabs_are_left_alone_because_a_span_is_a_byte_range() {
-    // A tab is one byte and several columns. Nothing here needs to know that:
-    // the renderer maps bytes to columns when it draws. `delta` expands tabs
-    // before highlighting and therefore has to get the width right twice.
+    // Tabs must not change span boundaries.
     let lines = ["\tlet x = \"hi\";", "\t\tlet y = \"there\";"];
     let spans = read("a.rs", &lines);
     for (n, line) in lines.iter().enumerate() {
@@ -73,9 +63,7 @@ fn tabs_are_left_alone_because_a_span_is_a_byte_range() {
 
 #[test]
 fn a_very_long_line_is_skipped_without_breaking_the_lines_after_it() {
-    // bat's answer, not delta's: the line keeps its place in the parse, so the
-    // file after it is still correct. delta truncates the text, which loses
-    // the state.
+    // Skipping a long line must preserve parser state for later lines.
     let minified = "x".repeat(limits::MAX_LINE_CHARS + 100);
     let lines = ["/* a comment */", &minified, "fn after() {}"];
     let spans = read("a.rs", &lines);
@@ -131,18 +119,14 @@ fn an_empty_file_and_empty_lines_are_fine() {
 
 #[test]
 fn a_file_with_no_trailing_newline_still_reads() {
-    // We store lines without their terminators and add one for the grammar,
-    // so a file that never had a last newline is not a special case — but the
-    // last line must still be coloured.
+    // The final line is coloured without a terminator.
     let spans = read("a.rs", &["fn a() {}", "let x = \"end\";"]);
     assert!(!spans[1].is_empty(), "the last line");
 }
 
 #[test]
 fn text_that_is_not_source_at_all_does_not_panic() {
-    // A `.rs` file containing a JPEG header, which is what a mislabelled or
-    // corrupt file looks like. Binary is refused earlier, in the pipeline;
-    // this is the belt to that pair of braces.
+    // Non-source text must still produce valid spans.
     let lines = [
         "\u{fffd}\u{fffd}\u{fffd}\u{fffd}JFIF\u{0}\u{1}",
         "\u{fffd}q",
@@ -155,11 +139,7 @@ fn text_that_is_not_source_at_all_does_not_panic() {
 
 #[test]
 fn a_selector_that_matches_nothing_is_silent_and_must_be_tested_by_use() {
-    // The engine's selector parser is permissive: a scope path is only dotted
-    // words, so nearly anything parses and a misspelled selector is accepted
-    // and then never matches. `rules()` therefore cannot catch a typo, and a
-    // theme's guard has to be a test that each of its rules colours something
-    // real — which is what `languages.rs` and `ui`'s theme tests do.
+    // A parsed selector may still match nothing.
     let palette = Palette::from_tables(
         &[
             Rule::new("keyword", Style::pen(Pen(1))),

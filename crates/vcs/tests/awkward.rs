@@ -1,9 +1,4 @@
-//! Repositories that are legal but not ordinary.
-//!
-//! Each of these was a real failure found by driving the interface, not a
-//! hypothetical: a repository with no commit yet refused to open at all, and a
-//! symlink was read through, so an unchanged link looked like a whole file
-//! rewritten.
+//! Integration tests for unusual repository states.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -59,8 +54,7 @@ impl Drop for Repo {
 
 #[test]
 fn a_repository_with_no_commit_yet_lists_what_is_staged() {
-    // `git init` then `git add` is the moment a reviewer has the most to look
-    // at, and it used to fail outright: there is no HEAD to resolve.
+    // An unborn repository uses the empty tree as its before side.
     let repo = Repo::new("unborn");
     repo.write("a.txt", "hello\n");
     repo.git(&["add", "-A"]);
@@ -84,9 +78,7 @@ fn a_repository_with_no_commit_yet_lists_what_is_staged() {
 
 #[test]
 fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
-    // The status forces rename detection and numstat did not, so a reader with
-    // `diff.renames=false` was shown a row that called a file a rename and
-    // counted it as a whole new file.
+    // Status and numstat must use the same rename detection.
     let repo = Repo::new("renames");
     repo.write("f.txt", "a\nb\nc\nd\ne\nf\ng\nh\n");
     repo.git(&["add", "-A"]);
@@ -110,9 +102,7 @@ fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
     let stats = counts
         .of(moved)
         .unwrap_or_else(|| panic!("g.txt is not counted at all: {counts:?}"));
-    // Zero and zero, which the row draws as nothing. Without rename detection
-    // git sees an add and a delete instead and reports the whole file as
-    // gained — which is what the reader saw.
+    // A pure rename has no line changes.
     assert!(
         stats.is_empty(),
         "a pure rename changed no lines, whatever the config says: {stats:?}"
@@ -167,8 +157,7 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
     let changes = git
         .get_changed_files(&DiffType::Worktree, &[])
         .expect("listing");
-    // Two files for one path: each carries the pair of revisions it compares,
-    // which is what tells them apart now that the list is flat.
+    // Each entry carries its own comparison revisions.
     assert_eq!(changes.len(), 2, "one path, two comparisons");
     assert_eq!(changes[0].revs().after, file_types::Rev::Worktree);
     assert_eq!(changes[1].revs().after, file_types::Rev::Index);
@@ -179,8 +168,7 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
     let staged = git
         .get_file_content(&changes[1], DiffVersion::Original)
         .expect("reading");
-    // The whole reason one row could not show both: their before sides are
-    // different files.
+    // The before sides use different revisions.
     assert_ne!(
         format!("{unstaged:?}"),
         format!("{staged:?}"),
@@ -190,9 +178,7 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
 
 #[test]
 fn a_repository_that_converts_line_endings_diffs_only_what_changed() {
-    // With `core.autocrlf` git stores LF and checks out CRLF, so comparing the
-    // stored bytes with the bytes on disk marked *every* line changed. The
-    // stored side has to be converted the way a checkout would convert it.
+    // Apply checkout filters to the stored side before comparing.
     let repo = Repo::new("autocrlf");
     repo.git(&["config", "core.autocrlf", "true"]);
     repo.write("a.txt", "one\ntwo\nthree\nfour\n");
@@ -220,9 +206,7 @@ fn a_repository_that_converts_line_endings_diffs_only_what_changed() {
     else {
         panic!("both sides are text");
     };
-    // Split on the newline rather than by `lines()`, which strips a trailing
-    // carriage return and so cannot tell the two forms apart at all — the
-    // first version of this test did that and passed with the fix removed.
+    // Preserve carriage returns while comparing the two forms.
     let same = before
         .split('\n')
         .zip(after.split('\n'))

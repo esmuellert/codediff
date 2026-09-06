@@ -1,12 +1,7 @@
-//! How many lines each file gained and lost.
+//! Parses line counts from `git diff --numstat`.
 //!
-//! `git diff --numstat`, which prints a tab-separated count per file and `-`
-//! for anything it could not count. Two runs, because the explorer shows two
-//! comparisons and one number cannot describe both.
-//!
-//! Separate from the status because it is a separate question, and an
-//! expensive one: it reads the content of every changed file, where a status
-//! reads none of it.
+//! Binary or otherwise uncountable files use `-` and are omitted from the
+//! returned counts.
 
 use std::collections::HashMap;
 
@@ -34,8 +29,7 @@ pub fn staged(repo: &Repo) -> Result<Counts> {
 
 /// The line counts for any comparison `git diff` can name.
 ///
-/// The counterpart of the two above for every other way of comparing: the same
-/// numbers, against arguments the caller chose.
+/// Counts lines for an arbitrary Git comparison.
 pub fn diff(repo: &Repo, args: &[&str], pathspec: &[String]) -> Result<Counts> {
     counts(repo, &super::command(FORMAT, args, pathspec))
 }
@@ -44,12 +38,7 @@ fn counts(repo: &Repo, args: &[&str]) -> Result<Counts> {
     Ok(parse(&run::run(&repo.root, args)?))
 }
 
-/// Reads `--numstat -z` output.
-///
-/// With `-z` the fields are tab-separated and each record ends with a NUL, so
-/// a path holding a space, a quote or a newline arrives as itself rather than
-/// as git's quoted spelling. A rename spends two extra records on its old and
-/// new paths, which is why this cannot simply split on NUL and take threes.
+/// Parses tab-separated `--numstat -z` records, including rename paths.
 fn parse(bytes: &[u8]) -> Counts {
     let mut counts = Counts::new();
     let mut records = bytes
@@ -75,9 +64,7 @@ fn parse(bytes: &[u8]) -> Counts {
         } else {
             path.to_owned()
         };
-        // `-` where a number should be means git did not count the lines,
-        // which is what it prints for a binary file. Zero would claim a
-        // measurement that was never made, so the file is left out entirely.
+        // Git uses `-` for uncountable files; omit those records.
         let (Ok(added), Ok(removed)) = (added.parse(), removed.parse()) else {
             continue;
         };
@@ -98,8 +85,7 @@ mod tests {
 
     #[test]
     fn a_path_with_a_tab_in_it_still_parses() {
-        // The reason for `splitn(3, ..)`: splitting on every tab would cut the
-        // path in half and file the counts under a name no file has.
+        // Keep tabs in the path after the first two fields.
         let counts = parse(b"1\t0\tan\tawkward.txt\0");
         assert_eq!(counts.get("an\tawkward.txt"), Some(&Stats::new(1, 0)));
     }
@@ -114,8 +100,7 @@ mod tests {
 
     #[test]
     fn a_file_git_could_not_count_is_left_out() {
-        // A picture. Recording zero would say it did not change, which is the
-        // one thing that is certainly false about a file in this list.
+        // Uncountable files are omitted.
         let counts = parse(b"-\t-\tpicture.png\0");
         assert!(counts.is_empty());
     }

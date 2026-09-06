@@ -1,11 +1,6 @@
 #![doc = include_str!("../README.md")]
 //!
-//! ---
-//!
-//!
-//! This crate performs no IO. It does hold the two texts — an [`Alignment`]
-//! shares both sides so the thread that colours can be handed them — but it
-//! reads neither of them from anywhere.
+//! The crate performs no IO and stores both input texts in [`Alignment`].
 
 mod alignment;
 mod decoration;

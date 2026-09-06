@@ -1,4 +1,4 @@
-//! A React for the terminal: components, hooks, flexbox, and a paint pass.
+//! Terminal UI framework with components, hooks, layout, and painting.
 
 mod component;
 mod current;
@@ -44,7 +44,7 @@ pub use tree::Tree;
 
 pub use loom_macros::{component, context, rsx};
 
-/// Re-exported so a consumer builds against the same versions we did.
+/// Re-exported for consumers.
 pub use crokey;
 pub use crossterm;
 pub use ratatui;

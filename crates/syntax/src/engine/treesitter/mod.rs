@@ -1,19 +1,7 @@
-//! The parser engine (tree-sitter). Recognises structure, not just shapes.
+//! Tree-sitter language selection and highlighting.
 //!
-//! Covers 35→21% of the identifiers syntect misses. Falls back to syntect
-//! for the ~150 languages without a grammar. See D39.
-//!
-//! Key properties:
-//! - Not resumable — parses the whole file each call (~190k lines/sec)
-//! - Uses each grammar crate's own `highlights.scm`, not Neovim's
-//!
-//! ```text
-//! mod.rs        grammar lookup and file → spans
-//! languages.rs  which languages have grammars
-//! queries.rs    compiling query text for the engine
-//! ```
-//!
-//! [`Highlighted`]: crate::Highlighted
+//! The engine uses each grammar's highlight query and converts highlight events
+//! into per-line spans.
 
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
@@ -26,18 +14,11 @@ mod queries;
 use languages::LANGUAGES;
 pub use queries::Palette;
 
-/// Which language to parse a file as.
-///
-/// An index into [`languages::LANGUAGES`], so it can be stored beside a
-/// buffer without borrowing anything.
+/// Index of a language in the parser table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Grammar(usize);
 
-/// Every grammar we can parse with.
-///
-/// Holds nothing: a `tree_sitter::Language` is produced on demand and the
-/// compiled queries live in the [`Palette`], because a query is compiled
-/// against the caller's list of capture names.
+/// Parser facade. Language handles and compiled queries live in the table and palette.
 pub struct Engine;
 
 impl Engine {
@@ -45,12 +26,9 @@ impl Engine {
         Self
     }
 
-    /// Which language parses this file, if we have one.
+    /// Finds a parser by file name, extension, or shebang.
     ///
-    /// Name, then extension, then shebang — most certain first, the same order
-    /// the TextMate engine uses. A file nothing here claims is *not* an error:
-    /// the caller falls through to `syntect`, which knows 183 languages, so an
-    /// incomplete table costs nothing but the better answer.
+    /// Unknown files return `None` and can use the TextMate fallback.
     pub fn find(&self, clues: Clues<'_>) -> Option<Grammar> {
         let file_name = clues.file_name();
         let extension = clues.extension().map(str::to_ascii_lowercase);
@@ -73,15 +51,9 @@ impl Engine {
         LANGUAGES[grammar.0].name
     }
 
-    /// Colours the whole file at once.
+    /// Highlights the complete snapshot and appends one span vector per line.
     ///
-    /// There is no smaller unit available: `tree_sitter_highlight` has no
-    /// range parameter and re-parses the document on every call, so asking for
-    /// part of a file would cost the same as asking for all of it and would
-    /// have to be paid again. Since the whole file is around ten times cheaper
-    /// than the TextMate engine's, that is a better deal than it sounds.
-    ///
-    /// Appends one entry per line, so the caller's line count is the file's.
+    /// The Tree-sitter highlighter has no range API.
     pub fn colour(
         &self,
         grammar: Grammar,
@@ -90,17 +62,13 @@ impl Engine {
         into: &mut Vec<Vec<Span>>,
     ) {
         let Some(config) = palette.config(grammar) else {
-            // No usable query, so no colour is ever coming. Fill the lines in
-            // blank rather than say nothing: a caller told nothing would wait
-            // for ever.
+            // Keep the response aligned when the query is unavailable.
             into.extend(std::iter::repeat_n(Vec::new(), lines.len()));
             return;
         };
         let mut output = vec![Vec::new(); lines.len()];
         {
-            // One allocation of the file, dropped on the way out. The engine
-            // wants contiguous bytes and we hold lines; there is no way round
-            // it that does not cost more than it saves.
+            // Tree-sitter consumes one contiguous source string.
             let mut source = String::with_capacity(lines.iter().map(|l| l.len() + 1).sum());
             let mut starts = Vec::with_capacity(lines.len());
             for line in lines {
@@ -130,8 +98,7 @@ fn paint(
     output: &mut [Vec<Span>],
 ) {
     let mut highlighter = Highlighter::new();
-    // A file the engine gives up on keeps its lines and loses its colour,
-    // which is what every other failure here does too.
+    // Keep plain lines if highlighting fails.
     let Ok(events) = highlighter.highlight(config, source.as_bytes(), None, |name| {
         palette.config_named(name)
     }) else {
@@ -145,9 +112,7 @@ fn paint(
             Ok(HighlightEvent::HighlightEnd) => {
                 open.pop();
             }
-            // Only the innermost claim counts. A capture nested inside another
-            // is the more specific statement about that text, which is the
-            // same rule TextMate precedence arrives at the long way round.
+            // The innermost capture is the most specific one.
             Ok(HighlightEvent::Source { start, end }) => {
                 if let Some(style) = open.last() {
                     spread(start, end, *style, starts, lines, output);
@@ -163,11 +128,7 @@ fn paint(
     let _ = source;
 }
 
-/// Cuts one byte range of the file into per-line spans.
-///
-/// A block comment or a multi-line string arrives as a single range covering
-/// several lines, and a [`Span`] is an offset into *one* line, so it has to be
-/// divided at the line boundaries.
+/// Splits a multi-line byte range at line boundaries.
 fn spread(
     start: usize,
     end: usize,
@@ -238,9 +199,7 @@ mod tests {
 
     #[test]
     fn preparing_a_language_happens_once_and_then_costs_nothing() {
-        // Building the index from a query is 16 ms for Rust and 250 ms for
-        // Haskell, once per process. It happens here, on whatever thread the
-        // painter runs on, and the second file in a language is free.
+        // The compiled query is cached by the palette.
         let engine = Engine::new();
         let palette = palette();
         let lines = vec!["fn a() {}".to_owned()];
@@ -257,8 +216,7 @@ mod tests {
 
     #[test]
     fn a_type_in_use_position_is_coloured() {
-        // The whole reason this engine exists. A TextMate grammar reports no
-        // scope at all for `Rect` here.
+        // The parser can classify a type in use position.
         let spans = read("a.rs", "fn f(area: Rect) {}\n");
         let at = |byte: u32| {
             spans[0]
@@ -279,8 +237,7 @@ mod tests {
 
     #[test]
     fn a_construct_spanning_lines_is_cut_at_the_line_ends() {
-        // A block comment arrives as one range covering three lines; a span
-        // is an offset into one line, so it has to be divided.
+        // One multi-line range becomes one span per line.
         let spans = read("a.rs", "/* one\n   two\n   three */\nfn f() {}\n");
         for (line, spans) in spans.iter().take(3).enumerate() {
             let covered = spans.iter().any(|s| s.style.pen == Some(Pen(2)));
@@ -311,9 +268,7 @@ mod tests {
 
     #[test]
     fn every_language_colours_its_comments() {
-        // The failure `@spell` caused: a grammar whose comment rule is
-        // suppressed has no comments at all, and nothing else here notices,
-        // because every other construct still works.
+        // Ignored metadata must not suppress real comment captures.
         let engine = Engine::new();
         let palette = palette();
         for (n, parser) in LANGUAGES.iter().enumerate() {

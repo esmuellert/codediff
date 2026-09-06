@@ -1,10 +1,6 @@
-//! `debug align` output, pinned for all twelve pairs.
+//! Golden tests for `debug align` output.
 //!
-//! The human-readable artifact and the regression fixture are the same file: if
-//! the snapshot reads correctly to a person, the format is doing its job, and
-//! any later change to the pairing shows up as a diff of the diff.
-//!
-//! Regenerate after a deliberate change:
+//! Regenerate with:
 //!
 //! ```sh
 //! UPDATE_GOLDEN=1 cargo test -p codediff --test golden
@@ -100,13 +96,7 @@ fn the_rendered_pairs_match_their_snapshots() {
     );
 }
 
-/// The property the snapshots exist to protect, checked against the files
-/// themselves so that a wrong snapshot cannot be blessed into place.
-///
-/// Both columns, every row, no skipping. An earlier version checked only the
-/// original column and skipped any line long enough to be clipped, so a change
-/// that clipped everything, or corrupted only the modified side, would have
-/// passed.
+/// Checks both rendered columns against their source files.
 #[test]
 fn both_rendered_columns_read_back_as_their_files() {
     for pair in PAIRS {

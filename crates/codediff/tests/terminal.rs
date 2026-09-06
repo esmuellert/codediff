@@ -1,13 +1,5 @@
-//! Giving the terminal back.
+//! Verifies terminal cleanup on exit, panic, and signal.
 #![cfg(unix)]
-//!
-//! The one failure mode a read-only reviewer must never have: quitting, or
-//! crashing, and leaving a shell with no echo, an invisible cursor and the
-//! diff still on screen. Recovering from that needs `reset`, typed blind.
-//!
-//! Checked from outside the process, through a real pty, because the escape
-//! sequences involved are only produced when stdout is a terminal and only
-//! observable by whatever is on the other end of it.
 
 mod support;
 
@@ -67,10 +59,7 @@ fn a_panic_still_gives_the_terminal_back() {
     assert!(!ok, "--self-panic is supposed to fail");
     assert!(output.contains(ENTER_ALT));
 
-    // The order is the whole point: the panic message has to land on the
-    // shell's screen, not on the one that is about to be thrown away. It is
-    // restored twice — once by the hook and once when `Screen` drops — which
-    // is harmless, so the *first* restore is what matters.
+    // The panic message must appear after leaving the alternate screen.
     let restored = output
         .find(LEAVE_ALT)
         .expect("never left the alternate screen");
@@ -99,17 +88,8 @@ fn a_command_that_prints_text_never_touches_the_alternate_screen() {
 #[test]
 #[cfg(unix)]
 fn a_signal_still_gives_the_terminal_back() {
-    // `Drop` does not run for a signal, so `kill` used to leave the reader in
-    // the alternate screen with the cursor hidden and raw mode on — a shell
-    // they had to type `reset` into blind.
-    //
-    // The first attempt at this was worse than the bug: it registered a
-    // handler that set a flag, and nothing ever read the flag, because
-    // crossterm retries its wait on `EINTR` rather than reporting it. The
-    // program became unkillable. Hence a wait with a timeout, and hence this
-    // test asserting the process actually goes.
-    // 15 and 1. Written as numbers because `kill` takes numbers and this
-    // crate has no libc dependency to name them from.
+    // Signal termination bypasses `Drop`; verify the terminal is restored.
+    // Use a timeout so a broken handler cannot hang the test.
     for signal in [15, 1] {
         let fixture = Fixture::new(&format!("signal{signal}"));
         let (output, status) = killed_by(&["modified.txt"], &fixture.dir, signal);
