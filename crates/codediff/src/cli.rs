@@ -1,6 +1,6 @@
 //! The command tree.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(
@@ -36,6 +36,12 @@ pub enum Command {
     Debug(Debug),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum DiffLayout {
+    SideBySide,
+    Inline,
+}
+
 #[derive(Subcommand)]
 pub enum Debug {
     /// Print the raw diff of two files, as the engine reports it
@@ -57,10 +63,12 @@ pub enum Debug {
         verbose: bool,
     },
 
-    /// Print side-by-side rows with syntax and diff roles
+    /// Print rendered rows and highlight roles for VS Code comparison
     Parity {
         original: String,
         modified: String,
+        #[arg(long, value_enum, default_value = "side-by-side")]
+        layout: DiffLayout,
         #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
         ignore_trim_whitespace: bool,
     },

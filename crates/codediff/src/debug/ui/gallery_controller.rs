@@ -75,9 +75,9 @@ impl GalleryController {
         let (files, content) = match fixture {
             StoryFixture::Welcome => (None, None),
             StoryFixture::Explorer(files) => (Some(files), None),
-            StoryFixture::SideBySide(content) | StoryFixture::SingleFile(content) => {
-                (None, Some(content))
-            }
+            StoryFixture::SideBySide(content)
+            | StoryFixture::Inline(content)
+            | StoryFixture::SingleFile(content) => (None, Some(content)),
         };
 
         self.generation += 1;

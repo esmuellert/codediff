@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::DiffLayout;
 use super::history::Pair;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,6 +51,24 @@ pub struct Files {
     pub modified: PathBuf,
 }
 
+pub struct OutputPaths {
+    pub workspace: PathBuf,
+    pub vscode_results: PathBuf,
+    pub mismatches: PathBuf,
+}
+
+impl OutputPaths {
+    pub fn new(root: &Path, layout: DiffLayout) -> Self {
+        let base = root.join("target/vscode-parity");
+        let layout_root = base.join(layout.as_str());
+        Self {
+            workspace: layout_root.join("work"),
+            vscode_results: layout_root.join("vscode"),
+            mismatches: base.join("mismatches").join(layout.as_str()),
+        }
+    }
+}
+
 pub fn build(root: &Path) -> Result<PathBuf> {
     let jobs = std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1));
     let status = Command::new("cargo")
@@ -69,8 +88,8 @@ pub fn build(root: &Path) -> Result<PathBuf> {
     }))
 }
 
-pub fn materialise(root: &Path, pair: &Pair) -> Result<Files> {
-    let dir = root.join("target/vscode-parity/work").join(&pair.id);
+pub fn materialise(workspace: &Path, pair: &Pair) -> Result<Files> {
+    let dir = workspace.join(&pair.id);
     std::fs::create_dir_all(&dir)?;
     let original = dir.join(format!("{}-original.txt", pair.id));
     let modified = dir.join(format!("{}-modified.txt", pair.id));
@@ -79,9 +98,14 @@ pub fn materialise(root: &Path, pair: &Pair) -> Result<Files> {
     Ok(Files { original, modified })
 }
 
-pub fn codediff(binary: &Path, files: &Files, ignore_trim_whitespace: bool) -> Result<String> {
+pub fn codediff(
+    binary: &Path,
+    files: &Files,
+    layout: DiffLayout,
+    ignore_trim_whitespace: bool,
+) -> Result<String> {
     let output = Command::new(binary)
-        .args(["debug", "parity"])
+        .args(["debug", "parity", "--layout", layout.as_str()])
         .arg(&files.original)
         .arg(&files.modified)
         .arg("--ignore-trim-whitespace")
@@ -89,7 +113,8 @@ pub fn codediff(binary: &Path, files: &Files, ignore_trim_whitespace: bool) -> R
         .output()?;
     if !output.status.success() {
         bail!(
-            "codediff parity failed: {}",
+            "codediff {} renderer failed: {}",
+            layout.as_str(),
             String::from_utf8_lossy(&output.stderr)
         );
     }
@@ -100,7 +125,7 @@ pub fn parse(text: &str) -> Result<Vec<Record>> {
     let mut records = Vec::new();
     for (index, line) in text.lines().enumerate() {
         let record: Record = serde_json::from_str(line)
-            .with_context(|| format!("invalid parity record on line {}", index + 1))?;
+            .with_context(|| format!("invalid rendering record on line {}", index + 1))?;
         validate(&record)?;
         records.push(record);
     }
@@ -109,13 +134,13 @@ pub fn parse(text: &str) -> Result<Vec<Record>> {
 }
 
 pub fn save_mismatch(
-    root: &Path,
+    mismatches: &Path,
     pair: &Pair,
     files: &Files,
     vscode: &str,
     codediff: &str,
 ) -> Result<PathBuf> {
-    let dir = root.join("target/vscode-parity/mismatches").join(&pair.id);
+    let dir = mismatches.join(&pair.id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
     }
@@ -135,10 +160,11 @@ pub fn save_mismatch(
     Ok(dir)
 }
 
-pub fn clear(root: &Path) -> Result<()> {
-    let path = root.join("target/vscode-parity");
-    if path.exists() {
-        std::fs::remove_dir_all(&path).context("clearing old parity output")?;
+pub fn clear(paths: &OutputPaths) -> Result<()> {
+    for path in [&paths.workspace, &paths.vscode_results, &paths.mismatches] {
+        if path.exists() {
+            std::fs::remove_dir_all(path).context("clearing old parity output")?;
+        }
     }
     Ok(())
 }
@@ -222,6 +248,38 @@ fn difference(expected: &str, actual: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layouts_have_independent_work_and_mismatch_paths() {
+        let root = Path::new("/repo");
+        let side_by_side = OutputPaths::new(root, DiffLayout::SideBySide);
+        let inline = OutputPaths::new(root, DiffLayout::Inline);
+
+        assert_ne!(side_by_side.workspace, inline.workspace);
+        assert_ne!(side_by_side.vscode_results, inline.vscode_results);
+        assert_ne!(side_by_side.mismatches, inline.mismatches);
+        assert!(side_by_side.workspace.ends_with("side-by-side/work"));
+        assert!(inline.mismatches.ends_with("mismatches/inline"));
+    }
+
+    #[test]
+    fn clearing_one_layout_preserves_the_other() {
+        let root =
+            std::env::temp_dir().join(format!("codediff-parity-paths-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let side_by_side = OutputPaths::new(&root, DiffLayout::SideBySide);
+        let inline = OutputPaths::new(&root, DiffLayout::Inline);
+        for path in [&side_by_side.workspace, &inline.workspace] {
+            std::fs::create_dir_all(path).unwrap();
+            std::fs::write(path.join("marker"), "present").unwrap();
+        }
+
+        clear(&inline).unwrap();
+
+        assert!(side_by_side.workspace.join("marker").exists());
+        assert!(!inline.workspace.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn record_order_does_not_change_the_result() {

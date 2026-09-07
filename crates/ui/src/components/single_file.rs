@@ -1,19 +1,43 @@
 //! One full-width file with no diff decorations.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
-    use_memo,
+    use_layout_effect, use_memo, use_ref,
 };
 
 use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
+use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
+use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
+
+#[derive(Clone, Copy, Default)]
+struct SingleFileViewState {
+    top: u32,
+    first_cell: u32,
+}
+
+#[derive(Default)]
+struct SingleFileViewStateHistory {
+    entries: HashMap<String, SingleFileViewState>,
+}
+
+impl SingleFileViewStateHistory {
+    fn load(&self, key: &str) -> SingleFileViewState {
+        self.entries.get(key).copied().unwrap_or_default()
+    }
+
+    fn save(&mut self, key: &str, state: SingleFileViewState) {
+        self.entries.insert(key.to_owned(), state);
+    }
+}
 
 #[component]
 pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
@@ -25,16 +49,39 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let file_key = single.file.path().as_str().to_string();
     let gutter_width = width_for_line_count(line_count);
     let content_id = Rc::as_ptr(content) as usize;
+    let view_states = use_ref(scope, SingleFileViewStateHistory::default);
+    let saved_state = view_states.current().load(&file_key);
+    let previous_identity = use_ref(scope, || None::<(String, usize)>);
+    let identity = (file_key.clone(), content_id);
+    let content_changed = previous_identity.current().as_ref() != Some(&identity);
     let maximum_line_cells = use_memo(scope, content_id, || longest_line_cells(&single.lines));
-    let (view, horizontal, listeners) = use_diff_viewer_navigation(
+    let (view, vertical_handle) = use_scroll(scope, line_count, saved_state.top);
+    let horizontal_limits = HorizontalDimensions::Single {
+        longest_line_cells: *maximum_line_cells,
+        gutter_cells: gutter_width,
+    }
+    .limits(view.width);
+    let (horizontal_view, horizontal_handle) = use_horizontal_scroll(
         scope,
-        Some(&file_key),
-        line_count,
-        HorizontalDimensions::Single {
-            longest_line_cells: *maximum_line_cells,
-            gutter_cells: gutter_width,
-        },
+        horizontal_limits.maximum_first_cell(),
+        saved_state.first_cell,
     );
+    let horizontal = horizontal_limits.view(horizontal_view.first_cell);
+    if !content_changed {
+        view_states.current().save(
+            &file_key,
+            SingleFileViewState {
+                top: view.top,
+                first_cell: horizontal.requested_first_cell,
+            },
+        );
+    }
+    *previous_identity.current() = Some(identity.clone());
+    use_layout_effect(scope, identity, move || {
+        vertical_handle.scroll_to(saved_state.top);
+        horizontal_handle.scroll_to(saved_state.first_cell);
+    });
+    let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),

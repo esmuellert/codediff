@@ -1,8 +1,6 @@
 //! Shared horizontal viewport state.
 
-use std::collections::HashMap;
-
-use loom::{Scope, SetState, use_ref, use_state};
+use loom::{Scope, SetState, use_state};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HorizontalScrollView {
@@ -16,6 +14,12 @@ pub struct HorizontalHandle {
 }
 
 impl HorizontalHandle {
+    /// Move the viewport to an absolute cell.
+    pub fn scroll_to(self, first_cell: u32) {
+        let maximum_first_cell = self.maximum_first_cell;
+        (self.set_requested_first_cell)(&move |_| first_cell.min(maximum_first_cell));
+    }
+
     /// Move the viewport by a signed number of cells.
     pub fn scroll_by(self, cells: i32) {
         let maximum_first_cell = self.maximum_first_cell;
@@ -32,42 +36,20 @@ impl HorizontalHandle {
     }
 
     pub fn scroll_to_start(self) {
-        (self.set_requested_first_cell)(&|_| 0);
+        self.scroll_to(0);
     }
 
     pub fn scroll_to_end(self) {
-        let first_cell = self.maximum_first_cell;
-        (self.set_requested_first_cell)(&move |_| first_cell);
+        self.scroll_to(self.maximum_first_cell);
     }
 }
 
 pub fn use_horizontal_scroll(
     scope: &mut Scope,
-    file_key: Option<&str>,
     maximum_first_cell: u32,
+    initial_first_cell: u32,
 ) -> (HorizontalScrollView, HorizontalHandle) {
-    let (requested_first_cell, set_requested_first_cell) = use_state(scope, || 0u32);
-    let horizontal_positions = use_ref(scope, HashMap::<String, u32>::new);
-    let previous_file_key = use_ref(scope, || None::<String>);
-
-    let mut requested_first_cell = requested_first_cell;
-    if let Some(file_key) = file_key {
-        let changed = previous_file_key.current().as_deref() != Some(file_key);
-        if changed {
-            if let Some(previous_file_key) = previous_file_key.current().as_ref() {
-                horizontal_positions
-                    .current()
-                    .insert(previous_file_key.clone(), requested_first_cell);
-            }
-            requested_first_cell = horizontal_positions
-                .current()
-                .get(file_key)
-                .copied()
-                .unwrap_or(0);
-            set_requested_first_cell(&move |_| requested_first_cell);
-            *previous_file_key.current() = Some(file_key.to_owned());
-        }
-    }
+    let (requested_first_cell, set_requested_first_cell) = use_state(scope, || initial_first_cell);
 
     let first_cell = requested_first_cell.min(maximum_first_cell);
     let view = HorizontalScrollView { first_cell };

@@ -6,10 +6,38 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
+use ui::components::diff_viewer::{ViewState, ViewStateHistory};
 use ui::components::side_by_side::{SideBySide, SideBySideProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
+
+#[component]
+fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+    let view_states = use_ref(scope, ViewStateHistory::default);
+    let content_id = Rc::as_ptr(content) as usize;
+    let key = content.file().path().as_str().to_owned();
+    let active_view_state = use_ref(scope, ViewState::default);
+    let active_key = use_ref(scope, || None::<String>);
+    let previous_key = active_key.current().clone();
+    if previous_key.as_deref() != Some(key.as_str()) {
+        if let Some(previous_key) = previous_key {
+            let state = *active_view_state.current();
+            view_states.current().save(&previous_key, state);
+        }
+        *active_view_state.current() = view_states.current().load(&key);
+        *active_key.current() = Some(key);
+    }
+    rsx! {
+        SideBySide {
+            key: content_id,
+            content: Rc::clone(content),
+            view_state: active_view_state,
+            auto_focus: false,
+        }
+    }
+}
 
 fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
     let diff = pipeline::diff::compute(original, modified).expect("a diff");
@@ -31,11 +59,13 @@ fn harness_with_syntax_service(
     let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
         original, modified,
     )));
-    Harness::new::<SideBySide>(SideBySideProps { content }, width, height).provide::<Ui>(Context {
-        theme: Rc::new(Theme::DARK),
-        syntax_service,
-        ..Context::default()
-    })
+    Harness::new::<TestSideBySide>(TestSideBySideProps { content }, width, height).provide::<Ui>(
+        Context {
+            theme: Rc::new(Theme::DARK),
+            syntax_service,
+            ..Context::default()
+        },
+    )
 }
 
 fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {

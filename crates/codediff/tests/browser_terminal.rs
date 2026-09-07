@@ -48,7 +48,7 @@ fn catalog_filters_opens_switches_resets_and_returns() {
 
     let next = send_and_wait(&mut writer, &output, b"]");
     assert!(
-        next.contains("newly_added"),
+        next.contains("inline/unchanged") && next.contains("same in one column"),
         "next story did not open: {next:?}"
     );
     let previous = send_and_wait(&mut writer, &output, b"[");

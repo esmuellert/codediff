@@ -10,6 +10,11 @@ const [workspace, results, cache] = process.argv.slice(2);
 if (!workspace || !results || !cache) {
   throw new Error('usage: runner.mjs <workspace> <results> <cache>');
 }
+const options = JSON.parse(await fs.readFile(path.join(workspace, 'options.json'), 'utf8'));
+if (!['side-by-side', 'inline'].includes(options.layout)) {
+  throw new Error('layout must be side-by-side or inline');
+}
+
 const manifestPath = require.resolve('@codediff/vscode-extension/package.json');
 const extension = path.dirname(manifestPath);
 const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -48,7 +53,10 @@ try {
   for (let index = 0; index < pairs.length; index++) {
     const pair = pairs[index];
     await page.getByText(`PARITY:${pair.id}`, { exact: true }).waitFor({ timeout: 60_000 });
-    await page.locator('.monaco-diff-editor.side-by-side').waitFor({ timeout: 60_000 });
+    const diffEditor = options.layout === 'side-by-side'
+      ? page.locator('.monaco-diff-editor.side-by-side')
+      : page.locator('.monaco-diff-editor:not(.side-by-side)');
+    await diffEditor.waitFor({ timeout: 60_000 });
     const modified = page.locator('.modified-in-monaco-diff-editor');
     await modified.waitFor({ state: 'visible', timeout: 60_000 });
     await modified.click({ position: { x: 100, y: 40 }, timeout: 60_000 });
@@ -66,7 +74,8 @@ try {
       { timeout: 60_000 },
     );
 
-    const records = await page.evaluate(extract);
+    const records = await page.evaluate(extractRecords);
+    validateRecords(records, pair);
     await fs.writeFile(path.join(results, `${pair.id}.jsonl`), records);
     if (index + 1 < pairs.length) {
       await page.keyboard.press('Control+Alt+n');
@@ -75,6 +84,33 @@ try {
 } finally {
   await browser.close();
   server.dispose();
+}
+
+function validateRecords(text, pair) {
+  const records = text.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  const rows = records.filter(record => record.type === 'row');
+  const lineNumbers = side => new Set(rows.flatMap(row => row[side] === null ? [] : [row[side]]));
+  const original = lineNumbers('original');
+  const modified = lineNumbers('modified');
+  if (original.size !== pair.originalLines || modified.size !== pair.modifiedLines) {
+    throw new Error(
+      `${options.layout} extractor missed lines for ${pair.id}: `
+      + `original ${original.size}/${pair.originalLines}, modified ${modified.size}/${pair.modifiedLines}`
+    );
+  }
+  let previousOriginal = 0;
+  let previousModified = 0;
+  rows.forEach((row, index) => {
+    if (row.index !== index) throw new Error(`${pair.id}: row indices are not contiguous`);
+    if (row.original !== null) {
+      if (row.original <= previousOriginal) throw new Error(`${pair.id}: original lines are not ordered`);
+      previousOriginal = row.original;
+    }
+    if (row.modified !== null) {
+      if (row.modified <= previousModified) throw new Error(`${pair.id}: modified lines are not ordered`);
+      previousModified = row.modified;
+    }
+  });
 }
 
 async function freePort() {
@@ -88,7 +124,7 @@ async function freePort() {
   return port;
 }
 
-function extract() {
+function extractRecords() {
   function lines(editor) {
     const result = new Map();
     for (const row of editor.querySelectorAll('.margin-view-overlays > div')) {
@@ -136,6 +172,9 @@ function extract() {
     return record;
   }
 
+  // Inline keeps the original editor as a narrow line-number and decoration
+  // surface while rendering deleted text in modified-editor view zones. The
+  // two line maps therefore describe both layouts with the same row schema.
   const original = document.querySelector('.original-in-monaco-diff-editor');
   const modified = document.querySelector('.modified-in-monaco-diff-editor');
   const originalLines = lines(original);

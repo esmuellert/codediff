@@ -2,10 +2,28 @@
 
 use std::rc::Rc;
 
+use file_types::DiffVersion;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx};
 use ratatui::style::Style;
 
 use super::cells;
+
+pub(crate) fn style_for_diff(
+    theme: &crate::theme::Theme,
+    version: DiffVersion,
+    change_background: bool,
+) -> Style {
+    let change_style = match version {
+        DiffVersion::Original => theme.deleted,
+        DiffVersion::Modified => theme.inserted,
+    };
+    let style = if change_background {
+        theme.normal.patch(change_style)
+    } else {
+        theme.normal
+    };
+    style.patch(theme.line_number)
+}
 
 /// Digits + one trailing space, at least 4 columns.
 pub(crate) fn width_for_line_count(line_count: u32) -> u16 {

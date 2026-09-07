@@ -13,10 +13,11 @@ App
       ├─ Border ─ Explorer
       └─ Border ─ DiffViewer
                      ├─ SideBySide
+                     ├─ Inline
                      └─ SingleFile
 ```
 
-`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` owns the currently loaded `pipeline::diff::DiffContent` and chooses a two-sided or one-sided view. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
+`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` owns the currently loaded `pipeline::diff::DiffContent`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
 
 ## Services and workers
 
@@ -32,7 +33,9 @@ The UI thread never runs Git or computes a diff while painting. The services del
 
 Explorer uses `j`/`k`, the arrow keys, `Enter`, `i`, `Space`, the right arrow, mouse clicks, and vertical wheel events. Diff views use `j`/`k`, `h`/`l`, `0`, `$`, the left arrow, mouse focus, and vertical or horizontal wheel events. `q` exits the application.
 
-The current main view is side by side for two-sided content. Added, deleted, and untracked files are shown with `SingleFile`; they are not compared against an invented empty side. The alignment model also supports an inline projection, but the normal `DiffViewer` currently selects only `SideBySide` and `SingleFile`.
+The main two-sided view starts side by side. When a diff view has focus, `t` switches between `SideBySide` and `Inline`. `DiffViewer` keeps one history entry per file: the entry stores the first `ViewLine` on screen and the first horizontal cell. Each layout resolves the same `ViewLine` in its own row sequence, so switching layouts preserves the visible screen position. `SingleFile` and `Explorer` do not respond to `t`.
+
+Added, deleted, and untracked files are shown with `SingleFile`; they are not compared against an invented empty side. `SingleFile` keeps its own simple numeric position and does not use diff history.
 
 ## Rendering rules
 
@@ -49,4 +52,4 @@ codediff debug ui --list
 codediff debug ui explorer/tree --snapshot --width 100 --height 24
 ```
 
-`loom::testing::Harness` renders components into a ratatui buffer. The codediff tests also exercise real PTYs for terminal takeover and restoration.
+The gallery includes deterministic stories for the production components and their edge cases. `loom::testing::Harness` renders components into a ratatui buffer, while codediff tests also exercise real PTYs for terminal takeover and restoration.

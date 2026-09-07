@@ -1,9 +1,8 @@
 //! Shared vertical viewport state.
 
-use std::collections::HashMap;
 use std::ops::Range;
 
-use loom::{NodeHandle, Ref, Scope, SetState, use_measure, use_ref, use_state};
+use loom::{NodeHandle, Ref, Scope, SetState, use_measure, use_state};
 
 /// The values a component reads during render: where to look and
 /// what to attach to its host element.
@@ -23,6 +22,12 @@ pub struct ScrollHandle {
 }
 
 impl ScrollHandle {
+    /// Move the viewport to an absolute row.
+    pub fn scroll_to(self, top: u32) {
+        let last_top = self.total.saturating_sub(self.height);
+        (self.set_top)(&move |_| top.min(last_top));
+    }
+
     /// Move the viewport by a signed number of rows.
     pub fn scroll_by(self, rows: i32) {
         let last_top = self.total.saturating_sub(self.height);
@@ -46,34 +51,14 @@ impl ScrollHandle {
     }
 }
 
-/// Creates vertical viewport state. When `key` changes, the old position is
-/// saved and the new one is restored.
-pub fn use_scroll(scope: &mut Scope, key: Option<&str>, total: u32) -> (ScrollView, ScrollHandle) {
-    let (requested_top, set_top) = use_state(scope, || 0u32);
+/// Creates vertical viewport state, starting at `initial_top`.
+///
+/// The hook owns only the active viewport. A component that needs history
+/// supplies the initial position and stores its own state.
+pub fn use_scroll(scope: &mut Scope, total: u32, initial_top: u32) -> (ScrollView, ScrollHandle) {
+    let (requested_top, set_top) = use_state(scope, || initial_top);
     let (node_ref, size) = use_measure(scope);
     let height = u32::from(size.height);
-
-    let positions = use_ref(scope, HashMap::<String, u32>::new);
-    let previous_key = use_ref(scope, || None::<String>);
-
-    let mut requested_top = requested_top;
-    if let Some(current_key) = key {
-        let changed = previous_key.current().as_deref() != Some(current_key);
-        if changed {
-            if let Some(previous_key) = previous_key.current().as_ref() {
-                positions
-                    .current()
-                    .insert(previous_key.clone(), requested_top);
-            }
-            requested_top = positions
-                .current()
-                .get(current_key)
-                .copied()
-                .unwrap_or_default();
-            set_top(&move |_| requested_top);
-            *previous_key.current() = Some(current_key.to_string());
-        }
-    }
 
     let top = requested_top.min(total.saturating_sub(height));
     let view = ScrollView {

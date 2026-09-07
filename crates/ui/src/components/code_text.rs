@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
+use file_types::DiffVersion;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
 use ratatui::style::Style;
 
@@ -10,6 +11,34 @@ use super::cells::{self, Ink};
 use super::context::Ui;
 
 const TAB_WIDTH: u8 = 4;
+
+pub(crate) struct DiffTextStyles {
+    pub unchanged: Style,
+    pub changed: Style,
+}
+
+pub(crate) fn styles_for_diff(
+    theme: &crate::theme::Theme,
+    version: DiffVersion,
+    line_background: bool,
+) -> DiffTextStyles {
+    let line_change = match version {
+        DiffVersion::Original => theme.deleted,
+        DiffVersion::Modified => theme.inserted,
+    };
+    let changed_text = match version {
+        DiffVersion::Original => theme.deleted_text,
+        DiffVersion::Modified => theme.inserted_text,
+    };
+    DiffTextStyles {
+        unchanged: if line_background {
+            theme.normal.patch(line_change)
+        } else {
+            theme.normal
+        },
+        changed: theme.normal.patch(changed_text),
+    }
+}
 
 fn width_in_cells(text: &str) -> u32 {
     line_index::LineIndex::new(text, TAB_WIDTH).width().0

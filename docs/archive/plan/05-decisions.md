@@ -582,8 +582,8 @@ keypress do nothing.
 
 Where a key is defined (which level's binding table) and where it is executed
 (which level handles it) are separate questions. `>` is bound by the focused
-buffer but executed by the tab (it affects two panes). `t` is bound by the view
-but executed on whichever pane shows a diff.
+buffer but executed by the tab (it affects two panes). `t` is bound by the
+focused diff viewer and changes its layout.
 
 ---
 
@@ -595,11 +595,12 @@ row for the terminal uses `line-index` (cell/column width), not character count.
 
 ---
 
-## D51 — Nothing is kept when a file is opened twice
+## D51 — Diff results are not cached when a file is opened twice
 
 Three of the four revisions (worktree, index, conflict stage) are mutable. A
-cache keyed by revision + path cannot tell fresh from stale. So nothing is
-cached — reading two versions and pairing them takes milliseconds.
+diff-result cache keyed by revision + path cannot tell fresh from stale. So
+diff results are not cached. The UI may still keep a small screen-position
+history; it contains no file contents or diff results.
 
 ---
 
@@ -615,24 +616,28 @@ changed file is named.
 ## D53 — A viewport belongs to a pane
 
 A viewport is a position in a buffer. Repointing a pane at a new buffer while
-keeping its viewport would show the new file at the old file's scroll offset. So
-opening a file installs a fresh pane.
+keeping its viewport would show the new file at the old file's scroll offset.
+Opening a file therefore installs a fresh active viewport; the owning viewer may
+restore a saved screen position for that file.
 
 ---
 
-## D54 — Anchor by name, not by row number
+## D54 — Save the first screen row, not a layout row number
 
-Toggling view mode renumbers rows. The cursor is anchored by (section, path),
-looked up after the rebuild. Same principle as carrying a file line across a
-layout toggle.
+SideBySide and Inline produce different numeric visual-row indices. DiffViewer
+keeps one `HashMap<file, ViewState>` for both. A `ViewState` stores the
+first `ViewLine` on screen and the first horizontal cell. The new layout resolves
+that `ViewLine` to its own row index. No vertical offset or layout-specific row
+number is stored.
 
 ---
 
-## D55 — A key must not be silently dead
+## D55 — `t` belongs to the focused DiffViewer
 
-`t` (toggle layout) was bound at the view level but acted on the focused buffer.
-When the list had focus, it did nothing silently. Now it acts on whichever pane
-shows a diff, regardless of focus.
+`t` toggles SideBySide and Inline only when focus is inside DiffViewer. The
+Explorer and SingleFile do not respond to it. The two diff components are
+unmounted and remounted normally, then read and write the same per-file screen
+history.
 
 ---
 

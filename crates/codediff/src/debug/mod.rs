@@ -32,8 +32,9 @@ pub fn run(command: Debug) -> Result<()> {
         Debug::Parity {
             original,
             modified,
+            layout,
             ignore_trim_whitespace,
-        } => parity::run(&original, &modified, ignore_trim_whitespace),
+        } => parity::run(&original, &modified, layout, ignore_trim_whitespace),
         Debug::Show { spec, raw } => show::run(&spec, raw),
         Debug::List {
             rev,

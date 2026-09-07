@@ -12,7 +12,11 @@ use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
 
 fn file(deleted: bool) -> file_types::File {
-    let path = file_types::RepoPath::new("plain.rs", Path::new("/repo"));
+    named_file("plain.rs", deleted)
+}
+
+fn named_file(path: &str, deleted: bool) -> file_types::File {
+    let path = file_types::RepoPath::new(path, Path::new("/repo"));
     let revs = file_types::Revs::worktree_against(file_types::Oid::new("abc"));
     if deleted {
         file_types::File::deleted(path, revs)
@@ -148,4 +152,49 @@ fn a_long_file_scrolls() {
     }
 
     assert_ne!(harness.screen(), before);
+}
+
+#[test]
+fn each_file_restores_its_position() {
+    let first_lines: Vec<String> = (1..=12).map(|line| format!("first {line:02}")).collect();
+    let second_lines: Vec<String> = (1..=12).map(|line| format!("second {line:02}")).collect();
+    let first = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file: named_file("first.rs", false),
+            lines: Arc::new(first_lines),
+        },
+    ));
+    let second = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file: named_file("second.rs", false),
+            lines: Arc::new(second_lines),
+        },
+    ));
+    let mut harness = Harness::new::<SingleFile>(
+        SingleFileProps {
+            content: first.clone(),
+        },
+        30,
+        4,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    for _ in 0..3 {
+        harness.press(crokey::key!(j)).force_draw();
+    }
+    assert!(harness.screen_row(0).contains("first 04"));
+
+    harness.set_props::<SingleFile>(SingleFileProps {
+        content: second.clone(),
+    });
+    harness.force_draw().force_draw();
+    assert!(harness.screen_row(0).contains("second 01"));
+    harness.press(crokey::key!(j)).force_draw();
+
+    harness.set_props::<SingleFile>(SingleFileProps { content: first });
+    harness.force_draw().force_draw();
+    assert!(harness.screen_row(0).contains("first 04"));
 }
