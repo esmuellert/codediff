@@ -3,11 +3,11 @@
 use std::rc::Rc;
 
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_exit,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_exit, use_ref,
     use_state,
 };
 use pipeline::diff::DiffContent;
-use ui::components::diff_viewer::DiffViewer;
+use ui::components::diff_viewer::{DiffViewer, ViewState};
 use ui::components::explorer::Explorer;
 use ui::components::inline::{Inline, InlineProps};
 use ui::components::side_by_side::{SideBySide, SideBySideProps};
@@ -63,6 +63,7 @@ pub(super) fn StoryPreview(
         Bubble::Stop
     });
     let theme = *context.theme;
+    let view_state = use_ref(scope, ViewState::default);
     let shortcuts = if navigate.is_some() {
         vec![
             Shortcut {
@@ -96,10 +97,20 @@ pub(super) fn StoryPreview(
         StoryComponent::Welcome => rsx! { DiffViewer {} },
         StoryComponent::Explorer => rsx! { Explorer {} },
         StoryComponent::SideBySide => rsx! {
-            SideBySide { content: Rc::clone(content.as_ref().expect("side-by-side story content")) }
+            SideBySide {
+                key: Rc::as_ptr(content.as_ref().expect("side-by-side story content")) as usize,
+                content: Rc::clone(content.as_ref().expect("side-by-side story content")),
+                view_state: view_state,
+                auto_focus: false,
+            }
         },
         StoryComponent::Inline => rsx! {
-            Inline { content: Rc::clone(content.as_ref().expect("inline story content")) }
+            Inline {
+                key: Rc::as_ptr(content.as_ref().expect("inline story content")) as usize,
+                content: Rc::clone(content.as_ref().expect("inline story content")),
+                view_state: view_state,
+                auto_focus: false,
+            }
         },
         StoryComponent::SingleFile => rsx! {
             SingleFile { content: Rc::clone(content.as_ref().expect("single-file story content")) }

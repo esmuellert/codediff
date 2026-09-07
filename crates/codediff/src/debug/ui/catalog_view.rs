@@ -80,7 +80,7 @@ fn CatalogView(
     let catalog_rows = Rc::new(filtered_rows(&query));
     let (selected_line, set_selected_line) = use_state(scope, || initial_line as u32);
     let total = catalog_rows.len() as u32;
-    let (view, scroll) = use_scroll(scope, None, total);
+    let (view, scroll) = use_scroll(scope, total, 0);
     let initial_target = initial_line as u32;
     let viewport_rows = view.view_lines.len() as u32;
     use_effect(scope, (*initial_story_index, viewport_rows), move || {

@@ -6,10 +6,38 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
+use ui::components::diff_viewer::{ViewState, ViewStateHistory};
 use ui::components::inline::{Inline, InlineProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
+
+#[component]
+fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+    let view_states = use_ref(scope, ViewStateHistory::default);
+    let content_id = Rc::as_ptr(content) as usize;
+    let key = content.file().path().as_str().to_owned();
+    let active_view_state = use_ref(scope, ViewState::default);
+    let active_key = use_ref(scope, || None::<String>);
+    let previous_key = active_key.current().clone();
+    if previous_key.as_deref() != Some(key.as_str()) {
+        if let Some(previous_key) = previous_key {
+            let state = *active_view_state.current();
+            view_states.current().save(&previous_key, state);
+        }
+        *active_view_state.current() = view_states.current().load(&key);
+        *active_key.current() = Some(key);
+    }
+    rsx! {
+        Inline {
+            key: content_id,
+            content: Rc::clone(content),
+            view_state: active_view_state,
+            auto_focus: false,
+        }
+    }
+}
 
 fn make_diff(path: &str, original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
     let diff = pipeline::diff::compute(original, modified).expect("a diff");
@@ -31,7 +59,7 @@ fn harness_with_syntax_service(
     let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
         "test.rs", original, modified,
     )));
-    Harness::new::<Inline>(InlineProps { content }, width, height).provide::<Ui>(Context {
+    Harness::new::<TestInline>(TestInlineProps { content }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         syntax_service,
         ..Context::default()
@@ -230,8 +258,8 @@ fn each_file_restores_its_vertical_position() {
         &second_lines,
         &second_lines,
     )));
-    let mut harness = Harness::new::<Inline>(
-        InlineProps {
+    let mut harness = Harness::new::<TestInline>(
+        TestInlineProps {
             content: Rc::clone(&first_content),
         },
         30,
@@ -248,7 +276,7 @@ fn each_file_restores_its_vertical_position() {
     harness.force_draw();
     assert!(harness.screen_row(0).contains("first 05"));
 
-    harness.set_props::<Inline>(InlineProps {
+    harness.set_props::<TestInline>(TestInlineProps {
         content: Rc::clone(&second_content),
     });
     settle(&mut harness);
@@ -256,7 +284,7 @@ fn each_file_restores_its_vertical_position() {
     harness.press(crokey::key!(j)).force_draw();
     assert!(harness.screen_row(0).contains("second 02"));
 
-    harness.set_props::<Inline>(InlineProps {
+    harness.set_props::<TestInline>(TestInlineProps {
         content: first_content,
     });
     settle(&mut harness);

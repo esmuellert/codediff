@@ -2,8 +2,7 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use loom::{
-    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component,
-    rsx, use_layout_effect,
+    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component, rsx,
 };
 use ui::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use ui::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -12,26 +11,19 @@ use ui::hooks::use_scroll::use_scroll;
 #[component]
 fn Probe(
     scope: &mut Scope,
-    file_key: Rc<str>,
     total: u32,
     longest_line_cells: u32,
     auto_focus: bool,
     initial_top: u32,
     initial_first_cell: u32,
 ) -> Node {
-    let (view, vertical_handle) = use_scroll(scope, Some(file_key), *total);
+    let (view, vertical_handle) = use_scroll(scope, *total, *initial_top);
     let maximum_first_cell = longest_line_cells
         .saturating_add(4)
         .saturating_sub(u32::from(view.width));
     let (horizontal, horizontal_handle) =
-        use_horizontal_scroll(scope, Some(file_key), maximum_first_cell);
+        use_horizontal_scroll(scope, maximum_first_cell, *initial_first_cell);
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
-    let initial_top = *initial_top;
-    let initial_first_cell = *initial_first_cell;
-    use_layout_effect(scope, (), move || {
-        vertical_handle.scroll_to(initial_top);
-        horizontal_handle.scroll_to(initial_first_cell);
-    });
     let state: Rc<str> = format!("{} {}", view.top, horizontal.first_cell).into();
     rsx! {
         Column {
@@ -46,14 +38,13 @@ fn Probe(
     }
 }
 
-fn harness(key: &str) -> Harness {
-    navigation_harness(key, 20, 40)
+fn harness() -> Harness {
+    navigation_harness(20, 40)
 }
 
-fn navigation_harness(key: &str, width: u16, longest_line_cells: u32) -> Harness {
+fn navigation_harness(width: u16, longest_line_cells: u32) -> Harness {
     let mut harness = Harness::new::<Probe>(
         ProbeProps {
-            file_key: key.into(),
             total: 20,
             longest_line_cells,
             auto_focus: true,
@@ -77,7 +68,6 @@ fn state(harness: &mut Harness) -> (u32, u32) {
 fn absolute_positions_can_be_set_on_mount() {
     let mut harness = Harness::new::<Probe>(
         ProbeProps {
-            file_key: "a.rs".into(),
             total: 20,
             longest_line_cells: 40,
             auto_focus: true,
@@ -97,7 +87,7 @@ fn absolute_positions_can_be_set_on_mount() {
 
 #[test]
 fn j_and_k_scroll_one_view_line() {
-    let mut harness = harness("a.rs");
+    let mut harness = harness();
     harness.press(crokey::key!(j)).force_draw();
     assert_eq!(state(&mut harness).0, 1);
     harness.press(crokey::key!(k)).force_draw();
@@ -106,14 +96,14 @@ fn j_and_k_scroll_one_view_line() {
 
 #[test]
 fn wheel_moves_only_the_view() {
-    let mut harness = harness("a.rs");
+    let mut harness = harness();
     harness.wheel(1, 1, 1).force_draw();
     assert_eq!(state(&mut harness), (3, 0));
 }
 
 #[test]
 fn h_l_zero_and_dollar_move_the_horizontal_position() {
-    let mut harness = harness("a.rs");
+    let mut harness = harness();
     harness.press(crokey::key!(h)).force_draw();
     assert_eq!(state(&mut harness).1, 0);
     for _ in 0..3 {
@@ -130,7 +120,7 @@ fn h_l_zero_and_dollar_move_the_horizontal_position() {
 
 #[test]
 fn repeated_horizontal_keys_compose_before_a_draw() {
-    let mut harness = harness("a.rs");
+    let mut harness = harness();
     harness
         .press(crokey::key!(l))
         .press(crokey::key!(l))
@@ -142,7 +132,7 @@ fn repeated_horizontal_keys_compose_before_a_draw() {
 
 #[test]
 fn repeated_vertical_keys_compose_before_a_draw() {
-    let mut harness = harness("a.rs");
+    let mut harness = harness();
     harness
         .press(crokey::key!(j))
         .press(crokey::key!(j))
@@ -154,7 +144,7 @@ fn repeated_vertical_keys_compose_before_a_draw() {
 
 #[test]
 fn horizontal_position_stops_at_the_vscode_endpoint() {
-    let mut harness = navigation_harness("a.rs", 10, 20);
+    let mut harness = navigation_harness(10, 20);
     for _ in 0..20 {
         harness.press(crokey::key!(l)).force_draw();
     }
@@ -163,14 +153,14 @@ fn horizontal_position_stops_at_the_vscode_endpoint() {
 
 #[test]
 fn a_line_narrower_than_the_viewport_does_not_scroll() {
-    let mut harness = navigation_harness("a.rs", 20, 10);
+    let mut harness = navigation_harness(20, 10);
     harness.press(crokey::key!(l)).force_draw();
     assert_eq!(state(&mut harness).1, 0);
 }
 
 #[test]
 fn resizing_clamps_without_forgetting_the_requested_position() {
-    let mut harness = navigation_harness("a.rs", 10, 20);
+    let mut harness = navigation_harness(10, 20);
     for _ in 0..6 {
         harness.press(crokey::key!(l)).force_draw();
     }
@@ -181,45 +171,6 @@ fn resizing_clamps_without_forgetting_the_requested_position() {
 
     harness.resize(10, 4).force_draw().force_draw();
     assert_eq!(state(&mut harness).1, 6);
-}
-
-#[test]
-fn changing_files_restores_each_position() {
-    let mut harness = harness("a.rs");
-    for _ in 0..8 {
-        harness.press(crokey::key!(j)).force_draw();
-    }
-    for _ in 0..5 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-    let saved = state(&mut harness);
-    assert_ne!(saved, (0, 0));
-
-    harness.set_props::<Probe>(ProbeProps {
-        file_key: "b.rs".into(),
-        total: 20,
-        longest_line_cells: 40,
-        auto_focus: true,
-        initial_top: 0,
-        initial_first_cell: 0,
-    });
-    harness.force_draw().force_draw();
-    assert_eq!(state(&mut harness), (0, 0));
-    for _ in 0..2 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-    assert_eq!(state(&mut harness).1, 2);
-
-    harness.set_props::<Probe>(ProbeProps {
-        file_key: "a.rs".into(),
-        total: 20,
-        longest_line_cells: 40,
-        auto_focus: true,
-        initial_top: 0,
-        initial_first_cell: 0,
-    });
-    harness.force_draw().force_draw();
-    assert_eq!(state(&mut harness), saved);
 }
 
 #[component]
@@ -244,7 +195,6 @@ fn FocusPair(scope: &mut Scope) -> Node {
             ..,
             Previous {}
             Probe {
-                file_key: "a.rs".into(),
                 total: 20,
                 longest_line_cells: 40,
                 auto_focus: true,

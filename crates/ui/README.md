@@ -369,9 +369,10 @@ codediff <path>
 ```
 
 `q` quits and `j`/`k` scroll the active production view. SideBySide remains the
-application's two-sided layout. Inline can be interacted with through `codediff debug ui inline/...`
-and checked through `codediff debug parity --layout inline`; routing it from DiffViewer and
-switching layouts are deliberately separate work.
+application's default two-sided layout. When a diff view has focus, `t` switches between
+SideBySide and Inline; both layouts share the file's first screen ViewLine and horizontal cell.
+SingleFile and Explorer do not respond to `t`. Inline can also be inspected through
+`codediff debug ui inline/...` and checked through `codediff debug parity --layout inline`.
 
 ```sh
 codediff <path> --theme basic-light

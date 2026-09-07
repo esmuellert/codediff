@@ -78,7 +78,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     };
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
-    let (view, scroll) = use_scroll(scope, None, total);
+    let (view, scroll) = use_scroll(scope, total, 0);
 
     // When the file list changes, keep the selection on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&files));

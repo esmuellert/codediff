@@ -6,13 +6,29 @@ use std::rc::Rc;
 use anyhow::{Context, Result};
 use file_types::{DiffType, DiffVersion};
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
+use ui::components::diff_viewer::ViewState;
 use ui::components::inline::{Inline, InlineProps};
 use ui::components::{Context as UiContext, Ui};
 
 use super::{
     MIN_WIDTH, Record, Side, gutter_width, highlight_record, line_number, load_diff_content,
 };
+
+#[component]
+fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+    let view_state = use_ref(scope, ViewState::default);
+    let content_id = Rc::as_ptr(content) as usize;
+    rsx! {
+        Inline {
+            key: content_id,
+            content: Rc::clone(content),
+            view_state: view_state,
+            auto_focus: false,
+        }
+    }
+}
 
 pub(super) fn run(
     original_path: &str,
@@ -32,8 +48,8 @@ pub(super) fn run(
     let original_line_count = diff.alignment.lines(DiffVersion::Original).len() as u32;
     let modified_line_count = diff.alignment.lines(DiffVersion::Modified).len() as u32;
     let theme = Theme::DARK;
-    let mut harness = Harness::new::<Inline>(
-        InlineProps {
+    let mut harness = Harness::new::<InlineHost>(
+        InlineHostProps {
             content: Rc::clone(&content),
         },
         width,
