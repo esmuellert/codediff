@@ -54,9 +54,7 @@ impl<T: 'static> Promise<T> {
 
 /// The answering end, kept by whoever sent the request.
 ///
-/// Carries the owning scope, the effect's slot and the effect's generation, so
-/// an answer that arrives after the deps changed or the component went away is
-/// refused rather than applied.
+/// Carries the effect generation so stale answers are ignored.
 pub struct Resolver<T: 'static> {
     address: Address,
     runtime: Weak<RefCell<Runtime>>,
@@ -172,7 +170,7 @@ pub fn observable<T: 'static>() -> (Observer<T>, Observable<T>) {
     )
 }
 
-/// P4.6 — which effect is running, and the runtime to reach back into.
+/// Captures the current effect and runtime for async replies.
 fn open() -> (Address, Weak<RefCell<Runtime>>) {
     let running = crate::current::with(|rt| rt.running_effect).flatten();
     let Some((scope, slot, generation)) = running else {

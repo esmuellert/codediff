@@ -1,4 +1,4 @@
-//! The grammar of §11.1.
+//! Parses RSX nodes, elements, and control flow.
 
 use syn::ext::IdentExt;
 use syn::parse::{ParseStream, Result};

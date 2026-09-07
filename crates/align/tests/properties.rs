@@ -1,17 +1,11 @@
-//! Invariants that must hold for any pair of files.
-//!
-//! The fixtures cover edits somebody thought of. These cover the rest: text is
-//! generated from a tiny alphabet so the engine finds real matches and produces
-//! genuinely mixed diffs rather than one big replacement.
+//! Property tests for alignment invariants.
 
 use align::{Alignment, DiffVersion, ViewLineType};
 use file_types::DiffType;
 use proptest::prelude::*;
 use vscode_diff::Options;
 
-/// Lines drawn from a small pool, so two generated files share material and the
-/// diff contains insertions, deletions and modifications rather than one
-/// wholesale replacement.
+/// Generates lines that produce mixed changes.
 fn file() -> impl Strategy<Value = Vec<String>> {
     proptest::collection::vec(
         prop_oneof![
@@ -84,9 +78,7 @@ fn check(original: &[String], modified: &[String]) -> Result<(), TestCaseError> 
     }
 
     // 5. each column reads back as the file it came from.
-    //    Compared against `lines()` rather than the input, because an empty
-    //    file is normalised to a single empty line — the engine's model of one,
-    //    and what the diff's line numbers refer to.
+    //    Compare with the normalized lines used by the alignment.
     prop_assert_eq!(left.as_slice(), alignment.lines(DiffVersion::Original));
     prop_assert_eq!(right.as_slice(), alignment.lines(DiffVersion::Modified));
 

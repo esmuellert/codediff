@@ -1,8 +1,4 @@
-//! Reading the working tree — the checkout on disk.
-//!
-//! Not a git command: it is `std::fs`. It lives here because the working tree
-//! is one of the two sides of the default comparison, and belongs behind the
-//! same interface as the side that does come from the object store.
+//! Reads file content from the working tree.
 
 use crate::error::{Error, Result};
 use file_types::RepoPath;
@@ -10,14 +6,9 @@ use file_types::RepoPath;
 /// A file's current content. `None` when it is not on disk — a deletion, or a
 /// path that only exists in the revision being compared against.
 ///
-/// Takes no root: a [`RepoPath`] already carries its absolute form, which is
-/// the reason it carries one. Passing the two separately is how they come to
-/// disagree.
+/// The path already carries its absolute filesystem spelling.
 pub fn read(path: &RepoPath) -> Result<Option<Vec<u8>>> {
-    // A symlink's content, to git, is where it points — a short line of text,
-    // stored as a blob. Reading through it would compare the *target* file
-    // against that line, which makes an unchanged link look like a whole file
-    // rewritten. `symlink_metadata` is what does not follow.
+    // Git stores a symlink's target; metadata avoids reading through the link.
     match std::fs::symlink_metadata(path.as_path()) {
         Ok(meta) if meta.is_symlink() => {
             return match std::fs::read_link(path.as_path()) {
@@ -28,9 +19,7 @@ pub fn read(path: &RepoPath) -> Result<Option<Vec<u8>>> {
                 }),
             };
         }
-        // A directory here is a submodule, whose content is a commit id rather
-        // than bytes. Answered as absent, so the reviewer says the file cannot
-        // be shown instead of failing to read a directory.
+        // A submodule directory has no file bytes to read.
         Ok(meta) if meta.is_dir() => return Ok(None),
         _ => {}
     }

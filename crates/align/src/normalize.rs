@@ -1,8 +1,6 @@
-//! Normalization VS Code applies between its diff provider and `DiffState`.
+//! Normalizes inner ranges that span complete lines.
 //!
-//! These are `normalizeDocumentDiff` and `normalizeRangeMapping` from
-//! `diffEditorViewModel.ts`: paired ranges beginning at column one and reaching
-//! both line ends include the line break.
+//! Ranges starting at column one and ending at both line ends include the line break.
 
 use diff_types::{CharRange, LinesDiff, RangeMapping};
 

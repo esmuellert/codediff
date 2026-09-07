@@ -1,4 +1,4 @@
-//! The table of §11.2.
+//! Expands parsed RSX nodes into Rust expressions.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};

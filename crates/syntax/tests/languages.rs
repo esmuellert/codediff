@@ -1,13 +1,6 @@
-//! Every language we claim to support, checked on real code.
+//! Checks recognition and highlighting across supported languages.
 //!
-//! The S11 criterion is *"keywords, strings and comments are coloured
-//! correctly in all twelve"*, so that is what this asserts — by the pen that
-//! reaches the caller, not by scope name, because a scope name that stopped
-//! reaching the theme would still look right in a test that only checked
-//! scopes.
-//!
-//! Four pens, deliberately distinct, so a mix-up is a failure rather than a
-//! coincidence.
+//! Assertions use shared pen assignments so either syntax engine can answer.
 
 use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style};
 
@@ -16,13 +9,7 @@ const STRING: Pen = Pen(2);
 const COMMENT: Pen = Pen(3);
 const MARKUP: Pen = Pen(4);
 
-/// The smallest theme that can tell the four apart.
-///
-/// Both tables, with the same pens. Which engine reads a file is the
-/// seam's business — a parser where we have a grammar, the matcher where we do
-/// not — and these assertions are about the language, not the engine. Giving
-/// both the same pens is what lets one test hold either way, and it is also
-/// how a language that changes engines is caught: the answer must not move.
+/// Shared pen assignments for both syntax engines.
 fn palette() -> Palette {
     Palette::from_tables(
         &[
@@ -30,7 +17,7 @@ fn palette() -> Palette {
             Rule::new("storage", Style::pen(KEYWORD)),
             Rule::new("string", Style::pen(STRING)),
             Rule::new("comment", Style::pen(COMMENT).italic()),
-            // Markup, so the two prose formats have something to claim.
+            // Markup constructs used by prose formats.
             Rule::new("markup", Style::pen(MARKUP)),
             Rule::new("entity.name", Style::pen(MARKUP)),
         ],
@@ -161,8 +148,7 @@ fn every_language_is_recognised() {
         let grammar = engine
             .find(Clues::new(path, first), source.lines().count())
             .unwrap_or_else(|| panic!("{name}: nothing claims {path}"));
-        // Not asserting the exact grammar name — engines spell them
-        // differently — only that something answered.
+        // Engine grammar names may differ; recognition is the contract.
         assert!(!engine.name(grammar).is_empty(), "{name}");
     }
 }
@@ -181,8 +167,7 @@ fn every_language_colours_its_strings() {
 
 #[test]
 fn every_language_colours_something() {
-    // The catch-all, so that a language exempted from the three tests above
-    // cannot silently come back with no colour at all.
+    // Every language must produce at least one span.
     for (name, path, source) in LANGUAGES {
         let spans = read(path, source);
         assert!(
@@ -207,7 +192,7 @@ fn every_language_with_comments_colours_them() {
 #[test]
 fn every_programming_language_colours_its_keywords() {
     for (name, path, source) in LANGUAGES {
-        // The four data and markup formats have no keywords to speak of.
+        // Data and markup formats have no keyword assertions.
         if matches!(*name, "JSON" | "YAML" | "Markdown" | "TOML") {
             continue;
         }
@@ -218,16 +203,13 @@ fn every_programming_language_colours_its_keywords() {
 
 #[test]
 fn the_three_kinds_land_on_the_right_characters() {
-    // Colour by colour on one known file, so that "something was coloured"
-    // cannot pass by colouring the wrong thing.
+    // Check that expected tokens use the expected pens.
     let source = "// a comment\nfn main() {\n    let g = \"hello\";\n}\n";
     let spans = read("src/main.rs", source);
 
     assert_eq!(at(&spans, 0, 0), Some(COMMENT), "the `//`");
     assert_eq!(at(&spans, 1, 0), Some(KEYWORD), "the `fn`");
-    // Not merely "coloured": a different colour from the keyword beside it,
-    // which is the whole point of matching a scope path rather than a
-    // category — `entity.name.function` is not `keyword`.
+    // Function names must use a different capture from keywords.
     assert_eq!(at(&spans, 1, 3), Some(MARKUP), "the function name");
     assert_ne!(at(&spans, 1, 3), at(&spans, 1, 0), "fn vs main");
     let quote = source.lines().nth(2).unwrap().find('"').unwrap() as u32;
@@ -237,8 +219,7 @@ fn the_three_kinds_land_on_the_right_characters() {
 
 #[test]
 fn a_comment_carries_its_font_style_as_well_as_its_colour() {
-    // A theme sets italic and colour independently; losing the flag would
-    // still leave the colour right, so it needs its own assertion.
+    // Font style is checked separately from colour.
     let spans = read("src/main.rs", "// a comment\nfn main() {}\n");
     let comment = spans[0].first().expect("the comment is coloured");
     assert!(comment.style.italic, "{:?}", comment.style);
@@ -256,7 +237,7 @@ fn an_unrecognised_file_is_plain_rather_than_a_failure() {
             )
             .is_none()
     );
-    // And the caller's answer for such a file is "no spans", not a panic.
+    // Unknown files return no spans.
     let nothing = Highlighted::none();
     assert_eq!(nothing.get_lines_coloured(), 0);
     assert!(nothing.finished());
@@ -264,7 +245,7 @@ fn an_unrecognised_file_is_plain_rather_than_a_failure() {
 
 #[test]
 fn a_shebang_names_a_language_when_the_name_cannot() {
-    // The commonest case a diff viewer meets: an executable with no extension.
+    // Shebangs identify executable files without extensions.
     let engine = Engine::new();
     let grammar = engine
         .find(Clues::new("scripts/deploy", Some("#!/usr/bin/env bash")), 1)

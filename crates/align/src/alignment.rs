@@ -13,12 +13,9 @@ use crate::layout::{self, ViewLines};
 use crate::normalize::normalize_document_diff;
 use crate::view_line::{ViewLine, blocks, is_well_formed};
 
-/// A diff whose ranges do not describe a coherent pairing.
+/// A diff whose ranges cannot form a valid pairing.
 ///
-/// Only reachable through an engine bug: the ranges must be ordered,
-/// non-overlapping, inside their files, and must leave both sides with the same
-/// number of unchanged lines. Reported rather than ignored because the
-/// alternative is a review tool quietly showing a line twice.
+/// Ranges must be ordered, non-overlapping, in bounds, and preserve unchanged-line counts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Malformed;
 
@@ -37,10 +34,7 @@ impl std::error::Error for Malformed {}
 #[derive(Debug, Clone)]
 pub struct Alignment {
     diff: LinesDiff,
-    /// Shared rather than owned outright, so the thread that colours can
-    /// be handed the text without copying it. A file's text never changes
-    /// once read — a diff is a snapshot — so there is nothing to keep in
-    /// step.
+    /// Shared file text used by the colouring thread.
     original: Arc<Vec<String>>,
     modified: Arc<Vec<String>>,
     tab_width: u8,
@@ -110,33 +104,21 @@ impl Alignment {
         })
     }
 
-    /// The changed blocks, in order.
-    ///
-    /// These and the two below are the engine's result, borrowed rather than
-    /// restated: `Alignment` holds a `&LinesDiff` and reads through it. VSCode
-    /// unpacks the same four values into its `DiffState` and drops the result,
-    /// so a caller there writes `state.movedTexts` and there is no diff object
-    /// left to reach into. Borrowing is free where copying is not, so the
-    /// surface matches without the copy.
+    /// Changed line mappings in engine order.
     pub fn changes(&self) -> &[DetailedLineRangeMapping] {
         &self.diff.changes
     }
 
-    /// Blocks the engine judged to have moved rather than been rewritten.
+    /// Blocks the engine marked as moved.
     ///
-    /// Empty unless the diff was computed with [`Options::with_moves`].
-    ///
-    /// [`Options::with_moves`]: vscode_diff::Options::with_moves
+    /// Empty when move detection was not requested.
     pub fn moves(&self) -> &[MovedText] {
         &self.diff.moves
     }
 
-    /// The engine gave up before finishing, so the pairing is coarser than the
-    /// files warrant.
+    /// Whether the engine stopped before producing a complete diff.
     ///
-    /// What is shown is still valid, but incomplete — a reviewer who mistakes
-    /// it for a finished diff approves code they have not seen, so it must
-    /// reach the screen. VSCode calls this `quitEarly`.
+    /// The returned pairing may be coarse.
     pub fn hit_timeout(&self) -> bool {
         self.diff.hit_timeout
     }
@@ -153,11 +135,7 @@ impl Alignment {
         }
     }
 
-    /// The text of one version, to hand to another thread.
-    ///
-    /// A cheap clone of a shared pointer, not of the text. Colouring happens
-    /// elsewhere and needs the lines; copying a large file per request would
-    /// cost more than the colouring.
+    /// Returns shared text for one version.
     pub fn text(&self, version: DiffVersion) -> Arc<Vec<String>> {
         match version {
             DiffVersion::Original => Arc::clone(&self.original),
@@ -193,12 +171,7 @@ impl Alignment {
         )
     }
 
-    /// The view lines a viewport covers.
-    ///
-    /// Still a walk: the view lines above `first` are built and dropped rather than
-    /// skipped over. They are twelve-byte `Copy` values that touch no text, so
-    /// for the view-line counts real files produce this costs nothing, and it keeps
-    /// the alternative — a stored view-line index per layout — out of the crate.
+    /// Iterates view lines starting at `first`.
     pub fn view_lines_from(
         &self,
         layout: DiffType,
@@ -212,11 +185,9 @@ impl Alignment {
         blocks(self.view_lines(layout))
     }
 
-    /// Which line of which version a view line shows.
+    /// Returns the file line shown by a view line.
     ///
-    /// With [`view_line_at`](Self::view_line_at), how a reader keeps their place when the
-    /// layout changes: a view-line number means nothing in the other layout, but a
-    /// line means the same in both.
+    /// File line numbers are shared by both layouts.
     pub fn line_at(&self, layout: DiffType, view_line: u32) -> Option<(DiffVersion, u32)> {
         layout::line_at(
             layout,
@@ -264,10 +235,7 @@ impl Alignment {
             .find(|h| contains(range(h, version), line))
     }
 
-    /// Character-level changes on one line, as byte ranges into it.
-    ///
-    /// An inner change can span several lines, so this asks for one line at a
-    /// time rather than returning a shape the caller has to unpick.
+    /// Returns byte spans for inner changes on one line.
     pub fn spans(&self, version: DiffVersion, line: u32) -> Vec<Span> {
         let lines = self.lines(version);
         self.diff
@@ -286,7 +254,7 @@ impl Alignment {
             .collect()
     }
 
-    /// The backgrounds, character ranges, and empty markers VS Code gives a line.
+    /// Returns line backgrounds, character ranges, and empty markers.
     pub fn decorations(&self, version: DiffVersion, line: u32) -> LineDecorations {
         decorations(
             &self.diff,
@@ -297,12 +265,7 @@ impl Alignment {
         )
     }
 
-    /// The move a line takes part in, if any.
-    ///
-    /// A lookup rather than a field on the line: the engine's move ranges need
-    /// not agree with its change ranges — in the `comprehensive_move` fixture a
-    /// move covers original 32..89 while a change covers 37..139 — so a move
-    /// cannot be attached to a change without lying about one of them.
+    /// Returns the move containing a line, if any.
     pub fn moved(&self, version: DiffVersion, line: u32) -> Option<&MovedText> {
         self.diff
             .moves
@@ -315,15 +278,8 @@ fn contains(range: LineRange, line: u32) -> bool {
     line >= range.start_line && line < range.end_line
 }
 
-/// An empty file, as the engine models it.
-///
-/// `vscode_diff::compute` turns `&[]` into `&[""]` before handing it to the
-/// engine, so a diff of an empty file talks about line 1. An `Alignment` given
-/// the un-normalised `&[]` would hold a file with no line 1 and disagree with
-/// its own diff, so it normalises identically. Found by `proptest`, which
-/// shrank to `original = []`.
-/// Copies the caller's lines in, standing an absent file up as the engine's
-/// representation of an empty one: a single empty line.
+/// Copies the lines and normalizes an empty side to one empty line, matching
+/// the engine's document model.
 fn normalise(lines: &[&str]) -> Vec<String> {
     if lines.is_empty() {
         return vec![String::new()];

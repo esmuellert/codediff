@@ -1,15 +1,6 @@
-//! What reading a file from the top buys, and what a hunk viewer cannot have.
+//! Tests multiline parser state across incremental reads.
 //!
-//! `delta` starts its highlighter afresh at every hunk header, so a hunk that
-//! begins inside a block comment or a multi-line string is coloured as though
-//! it began at the top of the file — code shown as string, string shown as
-//! code. It has been open since 2020 as
-//! [#117](https://github.com/dandavison/delta/issues/117), and the proposed
-//! fix is to ask git for `-U9999` and throw most of the answer away.
-//!
-//! We read whole snapshots, so the fix is free. These tests hold it that way:
-//! they are the ones that would fail if anybody made the highlighter stateless
-//! per line, or started it anywhere but line 1.
+//! Highlighting starts at line 1 and retains state between lines.
 
 use syntax::{Capture, Clues, Engine, Highlighted, Palette, Pen, Rule, Span, Style};
 
@@ -59,8 +50,7 @@ fn first(spans: &[Vec<Span>], line: usize, source: &str) -> Option<Pen> {
 
 #[test]
 fn a_line_inside_a_block_comment_is_a_comment() {
-    // The middle line has no comment marker of its own. Only the lines above
-    // it say it is one.
+    // The middle line inherits the opening comment state.
     let source = "\
 fn a() {}
 /*
@@ -76,8 +66,7 @@ fn b() {}
 
 #[test]
 fn code_after_a_block_comment_is_not_still_a_comment() {
-    // The other half of the same bug: a highlighter that never saw the `*/`
-    // would colour the rest of the file grey.
+    // State must reset after the closing delimiter.
     let source = "/* one\n   two */\nfn after() {}\n";
     let spans = read("a.rs", source);
     assert_eq!(first(&spans, 2, source), Some(KEYWORD), "after the close");
@@ -85,9 +74,7 @@ fn code_after_a_block_comment_is_not_still_a_comment() {
 
 #[test]
 fn a_python_docstring_does_not_invert_the_rest_of_the_file() {
-    // delta's own regression test, in their words: starting cold at the
-    // closing `"""` makes it read as an *opening* one, so the docstring gets
-    // code colours and the code gets string colours.
+    // A docstring must not change the state of the following code.
     let source = "\
 def f():
     \"\"\"
@@ -96,9 +83,7 @@ def f():
     return 1
 ";
     let spans = read("a.py", source);
-    // The grammar scopes a docstring as documentation rather than as a plain
-    // string, so it lands on the comment rule — which is what most themes
-    // want, and either way it is not code.
+    // A docstring is prose, not executable code.
     let docstring = first(&spans, 2, source);
     assert!(
         docstring == Some(COMMENT) || docstring == Some(STRING),
@@ -117,8 +102,7 @@ fn a_multiline_string_holds_its_colour_across_lines() {
 
 #[test]
 fn reading_lazily_gives_the_same_answer_as_reading_it_all() {
-    // The laziness must be invisible. Reading a prefix, then more, then the
-    // rest must land exactly where one pass would have.
+    // Incremental reads must match one full read.
     let source = "fn a() {}\n/*\n comment\n*/\nfn b() {}\nfn c() {}\n";
     let engine = Engine::new();
     let palette = palette();
@@ -128,10 +112,7 @@ fn reading_lazily_gives_the_same_answer_as_reading_it_all() {
         .expect("a grammar");
 
     let mut piecemeal = Highlighted::new(&engine, grammar, &palette, &lines);
-    // Reached in three goes, as a reader scrolling would. Each call appends
-    // only what it newly read, so the buffer is what the caller would have
-    // installed — which makes this a check on the joins as well as the
-    // colours.
+    // Each call appends only newly read lines.
     let mut spans = Vec::new();
     for line in [0, 2, 5] {
         piecemeal.read_colours_to_line(&engine, &palette, line, &lines, &mut spans);

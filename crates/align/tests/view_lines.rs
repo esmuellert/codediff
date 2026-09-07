@@ -1,9 +1,6 @@
 //! Exact view lines for hand-built diffs.
 //!
-//! The fixture and property tests check that each column *reads back* as its
-//! file, which a wrong pairing can still satisfy: swapping the two fillers
-//! inside a changed block leaves both columns intact and every invariant true.
-//! These pin which line sits opposite which.
+//! These tests pin the pairing of lines and fillers.
 
 use align::{Alignment, Malformed, Slot, ViewLineType};
 use file_types::DiffType;
@@ -52,8 +49,7 @@ fn a_deletion_and_an_insertion_land_on_the_right_rows() {
 
 #[test]
 fn a_change_taller_on_one_side_puts_its_fillers_last() {
-    // Three original lines become one. The first line pairs, and the two extra
-    // original lines fall opposite fillers *below* it, not interleaved.
+    // Extra original lines follow the paired line as fillers.
     let original = split("a\nb\nc\nd\nz");
     let modified = split("a\nQ\nz");
     let diff = compute(&original, &modified);
@@ -296,20 +292,11 @@ fn slot_reports_filler_correctly() {
     assert_eq!(Slot::Line(3).line(), Some(3));
 }
 
-// --- where the fillers go inside a change ---------------------------------
-//
-// A change is not one block with its fillers at the bottom. Where the engine
-// matched text across it, the lines carrying that text are pulled level and
-// the fillers go around them. These pin that, because the columns read back
-// as their files either way and every other invariant stays true.
+// --- filler placement inside a change --------------------------------------
 
 #[test]
 fn a_line_that_survived_a_rewrite_sits_beside_itself() {
-    // Real text, from the change that showed this up: a doc comment loses two
-    // lines and rewrites the rest, and the engine reports the whole thing as
-    // one change with inner detail. Without splitting on that detail the two
-    // fillers land at the bottom, and every line of the comment sits opposite
-    // the wrong one.
+    // Inner changes keep surviving lines aligned with their counterparts.
     let original = split(
         "impl std::fmt::Debug for Highlighted {\n\
          \x20   /// How far it has got, not every span it found.\n\
@@ -342,10 +329,7 @@ fn a_line_that_survived_a_rewrite_sits_beside_itself() {
 
 #[test]
 fn a_block_with_nothing_matching_puts_its_fillers_first() {
-    // Built by hand: this engine always reports inner detail when both sides
-    // have text, so nothing it produces reaches this branch. The plugin has
-    // the rule, a slower engine that gave up could produce the shape, and it
-    // is ten lines — so it is here and pinned rather than guessed at later.
+    // Exercise a line mapping without inner ranges.
     let original = split("one\ntwo\nthree");
     let modified = split("one\nalpha\nbeta\ngamma\nthree");
     let blunt = LinesDiff {
@@ -379,8 +363,7 @@ fn a_block_with_nothing_matching_puts_its_fillers_first() {
 
 #[test]
 fn the_view_line_count_matches_the_walk() {
-    // Splitting a change can make it taller than either side, so the count
-    // cannot be derived from the line totals and must come from the same walk.
+    // Count rows from the same walk that produces them.
     for (original, modified) in [
         (
             "impl std::fmt::Debug for Highlighted {\n    /// How far it has got.\n    ///\n    /// Written out rather than derived because the derived form is tens of\n    /// thousands of byte ranges, which no failing test is easier to read for.\n    fn fmt(&self) {",

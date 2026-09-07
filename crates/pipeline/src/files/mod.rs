@@ -47,7 +47,7 @@ impl Request {
 
 /// What one request produced.
 pub struct Response {
-    /// Which repository this answers — used to drop late responses.
+    /// Repository key used to match the response.
     pub repo: PathBuf,
     pub files: Vec<File>,
 }

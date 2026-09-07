@@ -32,14 +32,7 @@ pub fn collect(
     (thread, shared)
 }
 
-/// Blocks until the child has drawn and then gone quiet.
-///
-/// A keystroke means nothing until the first frame is on screen, and what that
-/// frame waits for — a process started, a repository listed, a file diffed —
-/// takes a different length of time on every machine. Measured here at 840 ms
-/// for a debug build, against the 400 ms a fixed sleep used to guess: the keys
-/// landed before the diff they act on, and the test read a screen with only
-/// the list on it. So wait for the writing to stop rather than guess.
+/// Blocks until the child has drawn a quiet frame.
 pub fn drawn(output: &Arc<Mutex<Output>>) {
     drawn_after(output, 0);
 }
@@ -101,8 +94,7 @@ pub fn on_a_terminal(args: &[&str], cwd: Option<&PathBuf>, keys: &[u8]) -> (Stri
 
     if !keys.is_empty() {
         // The child has to have drawn its first frame before a keystroke means
-        // anything; without this the key can arrive before raw mode is on and
-        // be echoed instead of read.
+        // Prevent input from being echoed before raw mode is enabled.
         drawn(&output);
         let mut writer = pty.master.take_writer().expect("writing to the pty");
         writer.write_all(keys).expect("sending keys");

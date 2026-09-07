@@ -1,8 +1,4 @@
-//! Character-level changes, resolved to byte ranges.
-//!
-//! The engine reports these as two-dimensional position pairs, so one can begin
-//! on one line and finish on another. These are hand-built rather than taken
-//! from the engine, so the awkward shapes are actually reachable.
+//! Tests character ranges that cross line boundaries.
 
 use align::{Alignment, DiffVersion};
 use vscode_diff::{
@@ -19,8 +15,7 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 
 #[test]
 fn a_span_crossing_a_line_boundary_covers_each_line_correctly() {
-    // The engine reports inner changes as two-dimensional position pairs, so
-    // one can start on one line and finish on another.
+    // A range can span multiple lines.
     let original = split("keep\nalpha\nbravo\nkeep");
     let modified = split("keep\nALPHA\nBRAVO\nkeep");
     let crossing = LinesDiff {
@@ -71,7 +66,7 @@ fn a_span_crossing_a_line_boundary_covers_each_line_correctly() {
 
 #[test]
 fn a_span_ending_at_column_one_contributes_no_final_line() {
-    // `L3:C1` means "the very start of line 3", so line 3 has nothing in it.
+    // An end column of 1 contributes no bytes on that line.
     let text = split("keep\nalpha\nkeep");
     let diff = LinesDiff {
         changes: vec![DetailedLineRangeMapping {
@@ -109,8 +104,7 @@ fn a_span_ending_at_column_one_contributes_no_final_line() {
 
 #[test]
 fn a_real_edit_reports_the_characters_that_changed() {
-    // A positive assertion: a test that only checks spans are *sliceable*
-    // passes just as well when `spans()` always returns nothing.
+    // A real edit must produce a non-empty span.
     let original = split("let timeout = 30;");
     let modified = split("let timeout = 45;");
     let diff = compute(&original, &modified);

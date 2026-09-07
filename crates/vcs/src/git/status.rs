@@ -1,28 +1,7 @@
-//! `git status --porcelain=v2 -z`, in git's own vocabulary.
+//! Parses `git status --porcelain=v2 -z`.
 //!
-//! This module keeps git's words — `XY` codes, the index, object ids — because
-//! forcing them into neutral names would either lose meaning or invent a
-//! concept other systems do not share. [`super::to_change`] is the single place
-//! they are translated.
-//!
-//! The format is documented in `git-status(1)`. Records are NUL-terminated and
-//! there are five kinds:
-//!
-//! ```text
-//! 1 XY sub mH mI mW hH hI path                  ordinary change
-//! 2 XY sub mH mI mW hH hI Xscore path NUL orig  rename or copy
-//! u XY sub m1 m2 m3 mW h1 h2 h3 path            unmerged
-//! ? path                                        untracked
-//! ! path                                        ignored
-//! ```
-//!
-//! A rename record spans two NUL-terminated fields. Splitting the stream on
-//! NUL and treating every piece as a record silently turns one rename into a
-//! record plus a garbage entry, so the parser consumes fields in order.
-//!
-//! `-z` is not optional. Without it git quotes any path containing a layout,
-//! a quote or a non-ASCII byte, and a path containing a newline breaks the
-//! format outright.
+//! Records are NUL-terminated; rename and copy records consume a second path.
+//! Record kinds are `1`, `2`, `u`, `?`, and `!`.
 
 use crate::error::{Error, Result};
 
@@ -59,12 +38,7 @@ impl Code {
         })
     }
 
-    /// Git's own letter for this code.
-    ///
-    /// The inverse of the parse above, and only the manifest check needs it:
-    /// nothing draws an `XY` code, because nothing outside this crate can see
-    /// one. It stays because the manifest is written in these letters and a
-    /// check that restated them in our words would be checking itself.
+    /// Git's letter for this code, used by parser tests.
     #[cfg(test)]
     pub fn letter(self) -> char {
         match self {
@@ -82,11 +56,7 @@ impl Code {
     }
 }
 
-/// The two codes git reports per file.
-///
-/// Git compares three things, not two: `HEAD`, the index and the working tree.
-/// `index` is `HEAD` against the index — what committing now would record —
-/// and `worktree` is the index against what is on disk.
+/// Git's index and worktree status codes for one path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Xy {
     pub index: Code,
@@ -96,10 +66,8 @@ pub struct Xy {
 /// One record of `git status --porcelain=v2`.
 ///
 /// Paths are plain strings, as git spelled them: parsing has no repository
-/// root to resolve them against. They become a [`RepoPath`] in
-/// [`to_file_diff`](crate::git::to_file_diff), which does.
-///
-/// [`RepoPath`]: file_types::RepoPath
+/// root to resolve them against. The repository layer turns them into
+/// `file_types::RepoPath` values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub xy: Xy,
@@ -126,7 +94,7 @@ impl Untracked {
     }
 }
 
-/// Parses the whole output of `git status --porcelain=v2 -z`.
+/// Parses `git status --porcelain=v2 -z` output.
 pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>> {
     let mut fields = Fields::new(bytes);
     let mut out = Vec::new();
@@ -156,13 +124,11 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>> {
     Ok(out)
 }
 
-/// `XY sub mH mI mW hH hI path` — eight fields. `splitn` leaves the whole
-/// remainder in the last one, so a path containing spaces stays intact.
+/// Ordinary records have eight fields; the path is the final field.
 fn ordinary(rest: &str) -> Result<Entry> {
     let mut parts = rest.splitn(8, ' ');
     let xy = codes(parts.next())?;
-    // The modes and hashes are skipped: what to show is decided by XY, and
-    // content is fetched by path.
+    // Callers fetch content by path; modes and hashes are not needed here.
     let path = parts
         .nth(6)
         .ok_or_else(|| missing("ordinary record path"))?;
@@ -192,8 +158,7 @@ fn rename(rest: &str, original: Option<&str>) -> Result<Entry> {
     })
 }
 
-/// `XY sub m1 m2 m3 mW h1 h2 h3 path` — ten fields: three stages, so three
-/// modes and three hashes rather than two.
+/// Unmerged records have ten fields: three stages, modes, and hashes.
 fn unmerged(rest: &str) -> Result<Entry> {
     let mut parts = rest.splitn(10, ' ');
     let xy = codes(parts.next())?;
@@ -211,7 +176,7 @@ fn unmerged(rest: &str) -> Result<Entry> {
 fn simple(path: &str, code: Code) -> Entry {
     Entry {
         xy: Xy {
-            // Git reports no index state for these; they exist only on disk.
+            // Untracked and ignored files have no index state.
             index: Code::Unmodified,
             worktree: code,
         },
@@ -260,9 +225,7 @@ impl<'a> Fields<'a> {
             None => (self.rest, &self.rest[self.rest.len()..]),
         };
         self.rest = rest;
-        // Paths are bytes on Unix and need not be UTF-8. One we cannot decode
-        // we could neither display nor hand back to git, so it is an error
-        // rather than a lossy conversion that looks right and then fails.
+        // Paths must be UTF-8 for display and later Git commands.
         std::str::from_utf8(field)
             .map(Some)
             .map_err(|_| Error::NotUtf8 {
@@ -273,9 +236,7 @@ impl<'a> Fields<'a> {
 
 #[cfg(test)]
 mod tests {
-    //! On bytes captured from real git, in git's vocabulary — `XY` codes, the
-    //! index, similarity scores. No repository needed, so these run everywhere
-    //! and pin the shapes that are awkward to produce on demand.
+    //! Parser tests for Git's NUL-terminated status records.
 
     use super::*;
     use file_types::ChangeType;
@@ -290,7 +251,6 @@ mod tests {
         out
     }
 
-    /// The ordinary comparison. No test here is about which revisions these are.
     fn revs() -> file_types::Revs {
         file_types::Revs::worktree_against(file_types::Oid::new("b87b24c"))
     }
@@ -308,7 +268,7 @@ mod tests {
 
     #[test]
     fn staged_and_then_edited_again_reports_two_different_codes() {
-        // The one case where X and Y disagree, and the reason both are kept.
+        // A staged-then-edited path carries both states.
         let bytes =
             stream(&["1 MM N... 100644 100644 100644 9c59e24 e019be0 staged-then-edited.txt"]);
         let entries = parse(&bytes).expect("parses");
@@ -318,9 +278,7 @@ mod tests {
 
     #[test]
     fn a_rename_spans_two_fields() {
-        // The trap: the original path is a *separate* NUL-terminated field, so a
-        // parser that splits the stream and treats each piece as a record produces
-        // one rename plus one garbage entry.
+        // The original path is a separate NUL-terminated field.
         let bytes = stream(&[
             "2 R. N... 100644 100644 100644 148c84a 148c84a R100 renamed-to.txt",
             "renamed-from.txt",
@@ -346,7 +304,6 @@ mod tests {
             .get_change_type(),
             ChangeType::Moved
         );
-        // The record after a rename must still be read correctly.
         assert_eq!(entries[1].path.as_str(), "after.txt");
     }
 
@@ -363,8 +320,7 @@ mod tests {
 
     #[test]
     fn an_unmerged_record_has_three_stages() {
-        // `u` carries three modes and three hashes rather than two, so the path
-        // sits at a different offset from an ordinary record.
+        // Unmerged records have three mode/hash pairs.
         let bytes =
             stream(&["u UU N... 100644 100644 100644 100644 df967b9 b19a1e9 950b81b conflict.txt"]);
         let entries = parse(&bytes).expect("parses");
@@ -401,8 +357,7 @@ mod tests {
 
     #[test]
     fn a_path_containing_spaces_survives() {
-        // Whitespace splitting is the obvious way to parse this format and it is
-        // wrong; the path runs to the end of the field.
+        // The path occupies the remainder of the field.
         let bytes = stream(&["1 .M N... 100644 100644 100644 4cb29ea 4cb29ea with spaces.txt"]);
         let entries = parse(&bytes).expect("parses");
         assert_eq!(entries[0].path.as_str(), "with spaces.txt");
@@ -418,8 +373,7 @@ mod tests {
 
     #[test]
     fn a_path_containing_a_newline_survives() {
-        // The reason -z is not optional: without it this breaks the format, since
-        // records would be newline-separated.
+        // NUL framing preserves newlines in paths.
         let bytes = stream(&["1 .M N... 100644 100644 100644 4cb29ea 4cb29ea two\nlines.txt"]);
         let entries = parse(&bytes).expect("parses");
         assert_eq!(entries.len(), 1);
@@ -439,8 +393,7 @@ mod tests {
 
     #[test]
     fn a_branch_header_is_ignored() {
-        // Only produced with --branch, which we do not pass, but skipping it costs
-        // nothing and makes the parser usable if we ever do.
+        // Ignore branch headers if they are present.
         let bytes = stream(&[
             "# branch.oid 1234abcd",
             "1 .M N... 100644 100644 100644 4cb29ea 4cb29ea modified.txt",
@@ -449,12 +402,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
     }
 
-    // ---- against a real repository -------------------------------------
-    //
-    // The manifest is written by hand in git's `XY` spelling, so the check is
-    // in git's words and belongs beside the parser that produces them. It used
-    // to be `codediff debug status`, which meant a subcommand printing status
-    // codes it had no business knowing. See D67.
+    // ---- repository integration -----------------------------------------
 
     struct Fixture {
         dir: std::path::PathBuf,
@@ -521,8 +469,7 @@ mod tests {
 
     #[test]
     fn a_file_staged_and_then_edited_again_keeps_both_codes() {
-        // One entry, two codes. The reviewer's layer splits it into two
-        // comparisons; this is the record it splits.
+        // One entry can represent two comparisons.
         let fixture = Fixture::new("both-codes");
         let entries = fixture.entries();
         let entry = entries

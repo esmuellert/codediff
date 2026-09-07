@@ -1,8 +1,4 @@
-//! Which tree-sitter capture maps to which [`Group`].
-//!
-//! The twin of [`scopes`](super::scopes) for the parser engine. Simpler
-//! because captures have no precedence rules — the engine matches by longest
-//! prefix, so only names that need a different answer from their prefix appear.
+//! Tree-sitter capture names mapped to syntax groups.
 
 use crate::group::Group;
 
@@ -16,24 +12,18 @@ const fn name(name: &'static str, group: Group) -> Name {
     Name { name, group }
 }
 
-/// Every capture we recognise.
-///
-/// The vocabulary is the union of what the twenty-five grammars in the table
-/// actually write, which is not quite tree-sitter's published standard list
-/// and not quite Neovim's — several grammars still use the pre-2024 names
-/// (`@parameter`, `@field`, `@method`, `@conditional`), so both spellings are
-/// here. A name nothing uses costs nothing.
+/// Capture names used by the bundled grammars.
 pub const NAMES: &[Name] = {
     use Group as T;
     &[
         // --- the shape every language has ---
-        // Upright, for the reason given beside the matcher's `comment`.
+        // Comments use the default font style.
         name("comment", T::Comment),
         name("string", T::String),
         name("string.escape", T::Escape),
         name("string.regex", T::Regexp),
         name("string.regexp", T::Regexp),
-        // JavaScript spells a regular expression this way, and Elixir a sigil.
+        // These names cover regex and sigil captures.
         name("string.special", T::Regexp),
         name("string.special.key", T::Property),
         name("string.special.path", T::Link),
@@ -53,7 +43,7 @@ pub const NAMES: &[Name] = {
         name("keyword.directive", T::Preprocessor),
         name("preproc", T::Preprocessor),
         name("operator", T::Operator),
-        // The pre-2024 spellings, still shipped by several grammars.
+        // Legacy grammar spellings.
         name("conditional", T::Keyword),
         name("repeat", T::Keyword),
         name("exception", T::Keyword),
@@ -62,10 +52,7 @@ pub const NAMES: &[Name] = {
         name("storageclass", T::Keyword),
         // --- types ---
         name("type", T::Type),
-        // A built-in type is a reserved word — `u32`, `int`, `string`. Both
-        // references agree: VS Code gives `storage.type` its keyword colour
-        // and Catppuccin sends `@type.builtin` to Mauve. The *name* of a type
-        // is what earns the type colour. Same decision as `scopes`.
+        // Built-in types use the keyword group; declared type names use Type.
         name("type.builtin", T::Keyword),
         name("type.qualifier", T::Keyword),
         name("type.definition", T::Type),
@@ -94,7 +81,7 @@ pub const NAMES: &[Name] = {
         // --- markup and data ---
         name("tag", T::Tag),
         name("tag.error", T::Invalid),
-        // CSS spells its at-rules as captures of their own.
+        // CSS at-rules use dedicated captures.
         name("keyframes", T::Keyword),
         name("media", T::Keyword),
         name("supports", T::Keyword),

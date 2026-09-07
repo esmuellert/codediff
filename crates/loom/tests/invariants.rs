@@ -1,5 +1,4 @@
-//! The invariants of §13, each written by breaking the code on purpose and
-//! watching it fail.
+//! Invariant tests for rendering, state, layout, and effects.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -89,7 +88,7 @@ fn a_component_reads_its_own_state() {
     assert_eq!(screen.screen_row(0), "n=0");
 }
 
-/// I1 — the screen is a function of state.
+/// Repeated draws are stable.
 #[test]
 fn two_draws_with_nothing_between_them_agree() {
     let mut screen = Harness::new::<Counter>(CounterProps {}, 10, 1);
@@ -109,7 +108,7 @@ fn a_key_reaches_the_focused_node_and_state_moves() {
     assert_eq!(screen.screen_row(0), "n=2");
 }
 
-/// I2 — state survives a re-render of the parent.
+/// Child state survives a parent re-render.
 #[component]
 fn Parent(scope: &mut Scope, tag: u32) -> Node {
     let _ = scope;
@@ -136,7 +135,7 @@ fn a_component_at_the_same_place_keeps_its_state() {
     assert_eq!(screen.screen_row(1), "n=1");
 }
 
-/// I3 — a different component at the same place starts fresh.
+/// A different component at the same position starts fresh.
 #[component]
 fn Swap(scope: &mut Scope, other: bool) -> Node {
     let _ = scope;
@@ -165,7 +164,7 @@ fn a_different_component_at_the_same_place_starts_fresh() {
     assert_eq!(screen.screen_row(0), "n=0");
 }
 
-/// I11 — an effect's cleanup runs before its next setup.
+/// Effect cleanup runs before the next setup.
 #[component]
 fn Effecting(scope: &mut Scope, tag: u32, log: Rc<RefCell<Vec<String>>>) -> Node {
     let tag = *tag;
@@ -287,7 +286,7 @@ fn a_ref_survives_a_render() {
     assert_eq!(&*log.borrow(), &[1, 2]);
 }
 
-/// I5 — every rectangle handed to a child lies inside its parent's.
+/// Child rectangles stay inside their parent.
 #[component]
 fn Overflowing(scope: &mut Scope) -> Node {
     let _ = scope;
@@ -314,8 +313,7 @@ fn every_child_rectangle_is_inside_its_parent() {
     assert!(text.contains("Row 18x1+1+1"), "{text}");
 }
 
-/// The same thing seen from the padded side: a child never starts before its
-/// parent's inner edge.
+/// Child layout starts inside the parent's padding.
 #[component]
 fn Nested(scope: &mut Scope) -> Node {
     let _ = scope;
@@ -338,7 +336,7 @@ fn padding_comes_off_before_the_children() {
     assert!(text.contains("Row 18x1+1+1"), "{text}");
 }
 
-/// I7 — children tile the container in order.
+/// Children tile the container in order.
 #[test]
 fn children_tile_the_container_in_order() {
     let mut screen = Harness::new::<Two>(TwoProps {}, 10, 1);
@@ -383,9 +381,7 @@ fn a_keyed_child_keeps_its_state_when_the_list_reorders() {
     assert_eq!(screen.screen(), vec!["3:3", "1:1", "2:2"]);
 }
 
-/// A child that writes state is reached even when everything above it is
-/// clean. Without marking the path to the root, the root hands back last
-/// frame's subtree and the write never reaches the screen.
+/// A child state update reaches the screen through clean ancestors.
 #[component]
 fn Quiet(scope: &mut Scope) -> Node {
     let _ = scope;
@@ -414,8 +410,7 @@ fn a_write_below_a_clean_parent_still_reaches_the_screen() {
     assert_eq!(screen.screen_row(0), "n=42");
 }
 
-/// I6.2 — a container that cannot fit its children, and has nothing to say
-/// about it, passes the condition to its parent.
+/// A too-small condition reaches the nearest fallback.
 #[component]
 fn Cramped(scope: &mut Scope) -> Node {
     let _ = scope;

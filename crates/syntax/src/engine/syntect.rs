@@ -1,7 +1,6 @@
-//! The syntect (TextMate regex) engine.
+//! Syntect/TextMate syntax highlighting.
 //!
-//! `lint-arch` refuses `syntect` outside this file. Theme matching (scope
-//! precedence) is syntect's own — we supply the colour choices as [`Rule`]s.
+//! This module owns grammar lookup, parser state, and scope matching.
 
 use syntect::highlighting::{
     Color, FontStyle, HighlightState, Highlighter, RangedHighlightIterator, ScopeSelectors,
@@ -13,19 +12,12 @@ use crate::detect::Clues;
 use crate::limits;
 use crate::style::{Pen, Rule, Span, Style, coalesce};
 
-/// Every grammar we can load, loaded once.
-///
-/// Two-face's set rather than syntect's own: it is `bat`'s, which carries the
-/// languages people actually diff — TypeScript, TOML, Dockerfile — that the
-/// default set omits.
+/// All TextMate grammars loaded by the process.
 pub struct Engine {
     syntaxes: SyntaxSet,
 }
 
-/// Which grammar to colour a file with.
-///
-/// An index rather than a reference, so it can be stored beside the buffer
-/// that needs it without borrowing the engine.
+/// Index of a TextMate grammar in the syntax table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Grammar(usize);
 
@@ -34,22 +26,11 @@ pub struct Palette {
     theme: Theme,
 }
 
-/// How far through a file the engine has read, and what it was in the middle
-/// of.
-///
-/// Two states, not one: `ParseState` knows which grammar contexts are open —
-/// whether this line is inside a block comment — and `HighlightState` knows
-/// which theme rules those contexts resolved to. Both must be carried from one
-/// line to the next, so a highlighter cannot be asked about line 500 alone.
+/// Parser and theme state carried from one line to the next.
 pub struct SyntectState {
     parse: ParseState,
     highlight: HighlightState,
-    /// The line with its newline restored, reused so that engine_state a file does
-    /// not allocate once per line.
-    ///
-    /// The grammars are the newline-terminated variants, because a rule that
-    /// ends at `$` needs something to match against; without it a line comment
-    /// never closes.
+    /// Reused buffer containing the current line and a newline.
     buffer: String,
 }
 
@@ -60,11 +41,9 @@ impl Engine {
         }
     }
 
-    /// Which grammar reads this file, if any does.
+    /// Finds a grammar by known name, extension, file name, or shebang.
     ///
-    /// Name, then extension, then shebang — most certain first. A file nothing
-    /// claims gets `None` and is shown as plain text, which is the S11
-    /// criterion for an unrecognised type: no colour, no failure.
+    /// Unknown files return `None` and are rendered as plain text.
     pub fn find(&self, clues: Clues<'_>) -> Option<Grammar> {
         let by_name = clues
             .well_known()
@@ -74,8 +53,7 @@ impl Engine {
                 .extension()
                 .and_then(|ext| self.syntaxes.find_syntax_by_extension(ext))
         };
-        // The whole file name too: as far as the engine's own table is
-        // concerned, `.gitignore` and `Makefile` are extensions.
+        // Some extension tables also contain complete file names.
         let by_file_name = || self.syntaxes.find_syntax_by_extension(clues.file_name());
         let by_shebang = || {
             clues
@@ -93,12 +71,12 @@ impl Engine {
             .map(Grammar)
     }
 
-    /// What the engine calls this grammar, for tests and for a status line.
+    /// Returns the grammar name.
     pub fn name(&self, grammar: Grammar) -> &str {
         &self.syntaxes.syntaxes()[grammar.0].name
     }
 
-    /// Begins engine_state a file from its first line.
+    /// Starts parser state for a file.
     pub fn start(&self, grammar: Grammar, palette: &Palette) -> SyntectState {
         let syntax = &self.syntaxes.syntaxes()[grammar.0];
         let highlighter = Highlighter::new(&palette.theme);
@@ -109,13 +87,7 @@ impl Engine {
         }
     }
 
-    /// Reads the given lines in order, appending the spans for each.
-    ///
-    /// A batch rather than one line at a time for one measured reason: the
-    /// engine's matcher is built from the theme, and building it costs a pass
-    /// over every rule. Per line that was two thirds of the total — 15 000
-    /// lines a second became 45 000 by moving one constructor out of the loop.
-    /// The caller already has the whole slice, so there is nothing to give up.
+    /// Reads lines in order and appends their spans.
     pub fn read(
         &self,
         engine_state: &mut SyntectState,
@@ -132,12 +104,8 @@ impl Engine {
 
     /// Reads one more line, and says how it is coloured.
     ///
-    /// Must be called in order from the first line: the answer for this line
-    /// depends on every line before it. A line too long to be worth colouring
-    /// is still parsed — its state is carried forward — but reported as
-    /// having no spans, so a minified bundle cannot corrupt the lines after
-    /// it. That is `bat`'s answer; `delta` truncates the text and loses the
-    /// state.
+    /// Reads in order from the first line so multiline grammar state is kept.
+    /// Lines over the colour limit are parsed but return no spans.
     fn read_line(
         &self,
         engine_state: &mut SyntectState,
@@ -183,12 +151,9 @@ impl Default for Engine {
 }
 
 impl Palette {
-    /// Builds the engine's theme from the caller's rules.
+    /// Builds a TextMate theme from the caller's scope rules.
     ///
-    /// A rule whose selector the engine cannot parse is dropped rather than
-    /// failing the whole theme: one bad selector should cost one colour, not
-    /// every colour. [`rules`](Self::rules) reports how many were accepted so
-    /// a test can catch one we wrote wrongly.
+    /// Selectors the engine cannot parse are ignored.
     pub fn new(rules: &[Rule]) -> Self {
         let scopes = rules
             .iter()
@@ -203,9 +168,7 @@ impl Palette {
             theme: Theme {
                 name: None,
                 author: None,
-                // A transparent default, so that a scope no rule claimed can
-                // be told apart from one a rule painted. Every rule we build
-                // is opaque, so alpha alone answers it — see `convert`.
+                // Transparency marks scopes that no rule claimed.
                 settings: ThemeSettings {
                     foreground: Some(UNCLAIMED),
                     ..ThemeSettings::default()
@@ -229,21 +192,15 @@ fn modifier(style: Style) -> StyleModifier {
     font.set(FontStyle::UNDERLINE, style.underline);
     StyleModifier {
         foreground: style.pen.map(encode),
-        // Never a background: a diff owns that, and a syntax background would
-        // hide which lines changed. See the crate README.
+        // Diff backgrounds are applied by the UI.
         background: None,
         font_style: Some(font),
     }
 }
 
-/// A [`Pen`] hidden in the only field the engine will carry for us.
+/// Encodes a pen in the colour field carried by syntect.
 ///
-/// The engine resolves a *colour* per scope, so a pen number rides in one. It
-/// is never shown to a terminal: [`decode`] takes it back out before a span
-/// leaves this file. `bat` smuggles ANSI indices through the same field for
-/// the same reason — there is nowhere else to put them.
-///
-/// Alpha is the tell. Every pen we encode is opaque; [`UNCLAIMED`] is not.
+/// Alpha distinguishes encoded pens from an unclaimed scope.
 const fn encode(Pen(n): Pen) -> Color {
     Color {
         r: (n >> 8) as u8,
@@ -260,13 +217,7 @@ const fn decode(colour: Color) -> Option<Pen> {
     Some(Pen(((colour.r as u16) << 8) | colour.g as u16))
 }
 
-/// What a scope resolves to when no rule claimed it.
-///
-/// Transparent, which no pen of ours ever is, so the two cannot be confused.
-/// Comparing against a *value* instead would mean a theme could not use that
-/// pen, and getting it wrong is invisible: every ordinary character would be
-/// repainted in a shade `ui` never chose, which is what the first draft of
-/// this did.
+/// Transparent marker for an unclaimed scope.
 const UNCLAIMED: Color = Color {
     r: 0,
     g: 0,

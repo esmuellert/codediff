@@ -1,8 +1,4 @@
-//! Colours for tree-structured rows (headings, guides, directories).
-//!
-//! Only what needs nesting to mean anything. Colours for *what happened to a
-//! file* are in [`Change`](super::Change) since they apply everywhere a file
-//! is named.
+//! Colours for tree rows: headings, guides, directories, and names.
 
 use ratatui::style::Color;
 
@@ -18,11 +14,7 @@ pub struct Tree {
     pub marker: Color,
     pub directory: Color,
     pub name: Color,
-    /// Where a file came from, when it moved.
-    ///
-    /// Not [`Theme::moved`](super::Theme::moved), which is a whole block the
-    /// engine judged to have moved within a file. This is a path written
-    /// beside a name, and it is faint because the name is what is being read.
+    /// The previous path shown beside a moved file name.
     pub previous: Color,
     /// How many files a section holds.
     pub count: Color,
@@ -45,7 +37,7 @@ impl Tree {
     }
 }
 
-/// The same assignment on the sixteen colours every terminal has.
+/// Basic-terminal colours for tree rows.
 pub const BASIC_DARK: Tree = Tree {
     heading: Color::Cyan,
     marker: Color::DarkGray,

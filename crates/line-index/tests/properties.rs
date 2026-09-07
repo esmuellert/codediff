@@ -1,8 +1,4 @@
-//! Invariants that must hold for any input.
-//!
-//! The hand-computed cases in `coordinates.rs` say what specific text measures.
-//! These say what must be true of *all* text, which is how the cases nobody
-//! thought to write down get covered.
+//! Property tests for Unicode coordinate conversions.
 
 use line_index::{ByteOff, CellCol, LineIndex, Utf16Col};
 use proptest::prelude::*;
@@ -15,14 +11,7 @@ fn m(text: &str) -> LineIndex<'_> {
 
 // ---------------------------------------------------------------------------
 
-/// Text built from the characters where the coordinate systems disagree.
-///
-/// `proptest`'s `.` is drawn from the whole of Unicode, but the *arrangements*
-/// that break conversions — a range landing inside a surrogate pair, a
-/// combining mark trailing a line, a tab after a wide character — need those
-/// characters next to each other, which random sampling rarely produces. This
-/// makes them common, while the last arm keeps arbitrary text in the mix so
-/// the properties still see input nobody thought to list.
+/// Generates text containing nontrivial coordinate cases.
 fn tricky_text() -> impl Strategy<Value = String> {
     proptest::collection::vec(
         prop_oneof![
@@ -83,9 +72,7 @@ proptest! {
         let line = m(&text);
         for g in line.graphemes() {
             prop_assert_eq!(line.byte_to_cell(g.byte), g.cell);
-            // Zero-width clusters share a cell with their neighbours, so the
-            // reverse direction yields the first byte at that cell rather than
-            // this particular one.
+            // Reverse lookup returns the first byte at a shared cell.
             let back = line.cell_to_byte(g.cell);
             prop_assert!(back <= g.byte);
             prop_assert_eq!(line.byte_to_cell(back), g.cell);
@@ -121,9 +108,7 @@ proptest! {
         let line = m(&text);
         let (from, to) = (start, start + len);
         let got: Vec<_> = line.graphemes_in_cells(CellCol(from)..CellCol(to)).collect();
-        // The window binary-searches a starting point rather than walking from
-        // column zero. Filtering the whole line is the same answer computed
-        // the slow, obvious way, so this checks the shortcut.
+        // Compare the window query with a full scan.
         let expected: Vec<_> = line
             .graphemes()
             .filter(|g| g.cells().end > from && g.cell.get() < to)
@@ -135,9 +120,7 @@ proptest! {
     fn a_non_empty_utf16_range_never_maps_to_an_empty_byte_range(
         text in tricky_text(), lo in 0u32..30, span in 0u32..5
     ) {
-        // Spans are deliberately short. The engine reports inner changes a few
-        // units wide, and a one-unit span is the case that breaks: both ends
-        // can land inside the same character.
+        // Short ranges cover endpoints inside one character.
         let line = m(&text);
         let hi = lo + span;
         let range = line.utf16_range_to_bytes(Utf16Col(lo)..Utf16Col(hi));
@@ -149,8 +132,7 @@ proptest! {
         prop_assert!(text.is_char_boundary(range.end.get() as usize));
 
         if lo < hi && lo < line.utf16_len().get() {
-            // Some real text lies in the span, so some real bytes must too —
-            // even when both ends land inside one character.
+            // A non-empty range must produce non-empty bytes.
             prop_assert!(range.start < range.end, "{:?} cols {}..{} collapsed", text, lo, hi);
         }
         if lo == hi {

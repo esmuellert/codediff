@@ -1,17 +1,10 @@
-//! `FileContent`: text, binary, or absent.
-//!
-//! A repository holds pictures as readily as source, so raw bytes are not
-//! something a caller can use. Classifying them here means every caller does
-//! not have to — and every caller would otherwise write the same check.
+//! File content classified as text, binary, or absent.
 
-/// What one version of a file holds, once we know whether it is text.
-///
-/// `Text` here means *not binary*, which is the only question this type
-/// answers. It is unrelated to how a file is shown, which is `ui`'s business.
+/// Content of one file version.
 #[derive(Debug)]
 pub enum FileContent {
     Text(String),
-    /// Not diffable. Carried rather than discarded so the size can be shown.
+    /// Binary content and its byte length.
     Binary {
         bytes: usize,
     },
@@ -30,9 +23,7 @@ impl FileContent {
         }
         match String::from_utf8(bytes) {
             Ok(text) => FileContent::Text(text),
-            // Valid UTF-8 is what `&str` requires and what the engine measures
-            // columns in. Bytes that are neither NUL-containing nor decodable
-            // are rare, and treating them as binary is honest.
+            // Non-UTF-8 content is treated as binary.
             Err(e) => FileContent::Binary {
                 bytes: e.into_bytes().len(),
             },
@@ -67,9 +58,7 @@ impl FileContent {
     }
 }
 
-/// How git decides, and for the same reason: a zero byte cannot appear in text,
-/// and scanning the whole of a large file to learn what its first kilobyte
-/// already says would be waste.
+/// Returns true when the first 8000 bytes contain a NUL.
 fn is_binary(bytes: &[u8]) -> bool {
     const SNIFF: usize = 8000;
     bytes.iter().take(SNIFF).any(|b| *b == 0)
@@ -87,8 +76,6 @@ mod tests {
 
     #[test]
     fn a_zero_byte_far_into_a_large_file_is_not_looked_for() {
-        // Deliberate: git stops at 8000 bytes too. A file that is text for its
-        // first kilobyte is text for our purposes.
         let mut bytes = vec![b'a'; 9000];
         bytes.push(0);
         assert!(!FileContent::from_bytes(Some(bytes)).is_binary());
@@ -101,8 +88,7 @@ mod tests {
 
     #[test]
     fn a_missing_side_is_absent_rather_than_empty() {
-        // Absent and empty are different: one file was added, the other was
-        // always blank.
+        // Absent and empty are distinct states.
         assert!(matches!(FileContent::from_bytes(None), FileContent::Absent));
         assert_eq!(FileContent::from_bytes(None).text_or_empty(), "");
     }

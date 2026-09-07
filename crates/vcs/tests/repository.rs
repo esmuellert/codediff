@@ -1,9 +1,4 @@
-//! Against a real repository, through the four operations everything above
-//! `vcs` sees.
-//!
-//! Git's own words are checked inside the crate, beside the parser that
-//! produces them — the manifest is written in `XY` spelling, and nothing out
-//! here can say `XY` any more. See D67.
+//! Repository integration tests.
 
 use std::path::PathBuf;
 
@@ -60,10 +55,7 @@ fn a_rename_carries_both_paths_rather_than_an_add_and_a_delete() {
         renamed.previous_path().map(RepoPath::as_str),
         Some("renamed-from.txt")
     );
-    // Both halves, because they come from different fields: the paths say
-    // where it went, and the change says what happened. Asserting only the
-    // paths let a rename read as an ordinary modification, which draws the
-    // wrong letter in the wrong colour.
+    // A rename carries two paths and a moved change type.
     assert_eq!(renamed.get_change_type(), ChangeType::Moved);
     assert!(
         !entries
@@ -166,8 +158,7 @@ fn the_two_sides_of_a_change_come_back_byte_for_byte() {
 
 #[test]
 fn a_one_sided_change_has_only_the_side_it_has() {
-    // Asking for both sides of every file is what a diff does, and one side is
-    // routinely absent. That is an answer, not an error.
+    // A missing side is represented as absent content.
     let fixture = Fixture::new("onesided");
     let mut git = fixture.git();
     let entries = fixture.files();
@@ -201,8 +192,7 @@ fn a_one_sided_change_has_only_the_side_it_has() {
 
 #[test]
 fn a_picture_comes_back_classified_rather_than_as_bytes() {
-    // The caller cannot use raw bytes without asking "is this text?", so the
-    // answer arrives with the content instead of every caller working it out.
+    // Repository reads classify binary content.
     let fixture = Fixture::new("binary");
     let mut git = fixture.git();
     let entries = fixture.files();
@@ -228,8 +218,7 @@ fn a_picture_comes_back_classified_rather_than_as_bytes() {
 
 #[test]
 fn a_moved_file_reads_its_old_path_on_the_before_side() {
-    // The caller does not have to know that rule, which is why `read` takes
-    // the whole change rather than a path.
+    // The before side uses the file's old path.
     let fixture = Fixture::new("moved");
     let mut git = fixture.git();
     let entries = fixture.files();
@@ -253,8 +242,6 @@ fn a_moved_file_reads_its_old_path_on_the_before_side() {
 
 #[test]
 fn blob_reads_reuse_one_child_process() {
-    // A sixty-file diff is a hundred and twenty reads; at a process spawn each
-    // that is most of a second in fork.
     let fixture = Fixture::new("batch");
     let mut git = fixture.git();
     for _ in 0..50 {
@@ -297,9 +284,7 @@ fn crlf_bytes_are_not_rewritten() {
 
 #[test]
 fn a_comparison_resolves_its_revisions_and_says_so_when_it_cannot() {
-    // A name is resolved to an id before anything is listed, so that a commit
-    // made while a review is open cannot leave half the files named against
-    // one `HEAD` and half against another.
+    // Resolve revisions before listing files.
     let fixture = Fixture::new("resolve");
 
     let files = fixture
@@ -318,19 +303,14 @@ fn a_comparison_resolves_its_revisions_and_says_so_when_it_cannot() {
 
 #[test]
 fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
-    // Git reports it once, with two codes. Here it is two files, because they
-    // are two diffs of it: the working tree against the index, and the index
-    // against the commit. Neither is a duplicate of the other. The record
-    // those come from is checked inside the crate, where the codes live.
+    // One Git status entry becomes two comparison files.
     let fixture = Fixture::new("both");
     let files = fixture
         .git()
         .get_changed_files(&DiffType::Worktree, &[])
         .expect("status runs");
 
-    // The list is flat, and each file says which comparison it is — so one
-    // path appearing twice is two files carrying different revisions rather
-    // than one file in two containers.
+    // Each entry carries its comparison revisions.
     let found: Vec<&'static str> = files
         .iter()
         .filter(|file| file.path().as_str() == "staged-then-edited.txt")
@@ -344,9 +324,7 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
 
 #[test]
 fn each_comparison_counts_its_own_lines() {
-    // `staged-then-edited.txt` gained a line in the working tree and swapped
-    // one in the index. Counting both comparisons into one map keyed by path
-    // kept only the staged pair, and the explorer drew it on both rows.
+    // Count each comparison separately.
     let fixture = Fixture::new("counts");
     let mut git = fixture.git();
     let files = git

@@ -34,7 +34,7 @@ pub fn lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
 }
 
-/// Splits CRLF, bare CR, and LF as VS Code's text model does.
+/// Splits CRLF, bare CR, and LF into engine lines.
 pub fn editor_lines(text: &str) -> Vec<&str> {
     let bytes = text.as_bytes();
     let mut lines = Vec::new();

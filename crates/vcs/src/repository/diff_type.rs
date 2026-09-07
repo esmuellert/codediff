@@ -1,17 +1,9 @@
-//! What to compare.
-//!
-//! Five comparison modes, each mapping to one backend command. Revisions are
-//! held as the reader typed them (not as ids), since resolving needs a
-//! repository.
+//! Comparison modes accepted by the Git backend.
 
 /// Which comparison a review is of.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffType {
-    /// What is not committed: two comparisons, the working tree against the
-    /// index and the index against the commit.
-    ///
-    /// The only one that yields more than one group, which is why it cannot be
-    /// expressed as a pair of revisions.
+    /// Worktree changes: index → worktree and commit → index.
     Worktree,
     /// One revision against the file on disk.
     Against(String),

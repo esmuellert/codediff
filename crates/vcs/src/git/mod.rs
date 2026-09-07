@@ -1,17 +1,7 @@
-//! The git backend: one file per command.
+//! Git command runners and parsers.
 //!
-//! ```text
-//! run             spawn git, capture output
-//! rev_parse       --show-toplevel | --absolute-git-dir | --verify
-//! status          --porcelain=v2 -z
-//! diff/           --name-status -z, --numstat -z
-//! merge_base      git merge-base
-//! cat_file        git cat-file --batch | --filters
-//! worktree        std::fs — the working tree
-//! ```
-//!
-//! Each file runs a command and parses its output in git's vocabulary.
-//! Translation to the reviewer's types happens in `repository/changed_file.rs`.
+//! Each module handles one Git command. The repository layer converts parsed
+//! records into the shared `file-types` vocabulary.
 
 pub mod cat_file;
 pub mod diff;
@@ -52,8 +42,7 @@ pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> 
             revs: Revs::new(commit(a)?, commit(b)?),
         },
         DiffType::MergeBase(base, target) => {
-            // Where the two parted, which is what `a...b` means and the only
-            // reason this is its own way of comparing rather than a spelling.
+            // `a...b` compares the target with the merge base.
             let base = merge_base::run(repo, base, target)?;
             GitCommand::Diff {
                 args: vec![base.as_str().to_owned(), target.clone()],
@@ -67,9 +56,7 @@ pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> 
     })
 }
 
-/// The raw records, in git's own terms.
-///
-/// Runs `git --no-optional-locks status --porcelain=v2 -z`.
+/// Lists changed paths using Git's porcelain-v2 status format.
 pub fn status_entries(
     repo: &Repo,
     untracked: Untracked,
@@ -80,8 +67,7 @@ pub fn status_entries(
         "--porcelain=v2",
         "-z",
         untracked.flag(),
-        // Without --find-renames a moved file appears as an unrelated add
-        // and delete. Forced for the same reason `diff` forces it.
+        // Keep rename detection consistent with diff commands.
         "--find-renames",
     ];
     if !pathspec.is_empty() {
@@ -91,11 +77,7 @@ pub fn status_entries(
     status::parse(&run::run(&repo.root, &args)?)
 }
 
-/// One side of a file, from wherever that side lives.
-///
-/// Three places a version can be: on disk, in the object store, or in the
-/// object store but wanted as a checkout would write it. Which one is decided
-/// by the file's own revisions, not by which side was asked for.
+/// Reads one file side from disk or Git, applying checkout filters when needed.
 pub fn read(
     repo: &Repo,
     blobs: &mut cat_file::Batch,

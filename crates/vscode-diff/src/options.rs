@@ -10,12 +10,10 @@ pub struct Options {
     /// [`crate::LinesDiff::hit_timeout`] set. Zero means no limit.
     pub max_computation_time_ms: u32,
 
-    /// Detect blocks that moved rather than being deleted and re-added.
-    /// Off by default because it costs additional work.
+    /// Detect blocks marked as moved. Disabled by default.
     pub compute_moves: bool,
 
-    /// Extend character-level changes out to subword boundaries, which tends to
-    /// produce more readable highlighting on identifier edits.
+    /// Extend character-level changes to subword boundaries.
     pub extend_to_subwords: bool,
 }
 
@@ -23,9 +21,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             ignore_trim_whitespace: false,
-            // Matches the upstream Neovim plugin's default. Large enough that
-            // ordinary files never hit it, small enough that a pathological
-            // file cannot stall the UI.
+            // Bound work for interactive use.
             max_computation_time_ms: 5_000,
             compute_moves: false,
             extend_to_subwords: false,

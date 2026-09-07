@@ -7,11 +7,7 @@ use file_types::DiffVersion;
 /// Why a diff could not be computed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    /// A line contained a NUL byte.
-    ///
-    /// The engine takes NUL-terminated C strings, so such a line cannot be
-    /// passed through faithfully. Source files do not contain NUL bytes;
-    /// binary content does, and should be detected before reaching here.
+    /// A line contains a NUL byte and cannot be passed to the C engine.
     InteriorNul { version: DiffVersion, line: usize },
 
     /// The engine could not allocate its result.
@@ -33,10 +29,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// What to call a version in a message.
-///
-/// `DiffVersion` has no `Display`: it is a selector, and how to
-/// spell it is the caller's business — a status line might say "before".
+/// Returns the display name for a file version.
 fn name(version: DiffVersion) -> &'static str {
     match version {
         DiffVersion::Original => "original",

@@ -6,7 +6,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    /// git could not be started at all — usually not installed, or not on PATH.
+    /// Git could not be started.
     Spawn {
         command: String,
         source: std::io::Error,
@@ -28,8 +28,7 @@ pub enum Error {
     Parse {
         what: String,
     },
-    /// A path or output that is not UTF-8. Paths are bytes on Unix, and one we
-    /// cannot decode is one we could neither display nor hand back to git.
+    /// A path or Git output was not UTF-8.
     NotUtf8 {
         command: String,
     },

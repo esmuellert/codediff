@@ -5,9 +5,7 @@ use std::rc::Rc;
 
 use crate::scope::{Scope, ScopeId};
 
-/// One context: the key a reader names and the element a provider writes.
-///
-/// Declared with `context!`, never by hand.
+/// A context type with a default value and equality check.
 pub trait Context: 'static {
     type Value: Clone + 'static;
     /// What a reader gets when nothing above it provides one.
@@ -45,9 +43,7 @@ pub fn use_context<C: Context>(scope: &mut Scope) -> C::Value {
     }
 }
 
-/// What `context!`'s `Component::render` calls.
-///
-/// Not API: the way to offer a value is to write the provider element.
+/// Internal helper used by generated providers.
 #[doc(hidden)]
 pub fn offer<C: Context>(scope: &mut Scope, value: C::Value) {
     let id = scope.id;
@@ -97,8 +93,7 @@ fn mark_readers(rt: &mut crate::runtime::Runtime, from: ScopeId, key: TypeId) {
         if reads {
             rt.mark(child);
         }
-        // A nearer provider of the same context shadows this one, so the walk
-        // stops there.
+        // Stop at a nearer provider of the same context.
         let shadowed = rt
             .offers
             .get(&child)

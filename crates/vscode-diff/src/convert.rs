@@ -1,10 +1,4 @@
-//! Converting C results to owned Rust types and freeing C memory.
-//!
-//! The rule is *convert eagerly, free immediately*: the result is walked once
-//! into owned Rust values and released before returning, so no raw pointer ever
-//! escapes into application types. That keeps the unsafe surface small enough
-//! to read in full, instead of spreading a lifetime obligation across the
-//! program.
+//! Converts C results to owned Rust values and frees C memory.
 #![allow(unsafe_code)]
 
 use vscode_diff_sys as sys;
@@ -24,10 +18,7 @@ use diff_types::{
 pub(crate) unsafe fn take(raw: *mut sys::LinesDiff) -> LinesDiff {
     debug_assert!(!raw.is_null(), "take() requires a non-null LinesDiff");
 
-    // SAFETY: the caller guarantees `raw` is a live, non-null result from
-    // `compute_diff`. Nothing below can panic before the free: every operation
-    // is a copy of plain integers, and `Vec` growth aborts rather than unwinds
-    // on allocation failure.
+    // SAFETY: the caller provides a live result; all fields are copied before freeing it.
     let (changes, moves, hit_timeout) = unsafe {
         let diff = &*raw;
 
@@ -53,8 +44,7 @@ pub(crate) unsafe fn take(raw: *mut sys::LinesDiff) -> LinesDiff {
         (changes, moves, diff.hit_timeout)
     };
 
-    // SAFETY: `raw` came from `compute_diff` and has not been freed. Everything
-    // above is copied, so releasing it now leaves no dangling reference.
+    // SAFETY: `raw` is still live and all references to it are gone.
     unsafe { sys::free_lines_diff(raw) };
 
     LinesDiff {
@@ -86,9 +76,7 @@ unsafe fn inner_changes(ptr: *mut sys::RangeMapping, count: i32) -> Vec<RangeMap
     }
 }
 
-/// The engine emits non-negative line numbers; clamping rather than wrapping
-/// means a hypothetical negative would surface as an obviously wrong `0`
-/// instead of a plausible four-billion.
+/// Clamps engine line values to non-negative `u32` values.
 fn line_range(range: sys::LineRange) -> LineRange {
     LineRange {
         start_line: non_negative(range.start_line),

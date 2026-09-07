@@ -1,15 +1,7 @@
-//! LRU cache of syntax spans for open files.
+//! LRU cache of syntax spans for open file versions.
 //!
-//! All of the cache is on this side. A frame that finds what it needs here
-//! draws and sends nothing, so switching between two files costs one lookup
-//! rather than two parses. The worker keeps no results at all — only its place
-//! in a file it has not finished, which is a bookmark and not a copy.
-//!
-//! Entries are dropped least-recently-used, capped by total lines cached rather than
-//! by number of files, because files differ by three orders of magnitude and
-//! counting them measures nothing. The file being coloured is never dropped: it is
-//! used every frame, so it is never the least recent, and that falls out of
-//! the ordering instead of needing a rule.
+//! The UI owns completed spans. The worker retains only unfinished engine state.
+//! Entries are limited by total cached lines.
 
 use std::collections::HashMap;
 
@@ -18,32 +10,19 @@ use align::DiffVersion;
 
 use super::message::{SyntaxResponse, Version};
 
-/// Max cached lines before the LRU file is evicted.
-///
-/// Spans measured at 3.5 per line on our own source, so roughly 80 bytes a
-/// line: eight hundred thousand lines is about sixty-four megabytes. Generous
-/// on purpose — dropping an entry costs a re-parse, and a review moves between
-/// a handful of files far more often than it opens a thousand.
+/// Maximum number of cached lines before eviction.
 const BUDGET: usize = 800_000;
 
-/// One version of one file, coloured as far as the answers have arrived.
-///
-/// Spans and nothing else. Deliberately not a `Highlighted`: that holds an
-/// engine's position, which is the worker's business, and the interface has no
-/// use for one when it is not doing the colouring.
+/// Spans received for one file version.
 #[derive(Debug, Default, Clone)]
 pub struct Colours {
     lines: Vec<Vec<Span>>,
-    /// Which content these describe. An answer for anything else is thrown
-    /// away rather than mixed in.
+    /// Content version these spans describe.
     version: Version,
 }
 
 impl Colours {
-    /// How the given line is coloured, or nothing if it has not arrived.
-    ///
-    /// Nothing is the ordinary answer for a line not yet reached, and means
-    /// "draw it plainly" rather than "this line has no colour".
+    /// Returns spans for a line, or an empty slice if it is not available.
     pub fn line(&self, line: u32) -> &[Span] {
         self.lines
             .get(line as usize)
@@ -56,11 +35,7 @@ impl Colours {
         self.lines.len() as u32
     }
 
-    /// Adds a piece, and says whether it was taken.
-    ///
-    /// Refused when it is for other content, or when it does not begin exactly
-    /// where the last one ended. The worker sends in order, but a stale answer
-    /// must not be able to shorten or reorder what is already drawn.
+    /// Appends an in-order response for this content version.
     fn install(&mut self, response: SyntaxResponse) -> bool {
         if response.version != self.version || response.from as usize != self.lines.len() {
             return false;
@@ -74,9 +49,7 @@ impl Colours {
 #[derive(Debug, Default, Clone)]
 pub struct Store {
     entries: HashMap<String, Colours>,
-    /// Most recently used last. A `Vec` rather than a queue because it is
-    /// searched by key every time one is used, and at the handful of entries a review
-    /// holds a scan beats a second index.
+    /// Most recently used key is last.
     order: Vec<String>,
     cached_lines: usize,
 }
@@ -95,9 +68,7 @@ impl Store {
 
     /// The colours for one file, if any have arrived.
     ///
-    /// Does not count as a use. Drawing asks for this many times a frame, and
-    /// what should keep an entry alive is a reader looking at the file, which
-    /// is what [`want`](Self::want) records.
+    /// Does not update LRU order; requests mark wanted files.
     pub fn get_colours(&self, key: &str) -> Option<&Colours> {
         self.entries.get(key)
     }
@@ -109,9 +80,7 @@ impl Store {
 
     /// Marks a file as wanted now, and starts an entry if it has none.
     ///
-    /// Called when a request is about to be sent. A file whose content has
-    /// changed loses what was cached of it, because the old colours describe
-    /// text that is gone.
+    /// Starts or resets a cache entry for a content version.
     pub fn ensure_cache(&mut self, key: &str, version: Version) {
         match self.entries.get_mut(key) {
             Some(colours) if colours.version == version => {}
@@ -135,11 +104,7 @@ impl Store {
         self.mark_used(key);
     }
 
-    /// Installs a piece, and says whether the screen may have changed.
-    ///
-    /// An answer for an evicted file is dropped: it was removed while
-    /// the worker was busy, and installing half of it would leave the file
-    /// looking coloured when most of it is not.
+    /// Installs a response and reports whether the store changed.
     pub fn install(&mut self, response: SyntaxResponse) -> bool {
         let key = response.key.clone();
         let Some(colours) = self.entries.get_mut(&key) else {
@@ -154,11 +119,8 @@ impl Store {
         true
     }
 
-    /// Drops least recently wanted files until inside the budget.
-    ///
-    /// `keeping` is never dropped however large it is — a single file over
-    /// budget is still the file being coloured, and colouring it only to throw it
-    /// away would loop.
+    /// Evicts old entries until the line budget is satisfied. `keeping` is
+    /// retained even when it alone exceeds the budget.
     fn evict(&mut self, keeping: &str) {
         while self.cached_lines > BUDGET {
             let Some(position) = self.order.iter().position(|key| key != keeping) else {
@@ -189,12 +151,7 @@ impl Store {
     }
 }
 
-/// The colouring of the versions a pane is drawing, for the frame.
-///
-/// Borrowed rather than owned so a renderer can be handed it without learning
-/// what a diff is. `Off` is what the toggle produces and what a buffer with
-/// nothing to colour reports; both draw plainly, and neither is a special case
-/// anywhere below.
+/// Syntax spans used by one frame of a pane.
 #[derive(Clone, Copy, Default)]
 pub enum Spans<'a> {
     #[default]
@@ -209,13 +166,7 @@ pub enum Spans<'a> {
 }
 
 impl<'a> Spans<'a> {
-    /// How line `number` of one version is coloured.
-    ///
-    /// Numbered from 1, like [`Alignment::line`] and like the gutter, and
-    /// unlike the spans underneath, which are indexed from 0. The two
-    /// conventions meet here and nowhere else: written at each call site
-    /// instead, it was wrong at one of them, and a whole file coloured one line
-    /// out still looks coloured.
+    /// Returns spans for a displayed one-based line number.
     ///
     /// [`Alignment::line`]: align::Alignment::line
     pub fn line(&self, version: DiffVersion, number: u32) -> &'a [Span] {
@@ -278,8 +229,7 @@ mod tests {
 
     #[test]
     fn a_piece_out_of_order_is_refused() {
-        // The worker sends in order. A piece that does not continue where the
-        // last ended is stale, and taking it would misplace every line after.
+        // Accept only the next contiguous piece.
         let mut store = Store::new();
         let a = key("a.rs");
         store.ensure_cache(&a, Version(1));
@@ -317,7 +267,7 @@ mod tests {
 
     #[test]
     fn asking_again_for_the_same_content_keeps_what_arrived() {
-        // The whole point: come back to a file and it is still coloured.
+        // Returning to a file keeps completed spans.
         let mut store = Store::new();
         let a = key("a.rs");
         store.ensure_cache(&a, Version(1));
@@ -367,8 +317,7 @@ mod tests {
 
     #[test]
     fn a_file_bigger_than_the_budget_is_still_kept() {
-        // Otherwise the one file being coloured would be coloured and thrown away
-        // over and over.
+        // Keep the active file even when it exceeds the budget.
         let mut store = Store::new();
         let a = key("huge.rs");
         store.ensure_cache(&a, Version(1));

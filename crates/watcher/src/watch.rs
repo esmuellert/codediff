@@ -135,6 +135,10 @@ fn try_queue_event(
     queue_overflow_flag: &AtomicBool,
     event: notify::Event,
 ) {
+    if matches!(event.kind, notify::EventKind::Access(_)) {
+        return;
+    }
+
     match sender.try_send(event) {
         Ok(()) => {}
         Err(mpsc::TrySendError::Full(_)) => queue_overflow_flag.store(true, Ordering::Relaxed),
@@ -315,6 +319,30 @@ mod tests {
             }
         );
         assert!(!batch.reload_ignore_rules && !batch.recompute_scope && !batch.events_lost);
+    }
+
+    #[test]
+    fn access_events_are_discarded_before_queueing() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let overflow_flag = AtomicBool::new(false);
+
+        try_queue_event(
+            &sender,
+            &overflow_flag,
+            notify::Event {
+                kind: notify::EventKind::Access(notify::event::AccessKind::Open(
+                    notify::event::AccessMode::Any,
+                )),
+                paths: vec![PathBuf::from("/repo/file.txt")],
+                attrs: Default::default(),
+            },
+        );
+
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert!(!overflow_flag.load(Ordering::Relaxed));
     }
 
     #[test]

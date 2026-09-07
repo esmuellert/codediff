@@ -1,13 +1,6 @@
-//! The normalized token kinds both engines map into.
-//!
-//! A syntax group (Vim's `:help group-name`): what text *is*, not what it
-//! looks like. The matcher's `comment.line.double-slash.rust` and the parser's
-//! `comment` both map to [`Group::Comment`], making the two engines
-//! interchangeable per file.
+//! Normalized token kinds shared by both syntax engines.
 
-/// What a stretch of text is, for the purpose of colouring it.
-///
-/// The groups Catppuccin distinguishes — a superset of VS Code's `dark_plus`.
+/// The kind of a syntax-highlighted text span.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     /// A comment or a docstring.
@@ -55,7 +48,7 @@ pub enum Group {
     /// Something the grammar believes is wrong.
     Invalid,
 
-    // --- markup, because a reviewer reads a great deal of it ---
+    // --- markup ---
     /// `# Heading`.
     Heading,
     /// A URL.
@@ -68,11 +61,9 @@ pub enum Group {
     List,
     /// A block quote.
     Quote,
-    /// Bold or italic text. Carries a colour as well as the flag, because
-    /// Catppuccin gives emphasis one.
+    /// Bold or italic text.
     Emphasis,
-    /// A line a `.patch` file adds, read as content rather than as our own
-    /// diff — reviewing a patch is reviewing a file like any other.
+    /// A line added by a `.patch` file.
     Inserted,
     /// A line it removes.
     Deleted,

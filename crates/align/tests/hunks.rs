@@ -15,7 +15,7 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 
 #[test]
 fn a_hunks_identity_follows_its_text_and_not_its_position() {
-    // Pushing a hunk down the file must not mark it unread again.
+    // Moving unchanged text must preserve the hunk ID.
     let original = split("a\nb\nc");
     let modified = split("a\nB\nc");
     let diff = compute(&original, &modified);
@@ -51,8 +51,7 @@ fn editing_a_hunk_changes_its_identity() {
 
 #[test]
 fn the_line_separator_stops_neighbours_hashing_alike() {
-    // Without a separator between lines, ["ab", "c"] and ["a", "bc"] would
-    // hash the same and two unrelated hunks would share a review mark.
+    // Separators distinguish different line sequences.
     let original = split("x\nab\nc\ny");
     let first = split("x\nQ\nQ\ny");
     let second = split("x\nQQ\n\ny");
@@ -67,7 +66,7 @@ fn the_line_separator_stops_neighbours_hashing_alike() {
 
 #[test]
 fn nearby_changes_join_and_distant_ones_do_not() {
-    // Two edits with one unchanged line between them read as one edit.
+    // Changes within the context threshold form one hunk.
     let original = split("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl");
     let near = split("A\nb\nC\nd\ne\nf\ng\nh\ni\nj\nk\nl");
     let diff = compute(&original, &near);
@@ -78,7 +77,7 @@ fn nearby_changes_join_and_distant_ones_do_not() {
         "changes one line apart belong to the same hunk"
     );
 
-    // The same two edits far apart read as two.
+    // Distant changes form separate hunks.
     let far = split("A\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nL");
     let diff = compute(&original, &far);
     let alignment = Alignment::with_options(diff.clone(), &original, &far, 4, 3);
@@ -122,9 +121,7 @@ fn a_file_with_no_changes_has_no_hunks_and_only_unchanged_rows() {
 
 #[test]
 fn an_empty_file_is_one_empty_line() {
-    // The engine models an empty file that way, and `vscode-diff` normalises to
-    // it before computing, so an `Alignment` that did not would hold a file its
-    // own diff refers to lines of. Found by proptest.
+    // Empty inputs normalize to one empty line.
     let empty: Vec<&str> = Vec::new();
     let added = split("hello");
     let diff = compute(&empty, &added);

@@ -1,67 +1,36 @@
-//! Every language the parser knows, and the rules we add to their queries.
+//! Parser languages and query overrides.
 //!
-//! Data, not behaviour: a table and the handful of one-line query additions
-//! that go with it. Adding a language is a dependency and a row here, and
-//! nothing in [`super`] changes.
-//!
-//! The rows are not uniform because the crates are not: the query constant is
-//! `HIGHLIGHT_QUERY` in some and `HIGHLIGHTS_QUERY` in others, injections and
-//! locals are present or absent per crate, and TypeScript and PHP each expose
-//! two languages. Writing that out is duller than a macro and survives the
-//! next crate that is different again.
+//! Each entry supplies the grammar, queries, injections, locals, and detection
+//! clues required by one language crate.
 
 use tree_sitter::Language;
 
-/// One language we can parse.
-///
-/// `language` is a function rather than a value because a `Language` is
-/// produced by a call, so a table of them cannot be a constant.
+/// One parser entry.
 pub struct Parser {
-    /// What the injection queries call it. `injection.language` in one
-    /// grammar's query is matched against this, which is how a fenced code
-    /// block in Markdown finds the grammar for its language.
+    /// Name used by injection queries.
     pub name: &'static str,
     pub language: fn() -> Language,
-    /// The highlight queries, joined in order.
-    ///
-    /// Usually one. More when a crate splits a dialect into a second file
-    /// (JavaScript's JSX), and — the case that matters — when a grammar's
-    /// query is an **increment on another language's rather than a whole
-    /// one**. TypeScript's ships five captures and C++'s ships six, because
-    /// upstream expects the tool to compose them with JavaScript's and C's;
-    /// the crates carry no marker saying so, and the symptom is a file that
-    /// comes back entirely plain. The derived language goes first, because an
-    /// earlier pattern wins.
+    /// Highlight queries, joined in the order required by the grammar.
     pub highlights: &'static [&'static str],
     pub injections: &'static str,
     pub locals: &'static str,
-    /// Extensions, lower case and without the dot.
+    /// Lowercase extensions without the dot.
     pub extensions: &'static [&'static str],
-    /// Whole file names, for the files that have no extension.
+    /// Complete file names that identify the language.
     pub file_names: &'static [&'static str],
-    /// Interpreters, matched against a `#!` line.
+    /// Interpreter names accepted in shebangs.
     pub shebangs: &'static [&'static str],
 }
 
-/// Rules appended after a grammar's own query.
-///
-/// Later patterns win in tree-sitter, so appending is how we override.
-/// Each fixes a case the matcher already gets right.
+/// Rules appended after a grammar's own query; later patterns take precedence.
 mod overrides {
-    /// The shipped query captures the key, then captures every string.
+    /// JSON keys need a more specific capture than strings.
     pub const JSON: &str = "(pair key: (_) @string.special.key)";
 
-    /// `(field_identifier) @property` comes after the method rule and takes
-    /// every method name with it.
+    /// Restore the function capture for Go methods.
     pub const GO: &str = "(method_declaration name: (field_identifier) @function.method)";
 
-    /// A decorator is scoped as the function it calls. Catppuccin gives
-    /// annotations a colour of their own, and the matcher already does.
-    ///
-    /// The rule has to name the *inner* node: where one capture is nested
-    /// inside another, the inner one is the more specific claim and wins, so
-    /// capturing the whole `decorator` would be overruled by the rule on the
-    /// identifier inside it.
+    /// Capture decorator names.
     pub const PYTHON: &str = r#"
         (decorator (identifier) @attribute)
         (decorator (attribute) @attribute)
@@ -72,18 +41,15 @@ mod overrides {
         (decorator (call_expression function: (identifier) @attribute))
     "#;
 
-    /// The delimiters of a regular expression belong to it. Without this the
-    /// slashes are captured as division operators, which is what they are
-    /// everywhere else.
+    /// Mark regular-expression delimiters as string content.
     pub const JAVASCRIPT: &str = r#"(regex "/" @string.special)"#;
 
-    /// A character literal is a number in C's query and a string in Rust's.
-    /// It is neither, and a theme that parts them has nowhere to say so.
+    /// Add the character-literal capture used by C and Rust.
     pub const C: &str = "(char_literal) @character";
     pub const RUST: &str = "(char_literal) @character";
 }
 
-/// Every language we parse. A [`Grammar`] is an index into this table.
+/// Every language we parse. The engine stores a parser index into this table.
 ///
 /// Adding one: add the crate dependency and a row here.
 pub static LANGUAGES: &[Parser] = &[
@@ -110,7 +76,7 @@ pub static LANGUAGES: &[Parser] = &[
     Parser {
         name: "javascript",
         language: || tree_sitter_javascript::LANGUAGE.into(),
-        // JSX is not a separate grammar in JavaScript, only extra rules.
+        // JSX uses the JavaScript grammar with extra query rules.
         highlights: &[
             tree_sitter_javascript::HIGHLIGHT_QUERY,
             tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
@@ -125,7 +91,7 @@ pub static LANGUAGES: &[Parser] = &[
     Parser {
         name: "typescript",
         language: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        // TypeScript is JavaScript plus types, and so is its query.
+        // Compose TypeScript's query with JavaScript's.
         highlights: &[
             tree_sitter_typescript::HIGHLIGHTS_QUERY,
             tree_sitter_javascript::HIGHLIGHT_QUERY,
@@ -139,8 +105,7 @@ pub static LANGUAGES: &[Parser] = &[
         shebangs: &["ts-node", "deno", "bun"],
     },
     Parser {
-        // A separate grammar rather than extra rules, because TSX and
-        // TypeScript disagree about what `<T>` means.
+        // TSX uses a separate grammar because `<T>` has different meaning.
         name: "tsx",
         language: || tree_sitter_typescript::LANGUAGE_TSX.into(),
         highlights: &[
@@ -189,7 +154,7 @@ pub static LANGUAGES: &[Parser] = &[
     Parser {
         name: "cpp",
         language: || tree_sitter_cpp::LANGUAGE.into(),
-        // C++ is C plus classes, and so is its query.
+        // Compose C++'s query with C's.
         highlights: &[
             tree_sitter_cpp::HIGHLIGHT_QUERY,
             tree_sitter_c::HIGHLIGHT_QUERY,
@@ -285,7 +250,7 @@ pub static LANGUAGES: &[Parser] = &[
         name: "html",
         language: || tree_sitter_html::LANGUAGE.into(),
         highlights: &[tree_sitter_html::HIGHLIGHTS_QUERY],
-        // `<script>` and `<style>` reach JavaScript and CSS through this.
+        // HTML injections cover embedded JavaScript and CSS.
         injections: tree_sitter_html::INJECTIONS_QUERY,
         locals: "",
         extensions: &["html", "htm", "xhtml"],

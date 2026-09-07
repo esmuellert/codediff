@@ -1,9 +1,4 @@
-//! `codediff debug status` — what the working tree looks like.
-//!
-//! What the repository says, in the reviewer's terms, because that is the only
-//! vocabulary above `vcs`. Git's own `XY` codes are checked against the
-//! fixture manifest inside `vcs`, beside the parser that reads them — a
-//! subcommand cannot see them any more, which is the point of D67.
+//! Prints working-tree status using the reviewer's file format.
 
 use anyhow::{Context, Result};
 use file_types::ChangeType;
@@ -31,9 +26,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
         return Ok(());
     }
 
-    // The repository answers flat, so the grouping happens here — by the pair
-    // of revisions each file carries, which is the same read the interface
-    // makes and the reason neither can disagree with the other.
+    // Group entries by their revision pair.
     let mut groups: Vec<(file_types::Revs, Vec<&file_types::File>)> = Vec::new();
     for file in &changed {
         let revs = file.revs();
@@ -44,8 +37,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     }
 
     for (revs, mut files) in groups {
-        // The revisions, not only the name: a name is a label a human reads,
-        // and what the group *is* is the pair.
+        // Print the revision pair represented by this group.
         println!(
             "{} ({}) {} -> {}",
             revs.heading(),
@@ -62,11 +54,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// Git's letter for what happened, as `git status` prints it.
-///
-/// Not the interface's: that one is beside the theme that colours it, and
-/// spells an untracked file `??` because a column of them reads better. This
-/// is a debug command echoing git.
+/// Returns Git's status letter for a change.
 pub fn letter(change: ChangeType) -> &'static str {
     match change {
         ChangeType::Added => "A",
@@ -82,8 +70,7 @@ pub fn letter(change: ChangeType) -> &'static str {
 fn line(file: &file_types::File, verbose: bool) -> String {
     let mut out = format!("{}  ", letter(file.get_change_type()));
     if verbose {
-        // Padded by display columns, not characters: a CJK filename is twice
-        // as wide as its character count suggests.
+        // Pad by display columns.
         out.push_str(&pad(&sanitize(file.path().as_str()), 28));
     } else {
         out.push_str(&sanitize(file.path().as_str()));

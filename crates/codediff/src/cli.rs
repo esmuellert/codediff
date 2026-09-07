@@ -6,11 +6,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(
     name = "codediff",
     version,
-    about = "A standalone, read-only terminal diff reviewer",
+    about = "A standalone terminal diff reviewer",
     disable_help_subcommand = true
 )]
 pub struct Cli {
-    /// Narrow to one file (used by tests, not advertised).
+    /// Narrow to one file.
     #[arg(hide = true)]
     pub path: Option<String>,
 

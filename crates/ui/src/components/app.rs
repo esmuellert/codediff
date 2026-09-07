@@ -1,4 +1,4 @@
-//! The whole interface.
+//! Application root component.
 
 use std::path::Path;
 use std::rc::Rc;

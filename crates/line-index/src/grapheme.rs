@@ -1,8 +1,4 @@
-//! Walking a line, cluster by cluster.
-//!
-//! The counterpart to [`LineIndex`](crate::LineIndex), which *queries* a
-//! line. Drawing needs only a forward walk and no index, so the two are kept
-//! apart: nothing here allocates.
+//! Walks a line one grapheme cluster at a time.
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -36,9 +32,7 @@ impl Grapheme<'_> {
 
 /// A grapheme boundary, in all three coordinate systems at once.
 ///
-/// Doubles as an entry in [`LineIndex`](crate::LineIndex)' index and as a
-/// place to resume a walk from, which is how scrolling right avoids rewalking
-/// the line from column zero.
+/// Also marks a position where a grapheme walk can resume.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Position {
     pub(crate) byte: u32,
@@ -54,13 +48,9 @@ impl Position {
     };
 }
 
-/// Grapheme clusters of a line, with their position in every coordinate
-/// system, without building an index.
+/// Walks grapheme clusters with byte, UTF-16, and cell positions.
 ///
-/// Drawing a line needs only a forward walk, so paying for a
-/// [`LineIndex`](crate::LineIndex) table that nothing queries is waste —
-/// and a renderer rebuilds its visible lines on every frame. Use this to draw,
-/// and `LineIndex` to answer questions about positions.
+/// Use [`LineIndex`](crate::LineIndex) for positional queries.
 pub fn graphemes(text: &str, tab_width: u8) -> impl Iterator<Item = Grapheme<'_>> {
     graphemes_from(text, tab_width, Position::ORIGIN)
 }
@@ -94,12 +84,7 @@ pub(crate) fn graphemes_from(
         })
 }
 
-/// Byte length as `u32`.
-///
-/// Every coordinate in this crate is a `u32`, which caps a single line at 4
-/// GiB. Nothing that reaches a code reviewer comes close, and saturating keeps
-/// positions monotone — the property binary search depends on — where wrapping
-/// would not.
+/// Converts a byte length to `u32`, saturating on overflow.
 pub(crate) fn len32(text: &str) -> u32 {
     u32::try_from(text.len()).unwrap_or(u32::MAX)
 }

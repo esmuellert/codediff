@@ -1,16 +1,9 @@
 //! `cargo xtask lint-arch`
 //!
-//! Cargo enforces exactly one architectural rule for free: crate dependencies
-//! must be acyclic. Every other rule in docs/plan is project-specific and has
-//! to be encoded somewhere. This is that somewhere.
+//! Architecture checks for the workspace.
 //!
-//! Split three ways so the tables can be read without the machinery:
-//!
-//! | | |
-//! |---|---|
-//! | [`rules`] | what is forbidden, and why |
-//! | [`checks`] | one function per rule |
-//! | [`files`] | finding crates and reading manifests |
+//! Cargo enforces dependency acyclicity; this module checks the remaining
+//! repository-specific boundaries.
 
 mod checks;
 mod files;

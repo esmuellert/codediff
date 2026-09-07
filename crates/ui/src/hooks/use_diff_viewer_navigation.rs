@@ -6,7 +6,7 @@ use loom::{Bubble, Listeners};
 use super::use_horizontal_scroll::HorizontalHandle;
 use super::use_scroll::ScrollHandle;
 
-// Registered default in the pinned VS Code source.
+// Keep four cells beyond the longest line.
 const SCROLL_BEYOND_LAST_COLUMN: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
