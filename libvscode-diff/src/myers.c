@@ -365,21 +365,35 @@ typedef struct SnakePath {
   int length;
 } SnakePath;
 
-static SnakePath *snakepath_create(SnakePath *prev, int x, int y, int length) {
-  SnakePath *path = (SnakePath *)malloc(sizeof(SnakePath));
-  path->prev = prev;
-  path->x = x;
-  path->y = y;
-  path->length = length;
-  return path;
+typedef struct PathAllocation {
+  struct PathAllocation *next;
+  SnakePath path;
+} PathAllocation;
+
+typedef struct {
+  PathAllocation *allocations;
+} PathArena;
+
+static SnakePath *snakepath_create(PathArena *arena, SnakePath *prev, int x, int y,
+                                   int length) {
+  PathAllocation *allocation = (PathAllocation *)malloc(sizeof(*allocation));
+  allocation->next = arena->allocations;
+  arena->allocations = allocation;
+  allocation->path.prev = prev;
+  allocation->path.x = x;
+  allocation->path.y = y;
+  allocation->path.length = length;
+  return &allocation->path;
 }
 
-static void snakepath_free_chain(SnakePath *path) {
-  while (path) {
-    SnakePath *prev = path->prev;
-    free(path);
-    path = prev;
+static void patharena_free(PathArena *arena) {
+  PathAllocation *allocation = arena->allocations;
+  while (allocation) {
+    PathAllocation *next = allocation->next;
+    free(allocation);
+    allocation = next;
   }
+  arena->allocations = NULL;
 }
 
 // Dynamic array for storing SnakePath pointers (supports negative indices)
@@ -400,7 +414,7 @@ static PathArray *patharray_create(void) {
 }
 
 static void patharray_free(PathArray *arr) {
-  // Note: We don't free individual paths here as they're freed later
+  // PathArena owns the individual paths.
   free(arr->positive);
   free(arr->negative);
   free(arr);
@@ -487,10 +501,13 @@ SequenceDiffArray *myers_nd_diff_algorithm(const ISequence *seq1, const ISequenc
 
   IntArray *V = intarray_create();
   PathArray *paths = patharray_create();
+  PathArena arena = {0};
 
   int initial_x = myers_get_x_after_snake(seq1, seq2, 0, 0);
   intarray_set(V, 0, initial_x);
-  patharray_set(paths, 0, initial_x == 0 ? NULL : snakepath_create(NULL, 0, 0, initial_x));
+  patharray_set(paths, 0, initial_x == 0
+                               ? NULL
+                               : snakepath_create(&arena, NULL, 0, 0, initial_x));
 
   int d = 0;
   int k = 0;
@@ -515,6 +532,7 @@ SequenceDiffArray *myers_nd_diff_algorithm(const ISequence *seq1, const ISequenc
         // Return trivial diff (entire range changed)
         intarray_free(V);
         patharray_free(paths);
+        patharena_free(&arena);
 
         SequenceDiffArray *result = (SequenceDiffArray *)malloc(sizeof(SequenceDiffArray));
         result->diffs = (SequenceDiff *)malloc(sizeof(SequenceDiff));
@@ -564,7 +582,8 @@ SequenceDiffArray *myers_nd_diff_algorithm(const ISequence *seq1, const ISequenc
       SnakePath *last_path =
           (x == max_x_top) ? patharray_get(paths, k + 1) : patharray_get(paths, k - 1);
       SnakePath *new_path =
-          (new_max_x != x) ? snakepath_create(last_path, x, y, new_max_x - x) : last_path;
+          (new_max_x != x) ? snakepath_create(&arena, last_path, x, y, new_max_x - x)
+                           : last_path;
       patharray_set(paths, k, new_path);
 
       // Check if we reached the end
@@ -630,10 +649,8 @@ SequenceDiffArray *myers_nd_diff_algorithm(const ISequence *seq1, const ISequenc
     path = path->prev;
   }
 
-  // Clean up - free the entire path chain from final path
-  SnakePath *final_path = patharray_get(paths, k);
-  snakepath_free_chain(final_path);
-
+  // Clean up all paths, including abandoned branches.
+  patharena_free(&arena);
   intarray_free(V);
   patharray_free(paths);
 
