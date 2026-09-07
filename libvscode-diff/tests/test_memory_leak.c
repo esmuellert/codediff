@@ -17,7 +17,9 @@
 #endif
 
 #define TEST_ITERATIONS 100
+#define ND_TEST_ITERATIONS 10000
 #define LARGE_FILE_SIZE 1000
+#define ND_LINE_LENGTH 250
 
 static int test_count = 0;
 static int test_passed = 0;
@@ -229,7 +231,45 @@ static int test_repeated_diffs(void) {
 }
 
 /**
- * Test 6: Different options combinations
+ * Test 6: Repeated large character diffs
+ */
+static int test_repeated_large_character_diffs(void) {
+    TEST("Repeated large character diffs (10000 iterations)");
+
+    static const char alphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+    char original[ND_LINE_LENGTH + 1];
+    char modified[ND_LINE_LENGTH + 1];
+    for (int i = 0; i < ND_LINE_LENGTH; i++) {
+        original[i] = alphabet[(i * 17 + 3) % (int)(sizeof(alphabet) - 1)];
+        modified[i] = alphabet[(i * 17 + 11) % (int)(sizeof(alphabet) - 1)];
+    }
+    original[ND_LINE_LENGTH] = '\0';
+    modified[ND_LINE_LENGTH] = '\0';
+
+    const char *original_lines[] = {original};
+    const char *modified_lines[] = {modified};
+    DiffOptions options = {
+        .ignore_trim_whitespace = false,
+        .max_computation_time_ms = 0,
+        .compute_moves = false,
+        .extend_to_subwords = false
+    };
+
+    for (int i = 0; i < ND_TEST_ITERATIONS; i++) {
+        LinesDiff *diff = compute_diff(original_lines, 1, modified_lines, 1, &options);
+        if (diff == NULL) {
+            printf("  ✗ FAILED at iteration %d\n", i);
+            return 1;
+        }
+        free_lines_diff(diff);
+    }
+
+    ASSERT(1, "10000 large character diffs completed without retained state");
+    return 0;
+}
+
+/**
+ * Test 7: Different options combinations
  */
 static int test_options_combinations(void) {
     TEST("Different option combinations");
@@ -277,7 +317,7 @@ static int test_options_combinations(void) {
 }
 
 /**
- * Test 7: Character-level changes
+ * Test 8: Character-level changes
  */
 static int test_char_level_changes(void) {
     TEST("Character-level change detection");
@@ -320,7 +360,7 @@ static int test_char_level_changes(void) {
 }
 
 /**
- * Test 8: NULL pointer safety
+ * Test 9: NULL pointer safety
  */
 static int test_null_safety(void) {
     TEST("NULL pointer safety");
@@ -348,6 +388,7 @@ int main(void) {
     failed += test_identical_files();
     failed += test_large_file();
     failed += test_repeated_diffs();
+    failed += test_repeated_large_character_diffs();
     failed += test_options_combinations();
     failed += test_char_level_changes();
     failed += test_null_safety();
