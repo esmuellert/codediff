@@ -6,12 +6,12 @@ use std::rc::Rc;
 use align::{Alignment, ViewLine};
 use file_types::{DiffType, DiffVersion, File, Rev};
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_context,
-    use_effect, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, component, rsx,
+    use_context, use_effect, use_ref, use_state,
 };
 use pipeline::diff::DiffContent;
 
-use super::context::Ui;
+use super::context::{Context, Ui};
 use super::inline::{Inline, InlineProps};
 use super::side_by_side::{SideBySide, SideBySideProps};
 use super::single_file::{SingleFile, SingleFileProps};
@@ -64,14 +64,8 @@ pub(crate) fn find_view_line_index(
         .and_then(|line| alignment.view_line_at(layout, DiffVersion::Original, line))
 }
 
-#[component]
-pub fn DiffViewer(scope: &mut Scope) -> Node {
-    let ctx = use_context::<Ui>(scope);
+fn use_diff_content(scope: &mut Scope, ctx: &Context) -> Option<Rc<DiffContent>> {
     let (content, set_content) = use_state(scope, || None::<Rc<DiffContent>>);
-    let (layout, set_layout) = use_state(scope, || DiffType::SideBySide);
-    let view_states = use_ref(scope, ViewStateHistory::default);
-    let active_view_state = use_ref(scope, ViewState::default);
-    let active_file_key = use_ref(scope, || None::<String>);
     let selected_file = ctx.file.as_ref().map(Rc::clone);
     let file_for_request = selected_file.as_ref().map(Rc::clone);
     let diff_service = ctx.diff_service.as_ref().map(Rc::clone);
@@ -108,35 +102,53 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         });
     });
 
-    let current_file_key = match content.as_deref() {
+    content
+}
+
+fn sync_active_view_state(
+    history: Ref<ViewStateHistory>,
+    active_state: Ref<ViewState>,
+    active_key: Ref<Option<String>>,
+    content: Option<&DiffContent>,
+) {
+    let current_key = match content {
         Some(DiffContent::Diff(diff)) => Some(diff.file.path().as_str().to_owned()),
         _ => None,
     };
-    let previous_file_key = active_file_key.current().clone();
-    if previous_file_key.as_ref() != current_file_key.as_ref() {
-        if let Some(previous_file_key) = previous_file_key {
-            let state = *active_view_state.current();
-            view_states.current().save(&previous_file_key, state);
-        }
-        let state = current_file_key
-            .as_deref()
-            .map(|key| view_states.current().load(key))
-            .unwrap_or_default();
-        *active_view_state.current() = state;
-        *active_file_key.current() = current_file_key;
+    let previous_key = active_key.current().clone();
+    if previous_key.as_ref() == current_key.as_ref() {
+        return;
     }
 
-    let is_diff = matches!(content.as_deref(), Some(DiffContent::Diff(_)));
-    let toggle = Listeners::new().on_key(move |key| {
+    if let Some(previous_key) = previous_key {
+        let state = *active_state.current();
+        history.current().save(&previous_key, state);
+    }
+    let state = current_key
+        .as_deref()
+        .map(|key| history.current().load(key))
+        .unwrap_or_default();
+    *active_state.current() = state;
+    *active_key.current() = current_key;
+}
+
+fn layout_listener(is_diff: bool, set_layout: SetState<DiffType>) -> Listeners {
+    Listeners::new().on_key(move |key| {
         if is_diff && key == crokey::key!(t) {
             set_layout(&|layout| layout.other());
             Bubble::Stop
         } else {
             Bubble::Continue
         }
-    });
+    })
+}
 
-    let body = match content {
+fn render_content_view(
+    content: Option<Rc<DiffContent>>,
+    layout: DiffType,
+    view_state: Ref<ViewState>,
+) -> Node {
+    match content {
         Some(content) => match content.as_ref() {
             DiffContent::Diff(_) => {
                 let content_id = Rc::as_ptr(&content) as usize;
@@ -145,7 +157,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
                         SideBySide {
                             key: content_id,
                             content: Rc::clone(&content),
-                            view_state: active_view_state,
+                            view_state: view_state,
                             auto_focus: true,
                         }
                     },
@@ -153,7 +165,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
                         Inline {
                             key: content_id,
                             content: Rc::clone(&content),
-                            view_state: active_view_state,
+                            view_state: view_state,
                             auto_focus: true,
                         }
                     },
@@ -169,14 +181,34 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             }
         },
         None => rsx! { Welcome {} },
-    };
+    }
+}
+
+#[component]
+pub fn DiffViewer(scope: &mut Scope) -> Node {
+    let ctx = use_context::<Ui>(scope);
+    let content = use_diff_content(scope, &ctx);
+    let (layout, set_layout) = use_state(scope, || DiffType::SideBySide);
+    let view_states = use_ref(scope, ViewStateHistory::default);
+    let active_view_state = use_ref(scope, ViewState::default);
+    let active_file_key = use_ref(scope, || None::<String>);
+    sync_active_view_state(
+        view_states,
+        active_view_state,
+        active_file_key,
+        content.as_deref(),
+    );
+
+    let is_diff = matches!(content.as_deref(), Some(DiffContent::Diff(_)));
+    let toggle = layout_listener(is_diff, set_layout);
+    let content_view = render_content_view(content, layout, active_view_state);
 
     rsx! {
         Column {
             listeners: toggle,
             layout: Layout { grow: 1, ..Default::default() },
             ..,
-            { body }
+            { content_view }
         }
     }
 }
