@@ -2,7 +2,6 @@
 
 mod app;
 pub mod border;
-pub mod cells;
 pub mod code_text;
 mod context;
 pub mod diff_viewer;

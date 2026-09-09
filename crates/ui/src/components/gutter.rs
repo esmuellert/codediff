@@ -3,10 +3,8 @@
 use std::rc::Rc;
 
 use file_types::DiffVersion;
-use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx};
+use loom::{Basis, Canvas, CanvasProps, Layout, Node, Paint, Scope, component, rsx};
 use ratatui::style::Style;
-
-use super::cells;
 
 pub(crate) fn style_for_diff(
     theme: &crate::theme::Theme,
@@ -49,20 +47,36 @@ pub fn Gutter(
         Canvas {
             layout: Layout { basis: Basis::Length(width), shrink: 0, ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
-                let area = paint.area();
-
-                let Some(n) = number else {
-                    cells::fill(paint.cells(), area, blank);
-                    return;
-                };
-
-                cells::fill(paint.cells(), area, style);
-                let label = n.to_string();
-                let digits = label.chars().count() as u16;
-                let at = area.width.saturating_sub(1).saturating_sub(digits);
-                cells::write(paint.cells(), area, at, &label, style);
+                paint_gutter(paint, paint.area(), number, style, blank);
             }),
             ..
+        }
+    }
+}
+
+fn paint_gutter(
+    paint: &mut Paint<'_>,
+    area: ratatui::layout::Rect,
+    number: Option<u32>,
+    style: Style,
+    blank: Style,
+) {
+    let Some(number) = number else {
+        fill_gutter(paint, area, blank);
+        return;
+    };
+
+    fill_gutter(paint, area, style);
+    let label = number.to_string();
+    let digits = label.chars().count() as u16;
+    let at = area.width.saturating_sub(1).saturating_sub(digits);
+    paint.write(area.x.saturating_add(at), area.y, &label, style);
+}
+
+fn fill_gutter(paint: &mut Paint<'_>, area: ratatui::layout::Rect, style: Style) {
+    for y in area.y..area.bottom() {
+        for x in area.x..area.right() {
+            paint.set(x, y, " ", style);
         }
     }
 }
