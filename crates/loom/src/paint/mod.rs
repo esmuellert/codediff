@@ -56,6 +56,24 @@ impl<'a> Paint<'a> {
         }
     }
 
+    /// Changes only a cell's style when it lies inside the clip.
+    pub fn set_style(&mut self, x: u16, y: u16, style: ratatui::style::Style) {
+        if !self.clip.contains(ratatui::layout::Position { x, y }) {
+            return;
+        }
+        if let Some(cell) = self.cells.cell_mut((x, y)) {
+            cell.set_style(style);
+        }
+    }
+
+    /// Reads a cell's style when it lies inside the clip.
+    pub fn style_at(&self, x: u16, y: u16) -> Option<ratatui::style::Style> {
+        if !self.clip.contains(ratatui::layout::Position { x, y }) {
+            return None;
+        }
+        self.cells.cell((x, y)).map(|cell| cell.style())
+    }
+
     /// Writes a string from `x`, stopping at the clip's right edge. Answers
     /// how many cells it took.
     pub fn write(&mut self, x: u16, y: u16, text: &str, style: ratatui::style::Style) -> u16 {

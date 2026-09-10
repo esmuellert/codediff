@@ -14,31 +14,24 @@ use ratatui::style::Style;
 
 use super::context::Ui;
 
-fn draw_one_border(buf: &mut ratatui::buffer::Buffer, rect: Rect, style: Style) {
+fn draw_one_border(paint: &mut loom::Paint<'_>, rect: Rect, style: Style) {
     if rect.width < 2 || rect.height < 2 {
         return;
     }
     let (left, right) = (rect.x, rect.right() - 1);
     let (top, bottom) = (rect.y, rect.bottom() - 1);
     for x in left..=right {
-        set_cell(buf, x, top, "─", style);
-        set_cell(buf, x, bottom, "─", style);
+        paint.set(x, top, "─", style);
+        paint.set(x, bottom, "─", style);
     }
     for y in top..=bottom {
-        set_cell(buf, left, y, "│", style);
-        set_cell(buf, right, y, "│", style);
+        paint.set(left, y, "│", style);
+        paint.set(right, y, "│", style);
     }
-    set_cell(buf, left, top, "╭", style);
-    set_cell(buf, right, top, "╮", style);
-    set_cell(buf, left, bottom, "╰", style);
-    set_cell(buf, right, bottom, "╯", style);
-}
-
-fn set_cell(buf: &mut ratatui::buffer::Buffer, x: u16, y: u16, symbol: &str, style: Style) {
-    if let Some(cell) = buf.cell_mut((x, y)) {
-        cell.set_symbol(symbol);
-        cell.set_style(style);
-    }
+    paint.set(left, top, "╭", style);
+    paint.set(right, top, "╮", style);
+    paint.set(left, bottom, "╰", style);
+    paint.set(right, bottom, "╯", style);
 }
 
 #[component]
@@ -84,7 +77,7 @@ pub fn Border(scope: &mut Scope, layout: Layout, children: loom::Children) -> No
                 layout: Layout { grow: 1, ..Default::default() },
                 paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                     let area = paint.area();
-                    draw_one_border(paint.cells(), area, border_style);
+                    draw_one_border(paint, area, border_style);
                 }),
                 ..
             }

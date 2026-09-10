@@ -7,13 +7,12 @@
 use std::rc::Rc;
 
 use loom::{
-    Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Scope, component, rsx, use_context,
+    Basis, Canvas, CanvasProps, Layout, Node as LoomNode, Paint, Scope, component, rsx, use_context,
 };
 use ratatui::layout::Rect;
-use ratatui::style::Color;
+use ratatui::style::{Color, Style};
 
 use super::build::Node;
-use crate::components::cells;
 use crate::components::context::Ui;
 use crate::theme::icon::{self, Icon};
 
@@ -35,6 +34,22 @@ fn truncate(s: &str, cells: u16) -> String {
     let mut out = s[..end.0 as usize].to_string();
     out.push('…');
     out
+}
+
+fn fill_entry_background(paint: &mut Paint<'_>, area: Rect, style: Style) {
+    for x in area.x..area.right() {
+        paint.set(x, area.y, " ", style);
+    }
+}
+
+fn append_entry_text(
+    paint: &mut Paint<'_>,
+    area: Rect,
+    offset: u16,
+    text: &str,
+    style: Style,
+) -> u16 {
+    offset.saturating_add(paint.write(area.x.saturating_add(offset), area.y, text, style))
 }
 
 struct Indent {
@@ -73,7 +88,7 @@ pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
             layout: Layout { basis: Basis::Length(1), shrink: 0, fill: Some(base), ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
-                cells::fill(paint.cells(), area, base);
+                fill_entry_background(paint, area, base);
                 let area = Rect {
                     x: area.x.saturating_add(1),
                     width: area.width.saturating_sub(2),
@@ -150,7 +165,7 @@ pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
 
                 // Section 1: indent.
                 let indent_width = cell_width(&indent.markers);
-                let mut at = cells::write(paint.cells(), area, 0, &indent.markers, base.fg(theme.tree.marker));
+                let mut at = append_entry_text(paint, area, 0, &indent.markers, base.fg(theme.tree.marker));
 
                 // Section 3: status — measure first to know how much body gets.
                 let status_width = if let Some(ref st) = status {
@@ -176,7 +191,7 @@ pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
                 let (icon_width, text_style) = if let Some(ref ic) = body.icon {
                     let icon_str = format!("{} ", ic.glyph);
                     let w = cell_width(&icon_str);
-                    at = cells::write(paint.cells(), area, at, &icon_str, base.fg(ic.color));
+                    at = append_entry_text(paint, area, at, &icon_str, base.fg(ic.color));
                     (w, base.fg(body.text_color))
                 } else {
                     (0, base.fg(body.text_color))
@@ -188,19 +203,19 @@ pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
 
                 if !body.suffix.is_empty() {
                     if name_width + suffix_width <= name_budget {
-                        at = cells::write(paint.cells(), area, at, &body.text, text_style);
+                        at = append_entry_text(paint, area, at, &body.text, text_style);
                         for (text, color) in &body.suffix {
-                            at = cells::write(paint.cells(), area, at, text, base.fg(*color));
+                            at = append_entry_text(paint, area, at, text, base.fg(*color));
                         }
                     } else if name_width <= name_budget {
-                        at = cells::write(paint.cells(), area, at, &body.text, text_style);
+                        at = append_entry_text(paint, area, at, &body.text, text_style);
                     } else {
                         let cut = truncate(&body.text, name_budget);
-                        at = cells::write(paint.cells(), area, at, &cut, text_style);
+                        at = append_entry_text(paint, area, at, &cut, text_style);
                     }
                 } else {
                     let cut = truncate(&body.text, name_budget);
-                    at = cells::write(paint.cells(), area, at, &cut, text_style);
+                    at = append_entry_text(paint, area, at, &cut, text_style);
                 }
 
                 // Section 3: status — right-aligned.
@@ -210,22 +225,19 @@ pub fn Entry(scope: &mut Scope, node: Node, selected: bool) -> LoomNode {
 
                     if st.added > 0 {
                         let added = format!("+{}", st.added);
-                        right_at = cells::write(paint.cells(), area, right_at, &added, base.fg(st.added_color));
+                        right_at = append_entry_text(paint, area, right_at, &added, base.fg(st.added_color));
                         if st.removed > 0 {
-                            right_at = cells::write(paint.cells(), area, right_at, " ", base);
+                            right_at = append_entry_text(paint, area, right_at, " ", base);
                         }
                     }
                     if st.removed > 0 {
                         let removed = format!("-{}", st.removed);
-                        right_at = cells::write(paint.cells(), area, right_at, &removed, base.fg(st.removed_color));
+                        right_at = append_entry_text(paint, area, right_at, &removed, base.fg(st.removed_color));
                     }
                     if st.added > 0 || st.removed > 0 {
-                        right_at = cells::write(paint.cells(), area, right_at, " ", base);
+                        right_at = append_entry_text(paint, area, right_at, " ", base);
                     }
-                    cells::write(
-                        paint.cells(), area, right_at, st.symbol,
-                        base.fg(st.symbol_color),
-                    );
+                    append_entry_text(paint, area, right_at, st.symbol, base.fg(st.symbol_color));
                 }
             }),
             ..

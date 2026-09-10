@@ -2,9 +2,9 @@
 
 use std::rc::Rc;
 
-use loom::{Basis, Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
+use loom::{Basis, Canvas, CanvasProps, Layout, Node, Paint, Scope, component, rsx, use_context};
+use ratatui::{layout::Rect, style::Style};
 
-use super::cells;
 use super::context::Ui;
 
 #[component]
@@ -17,9 +17,17 @@ pub fn Filler(scope: &mut Scope) -> Node {
             layout: Layout { grow: 1, basis: Basis::Length(1), shrink: 0, ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
-                cells::fill_repeat_pattern(paint.cells(), area, "╱", style);
+                paint_filler(paint, area, style);
             }),
             ..
+        }
+    }
+}
+
+pub(crate) fn paint_filler(paint: &mut Paint<'_>, area: Rect, style: Style) {
+    for y in area.y..area.bottom() {
+        for x in area.x..area.right() {
+            paint.set(x, y, "╱", style);
         }
     }
 }
