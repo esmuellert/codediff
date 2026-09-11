@@ -1,6 +1,6 @@
 //! Prints two files as aligned rows.
 
-use ::align::{Alignment, DiffVersion, Slot, ViewLine, ViewLineType};
+use ::align::{Alignment, DiffVersion, ViewLine, ViewLineContent, ViewLineType};
 use anyhow::{Context, Result};
 use file_types::DiffType;
 
@@ -120,16 +120,16 @@ fn marks(kind: ViewLineType) -> (char, char) {
     }
 }
 
-fn number(slot: Slot) -> String {
-    match slot.line() {
+fn number(content: ViewLineContent) -> String {
+    match content.line() {
         Some(n) => format!("{n:>5}"),
         None => "     ".to_owned(),
     }
 }
 
 /// One version's cell on one line: its text, or fillers where it has no line.
-fn cell(alignment: &Alignment, version: DiffVersion, slot: Slot) -> String {
-    match slot.line() {
+fn cell(alignment: &Alignment, version: DiffVersion, content: ViewLineContent) -> String {
+    match content.line() {
         None => "╱".repeat(COLUMN as usize),
         Some(number) => fit(
             &expand_str(alignment.line(version, number).unwrap_or_default()),
@@ -161,11 +161,13 @@ fn detail(alignment: &Alignment) {
         if line.kind != ViewLineType::Modified {
             continue;
         }
-        for (version, slot) in [
+        for (version, content) in [
             (DiffVersion::Original, line.original),
             (DiffVersion::Modified, line.modified),
         ] {
-            let Some(number) = slot.line() else { continue };
+            let Some(number) = content.line() else {
+                continue;
+            };
             for span in alignment.spans(version, number) {
                 any = true;
                 let text = alignment.line(version, number).unwrap_or_default();

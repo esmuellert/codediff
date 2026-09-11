@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use align::{Alignment, Slot, ViewLine, ViewLineType};
+use align::{Alignment, ViewLine, ViewLineContent, ViewLineType};
 use file_types::{DiffType, DiffVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,11 +23,11 @@ impl WrappedViewLine {
         modified_source: Option<&str>,
     ) -> Self {
         Self {
-            original: vec![TerminalLine::from_view_slot(
+            original: vec![TerminalLine::from_view_line_content(
                 view_line.original,
                 original_source,
             )],
-            modified: vec![TerminalLine::from_view_slot(
+            modified: vec![TerminalLine::from_view_line_content(
                 view_line.modified,
                 modified_source,
             )],
@@ -44,13 +44,13 @@ impl WrappedViewLine {
 }
 
 impl TerminalLine {
-    pub(crate) fn from_view_slot(slot: Slot, source: Option<&str>) -> Self {
-        match slot {
-            Slot::Line(source_line) => Self::SourceCode {
+    pub(crate) fn from_view_line_content(content: ViewLineContent, source: Option<&str>) -> Self {
+        match content {
+            ViewLineContent::SourceLine(source_line) => Self::SourceCode {
                 source_line,
                 bytes: 0..source.unwrap_or("").len() as u32,
             },
-            Slot::Filler => Self::Filler,
+            ViewLineContent::Filler => Self::Filler,
         }
     }
 

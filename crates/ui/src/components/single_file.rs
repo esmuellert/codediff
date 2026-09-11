@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use align::{Slot, ViewLine, ViewLineType};
+use align::{ViewLine, ViewLineContent, ViewLineType};
 use file_types::{DiffType, DiffVersion};
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
@@ -66,13 +66,13 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                 let source_line = index as u32 + 1;
                 let view_line = match version {
                     DiffVersion::Original => ViewLine {
-                        original: Slot::Line(source_line),
-                        modified: Slot::Filler,
+                        original: ViewLineContent::SourceLine(source_line),
+                        modified: ViewLineContent::Filler,
                         kind: ViewLineType::Deleted,
                     },
                     DiffVersion::Modified => ViewLine {
-                        original: Slot::Filler,
-                        modified: Slot::Line(source_line),
+                        original: ViewLineContent::Filler,
+                        modified: ViewLineContent::SourceLine(source_line),
                         kind: ViewLineType::Inserted,
                     },
                 };

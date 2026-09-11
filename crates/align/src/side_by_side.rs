@@ -3,7 +3,7 @@
 use diff_types::{DetailedLineRangeMapping, LinesDiff};
 use file_types::DiffVersion;
 
-use crate::view_line::{Slot, ViewLine};
+use crate::view_line::{ViewLine, ViewLineContent};
 
 /// Every paired view line.
 pub fn view_lines<'a>(
@@ -126,8 +126,8 @@ fn rows(change: &DetailedLineRangeMapping, original: &[String]) -> Vec<ViewLine>
         return (0..tall)
             .map(|i| {
                 ViewLine::new(
-                    slot_from_end(os, olen, i, tall),
-                    slot_from_end(ms, mlen, i, tall),
+                    view_line_content_from_end(os, olen, i, tall),
+                    view_line_content_from_end(ms, mlen, i, tall),
                 )
             })
             .collect();
@@ -139,8 +139,8 @@ fn rows(change: &DetailedLineRangeMapping, original: &[String]) -> Vec<ViewLine>
         let (olen, mlen) = (cut.0 - from.0, cut.1 - from.1);
         for i in 0..olen.max(mlen) {
             out.push(ViewLine::new(
-                slot_at(from.0, olen, i),
-                slot_at(from.1, mlen, i),
+                view_line_content_at(from.0, olen, i),
+                view_line_content_at(from.1, mlen, i),
             ));
         }
         from = cut;
@@ -198,18 +198,18 @@ impl Iterator for ViewLines<'_> {
     }
 }
 
-fn slot_at(start: u32, len: u32, i: u32) -> Slot {
+fn view_line_content_at(start: u32, len: u32, i: u32) -> ViewLineContent {
     if i < len {
-        Slot::Line(start + i)
+        ViewLineContent::SourceLine(start + i)
     } else {
-        Slot::Filler
+        ViewLineContent::Filler
     }
 }
 
-fn slot_from_end(start: u32, len: u32, i: u32, tall: u32) -> Slot {
+fn view_line_content_from_end(start: u32, len: u32, i: u32, tall: u32) -> ViewLineContent {
     match i.checked_sub(tall - len) {
-        Some(n) => Slot::Line(start + n),
-        None => Slot::Filler,
+        Some(n) => ViewLineContent::SourceLine(start + n),
+        None => ViewLineContent::Filler,
     }
 }
 
@@ -240,11 +240,11 @@ pub fn view_line_at(
     line: u32,
 ) -> Option<u32> {
     view_lines(diff, original, original_lines, modified_lines)
-        .position(|l| slot(&l, version).line() == Some(line))
+        .position(|l| view_line_content(&l, version).line() == Some(line))
         .map(|n| n as u32)
 }
 
-fn slot(line: &ViewLine, version: DiffVersion) -> Slot {
+fn view_line_content(line: &ViewLine, version: DiffVersion) -> ViewLineContent {
     match version {
         DiffVersion::Original => line.original,
         DiffVersion::Modified => line.modified,
