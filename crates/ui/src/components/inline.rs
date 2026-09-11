@@ -86,26 +86,34 @@ pub fn Inline(
     let syntax = syntax.as_deref();
 
     let mut rows = Vec::with_capacity(visible_wrapped_lines.len());
-    for (offset, wrapped_line) in visible_wrapped_lines.iter().enumerate() {
+    for (offset, (original, modified)) in visible_wrapped_lines
+        .iter()
+        .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .enumerate()
+    {
         let view_line_index = view.view_lines.start + offset as u32;
-        let (version, line_number) = match wrapped_line.selected_terminal_line() {
-            Some(TerminalLine::SourceCode { source_line, .. }) => {
-                let version = match wrapped_line.modified.first() {
-                    Some(TerminalLine::SourceCode { .. }) => DiffVersion::Modified,
-                    _ => DiffVersion::Original,
-                };
-                (version, source_line)
-            }
-            Some(TerminalLine::Filler) | None => continue,
+        let terminal_line = match modified {
+            TerminalLine::SourceCode { .. } => modified,
+            TerminalLine::Filler => match original {
+                TerminalLine::SourceCode { .. } => original,
+                TerminalLine::Filler => continue,
+            },
         };
-        let original_number = wrapped_line
-            .original
-            .first()
-            .and_then(TerminalLine::source_line);
-        let modified_number = wrapped_line
-            .modified
-            .first()
-            .and_then(TerminalLine::source_line);
+        let TerminalLine::SourceCode {
+            source_line: line_number,
+            ..
+        } = terminal_line
+        else {
+            continue;
+        };
+        let line_number = *line_number;
+        let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
+            DiffVersion::Modified
+        } else {
+            DiffVersion::Original
+        };
+        let original_number = original.source_line();
+        let modified_number = modified.source_line();
         let decorations = alignment.decorations(version, line_number);
         let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
         let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);

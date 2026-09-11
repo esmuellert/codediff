@@ -94,7 +94,11 @@ pub fn SideBySide(
     let divider_style = theme.normal.patch(theme.divider);
 
     let mut rows: Vec<Node> = Vec::with_capacity(visible_wrapped_lines.len());
-    for (offset, wrapped_line) in visible_wrapped_lines.iter().enumerate() {
+    for (offset, (original, modified)) in visible_wrapped_lines
+        .iter()
+        .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .enumerate()
+    {
         let view_line = view.view_lines.start + offset as u32;
         let make_side = |version: DiffVersion,
                          line: &TerminalLine,
@@ -172,16 +176,8 @@ pub fn SideBySide(
             }
         };
 
-        let original_nodes = make_side(
-            DiffVersion::Original,
-            &wrapped_line.original[0],
-            original_gutter_width,
-        );
-        let modified_nodes = make_side(
-            DiffVersion::Modified,
-            &wrapped_line.modified[0],
-            modified_gutter_width,
-        );
+        let original_nodes = make_side(DiffVersion::Original, original, original_gutter_width);
+        let modified_nodes = make_side(DiffVersion::Modified, modified, modified_gutter_width);
 
         rows.push(rsx! {
             Row {

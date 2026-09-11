@@ -127,11 +127,12 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let number_style = base.patch(ctx.theme.line_number);
     let visible_lines: Vec<Node> = visible_wrapped_lines
         .iter()
-        .filter_map(|wrapped_line| {
+        .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .filter_map(|(original, modified)| {
             let terminal_line = match version {
-                DiffVersion::Original => wrapped_line.original.first(),
-                DiffVersion::Modified => wrapped_line.modified.first(),
-            }?;
+                DiffVersion::Original => original,
+                DiffVersion::Modified => modified,
+            };
             let number = match terminal_line {
                 TerminalLine::SourceCode { source_line, .. } => *source_line,
                 TerminalLine::Filler => return None,
