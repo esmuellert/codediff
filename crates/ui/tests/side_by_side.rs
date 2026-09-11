@@ -23,7 +23,7 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let previous_key = active_key.current().clone();
     if previous_key.as_deref() != Some(key.as_str()) {
         if let Some(previous_key) = previous_key {
-            let state = *active_view_state.current();
+            let state = active_view_state.current().clone();
             view_states.current().save(&previous_key, state);
         }
         *active_view_state.current() = view_states.current().load(&key);

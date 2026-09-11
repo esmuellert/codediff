@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use align::{Alignment, ViewLine};
 use file_types::{DiffType, DiffVersion, File, Rev};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, component, rsx,
@@ -16,11 +15,12 @@ use super::inline::{Inline, InlineProps};
 use super::side_by_side::{SideBySide, SideBySideProps};
 use super::single_file::{SingleFile, SingleFileProps};
 use super::welcome::Welcome;
+use super::wrap::TerminalLine;
 
 /// The screen position of one two-sided diff.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ViewState {
-    pub first_view_line: Option<ViewLine>,
+    pub(crate) first_terminal_line: Option<TerminalLine>,
     pub first_cell: u32,
 }
 
@@ -32,36 +32,12 @@ pub struct ViewStateHistory {
 
 impl ViewStateHistory {
     pub fn load(&self, key: &str) -> ViewState {
-        self.entries.get(key).copied().unwrap_or_default()
+        self.entries.get(key).cloned().unwrap_or_default()
     }
 
     pub fn save(&mut self, key: &str, state: ViewState) {
         self.entries.insert(key.to_owned(), state);
     }
-}
-
-pub(crate) fn first_view_line(
-    alignment: &Alignment,
-    layout: DiffType,
-    top: u32,
-) -> Option<ViewLine> {
-    alignment.view_lines_from(layout, top).next()
-}
-
-pub(crate) fn find_view_line_index(
-    alignment: &Alignment,
-    layout: DiffType,
-    first: ViewLine,
-) -> Option<u32> {
-    if let Some(line) = first.modified.line()
-        && let Some(top) = alignment.view_line_at(layout, DiffVersion::Modified, line)
-    {
-        return Some(top);
-    }
-    first
-        .original
-        .line()
-        .and_then(|line| alignment.view_line_at(layout, DiffVersion::Original, line))
 }
 
 fn use_diff_content(scope: &mut Scope, ctx: &Context) -> Option<Rc<DiffContent>> {
@@ -121,7 +97,7 @@ fn sync_active_view_state(
     }
 
     if let Some(previous_key) = previous_key {
-        let state = *active_state.current();
+        let state = active_state.current().clone();
         history.current().save(&previous_key, state);
     }
     let state = current_key

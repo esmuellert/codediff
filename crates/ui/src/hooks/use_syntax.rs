@@ -1,6 +1,5 @@
 //! Syntax state and requests for rendered diff content.
 
-use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -9,6 +8,7 @@ use loom::{Scope, use_effect, use_state};
 use pipeline::diff::DiffContent;
 use syntax::Store;
 
+use crate::components::WrappedViewLine;
 use crate::services::syntax::SyntaxService;
 
 #[derive(Clone)]
@@ -28,12 +28,12 @@ impl PartialEq for SyntaxRequest {
     }
 }
 
-pub fn use_syntax(
+pub(crate) fn use_syntax(
     scope: &mut Scope,
     syntax_service: Option<Rc<SyntaxService>>,
     content: Rc<DiffContent>,
     diff_type: DiffType,
-    visible_lines: Range<u32>,
+    visible_lines: &[WrappedViewLine],
 ) -> Option<Rc<Store>> {
     let content_id = Rc::as_ptr(&content) as usize;
     let syntax_service_id = syntax_service
@@ -77,59 +77,53 @@ pub fn use_syntax(
 fn syntax_requests(
     content: &DiffContent,
     diff_type: DiffType,
-    visible_lines: Range<u32>,
+    visible_lines: &[WrappedViewLine],
 ) -> Vec<SyntaxRequest> {
     match content {
         DiffContent::Diff(diff) if diff_type != DiffType::Single => {
-            let visible: Vec<_> = diff
-                .alignment
-                .view_lines_from(diff_type, visible_lines.start)
-                .take(visible_lines.len())
-                .collect();
             let mut requests = Vec::with_capacity(2);
-            let original_last = visible
-                .iter()
-                .filter_map(|line| line.original.line())
-                .max()
-                .and_then(|line| line.checked_sub(1));
-            if let Some(last) = original_last {
+            for version in [DiffVersion::Original, DiffVersion::Modified] {
+                let Some(last) = last_source_line(visible_lines, version) else {
+                    continue;
+                };
                 requests.push(SyntaxRequest {
                     file: diff.file.clone(),
-                    version: DiffVersion::Original,
-                    text: diff.alignment.text(DiffVersion::Original),
-                    last,
-                });
-            }
-            let modified_last = visible
-                .iter()
-                .filter_map(|line| line.modified.line())
-                .max()
-                .and_then(|line| line.checked_sub(1));
-            if let Some(last) = modified_last {
-                requests.push(SyntaxRequest {
-                    file: diff.file.clone(),
-                    version: DiffVersion::Modified,
-                    text: diff.alignment.text(DiffVersion::Modified),
+                    version,
+                    text: diff.alignment.text(version),
                     last,
                 });
             }
             requests
         }
         DiffContent::SingleFile(single) if diff_type == DiffType::Single => {
-            let line_count = single.lines.len() as u32;
-            if visible_lines.start >= line_count {
-                return Vec::new();
-            }
-            let Some(last) = visible_lines.end.min(line_count).checked_sub(1) else {
-                return Vec::new();
-            };
-            vec![SyntaxRequest {
-                file: single.file.clone(),
-                version: single.side(),
-                text: Arc::clone(&single.lines),
-                last,
-            }]
+            let version = single.side();
+            last_source_line(visible_lines, version)
+                .map(|last| {
+                    vec![SyntaxRequest {
+                        file: single.file.clone(),
+                        version,
+                        text: Arc::clone(&single.lines),
+                        last,
+                    }]
+                })
+                .unwrap_or_default()
         }
         _ => Vec::new(),
     }
+}
+
+fn last_source_line(visible_lines: &[WrappedViewLine], version: DiffVersion) -> Option<u32> {
+    let mut last_line: Option<u32> = None;
+    for line in visible_lines {
+        let terminal_lines = match version {
+            DiffVersion::Original => &line.original,
+            DiffVersion::Modified => &line.modified,
+        };
+        for terminal_line in terminal_lines {
+            if let Some(source_line) = terminal_line.source_line() {
+                last_line = Some(last_line.map_or(source_line, |last| last.max(source_line)));
+            }
+        }
+    }
+    last_line.and_then(|line| line.checked_sub(1))
 }

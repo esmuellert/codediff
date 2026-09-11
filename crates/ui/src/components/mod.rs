@@ -14,6 +14,8 @@ pub mod single_file;
 mod welcome;
 mod wrap;
 
+pub(crate) use wrap::WrappedViewLine;
+
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
 pub use explorer::{Explorer, ExplorerProps, letter};

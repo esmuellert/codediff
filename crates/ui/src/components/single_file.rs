@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use file_types::DiffType;
+use align::{Slot, ViewLine, ViewLineType};
+use file_types::{DiffType, DiffVersion};
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
     use_layout_effect, use_memo, use_ref,
@@ -12,6 +13,7 @@ use loom::{
 use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
+use super::wrap::{TerminalLine, WrappedViewLine};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
@@ -54,8 +56,36 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let previous_identity = use_ref(scope, || None::<(String, usize)>);
     let identity = (file_key.clone(), content_id);
     let content_changed = previous_identity.current().as_ref() != Some(&identity);
+    let version = single.side();
+    let wrapped_lines = use_memo(scope, content_id, || {
+        single
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(index, text)| {
+                let source_line = index as u32 + 1;
+                let view_line = match version {
+                    DiffVersion::Original => ViewLine {
+                        original: Slot::Line(source_line),
+                        modified: Slot::Filler,
+                        kind: ViewLineType::Deleted,
+                    },
+                    DiffVersion::Modified => ViewLine {
+                        original: Slot::Filler,
+                        modified: Slot::Line(source_line),
+                        kind: ViewLineType::Inserted,
+                    },
+                };
+                let (original, modified) = match version {
+                    DiffVersion::Original => (Some(text.as_str()), None),
+                    DiffVersion::Modified => (None, Some(text.as_str())),
+                };
+                WrappedViewLine::from_view_line(view_line, original, modified)
+            })
+            .collect::<Vec<_>>()
+    });
     let maximum_line_cells = use_memo(scope, content_id, || longest_line_cells(&single.lines));
-    let (view, vertical_handle) = use_scroll(scope, line_count, saved_state.top);
+    let (view, vertical_handle) = use_scroll(scope, wrapped_lines.len() as u32, saved_state.top);
     let horizontal_limits = HorizontalDimensions::Single {
         longest_line_cells: *maximum_line_cells,
         gutter_cells: gutter_width,
@@ -82,27 +112,32 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
         horizontal_handle.scroll_to(saved_state.first_cell);
     });
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
+    let visible_wrapped_lines =
+        &wrapped_lines[view.view_lines.start as usize..view.view_lines.end as usize];
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
         Rc::clone(content),
         DiffType::Single,
-        view.view_lines.clone(),
+        visible_wrapped_lines,
     );
-    let version = single.side();
     let syntax = syntax.as_deref();
 
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
-    let visible_lines: Vec<Node> = single
-        .lines
+    let visible_lines: Vec<Node> = visible_wrapped_lines
         .iter()
-        .enumerate()
-        .skip(view.view_lines.start as usize)
-        .take(view.view_lines.len())
-        .map(|(index, text)| {
-            let number = index as u32 + 1;
-            rsx! {
+        .filter_map(|wrapped_line| {
+            let terminal_line = match version {
+                DiffVersion::Original => wrapped_line.original.first(),
+                DiffVersion::Modified => wrapped_line.modified.first(),
+            }?;
+            let number = match terminal_line {
+                TerminalLine::SourceCode { source_line, .. } => *source_line,
+                TerminalLine::Filler => return None,
+            };
+            let text = single.lines.get(number.saturating_sub(1) as usize)?;
+            let row = rsx! {
                 Row {
                     key: number,
                     layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -132,7 +167,8 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                         selection: None,
                     }
                 }
-            }
+            };
+            Some(row)
         })
         .collect();
 
