@@ -12,6 +12,7 @@ pub mod inline;
 pub mod side_by_side;
 pub mod single_file;
 mod welcome;
+mod wrap;
 
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
