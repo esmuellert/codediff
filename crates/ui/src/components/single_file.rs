@@ -138,6 +138,18 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                 TerminalLine::Filler => return None,
             };
             let text = single.lines.get(number.saturating_sub(1) as usize)?;
+            let syntax_spans = syntax
+                .map(|store| SyntaxService::line_spans(store, &single.file, version, number))
+                .unwrap_or_default();
+            let (text, diff, fill_from, empty_markers, syntax_spans) =
+                super::code_text::prepare_code_text_inputs(
+                    text,
+                    terminal_line,
+                    &[],
+                    None,
+                    &[],
+                    &syntax_spans,
+                );
             let row = rsx! {
                 Row {
                     key: number,
@@ -152,17 +164,12 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     }
                     CodeText {
                         key: 1u32,
-                        text: Rc::from(text.as_str()),
+                        text: text,
                         first_cell: horizontal.first_cell(version),
-                        diff: Rc::from([]),
-                        fill_from: None,
-                        empty_markers: Rc::from([]),
-                        syntax: Rc::from(
-                            syntax
-                                .map(|store| SyntaxService::line_spans(store, &single.file, version, number))
-                                .unwrap_or_default()
-                                .as_slice()
-                        ),
+                        diff: diff,
+                        fill_from: fill_from,
+                        empty_markers: empty_markers,
+                        syntax: syntax_spans,
                         unchanged_style: base,
                         changed_style: base,
                         selection: None,

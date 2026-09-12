@@ -100,81 +100,88 @@ pub fn SideBySide(
         .enumerate()
     {
         let view_line = view.view_lines.start + offset as u32;
-        let make_side = |version: DiffVersion,
-                         line: &TerminalLine,
-                         gutter_width: u16|
-         -> Vec<Node> {
-            match line {
-                TerminalLine::SourceCode {
-                    source_line: line_number,
-                    ..
-                } => {
-                    let line_number = *line_number;
-                    let decorations = alignment.decorations(version, line_number);
-                    let code_styles =
-                        code_text::styles_for_diff(theme, version, decorations.line_background);
-                    let gutter_style =
-                        gutter::style_for_diff(theme, version, decorations.gutter_background);
-                    let text = alignment.line(version, line_number).unwrap_or("");
-                    let changed_ranges: Vec<Range<u32>> = decorations
-                        .characters
-                        .iter()
-                        .map(|character| character.bytes.clone())
-                        .collect();
-                    let fill_from = decorations
-                        .characters
-                        .iter()
-                        .filter(|character| character.fill_to_edge)
-                        .map(|character| character.bytes.start)
-                        .min();
-                    vec![
-                        rsx! {
-                            Gutter {
-                                key: 0u32,
-                                number: Some(line_number),
-                                style: gutter_style,
-                                blank: gutter_style,
-                                width: gutter_width,
-                            }
-                        },
-                        rsx! {
-                            CodeText {
-                                key: 1u32,
-                                text: Rc::from(text),
-                                first_cell: horizontal.first_cell(version),
-                                diff: Rc::from(changed_ranges.as_slice()),
-                                fill_from: fill_from,
-                                empty_markers: Rc::from(decorations.empty_markers.as_slice()),
-                                syntax: Rc::from(
-                                    syntax
-                                        .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-                                        .unwrap_or_default()
-                                        .as_slice()
-                                ),
-                                unchanged_style: code_styles.unchanged,
-                                changed_style: code_styles.changed,
-                                selection: None,
-                            }
-                        },
-                    ]
+        let make_side =
+            |version: DiffVersion, line: &TerminalLine, gutter_width: u16| -> Vec<Node> {
+                match line {
+                    TerminalLine::SourceCode {
+                        source_line: line_number,
+                        ..
+                    } => {
+                        let line_number = *line_number;
+                        let decorations = alignment.decorations(version, line_number);
+                        let code_styles =
+                            code_text::styles_for_diff(theme, version, decorations.line_background);
+                        let gutter_style =
+                            gutter::style_for_diff(theme, version, decorations.gutter_background);
+                        let text = alignment.line(version, line_number).unwrap_or("");
+                        let changed_ranges: Vec<Range<u32>> = decorations
+                            .characters
+                            .iter()
+                            .map(|character| character.bytes.clone())
+                            .collect();
+                        let fill_from = decorations
+                            .characters
+                            .iter()
+                            .filter(|character| character.fill_to_edge)
+                            .map(|character| character.bytes.start)
+                            .min();
+                        let syntax_spans = syntax
+                            .map(|store| {
+                                SyntaxService::line_spans(store, &diff.file, version, line_number)
+                            })
+                            .unwrap_or_default();
+                        let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
+                            code_text::prepare_code_text_inputs(
+                                text,
+                                line,
+                                &changed_ranges,
+                                fill_from,
+                                &decorations.empty_markers,
+                                &syntax_spans,
+                            );
+                        vec![
+                            rsx! {
+                                Gutter {
+                                    key: 0u32,
+                                    number: Some(line_number),
+                                    style: gutter_style,
+                                    blank: gutter_style,
+                                    width: gutter_width,
+                                }
+                            },
+                            rsx! {
+                                CodeText {
+                                    key: 1u32,
+                                    text: text,
+                                    first_cell: horizontal.first_cell(version),
+                                    diff: changed_ranges,
+                                    fill_from: fill_from,
+                                    empty_markers: empty_markers,
+                                    syntax: syntax_spans,
+                                    unchanged_style: code_styles.unchanged,
+                                    changed_style: code_styles.changed,
+                                    selection: None,
+                                }
+                            },
+                        ]
+                    }
+                    TerminalLine::Filler => {
+                        let blank = theme.normal.patch(theme.filler);
+                        vec![
+                            rsx! {
+                                Gutter {
+                                    key: 0u32,
+                                    number: None,
+                                    style: blank,
+                                    blank: blank,
+                                    width: gutter_width,
+                                }
+                            },
+                            rsx! { Filler { key: 1u32 } },
+                        ]
+                    }
                 }
-                TerminalLine::Filler => {
-                    let blank = theme.normal.patch(theme.filler);
-                    vec![
-                        rsx! {
-                            Gutter {
-                                key: 0u32,
-                                number: None,
-                                style: blank,
-                                blank: blank,
-                                width: gutter_width,
-                            }
-                        },
-                        rsx! { Filler { key: 1u32 } },
-                    ]
-                }
-            }
-        };
+            };
 
         let original_nodes = make_side(DiffVersion::Original, original, original_gutter_width);
         let modified_nodes = make_side(DiffVersion::Modified, modified, modified_gutter_width);

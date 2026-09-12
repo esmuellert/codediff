@@ -129,6 +129,18 @@ pub fn Inline(
             .filter(|character| character.fill_to_edge)
             .map(|character| character.bytes.start)
             .min();
+        let syntax_spans = syntax
+            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
+            .unwrap_or_default();
+        let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
+            code_text::prepare_code_text_inputs(
+                text,
+                terminal_line,
+                &changed_ranges,
+                fill_from,
+                &decorations.empty_markers,
+                &syntax_spans,
+            );
 
         rows.push(rsx! {
             Row {
@@ -151,17 +163,12 @@ pub fn Inline(
                 }
                 CodeText {
                     key: 2u32,
-                    text: Rc::from(text),
+                    text: text,
                     first_cell: horizontal.first_cell(version),
-                    diff: Rc::from(changed_ranges.as_slice()),
+                    diff: changed_ranges,
                     fill_from: fill_from,
-                    empty_markers: Rc::from(decorations.empty_markers.as_slice()),
-                    syntax: Rc::from(
-                        syntax
-                            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-                            .unwrap_or_default()
-                            .as_slice()
-                    ),
+                    empty_markers: empty_markers,
+                    syntax: syntax_spans,
                     unchanged_style: code_styles.unchanged,
                     changed_style: code_styles.changed,
                     selection: None,
