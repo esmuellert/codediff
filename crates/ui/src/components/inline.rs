@@ -10,12 +10,12 @@ use loom::{
     use_context, use_measure, use_memo,
 };
 
-use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
+use super::code_text::{self, CodeText, CodeTextProps};
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, find_terminal_line_index, unwrapped_view_lines,
+    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells, wrap_view_lines,
     wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
@@ -23,6 +23,25 @@ use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
+
+fn longest_inline_terminal_line_cells(
+    lines: &[WrappedViewLine],
+    original_lines: &[String],
+    modified_lines: &[String],
+) -> u32 {
+    lines
+        .iter()
+        .flat_map(|line| line.original.iter().zip(&line.modified))
+        .map(|(original, modified)| {
+            if matches!(modified, TerminalLine::SourceCode { .. }) {
+                terminal_line_cells(modified, modified_lines)
+            } else {
+                terminal_line_cells(original, original_lines)
+            }
+        })
+        .max()
+        .unwrap_or(0)
+}
 
 #[component]
 pub fn Inline(
@@ -45,27 +64,30 @@ pub fn Inline(
     let view_state_ref = *view_state;
     let current_view_state = view_state_ref.current().clone();
     let content_id = Rc::as_ptr(content) as usize;
-    let wrapped_lines = use_memo(scope, content_id, || {
-        unwrapped_view_lines(alignment, DiffType::Inline)
+    let code_width = size
+        .width
+        .saturating_sub(original_gutter_width)
+        .saturating_sub(modified_gutter_width);
+    let wrapped_lines = use_memo(scope, (content_id, code_width), || {
+        wrap_view_lines(alignment, DiffType::Inline, code_width, code_width)
     });
-    let maximum_line_cells = use_memo(scope, content_id, || {
-        longest_line_cells(alignment.lines(DiffVersion::Original))
-            .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
+    let maximum_line_cells = use_memo(scope, (content_id, code_width), || {
+        longest_inline_terminal_line_cells(
+            &wrapped_lines,
+            alignment.lines(DiffVersion::Original),
+            alignment.lines(DiffVersion::Modified),
+        )
     });
     let initial_top = current_view_state
         .first_terminal_line
         .as_ref()
         .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
         .unwrap_or(0);
-    let (view, vertical_handle) = use_scroll(
-        scope,
-        wrapped_lines
-            .iter()
-            .map(|line| line.original.len() as u32)
-            .sum(),
-        initial_top,
-        size.height,
-    );
+    let terminal_line_count = wrapped_lines
+        .iter()
+        .map(|line| line.original.len() as u32)
+        .sum();
+    let (view, vertical_handle) = use_scroll(scope, terminal_line_count, initial_top, size.height);
     let horizontal_limits = HorizontalDimensions::Inline {
         longest_line_cells: *maximum_line_cells,
         original_gutter_cells: original_gutter_width,
@@ -78,25 +100,27 @@ pub fn Inline(
         current_view_state.first_cell,
     );
     let horizontal = horizontal_limits.view(horizontal_view.first_cell);
-    *view_state_ref.current() = ViewState {
-        first_terminal_line: (view.top > 0)
-            .then(|| {
-                wrapped_lines
-                    .iter()
-                    .flat_map(|line| line.original.iter().zip(&line.modified))
-                    .nth(view.top as usize)
-            })
-            .flatten()
-            .and_then(|(original, modified)| match modified {
-                TerminalLine::SourceCode { .. } => Some(modified),
-                TerminalLine::Filler => match original {
-                    TerminalLine::SourceCode { .. } => Some(original),
-                    TerminalLine::Filler => None,
-                },
-            })
-            .cloned(),
-        first_cell: horizontal.requested_first_cell,
-    };
+    if size.width > 0 && size.height > 0 {
+        *view_state_ref.current() = ViewState {
+            first_terminal_line: (view.top > 0)
+                .then(|| {
+                    wrapped_lines
+                        .iter()
+                        .flat_map(|line| line.original.iter().zip(&line.modified))
+                        .nth(view.top as usize)
+                })
+                .flatten()
+                .and_then(|(original, modified)| match modified {
+                    TerminalLine::SourceCode { .. } => Some(modified),
+                    TerminalLine::Filler => match original {
+                        TerminalLine::SourceCode { .. } => Some(original),
+                        TerminalLine::Filler => None,
+                    },
+                })
+                .cloned(),
+            first_cell: horizontal.requested_first_cell,
+        };
+    }
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
     let visible_wrapped_lines = &wrapped_lines[wrapped_view_line_range_for_terminal_lines(
         &wrapped_lines,

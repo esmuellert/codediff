@@ -59,6 +59,25 @@ fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
 }
 
 #[test]
+fn a_long_line_renders_its_continuation() {
+    let line = format!(
+        "SINGLE_WRAP_START {} SINGLE_WRAP_END",
+        "0123456789 ".repeat(4)
+    );
+    let mut harness = harness(vec![line], false, 32, 8);
+
+    assert!(
+        harness
+            .screen()
+            .iter()
+            .skip(1)
+            .any(|screen_line| screen_line.contains("SINGLE_WRAP_END")),
+        "wrapped continuation is missing: {:?}",
+        harness.screen()
+    );
+}
+
+#[test]
 fn lines_are_numbered_in_one_full_width_pane() {
     let mut harness = harness(vec!["alpha".into(), "beta".into()], false, 30, 3);
     let screen = harness.screen();
@@ -114,30 +133,24 @@ fn syntax_is_requested_for_the_present_side() {
 }
 
 #[test]
-fn horizontal_scroll_keeps_the_gutter_and_four_trailing_cells() {
+fn horizontal_input_does_not_move_wrapped_text() {
     let mut harness = harness(vec!["ABCDEFGHIJKL".into()], false, 12, 2);
-    harness.force_draw().force_draw();
-    let gutter = symbols(&mut harness, 0, 4);
+    let before = harness.screen();
 
-    for _ in 0..12 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
+    harness
+        .press(crokey::key!(l))
+        .wheel_horizontal(10, 1, 1)
+        .press(crokey::key!('$'))
+        .force_draw();
 
-    assert_eq!(symbols(&mut harness, 0, 4), gutter);
-    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+    assert_eq!(harness.screen(), before);
 }
 
 #[test]
-fn an_offscreen_longest_line_sets_the_horizontal_endpoint() {
+fn an_offscreen_longest_line_stays_at_the_start() {
     let mut harness = harness(vec!["short".into(), "ABCDEFGHIJKL".into()], false, 12, 1);
-    harness.force_draw().force_draw();
-    for _ in 0..12 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-
-    harness.press(crokey::key!(j)).force_draw();
-
-    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+    harness.press(crokey::key!('$')).force_draw();
+    assert!(symbols(&mut harness, 4, 12).starts_with("short"));
 }
 
 #[test]

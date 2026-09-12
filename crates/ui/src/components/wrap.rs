@@ -294,22 +294,89 @@ fn is_ideographic(character: char) -> bool {
     )
 }
 
+fn selected_terminal_line<'a>(
+    original: &'a TerminalLine,
+    modified: &'a TerminalLine,
+) -> Option<&'a TerminalLine> {
+    match modified {
+        TerminalLine::SourceCode { .. } => Some(modified),
+        TerminalLine::Filler => match original {
+            TerminalLine::SourceCode { .. } => Some(original),
+            TerminalLine::Filler => None,
+        },
+    }
+}
+
+pub(crate) fn terminal_line_cells(line: &TerminalLine, source_lines: &[String]) -> u32 {
+    let TerminalLine::SourceCode { source_line, bytes } = line else {
+        return 0;
+    };
+    source_lines
+        .get(source_line.saturating_sub(1) as usize)
+        .and_then(|source| source.get(bytes.start as usize..bytes.end as usize))
+        .map(|text| LineIndex::new(text, TAB_WIDTH).width().0)
+        .unwrap_or(0)
+}
+
+pub(crate) fn longest_terminal_line_cells(
+    lines: &[WrappedViewLine],
+    version: DiffVersion,
+    source_lines: &[String],
+) -> u32 {
+    lines
+        .iter()
+        .flat_map(|line| match version {
+            DiffVersion::Original => line.original.iter(),
+            DiffVersion::Modified => line.modified.iter(),
+        })
+        .map(|line| terminal_line_cells(line, source_lines))
+        .max()
+        .unwrap_or(0)
+}
+
 pub(crate) fn find_terminal_line_index(
     lines: &[WrappedViewLine],
     target: &TerminalLine,
 ) -> Option<u32> {
-    lines
+    let exact = lines
         .iter()
         .flat_map(|line| line.original.iter().zip(&line.modified))
         .position(|(original, modified)| {
-            let selected = match modified {
-                TerminalLine::SourceCode { .. } => Some(modified),
-                TerminalLine::Filler => match original {
-                    TerminalLine::SourceCode { .. } => Some(original),
-                    TerminalLine::Filler => None,
-                },
-            };
-            selected == Some(target)
+            selected_terminal_line(original, modified) == Some(target)
+        });
+    exact
+        .or_else(|| {
+            lines
+                .iter()
+                .flat_map(|line| line.original.iter().zip(&line.modified))
+                .position(|(original, modified)| {
+                    let Some(fragment) = selected_terminal_line(original, modified) else {
+                        return false;
+                    };
+                    let (
+                        TerminalLine::SourceCode {
+                            source_line: fragment_line,
+                            bytes: fragment_bytes,
+                        },
+                        TerminalLine::SourceCode {
+                            source_line: saved_line,
+                            bytes: saved_bytes,
+                        },
+                    ) = (fragment, target)
+                    else {
+                        return false;
+                    };
+                    if fragment_line != saved_line {
+                        return false;
+                    }
+                    if saved_bytes.start == saved_bytes.end {
+                        fragment_bytes.start <= saved_bytes.start
+                            && saved_bytes.start <= fragment_bytes.end
+                    } else {
+                        fragment_bytes.start <= saved_bytes.start
+                            && saved_bytes.start < fragment_bytes.end
+                    }
+                })
         })
         .map(|index| index as u32)
 }
@@ -510,6 +577,29 @@ mod tests {
                 },
             ),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn restores_a_terminal_line_inside_a_new_fragment() {
+        let wrapped = WrappedViewLine {
+            original: vec![TerminalLine::SourceCode {
+                source_line: 1,
+                bytes: 0..6,
+            }],
+            modified: vec![TerminalLine::Filler],
+            diff_type: ViewLineType::Deleted,
+        };
+
+        assert_eq!(
+            find_terminal_line_index(
+                &[wrapped],
+                &TerminalLine::SourceCode {
+                    source_line: 1,
+                    bytes: 3..6,
+                },
+            ),
+            Some(0)
         );
     }
 

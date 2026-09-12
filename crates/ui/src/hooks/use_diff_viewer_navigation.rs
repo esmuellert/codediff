@@ -120,9 +120,13 @@ impl HorizontalView {
 }
 
 fn max_first_cell(longest_line_cells: u32, text_viewport_cells: u32) -> u32 {
-    longest_line_cells
-        .saturating_add(SCROLL_BEYOND_LAST_COLUMN)
-        .saturating_sub(text_viewport_cells)
+    if longest_line_cells <= text_viewport_cells {
+        0
+    } else {
+        longest_line_cells
+            .saturating_add(SCROLL_BEYOND_LAST_COLUMN)
+            .saturating_sub(text_viewport_cells)
+    }
 }
 
 /// Connects code-view input to already-created viewport handles.

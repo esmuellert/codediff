@@ -12,14 +12,14 @@ use ui::hooks::use_scroll::use_scroll;
 #[component]
 fn Probe(
     scope: &mut Scope,
-    total: u32,
+    line_count: u32,
     longest_line_cells: u32,
     auto_focus: bool,
     initial_top: u32,
     initial_first_cell: u32,
 ) -> Node {
     let (node_ref, size) = use_measure(scope);
-    let (view, vertical_handle) = use_scroll(scope, *total, *initial_top, size.height);
+    let (view, vertical_handle) = use_scroll(scope, *line_count, *initial_top, size.height);
     let maximum_first_cell = longest_line_cells
         .saturating_add(4)
         .saturating_sub(u32::from(size.width));
@@ -47,7 +47,7 @@ fn harness() -> Harness {
 fn navigation_harness(width: u16, longest_line_cells: u32) -> Harness {
     let mut harness = Harness::new::<Probe>(
         ProbeProps {
-            total: 20,
+            line_count: 20,
             longest_line_cells,
             auto_focus: true,
             initial_top: 0,
@@ -70,7 +70,7 @@ fn state(harness: &mut Harness) -> (u32, u32) {
 fn absolute_positions_can_be_set_on_mount() {
     let mut harness = Harness::new::<Probe>(
         ProbeProps {
-            total: 20,
+            line_count: 20,
             longest_line_cells: 40,
             auto_focus: true,
             initial_top: 6,
@@ -197,7 +197,7 @@ fn FocusPair(scope: &mut Scope) -> Node {
             ..,
             Previous {}
             Probe {
-                total: 20,
+                line_count: 20,
                 longest_line_cells: 40,
                 auto_focus: true,
                 initial_top: 0,

@@ -352,8 +352,8 @@ fn a_diff_view_state_survives_a_layout_switch() {
 
     harness.press(crokey::key!(t)).force_draw();
     assert!(
-        harness.screen_row(0).contains("05"),
-        "row 0 after layout switch: {:?}",
+        !harness.screen_row(0).contains("line 01"),
+        "layout switch reset the terminal position: {:?}",
         harness.screen_row(0)
     );
     assert!(!harness.screen().iter().any(|row| row.contains('│')));

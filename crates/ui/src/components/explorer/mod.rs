@@ -77,9 +77,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         grouped_list(&files)
     };
     let nodes = Rc::new(nodes);
-    let total = nodes.len() as u32;
+    let catalog_line_count = nodes.len() as u32;
     let (node_ref, size) = use_measure(scope);
-    let (view, scroll) = use_scroll(scope, total, 0, size.height);
+    let (view, scroll) = use_scroll(scope, catalog_line_count, 0, size.height);
 
     // When the file list changes, keep the selection on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&files));
@@ -105,7 +105,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             k if k == key!(j) || k == key!(down) => {
                 let nodes = Rc::clone(&nodes_keys);
                 set_selected_line(&move |selected_line| {
-                    let next = selected_line.saturating_add(1).min(total.saturating_sub(1));
+                    let next = selected_line
+                        .saturating_add(1)
+                        .min(catalog_line_count.saturating_sub(1));
                     scroll.keep_line_visible(next, SCROLLOFF);
                     if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
                         open_file(file, set_file);
@@ -160,7 +162,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             Bubble::Stop
         })
         .on_mouse_down(move |mouse| {
-            let line = (view.top + u32::from(mouse.local.y)).min(total.saturating_sub(1));
+            let line =
+                (view.top + u32::from(mouse.local.y)).min(catalog_line_count.saturating_sub(1));
             let already_selected = line == selected_line;
             set_selected_line(&move |_| line);
             if let Some(node) = nodes_click.get(line as usize) {

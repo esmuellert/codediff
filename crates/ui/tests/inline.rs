@@ -183,63 +183,46 @@ fn vertical_keys_and_wheel_move_visual_rows() {
 }
 
 #[test]
-fn horizontal_keys_and_wheel_keep_both_gutters_fixed() {
+fn horizontal_input_does_not_move_wrapped_text() {
     let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 20, 3);
-    let original_row_gutters = symbols(&mut harness, 0, 8, 0);
-    let modified_row_gutters = symbols(&mut harness, 0, 8, 1);
+    let before = harness.screen();
 
-    for _ in 0..3 {
-        harness.press(crokey::key!(l));
-    }
-    harness.force_draw();
-    assert_eq!(symbols(&mut harness, 0, 8, 0), original_row_gutters);
-    assert_eq!(symbols(&mut harness, 0, 8, 1), modified_row_gutters);
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "DEFGHIJKLMNO");
-    assert_eq!(symbols(&mut harness, 8, 20, 1), "defghijklmno");
+    harness
+        .press(crokey::key!(l))
+        .wheel_horizontal(1, 1, 1)
+        .press(crokey::key!('$'))
+        .force_draw();
 
-    harness.wheel_horizontal(1, 1, 1).force_draw();
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "GHIJKLMNOPQR");
-    assert_eq!(symbols(&mut harness, 8, 20, 1), "ghijklmnopqr");
-
-    harness.wheel_horizontal(1, 1, -1).force_draw();
-    harness.press(crokey::key!(h)).force_draw();
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "CDEFGHIJKLMN");
-    harness.press(crokey::key!(0)).force_draw();
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "ABCDEFGHIJKL");
+    assert_eq!(harness.screen(), before);
 }
 
 #[test]
-fn horizontal_endpoint_leaves_four_cells_and_survives_resize() {
+fn resizing_wrapped_text_keeps_it_at_the_start() {
     let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 20, 3);
+    assert!(symbols(&mut harness, 8, 20, 0).starts_with("ABCDEFGHIJKL"));
 
-    harness.press(crokey::key!('$')).force_draw();
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "MNOPQRST    ");
-    assert_eq!(symbols(&mut harness, 8, 20, 1), "mnopqrst    ");
-
-    harness.resize(30, 3).force_draw();
-    assert_eq!(symbols(&mut harness, 8, 30, 0), "CDEFGHIJKLMNOPQRST    ");
-    harness.resize(20, 3).force_draw();
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "MNOPQRST    ");
+    harness.press(crokey::key!('$')).resize(30, 3).force_draw();
+    assert!(symbols(&mut harness, 8, 30, 0).starts_with("ABCDEFGHIJKLMNOPQRST"));
 }
 
 #[test]
-fn an_offscreen_longest_line_sets_the_horizontal_endpoint() {
+fn an_offscreen_longest_line_stays_at_the_start() {
     let lines = ["short", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
     let mut harness = harness(&lines, &lines, 20, 1);
 
     harness.press(crokey::key!('$')).force_draw();
 
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "            ");
+    assert!(symbols(&mut harness, 8, 20, 0).starts_with("short"));
 }
 
 #[test]
-fn both_versions_follow_the_longer_version_endpoint() {
+fn both_versions_start_at_their_first_wrapped_fragment() {
     let mut harness = harness(&["ABCDEFGHIJKL"], &["abcdefghijklmnopqrst"], 20, 3);
 
     harness.press(crokey::key!('$')).force_draw();
 
-    assert_eq!(symbols(&mut harness, 8, 20, 0), "            ");
-    assert_eq!(symbols(&mut harness, 8, 20, 1), "mnopqrst    ");
+    assert!(symbols(&mut harness, 8, 20, 0).starts_with("ABCDEFGHIJKL"));
+    assert!(symbols(&mut harness, 8, 20, 1).starts_with("abcdefghijkl"));
 }
 
 #[test]
@@ -289,6 +272,31 @@ fn each_file_restores_its_vertical_position() {
     });
     settle(&mut harness);
     assert!(harness.screen_row(0).contains("first 05"));
+}
+
+#[test]
+fn a_long_line_renders_its_continuation() {
+    let original = format!(
+        "INLINE_WRAP_ORIGINAL_START {} INLINE_WRAP_ORIGINAL_END",
+        "0123456789 ".repeat(4)
+    );
+    let modified = format!(
+        "INLINE_WRAP_MODIFIED_START {} INLINE_WRAP_MODIFIED_END",
+        "abcdefghij ".repeat(4)
+    );
+    let original = [original.as_str()];
+    let modified = [modified.as_str()];
+    let mut harness = harness(&original, &modified, 32, 12);
+
+    assert!(
+        harness
+            .screen()
+            .iter()
+            .skip(1)
+            .any(|line| line.contains("INLINE_WRAP_MODIFIED_END")),
+        "wrapped continuation is missing: {:?}",
+        harness.screen()
+    );
 }
 
 #[test]

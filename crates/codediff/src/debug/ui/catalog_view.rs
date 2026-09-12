@@ -7,7 +7,7 @@ use loom::crokey::crossterm::event::{KeyCode, KeyModifiers};
 use loom::crokey::{KeyCombination, OneToThree, key};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_context,
-    use_effect, use_exit, use_state,
+    use_effect, use_exit, use_measure, use_state,
 };
 use ui::Theme;
 use ui::components::{Context as UiContext, Ui, UiProps};
@@ -79,8 +79,9 @@ fn CatalogView(
         .unwrap_or_else(|| first_story_line(&initial_rows));
     let catalog_rows = Rc::new(filtered_rows(&query));
     let (selected_line, set_selected_line) = use_state(scope, || initial_line as u32);
-    let total = catalog_rows.len() as u32;
-    let (view, scroll) = use_scroll(scope, total, 0);
+    let catalog_line_count = catalog_rows.len() as u32;
+    let (node_ref, size) = use_measure(scope);
+    let (view, scroll) = use_scroll(scope, catalog_line_count, 0, size.height);
     let initial_target = initial_line as u32;
     let viewport_rows = view.view_lines.len() as u32;
     use_effect(scope, (*initial_story_index, viewport_rows), move || {
@@ -274,7 +275,7 @@ fn CatalogView(
             }
             Column {
                 key: 1u32,
-                ref: Some(view.node_ref),
+                ref: Some(node_ref),
                 layout: Layout { grow: 1, ..Default::default() },
                 ..,
                 { visible }

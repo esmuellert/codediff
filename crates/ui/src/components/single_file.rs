@@ -10,10 +10,13 @@ use loom::{
     use_layout_effect, use_measure, use_memo, use_ref,
 };
 
-use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
+use super::code_text::{CodeText, CodeTextProps};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
-use super::wrap::{TerminalLine, WrappedViewLine, wrapped_view_line_range_for_terminal_lines};
+use super::wrap::{
+    TerminalLine, longest_terminal_line_cells, wrap_view_line,
+    wrapped_view_line_range_for_terminal_lines,
+};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
@@ -58,7 +61,8 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let content_changed = previous_identity.current().as_ref() != Some(&identity);
     let (node_ref, size) = use_measure(scope);
     let version = single.side();
-    let wrapped_lines = use_memo(scope, content_id, || {
+    let code_width = size.width.saturating_sub(gutter_width);
+    let wrapped_lines = use_memo(scope, (content_id, code_width), || {
         single
             .lines
             .iter()
@@ -81,20 +85,26 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     DiffVersion::Original => (Some(text.as_str()), None),
                     DiffVersion::Modified => (None, Some(text.as_str())),
                 };
-                WrappedViewLine::from_view_line(view_line, original, modified)
+                wrap_view_line(
+                    view_line,
+                    original,
+                    modified,
+                    code_width,
+                    code_width,
+                    DiffType::SideBySide,
+                )
             })
             .collect::<Vec<_>>()
     });
-    let maximum_line_cells = use_memo(scope, content_id, || longest_line_cells(&single.lines));
-    let (view, vertical_handle) = use_scroll(
-        scope,
-        wrapped_lines
-            .iter()
-            .map(|line| line.original.len() as u32)
-            .sum(),
-        saved_state.top,
-        size.height,
-    );
+    let maximum_line_cells = use_memo(scope, (content_id, code_width), || {
+        longest_terminal_line_cells(&wrapped_lines, version, &single.lines)
+    });
+    let terminal_line_count = wrapped_lines
+        .iter()
+        .map(|line| line.original.len() as u32)
+        .sum();
+    let (view, vertical_handle) =
+        use_scroll(scope, terminal_line_count, saved_state.top, size.height);
     let horizontal_limits = HorizontalDimensions::Single {
         longest_line_cells: *maximum_line_cells,
         gutter_cells: gutter_width,
