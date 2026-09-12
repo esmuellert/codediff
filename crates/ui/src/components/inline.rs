@@ -53,7 +53,14 @@ pub fn Inline(
         .as_ref()
         .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
         .unwrap_or(0);
-    let (view, vertical_handle) = use_scroll(scope, wrapped_lines.len() as u32, initial_top);
+    let (view, vertical_handle) = use_scroll(
+        scope,
+        wrapped_lines
+            .iter()
+            .map(|line| line.original.len() as u32)
+            .sum(),
+        initial_top,
+    );
     let horizontal_limits = HorizontalDimensions::Inline {
         longest_line_cells: *maximum_line_cells,
         original_gutter_cells: original_gutter_width,
@@ -85,10 +92,12 @@ pub fn Inline(
     );
     let syntax = syntax.as_deref();
 
-    let mut rows = Vec::with_capacity(visible_wrapped_lines.len());
-    for (offset, (original, modified)) in visible_wrapped_lines
+    let mut rows = Vec::with_capacity(view.view_lines.len());
+    for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .skip(view.view_lines.start as usize)
+        .take(view.view_lines.len())
         .enumerate()
     {
         let view_line_index = view.view_lines.start + offset as u32;
@@ -112,8 +121,18 @@ pub fn Inline(
         } else {
             DiffVersion::Original
         };
-        let original_number = original.source_line();
-        let modified_number = modified.source_line();
+        let original_number = match original {
+            TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
+                Some(*source_line)
+            }
+            _ => None,
+        };
+        let modified_number = match modified {
+            TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
+                Some(*source_line)
+            }
+            _ => None,
+        };
         let decorations = alignment.decorations(version, line_number);
         let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
         let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);

@@ -56,7 +56,14 @@ pub fn SideBySide(
         .as_ref()
         .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
         .unwrap_or(0);
-    let (view, vertical_handle) = use_scroll(scope, wrapped_lines.len() as u32, initial_top);
+    let (view, vertical_handle) = use_scroll(
+        scope,
+        wrapped_lines
+            .iter()
+            .map(|line| line.original.len() as u32)
+            .sum(),
+        initial_top,
+    );
     let horizontal_limits = HorizontalDimensions::SideBySide {
         original_longest_line_cells: maximum_line_cells.0,
         modified_longest_line_cells: maximum_line_cells.1,
@@ -93,10 +100,12 @@ pub fn SideBySide(
     let syntax = syntax.as_deref();
     let divider_style = theme.normal.patch(theme.divider);
 
-    let mut rows: Vec<Node> = Vec::with_capacity(visible_wrapped_lines.len());
-    for (offset, (original, modified)) in visible_wrapped_lines
+    let mut rows: Vec<Node> = Vec::with_capacity(view.view_lines.len());
+    for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .skip(view.view_lines.start as usize)
+        .take(view.view_lines.len())
         .enumerate()
     {
         let view_line = view.view_lines.start + offset as u32;
@@ -113,6 +122,12 @@ pub fn SideBySide(
                             code_text::styles_for_diff(theme, version, decorations.line_background);
                         let gutter_style =
                             gutter::style_for_diff(theme, version, decorations.gutter_background);
+                        let gutter_number = match line {
+                            TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
+                                Some(*source_line)
+                            }
+                            _ => None,
+                        };
                         let text = alignment.line(version, line_number).unwrap_or("");
                         let changed_ranges: Vec<Range<u32>> = decorations
                             .characters
@@ -143,7 +158,7 @@ pub fn SideBySide(
                             rsx! {
                                 Gutter {
                                     key: 0u32,
-                                    number: Some(line_number),
+                                    number: gutter_number,
                                     style: gutter_style,
                                     blank: gutter_style,
                                     width: gutter_width,

@@ -85,7 +85,14 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             .collect::<Vec<_>>()
     });
     let maximum_line_cells = use_memo(scope, content_id, || longest_line_cells(&single.lines));
-    let (view, vertical_handle) = use_scroll(scope, wrapped_lines.len() as u32, saved_state.top);
+    let (view, vertical_handle) = use_scroll(
+        scope,
+        wrapped_lines
+            .iter()
+            .map(|line| line.original.len() as u32)
+            .sum(),
+        saved_state.top,
+    );
     let horizontal_limits = HorizontalDimensions::Single {
         longest_line_cells: *maximum_line_cells,
         gutter_cells: gutter_width,
@@ -125,9 +132,11 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
 
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
-    let visible_lines: Vec<Node> = visible_wrapped_lines
+    let visible_lines: Vec<Node> = wrapped_lines
         .iter()
         .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .skip(view.view_lines.start as usize)
+        .take(view.view_lines.len())
         .filter_map(|(original, modified)| {
             let terminal_line = match version {
                 DiffVersion::Original => original,
@@ -136,6 +145,12 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             let number = match terminal_line {
                 TerminalLine::SourceCode { source_line, .. } => *source_line,
                 TerminalLine::Filler => return None,
+            };
+            let gutter_number = match terminal_line {
+                TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
+                    Some(*source_line)
+                }
+                _ => None,
             };
             let text = single.lines.get(number.saturating_sub(1) as usize)?;
             let syntax_spans = syntax
@@ -157,7 +172,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     ..,
                     Gutter {
                         key: 0u32,
-                        number: Some(number),
+                        number: gutter_number,
                         style: number_style,
                         blank: base,
                         width: gutter_width,
