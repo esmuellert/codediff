@@ -37,13 +37,6 @@ impl WrappedViewLine {
             diff_type: view_line.kind,
         }
     }
-
-    pub(crate) fn selected_terminal_line(&self) -> Option<TerminalLine> {
-        match self.modified.first() {
-            Some(TerminalLine::SourceCode { .. }) => self.modified.first().cloned(),
-            Some(TerminalLine::Filler) | None => self.original.first().cloned(),
-        }
-    }
 }
 
 impl TerminalLine {
@@ -307,7 +300,17 @@ pub(crate) fn find_terminal_line_index(
 ) -> Option<u32> {
     lines
         .iter()
-        .position(|line| line.selected_terminal_line().as_ref() == Some(target))
+        .flat_map(|line| line.original.iter().zip(&line.modified))
+        .position(|(original, modified)| {
+            let selected = match modified {
+                TerminalLine::SourceCode { .. } => Some(modified),
+                TerminalLine::Filler => match original {
+                    TerminalLine::SourceCode { .. } => Some(original),
+                    TerminalLine::Filler => None,
+                },
+            };
+            selected == Some(target)
+        })
         .map(|index| index as u32)
 }
 
@@ -446,6 +449,41 @@ mod tests {
             }]
         );
         assert_eq!(wrapped.modified, vec![TerminalLine::Filler]);
+    }
+
+    #[test]
+    fn finds_a_terminal_line_in_the_flattened_rows() {
+        let wrapped = WrappedViewLine {
+            original: vec![
+                TerminalLine::SourceCode {
+                    source_line: 1,
+                    bytes: 0..3,
+                },
+                TerminalLine::SourceCode {
+                    source_line: 1,
+                    bytes: 3..6,
+                },
+            ],
+            modified: vec![
+                TerminalLine::SourceCode {
+                    source_line: 1,
+                    bytes: 0..3,
+                },
+                TerminalLine::Filler,
+            ],
+            diff_type: ViewLineType::Modified,
+        };
+
+        assert_eq!(
+            find_terminal_line_index(
+                &[wrapped],
+                &TerminalLine::SourceCode {
+                    source_line: 1,
+                    bytes: 3..6,
+                },
+            ),
+            Some(1)
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::filler::Filler;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use super::wrap::{TerminalLine, WrappedViewLine, find_terminal_line_index, unwrapped_view_lines};
+use super::wrap::{TerminalLine, find_terminal_line_index, unwrapped_view_lines};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
@@ -80,9 +80,21 @@ pub fn SideBySide(
     let horizontal = horizontal_limits.view(horizontal_view.first_cell);
     *view_state_ref.current() = ViewState {
         first_terminal_line: (view.top > 0)
-            .then(|| wrapped_lines.get(view.top as usize))
+            .then(|| {
+                wrapped_lines
+                    .iter()
+                    .flat_map(|line| line.original.iter().zip(&line.modified))
+                    .nth(view.top as usize)
+            })
             .flatten()
-            .and_then(WrappedViewLine::selected_terminal_line),
+            .and_then(|(original, modified)| match modified {
+                TerminalLine::SourceCode { .. } => Some(modified),
+                TerminalLine::Filler => match original {
+                    TerminalLine::SourceCode { .. } => Some(original),
+                    TerminalLine::Filler => None,
+                },
+            })
+            .cloned(),
         first_cell: horizontal.requested_first_cell,
     };
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
