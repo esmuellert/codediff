@@ -7,7 +7,7 @@ use align::{ViewLine, ViewLineContent, ViewLineType};
 use file_types::{DiffType, DiffVersion};
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, component, rsx, use_context,
-    use_layout_effect, use_memo, use_ref,
+    use_layout_effect, use_measure, use_memo, use_ref,
 };
 
 use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
@@ -56,6 +56,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let previous_identity = use_ref(scope, || None::<(String, usize)>);
     let identity = (file_key.clone(), content_id);
     let content_changed = previous_identity.current().as_ref() != Some(&identity);
+    let (node_ref, size) = use_measure(scope);
     let version = single.side();
     let wrapped_lines = use_memo(scope, content_id, || {
         single
@@ -92,12 +93,13 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             .map(|line| line.original.len() as u32)
             .sum(),
         saved_state.top,
+        size.height,
     );
     let horizontal_limits = HorizontalDimensions::Single {
         longest_line_cells: *maximum_line_cells,
         gutter_cells: gutter_width,
     }
-    .limits(view.width);
+    .limits(size.width);
     let (horizontal_view, horizontal_handle) = use_horizontal_scroll(
         scope,
         horizontal_limits.maximum_first_cell(),
@@ -200,7 +202,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
 
     rsx! {
         Column {
-            ref: Some(view.node_ref),
+            ref: Some(node_ref),
             focusable: true,
             listeners: listeners,
             layout: Layout { grow: 1, fill: Some(base), ..Default::default() },

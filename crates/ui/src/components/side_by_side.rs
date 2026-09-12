@@ -7,7 +7,7 @@ use align::DiffVersion;
 use file_types::DiffType;
 use loom::{
     Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Ref, Row, RowProps, Scope,
-    component, rsx, use_context, use_memo,
+    component, rsx, use_context, use_measure, use_memo,
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
@@ -44,6 +44,7 @@ pub fn SideBySide(
     let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter_width = width_for_line_count(original_line_count);
     let modified_gutter_width = width_for_line_count(modified_line_count);
+    let (node_ref, size) = use_measure(scope);
     let content_id = Rc::as_ptr(content) as usize;
     let wrapped_lines = use_memo(scope, content_id, || {
         unwrapped_view_lines(alignment, DiffType::SideBySide)
@@ -66,6 +67,7 @@ pub fn SideBySide(
             .map(|line| line.original.len() as u32)
             .sum(),
         initial_top,
+        size.height,
     );
     let horizontal_limits = HorizontalDimensions::SideBySide {
         original_longest_line_cells: maximum_line_cells.0,
@@ -74,7 +76,7 @@ pub fn SideBySide(
         modified_gutter_cells: modified_gutter_width,
         divider_cells: 1,
     }
-    .limits(view.width);
+    .limits(size.width);
     let (horizontal_view, horizontal_handle) = use_horizontal_scroll(
         scope,
         horizontal_limits.maximum_first_cell(),
@@ -249,7 +251,7 @@ pub fn SideBySide(
 
     rsx! {
         Column {
-            ref: Some(view.node_ref),
+            ref: Some(node_ref),
             focusable: true,
             auto_focus: *auto_focus,
             listeners: listeners,

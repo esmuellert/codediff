@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use loom::{
-    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component, rsx,
+    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component,
+    rsx, use_measure,
 };
 use ui::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use ui::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -17,17 +18,18 @@ fn Probe(
     initial_top: u32,
     initial_first_cell: u32,
 ) -> Node {
-    let (view, vertical_handle) = use_scroll(scope, *total, *initial_top);
+    let (node_ref, size) = use_measure(scope);
+    let (view, vertical_handle) = use_scroll(scope, *total, *initial_top, size.height);
     let maximum_first_cell = longest_line_cells
         .saturating_add(4)
-        .saturating_sub(u32::from(view.width));
+        .saturating_sub(u32::from(size.width));
     let (horizontal, horizontal_handle) =
         use_horizontal_scroll(scope, maximum_first_cell, *initial_first_cell);
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
     let state: Rc<str> = format!("{} {}", view.top, horizontal.first_cell).into();
     rsx! {
         Column {
-            ref: Some(view.node_ref),
+            ref: Some(node_ref),
             focusable: true,
             auto_focus: *auto_focus,
             listeners: listeners,

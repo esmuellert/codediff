@@ -10,7 +10,7 @@ use crokey::key;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
-    use_context, use_effect, use_exit, use_ref, use_state,
+    use_context, use_effect, use_exit, use_measure, use_ref, use_state,
 };
 
 use self::build::{Node, directory_key, grouped_list, grouped_tree};
@@ -78,7 +78,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     };
     let nodes = Rc::new(nodes);
     let total = nodes.len() as u32;
-    let (view, scroll) = use_scroll(scope, total, 0);
+    let (node_ref, size) = use_measure(scope);
+    let (view, scroll) = use_scroll(scope, total, 0, size.height);
 
     // When the file list changes, keep the selection on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&files));
@@ -190,7 +191,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     rsx! {
         Column {
-            ref: Some(view.node_ref),
+            ref: Some(node_ref),
             focusable: true,
             auto_focus: true,
             listeners: listeners,

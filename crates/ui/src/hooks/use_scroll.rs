@@ -2,15 +2,12 @@
 
 use std::ops::Range;
 
-use loom::{NodeHandle, Ref, Scope, SetState, use_measure, use_state};
+use loom::{Scope, SetState, use_state};
 
-/// The values a component reads during render: where to look and
-/// what to attach to its host element.
+/// The values a component reads during render: where to look.
 pub struct ScrollView {
     pub top: u32,
-    pub width: u16,
     pub view_lines: Range<u32>,
-    pub node_ref: Ref<Option<NodeHandle>>,
 }
 
 /// A `Copy` handle for closures. Every viewport movement lives here.
@@ -28,11 +25,11 @@ impl ScrollHandle {
         (self.set_top)(&move |_| top.min(last_top));
     }
 
-    /// Move the viewport by a signed number of rows.
-    pub fn scroll_by(self, rows: i32) {
+    /// Move the viewport by a signed number of lines.
+    pub fn scroll_by(self, lines: i32) {
         let last_top = self.total.saturating_sub(self.height);
-        let down = rows.is_positive();
-        let step = rows.unsigned_abs();
+        let down = lines.is_positive();
+        let step = lines.unsigned_abs();
         (self.set_top)(&move |top| {
             let top = top.min(last_top);
             if down {
@@ -43,7 +40,7 @@ impl ScrollHandle {
         });
     }
 
-    /// Move the viewport as little as possible to keep one row visible.
+    /// Move the viewport as little as possible to keep one line visible.
     pub fn keep_line_visible(self, line: u32, margin: u32) {
         let total = self.total;
         let height = self.height;
@@ -55,17 +52,19 @@ impl ScrollHandle {
 ///
 /// The hook owns only the active viewport. A component that needs history
 /// supplies the initial position and stores its own state.
-pub fn use_scroll(scope: &mut Scope, total: u32, initial_top: u32) -> (ScrollView, ScrollHandle) {
+pub fn use_scroll(
+    scope: &mut Scope,
+    total: u32,
+    initial_top: u32,
+    height: u16,
+) -> (ScrollView, ScrollHandle) {
     let (requested_top, set_top) = use_state(scope, || initial_top);
-    let (node_ref, size) = use_measure(scope);
-    let height = u32::from(size.height);
+    let height = u32::from(height);
 
     let top = requested_top.min(total.saturating_sub(height));
     let view = ScrollView {
         top,
-        width: size.width,
         view_lines: top..top.saturating_add(height).min(total),
-        node_ref,
     };
     let handle = ScrollHandle {
         total,
@@ -76,7 +75,7 @@ pub fn use_scroll(scope: &mut Scope, total: u32, initial_top: u32) -> (ScrollVie
     (view, handle)
 }
 
-/// Returns the first row needed to keep `line` visible with a margin.
+/// Returns the first line needed to keep `line` visible with a margin.
 pub fn top_with_line_visible(
     line: u32,
     total: u32,
