@@ -13,7 +13,7 @@ use loom::{
 use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
-use super::wrap::{TerminalLine, WrappedViewLine};
+use super::wrap::{TerminalLine, WrappedViewLine, wrapped_view_line_range_for_terminal_lines};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
@@ -119,8 +119,11 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
         horizontal_handle.scroll_to(saved_state.first_cell);
     });
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
-    let visible_wrapped_lines =
-        &wrapped_lines[view.view_lines.start as usize..view.view_lines.end as usize];
+    let visible_wrapped_lines = &wrapped_lines[wrapped_view_line_range_for_terminal_lines(
+        &wrapped_lines,
+        view.view_lines.start,
+        view.view_lines.end,
+    )];
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),

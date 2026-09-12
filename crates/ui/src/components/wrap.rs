@@ -314,6 +314,33 @@ pub(crate) fn find_terminal_line_index(
         .map(|index| index as u32)
 }
 
+pub(crate) fn wrapped_view_line_range_for_terminal_lines(
+    lines: &[WrappedViewLine],
+    start: u32,
+    end: u32,
+) -> Range<usize> {
+    let mut offset = 0;
+    let first = lines
+        .iter()
+        .position(|line| {
+            offset += line.original.len() as u32;
+            offset > start
+        })
+        .unwrap_or(lines.len());
+
+    let mut offset = 0;
+    let last = lines
+        .iter()
+        .position(|line| {
+            let line_start = offset;
+            offset += line.original.len() as u32;
+            line_start >= end
+        })
+        .unwrap_or(lines.len());
+
+    first..last
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -483,6 +510,45 @@ mod tests {
                 },
             ),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn finds_the_wrapped_lines_for_a_terminal_viewport() {
+        let lines = vec![
+            wrap_view_line(
+                ViewLine {
+                    original: ViewLineContent::SourceLine(1),
+                    modified: ViewLineContent::SourceLine(1),
+                    kind: ViewLineType::Modified,
+                },
+                Some("abcdef"),
+                Some("abc"),
+                3,
+                3,
+                DiffType::SideBySide,
+            ),
+            wrap_view_line(
+                ViewLine {
+                    original: ViewLineContent::SourceLine(2),
+                    modified: ViewLineContent::Filler,
+                    kind: ViewLineType::Deleted,
+                },
+                Some("x"),
+                None,
+                3,
+                3,
+                DiffType::SideBySide,
+            ),
+        ];
+
+        assert_eq!(
+            wrapped_view_line_range_for_terminal_lines(&lines, 1, 2),
+            0..1
+        );
+        assert_eq!(
+            wrapped_view_line_range_for_terminal_lines(&lines, 2, 3),
+            1..2
         );
     }
 

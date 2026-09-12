@@ -14,7 +14,10 @@ use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use super::wrap::{TerminalLine, find_terminal_line_index, unwrapped_view_lines};
+use super::wrap::{
+    TerminalLine, find_terminal_line_index, unwrapped_view_lines,
+    wrapped_view_line_range_for_terminal_lines,
+};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
@@ -93,8 +96,11 @@ pub fn Inline(
         first_cell: horizontal.requested_first_cell,
     };
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
-    let visible_wrapped_lines =
-        &wrapped_lines[view.view_lines.start as usize..view.view_lines.end as usize];
+    let visible_wrapped_lines = &wrapped_lines[wrapped_view_line_range_for_terminal_lines(
+        &wrapped_lines,
+        view.view_lines.start,
+        view.view_lines.end,
+    )];
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
