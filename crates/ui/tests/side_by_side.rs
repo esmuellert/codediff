@@ -273,6 +273,26 @@ fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
 }
 
 #[test]
+fn a_wrapped_fragment_keeps_its_side_style_and_opposite_filler() {
+    let mut harness = harness(&["abcdefghijkl"], &["ABC"], 25, 2);
+    harness.force_draw().force_draw();
+
+    assert_eq!(harness.screen_row(1), "    ijkl    │    ╱╱╱╱╱╱╱╱");
+    assert_eq!(
+        harness.style_at(4, 1).bg,
+        Theme::DARK.normal.patch(Theme::DARK.deleted_text).bg
+    );
+    assert_eq!(
+        harness.style_at(17, 0).bg,
+        Theme::DARK.normal.patch(Theme::DARK.inserted_text).bg
+    );
+    assert_eq!(
+        harness.style_at(17, 1).bg,
+        Theme::DARK.normal.patch(Theme::DARK.filler).bg
+    );
+}
+
+#[test]
 fn j_scrolls_one_line_immediately() {
     let lines: Vec<String> = (1..=20).map(|line| format!("line {line}")).collect();
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();

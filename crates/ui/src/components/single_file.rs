@@ -64,42 +64,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
     let version = single.side();
     let code_width = size.width.saturating_sub(gutter_width);
     let wrapped_lines = use_memo(scope, (content_id, code_width, wrap), || {
-        single
-            .lines
-            .iter()
-            .enumerate()
-            .map(|(index, text)| {
-                let source_line = index as u32 + 1;
-                let view_line = match version {
-                    DiffVersion::Original => ViewLine {
-                        original: ViewLineContent::SourceLine(source_line),
-                        modified: ViewLineContent::Filler,
-                        kind: ViewLineType::Deleted,
-                    },
-                    DiffVersion::Modified => ViewLine {
-                        original: ViewLineContent::Filler,
-                        modified: ViewLineContent::SourceLine(source_line),
-                        kind: ViewLineType::Inserted,
-                    },
-                };
-                let (original, modified) = match version {
-                    DiffVersion::Original => (Some(text.as_str()), None),
-                    DiffVersion::Modified => (None, Some(text.as_str())),
-                };
-                if wrap {
-                    wrap_view_line(
-                        view_line,
-                        original,
-                        modified,
-                        code_width,
-                        code_width,
-                        DiffType::SideBySide,
-                    )
-                } else {
-                    WrappedViewLine::from_view_line(view_line, original, modified)
-                }
-            })
-            .collect::<Vec<_>>()
+        wrapped_lines(single, version, code_width, wrap)
     });
     let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap), || {
         if wrap {
@@ -246,4 +211,48 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
             { visible_lines }
         }
     }
+}
+
+fn wrapped_lines(
+    single: &pipeline::diff::SingleFile,
+    version: DiffVersion,
+    code_width: u16,
+    wrap: bool,
+) -> Vec<WrappedViewLine> {
+    single
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(index, text)| {
+            let source_line = index as u32 + 1;
+            let view_line = match version {
+                DiffVersion::Original => ViewLine {
+                    original: ViewLineContent::SourceLine(source_line),
+                    modified: ViewLineContent::Filler,
+                    kind: ViewLineType::Deleted,
+                },
+                DiffVersion::Modified => ViewLine {
+                    original: ViewLineContent::Filler,
+                    modified: ViewLineContent::SourceLine(source_line),
+                    kind: ViewLineType::Inserted,
+                },
+            };
+            let (original, modified) = match version {
+                DiffVersion::Original => (Some(text.as_str()), None),
+                DiffVersion::Modified => (None, Some(text.as_str())),
+            };
+            if wrap {
+                wrap_view_line(
+                    view_line,
+                    original,
+                    modified,
+                    code_width,
+                    code_width,
+                    DiffType::SideBySide,
+                )
+            } else {
+                WrappedViewLine::from_view_line(view_line, original, modified)
+            }
+        })
+        .collect::<Vec<_>>()
 }

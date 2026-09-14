@@ -159,6 +159,21 @@ fn toggling_wrap_preserves_the_current_terminal_line() {
 }
 
 #[test]
+fn both_file_sides_keep_line_numbers_when_wrapping_changes() {
+    for deleted in [false, true] {
+        let lines = vec!["abcdefghijkl".to_owned(), "tail".to_owned()];
+        let mut wrapped = harness(lines.clone(), deleted, 12, 3);
+        let mut unwrapped = harness_unwrapped(lines, deleted, 12, 3);
+
+        assert_eq!(
+            wrapped.screen(),
+            vec!["  1 abcdefgh", "    ijkl", "  2 tail"]
+        );
+        assert_eq!(unwrapped.screen(), vec!["  1 abcdefgh", "  2 tail", ""]);
+    }
+}
+
+#[test]
 fn lines_are_numbered_in_one_full_width_pane() {
     let mut harness = harness(vec!["alpha".into(), "beta".into()], false, 30, 3);
     let screen = harness.screen();
