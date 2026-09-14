@@ -10,13 +10,13 @@ use loom::{
     use_context, use_measure, use_memo,
 };
 
-use super::code_text::{self, CodeText, CodeTextProps};
+use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells, wrap_view_lines,
-    wrapped_view_line_range_for_terminal_lines,
+    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
+    unwrapped_view_lines, wrap_view_lines, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -48,8 +48,10 @@ pub fn Inline(
     scope: &mut Scope,
     content: Rc<pipeline::diff::DiffContent>,
     view_state: Ref<ViewState>,
+    wrap: bool,
     auto_focus: bool,
 ) -> Node {
+    let wrap = *wrap;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -68,15 +70,24 @@ pub fn Inline(
         .width
         .saturating_sub(original_gutter_width)
         .saturating_sub(modified_gutter_width);
-    let wrapped_lines = use_memo(scope, (content_id, code_width), || {
-        wrap_view_lines(alignment, DiffType::Inline, code_width, code_width)
+    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap), || {
+        if wrap {
+            wrap_view_lines(alignment, DiffType::Inline, code_width, code_width)
+        } else {
+            unwrapped_view_lines(alignment, DiffType::Inline)
+        }
     });
-    let maximum_line_cells = use_memo(scope, (content_id, code_width), || {
-        longest_inline_terminal_line_cells(
-            &wrapped_lines,
-            alignment.lines(DiffVersion::Original),
-            alignment.lines(DiffVersion::Modified),
-        )
+    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap), || {
+        if wrap {
+            longest_inline_terminal_line_cells(
+                &wrapped_lines,
+                alignment.lines(DiffVersion::Original),
+                alignment.lines(DiffVersion::Modified),
+            )
+        } else {
+            longest_line_cells(alignment.lines(DiffVersion::Original))
+                .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
+        }
     });
     let initial_top = current_view_state
         .first_terminal_line

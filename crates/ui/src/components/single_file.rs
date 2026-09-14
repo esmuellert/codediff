@@ -10,11 +10,11 @@ use loom::{
     use_layout_effect, use_measure, use_memo, use_ref,
 };
 
-use super::code_text::{CodeText, CodeTextProps};
+use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, longest_terminal_line_cells, wrap_view_line,
+    TerminalLine, WrappedViewLine, longest_terminal_line_cells, wrap_view_line,
     wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
@@ -45,7 +45,8 @@ impl SingleFileViewStateHistory {
 }
 
 #[component]
-pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
+    let wrap = *wrap;
     let ctx = use_context::<Ui>(scope);
     let pipeline::diff::DiffContent::SingleFile(single) = content.as_ref() else {
         unreachable!("DiffViewer sends one-sided files to SingleFile")
@@ -62,7 +63,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let (node_ref, size) = use_measure(scope);
     let version = single.side();
     let code_width = size.width.saturating_sub(gutter_width);
-    let wrapped_lines = use_memo(scope, (content_id, code_width), || {
+    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap), || {
         single
             .lines
             .iter()
@@ -85,19 +86,27 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
                     DiffVersion::Original => (Some(text.as_str()), None),
                     DiffVersion::Modified => (None, Some(text.as_str())),
                 };
-                wrap_view_line(
-                    view_line,
-                    original,
-                    modified,
-                    code_width,
-                    code_width,
-                    DiffType::SideBySide,
-                )
+                if wrap {
+                    wrap_view_line(
+                        view_line,
+                        original,
+                        modified,
+                        code_width,
+                        code_width,
+                        DiffType::SideBySide,
+                    )
+                } else {
+                    WrappedViewLine::from_view_line(view_line, original, modified)
+                }
             })
             .collect::<Vec<_>>()
     });
-    let maximum_line_cells = use_memo(scope, (content_id, code_width), || {
-        longest_terminal_line_cells(&wrapped_lines, version, &single.lines)
+    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap), || {
+        if wrap {
+            longest_terminal_line_cells(&wrapped_lines, version, &single.lines)
+        } else {
+            longest_line_cells(&single.lines)
+        }
     });
     let terminal_line_count = wrapped_lines
         .iter()

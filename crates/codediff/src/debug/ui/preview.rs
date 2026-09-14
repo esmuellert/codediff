@@ -101,6 +101,7 @@ pub(super) fn StoryPreview(
                 key: Rc::as_ptr(content.as_ref().expect("side-by-side story content")) as usize,
                 content: Rc::clone(content.as_ref().expect("side-by-side story content")),
                 view_state: view_state,
+                wrap: true,
                 auto_focus: false,
             }
         },
@@ -109,11 +110,15 @@ pub(super) fn StoryPreview(
                 key: Rc::as_ptr(content.as_ref().expect("inline story content")) as usize,
                 content: Rc::clone(content.as_ref().expect("inline story content")),
                 view_state: view_state,
+                wrap: true,
                 auto_focus: false,
             }
         },
         StoryComponent::SingleFile => rsx! {
-            SingleFile { content: Rc::clone(content.as_ref().expect("single-file story content")) }
+            SingleFile {
+                content: Rc::clone(content.as_ref().expect("single-file story content")),
+                wrap: true,
+            }
         },
     };
 

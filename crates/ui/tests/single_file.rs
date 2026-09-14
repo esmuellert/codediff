@@ -39,7 +39,15 @@ fn harness_with_syntax_service(
             lines: Arc::new(lines),
         },
     ));
-    Harness::new::<SingleFile>(SingleFileProps { content }, width, height).provide::<Ui>(Context {
+    Harness::new::<SingleFile>(
+        SingleFileProps {
+            content,
+            wrap: true,
+        },
+        width,
+        height,
+    )
+    .provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         syntax_service,
         ..Context::default()
@@ -186,6 +194,7 @@ fn each_file_restores_its_position() {
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
             content: first.clone(),
+            wrap: true,
         },
         30,
         4,
@@ -202,12 +211,16 @@ fn each_file_restores_its_position() {
 
     harness.set_props::<SingleFile>(SingleFileProps {
         content: second.clone(),
+        wrap: true,
     });
     harness.force_draw().force_draw();
     assert!(harness.screen_row(0).contains("second 01"));
     harness.press(crokey::key!(j)).force_draw();
 
-    harness.set_props::<SingleFile>(SingleFileProps { content: first });
+    harness.set_props::<SingleFile>(SingleFileProps {
+        content: first,
+        wrap: true,
+    });
     harness.force_draw().force_draw();
     assert!(harness.screen_row(0).contains("first 04"));
 }

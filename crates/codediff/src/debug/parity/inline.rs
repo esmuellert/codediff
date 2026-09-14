@@ -25,6 +25,7 @@ fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
             key: content_id,
             content: Rc::clone(content),
             view_state: view_state,
+            wrap: true,
             auto_focus: false,
         }
     }

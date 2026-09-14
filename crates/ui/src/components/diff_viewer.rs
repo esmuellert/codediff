@@ -108,10 +108,17 @@ fn sync_active_view_state(
     *active_key.current() = current_key;
 }
 
-fn layout_listener(is_diff: bool, set_layout: SetState<DiffType>) -> Listeners {
+fn layout_listener(
+    is_diff: bool,
+    set_layout: SetState<DiffType>,
+    set_wrap: SetState<bool>,
+) -> Listeners {
     Listeners::new().on_key(move |key| {
         if is_diff && key == crokey::key!(t) {
             set_layout(&|layout| layout.other());
+            Bubble::Stop
+        } else if key == crokey::key!(w) {
+            set_wrap(&|wrap| !wrap);
             Bubble::Stop
         } else {
             Bubble::Continue
@@ -123,6 +130,7 @@ fn render_content_view(
     content: Option<Rc<DiffContent>>,
     layout: DiffType,
     view_state: Ref<ViewState>,
+    wrap: bool,
 ) -> Node {
     match content {
         Some(content) => match content.as_ref() {
@@ -134,6 +142,7 @@ fn render_content_view(
                             key: content_id,
                             content: Rc::clone(&content),
                             view_state: view_state,
+                            wrap: wrap,
                             auto_focus: true,
                         }
                     },
@@ -142,6 +151,7 @@ fn render_content_view(
                             key: content_id,
                             content: Rc::clone(&content),
                             view_state: view_state,
+                            wrap: wrap,
                             auto_focus: true,
                         }
                     },
@@ -152,6 +162,7 @@ fn render_content_view(
                 rsx! {
                     SingleFile {
                         content: Rc::clone(&content),
+                        wrap: wrap,
                     }
                 }
             }
@@ -165,6 +176,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let content = use_diff_content(scope, &ctx);
     let (layout, set_layout) = use_state(scope, || DiffType::SideBySide);
+    let (wrap, set_wrap) = use_state(scope, || true);
     let view_states = use_ref(scope, ViewStateHistory::default);
     let active_view_state = use_ref(scope, ViewState::default);
     let active_file_key = use_ref(scope, || None::<String>);
@@ -176,8 +188,8 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     );
 
     let is_diff = matches!(content.as_deref(), Some(DiffContent::Diff(_)));
-    let toggle = layout_listener(is_diff, set_layout);
-    let content_view = render_content_view(content, layout, active_view_state);
+    let toggle = layout_listener(is_diff, set_layout, set_wrap);
+    let content_view = render_content_view(content, layout, active_view_state, wrap);
 
     rsx! {
         Column {

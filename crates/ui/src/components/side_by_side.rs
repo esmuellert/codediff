@@ -10,14 +10,14 @@ use loom::{
     component, rsx, use_context, use_measure, use_memo,
 };
 
-use super::code_text::{self, CodeText, CodeTextProps};
+use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::filler::Filler;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, find_terminal_line_index, longest_terminal_line_cells, wrap_view_lines,
-    wrapped_view_line_range_for_terminal_lines,
+    TerminalLine, find_terminal_line_index, longest_terminal_line_cells, unwrapped_view_lines,
+    wrap_view_lines, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -30,8 +30,10 @@ pub fn SideBySide(
     scope: &mut Scope,
     content: Rc<pipeline::diff::DiffContent>,
     view_state: Ref<ViewState>,
+    wrap: bool,
     auto_focus: bool,
 ) -> Node {
+    let wrap = *wrap;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -54,28 +56,47 @@ pub fn SideBySide(
     );
     let original_width = text_width.div_ceil(2) as u16;
     let modified_width = (text_width / 2) as u16;
-    let wrapped_lines = use_memo(scope, (content_id, original_width, modified_width), || {
-        wrap_view_lines(
-            alignment,
-            DiffType::SideBySide,
-            original_width,
-            modified_width,
-        )
-    });
-    let maximum_line_cells = use_memo(scope, (content_id, original_width, modified_width), || {
-        (
-            longest_terminal_line_cells(
-                &wrapped_lines,
-                DiffVersion::Original,
-                alignment.lines(DiffVersion::Original),
-            ),
-            longest_terminal_line_cells(
-                &wrapped_lines,
-                DiffVersion::Modified,
-                alignment.lines(DiffVersion::Modified),
-            ),
-        )
-    });
+    let wrapped_lines = use_memo(
+        scope,
+        (content_id, original_width, modified_width, wrap),
+        || {
+            if wrap {
+                wrap_view_lines(
+                    alignment,
+                    DiffType::SideBySide,
+                    original_width,
+                    modified_width,
+                )
+            } else {
+                unwrapped_view_lines(alignment, DiffType::SideBySide)
+            }
+        },
+    );
+    let maximum_line_cells = use_memo(
+        scope,
+        (content_id, original_width, modified_width, wrap),
+        || {
+            if wrap {
+                (
+                    longest_terminal_line_cells(
+                        &wrapped_lines,
+                        DiffVersion::Original,
+                        alignment.lines(DiffVersion::Original),
+                    ),
+                    longest_terminal_line_cells(
+                        &wrapped_lines,
+                        DiffVersion::Modified,
+                        alignment.lines(DiffVersion::Modified),
+                    ),
+                )
+            } else {
+                (
+                    longest_line_cells(alignment.lines(DiffVersion::Original)),
+                    longest_line_cells(alignment.lines(DiffVersion::Modified)),
+                )
+            }
+        },
+    );
     let initial_top = current_view_state
         .first_terminal_line
         .as_ref()

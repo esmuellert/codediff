@@ -319,6 +319,23 @@ fn t_switches_a_focused_diff_layout() {
 }
 
 #[test]
+fn w_toggles_wrapping_for_the_active_diff() {
+    let file = file("test.rs");
+    let line = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let content = make_diff_with_lines(file.clone(), &[line], &[line]);
+    let mut harness = with_response_at(file, content, 30, 4);
+
+    let wrapped = harness.screen();
+    harness.press(crokey::key!(l)).force_draw();
+    assert_eq!(harness.screen(), wrapped);
+
+    harness.press(crokey::key!(w)).force_draw();
+    let unwrapped = harness.screen();
+    harness.press(crokey::key!(l)).force_draw();
+    assert_ne!(harness.screen(), unwrapped);
+}
+
+#[test]
 fn t_does_not_change_a_single_file() {
     let file = file("untracked.rs");
     let mut harness = with_response(file.clone(), make_single(file));
