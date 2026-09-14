@@ -37,6 +37,12 @@ impl WrappedViewLine {
             diff_type: view_line.kind,
         }
     }
+
+    pub(crate) fn terminal_line_pairs(
+        &self,
+    ) -> impl Iterator<Item = (&TerminalLine, &TerminalLine)> {
+        self.original.iter().zip(&self.modified)
+    }
 }
 
 impl TerminalLine {
@@ -66,6 +72,17 @@ impl TerminalLine {
             Self::Filler => None,
         }
     }
+
+    pub(crate) fn gutter_number(&self) -> Option<u32> {
+        match self {
+            Self::SourceCode { source_line, bytes } if bytes.start == 0 => Some(*source_line),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn terminal_line_count(lines: &[WrappedViewLine]) -> u32 {
+    lines.iter().map(|line| line.original.len() as u32).sum()
 }
 
 pub(crate) fn unwrapped_view_lines(
@@ -371,7 +388,7 @@ pub(crate) fn find_terminal_line_index(
 ) -> Option<u32> {
     let exact = lines
         .iter()
-        .flat_map(|line| line.original.iter().zip(&line.modified))
+        .flat_map(WrappedViewLine::terminal_line_pairs)
         .position(|(original, modified)| {
             selected_terminal_line(original, modified) == Some(target)
         });
@@ -379,7 +396,7 @@ pub(crate) fn find_terminal_line_index(
         .or_else(|| {
             lines
                 .iter()
-                .flat_map(|line| line.original.iter().zip(&line.modified))
+                .flat_map(WrappedViewLine::terminal_line_pairs)
                 .position(|(original, modified)| {
                     let Some(fragment) = selected_terminal_line(original, modified) else {
                         return false;
@@ -442,6 +459,104 @@ pub(crate) fn wrapped_view_line_range_for_terminal_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_line_pairs_preserve_order_and_fillers() {
+        let lines = [
+            wrap_view_line(
+                ViewLine {
+                    original: ViewLineContent::SourceLine(1),
+                    modified: ViewLineContent::SourceLine(2),
+                    kind: ViewLineType::Modified,
+                },
+                Some("abcdef"),
+                Some("abc"),
+                3,
+                3,
+                DiffType::SideBySide,
+            ),
+            wrap_view_line(
+                ViewLine {
+                    original: ViewLineContent::Filler,
+                    modified: ViewLineContent::SourceLine(3),
+                    kind: ViewLineType::Inserted,
+                },
+                None,
+                Some(""),
+                3,
+                3,
+                DiffType::SideBySide,
+            ),
+        ];
+        let pairs = lines
+            .iter()
+            .flat_map(WrappedViewLine::terminal_line_pairs)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            pairs,
+            vec![
+                (&lines[0].original[0], &lines[0].modified[0]),
+                (&lines[0].original[1], &lines[0].modified[1]),
+                (&lines[1].original[0], &lines[1].modified[0]),
+            ]
+        );
+        let visible = lines
+            .iter()
+            .flat_map(WrappedViewLine::terminal_line_pairs)
+            .skip(1)
+            .take(2)
+            .collect::<Vec<_>>();
+        assert_eq!(visible, pairs[1..]);
+
+        let empty: &[WrappedViewLine] = &[];
+        assert_eq!(
+            empty
+                .iter()
+                .flat_map(WrappedViewLine::terminal_line_pairs)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn terminal_line_count_counts_each_pair_once() {
+        let lines = ["abcdef", ""]
+            .into_iter()
+            .enumerate()
+            .map(|(index, text)| {
+                wrap_view_line(
+                    ViewLine {
+                        original: ViewLineContent::Filler,
+                        modified: ViewLineContent::SourceLine(index as u32 + 1),
+                        kind: ViewLineType::Inserted,
+                    },
+                    None,
+                    Some(text),
+                    3,
+                    3,
+                    DiffType::SideBySide,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(terminal_line_count(&lines), 3);
+        assert_eq!(terminal_line_count(&[]), 0);
+    }
+
+    #[test]
+    fn gutter_number_is_only_present_on_first_fragments() {
+        for (bytes, expected) in [(0..3, Some(7)), (3..6, None), (0..0, Some(7))] {
+            let line = TerminalLine::SourceCode {
+                source_line: 7,
+                bytes,
+            };
+            assert_eq!(line.gutter_number(), expected, "{line:?}");
+            assert_eq!(line.source_line(), Some(7));
+        }
+        assert_eq!(TerminalLine::Filler.gutter_number(), None);
+        assert_eq!(TerminalLine::Filler.source_line(), None);
+    }
 
     #[test]
     fn wraps_both_sides_and_pads_the_shorter_side() {

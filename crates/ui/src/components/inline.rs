@@ -16,7 +16,7 @@ use super::diff_viewer::ViewState;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
     TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
-    terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
+    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -31,7 +31,7 @@ fn longest_inline_terminal_line_cells(
 ) -> u32 {
     lines
         .iter()
-        .flat_map(|line| line.original.iter().zip(&line.modified))
+        .flat_map(WrappedViewLine::terminal_line_pairs)
         .map(|(original, modified)| {
             if matches!(modified, TerminalLine::SourceCode { .. }) {
                 terminal_line_cells(modified, modified_lines)
@@ -90,10 +90,7 @@ pub fn Inline(
         .as_ref()
         .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
         .unwrap_or(0);
-    let terminal_line_count = wrapped_lines
-        .iter()
-        .map(|line| line.original.len() as u32)
-        .sum();
+    let terminal_line_count = terminal_line_count(&wrapped_lines);
     let (view, vertical_handle) = use_scroll(scope, terminal_line_count, initial_top, size.height);
     let horizontal_limits = HorizontalDimensions::Inline {
         longest_line_cells: *maximum_line_cells,
@@ -113,7 +110,7 @@ pub fn Inline(
                 .then(|| {
                     wrapped_lines
                         .iter()
-                        .flat_map(|line| line.original.iter().zip(&line.modified))
+                        .flat_map(WrappedViewLine::terminal_line_pairs)
                         .nth(view.top as usize)
                 })
                 .flatten()
@@ -146,7 +143,7 @@ pub fn Inline(
     let mut rows = Vec::with_capacity(view.view_lines.len());
     for (offset, (original, modified)) in wrapped_lines
         .iter()
-        .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .flat_map(WrappedViewLine::terminal_line_pairs)
         .skip(view.view_lines.start as usize)
         .take(view.view_lines.len())
         .enumerate()
@@ -172,18 +169,8 @@ pub fn Inline(
         } else {
             DiffVersion::Original
         };
-        let original_number = match original {
-            TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
-                Some(*source_line)
-            }
-            _ => None,
-        };
-        let modified_number = match modified {
-            TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
-                Some(*source_line)
-            }
-            _ => None,
-        };
+        let original_number = original.gutter_number();
+        let modified_number = modified.gutter_number();
         let decorations = alignment.decorations(version, line_number);
         let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
         let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);

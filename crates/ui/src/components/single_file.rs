@@ -15,7 +15,7 @@ use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
     TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
-    wrap_view_line, wrapped_view_line_range_for_terminal_lines,
+    terminal_line_count, wrap_view_line, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -73,10 +73,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
             longest_line_cells(&single.lines)
         }
     });
-    let terminal_line_count = wrapped_lines
-        .iter()
-        .map(|line| line.original.len() as u32)
-        .sum();
+    let terminal_line_count = terminal_line_count(&wrapped_lines);
     let initial_top = saved_state
         .top
         .as_ref()
@@ -102,7 +99,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
                     .then(|| {
                         wrapped_lines
                             .iter()
-                            .flat_map(|line| line.original.iter().zip(&line.modified))
+                            .flat_map(WrappedViewLine::terminal_line_pairs)
                             .nth(view.top as usize)
                     })
                     .flatten()
@@ -138,7 +135,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
     let number_style = base.patch(ctx.theme.line_number);
     let visible_lines: Vec<Node> = wrapped_lines
         .iter()
-        .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .flat_map(WrappedViewLine::terminal_line_pairs)
         .skip(view.view_lines.start as usize)
         .take(view.view_lines.len())
         .enumerate()
@@ -152,12 +149,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
                 TerminalLine::SourceCode { source_line, .. } => *source_line,
                 TerminalLine::Filler => return None,
             };
-            let gutter_number = match terminal_line {
-                TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
-                    Some(*source_line)
-                }
-                _ => None,
-            };
+            let gutter_number = terminal_line.gutter_number();
             let text = single.lines.get(number.saturating_sub(1) as usize)?;
             let syntax_spans = syntax
                 .map(|store| SyntaxService::line_spans(store, &single.file, version, number))

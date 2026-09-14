@@ -16,8 +16,8 @@ use super::diff_viewer::ViewState;
 use super::filler::Filler;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, find_terminal_line_index, longest_terminal_line_cells, terminal_view_lines,
-    wrapped_view_line_range_for_terminal_lines,
+    TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
+    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{
     HorizontalDimensions, HorizontalView, use_diff_viewer_navigation,
@@ -101,10 +101,7 @@ pub fn SideBySide(
         .as_ref()
         .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
         .unwrap_or(0);
-    let terminal_line_count = wrapped_lines
-        .iter()
-        .map(|line| line.original.len() as u32)
-        .sum();
+    let terminal_line_count = terminal_line_count(&wrapped_lines);
     let (view, vertical_handle) = use_scroll(scope, terminal_line_count, initial_top, size.height);
     let horizontal_limits = HorizontalDimensions::SideBySide {
         original_longest_line_cells: maximum_line_cells.0,
@@ -126,7 +123,7 @@ pub fn SideBySide(
                 .then(|| {
                     wrapped_lines
                         .iter()
-                        .flat_map(|line| line.original.iter().zip(&line.modified))
+                        .flat_map(WrappedViewLine::terminal_line_pairs)
                         .nth(view.top as usize)
                 })
                 .flatten()
@@ -162,7 +159,7 @@ pub fn SideBySide(
     let mut rows: Vec<Node> = Vec::with_capacity(view.view_lines.len());
     for (offset, (original, modified)) in wrapped_lines
         .iter()
-        .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
+        .flat_map(WrappedViewLine::terminal_line_pairs)
         .skip(view.view_lines.start as usize)
         .take(view.view_lines.len())
         .enumerate()
@@ -249,12 +246,7 @@ fn make_side(
                 code_text::styles_for_diff(theme, version, decorations.line_background);
             let gutter_style =
                 gutter::style_for_diff(theme, version, decorations.gutter_background);
-            let gutter_number = match line {
-                TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
-                    Some(*source_line)
-                }
-                _ => None,
-            };
+            let gutter_number = line.gutter_number();
             let text = alignment.line(version, line_number).unwrap_or("");
             let changed_ranges: Vec<Range<u32>> = decorations
                 .characters
