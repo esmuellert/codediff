@@ -4,6 +4,8 @@ mod vscode;
 
 use anyhow::{Result, bail};
 
+const WRAP_COLUMN: u16 = 40;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DiffLayout {
     #[default]
@@ -26,7 +28,9 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut versions = 30usize;
     let mut max_lines = 2_000usize;
     let mut pair_count = None;
+    let mut from_pair = 1usize;
     let mut ignore_trim_whitespace = false;
+    let mut wrap = true;
     let mut layout = DiffLayout::default();
     let mut at = 0;
     while at < args.len() {
@@ -51,9 +55,20 @@ pub fn run(args: &[String]) -> Result<()> {
                 }
                 pair_count = Some(count);
             }
+            "--from" => {
+                at += 1;
+                from_pair = value(args, at, "--from")?;
+                if from_pair == 0 {
+                    bail!("--from must be greater than zero");
+                }
+            }
             "--ignore-trim-whitespace" => {
                 at += 1;
                 ignore_trim_whitespace = boolean(args, at, "--ignore-trim-whitespace")?;
+            }
+            "--wrap" => {
+                at += 1;
+                wrap = boolean(args, at, "--wrap")?;
             }
             "--layout" => {
                 at += 1;
@@ -71,6 +86,15 @@ pub fn run(args: &[String]) -> Result<()> {
     let paths = output::OutputPaths::new(&root, layout);
     output::clear(&paths)?;
     let mut pairs = history::pairs(&repo, files, versions, max_lines)?;
+    if from_pair > pairs.len() {
+        bail!(
+            "--from requests pair {from_pair}, but only {} were suitable",
+            pairs.len()
+        );
+    }
+    if from_pair > 1 {
+        pairs = pairs.into_iter().skip(from_pair - 1).collect();
+    }
     if let Some(count) = pair_count {
         if pairs.len() < count {
             bail!(
@@ -110,17 +134,18 @@ pub fn run(args: &[String]) -> Result<()> {
     std::fs::write(workspace.join("pairs.txt"), manifest)?;
     std::fs::write(
         workspace.join("options.json"),
-        web_options(layout, ignore_trim_whitespace)?,
+        web_options(layout, ignore_trim_whitespace, wrap, WRAP_COLUMN)?,
     )?;
     vscode::render(&root, workspace, results)?;
 
     let mut failures = Vec::new();
     let mut coverage = Coverage::default();
     println!(
-        "verify-vscode: {} historical pair(s) from {} (layout: {}, ignore trim whitespace: {})",
+        "verify-vscode: {} historical pair(s) from {} (layout: {}, wrap: {}, ignore trim whitespace: {})",
         pairs.len(),
         repo.display(),
         layout.as_str(),
+        wrap,
         ignore_trim_whitespace,
     );
     for (index, (pair, files)) in pairs.iter().zip(&materialised).enumerate() {
@@ -128,8 +153,9 @@ pub fn run(args: &[String]) -> Result<()> {
         let expected_records = output::parse(&expected)?;
         coverage.read_trim_whitespace(pair)?;
         coverage.read(&expected_records);
-        let actual = output::codediff(&binary, files, layout, ignore_trim_whitespace)?;
-        if expected_records == output::parse(&actual)? {
+        let actual = output::codediff(&binary, files, layout, ignore_trim_whitespace, wrap)?;
+        let actual_records = output::parse(&actual)?;
+        if output::records_match(&expected_records, &actual_records, layout, wrap) {
             println!("  {:>3}/{}  PASS  {}", index + 1, pairs.len(), pair.path);
         } else {
             let dir = output::save_mismatch(&paths.mismatches, pair, files, &expected, &actual)?;
@@ -154,10 +180,17 @@ pub fn run(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn web_options(layout: DiffLayout, ignore_trim_whitespace: bool) -> Result<Vec<u8>> {
+fn web_options(
+    layout: DiffLayout,
+    ignore_trim_whitespace: bool,
+    wrap: bool,
+    wrap_column: u16,
+) -> Result<Vec<u8>> {
     Ok(serde_json::to_vec_pretty(&serde_json::json!({
         "ignore_trim_whitespace": ignore_trim_whitespace,
         "layout": layout.as_str(),
+        "wrap": wrap,
+        "wrap_column": wrap_column,
     }))?)
 }
 
@@ -278,11 +311,15 @@ mod tests {
 
     #[test]
     fn web_options_carry_layout_and_whitespace_policy() {
-        let value: serde_json::Value =
-            serde_json::from_slice(&web_options(DiffLayout::Inline, true).unwrap()).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(
+            &web_options(DiffLayout::Inline, true, false, WRAP_COLUMN).unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(value["layout"], "inline");
         assert_eq!(value["ignore_trim_whitespace"], true);
+        assert_eq!(value["wrap"], false);
+        assert_eq!(value["wrap_column"], WRAP_COLUMN);
     }
 
     #[test]

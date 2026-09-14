@@ -103,6 +103,7 @@ pub fn codediff(
     files: &Files,
     layout: DiffLayout,
     ignore_trim_whitespace: bool,
+    wrap: bool,
 ) -> Result<String> {
     let output = Command::new(binary)
         .args(["debug", "parity", "--layout", layout.as_str()])
@@ -110,6 +111,8 @@ pub fn codediff(
         .arg(&files.modified)
         .arg("--ignore-trim-whitespace")
         .arg(ignore_trim_whitespace.to_string())
+        .arg("--wrap")
+        .arg(wrap.to_string())
         .output()?;
     if !output.status.success() {
         bail!(
@@ -119,6 +122,59 @@ pub fn codediff(
         );
     }
     Ok(String::from_utf8(output.stdout)?)
+}
+
+pub fn records_match(
+    expected: &[Record],
+    actual: &[Record],
+    layout: DiffLayout,
+    wrap: bool,
+) -> bool {
+    if layout != DiffLayout::SideBySide || !wrap {
+        return expected == actual;
+    }
+    let expected_rows = rows(expected);
+    let actual_rows = rows(actual);
+    if row_numbers(&expected_rows, true) != row_numbers(&actual_rows, true)
+        || row_numbers(&expected_rows, false) != row_numbers(&actual_rows, false)
+    {
+        return false;
+    }
+    non_rows(expected) == non_rows(actual)
+}
+
+fn rows(records: &[Record]) -> Vec<&Record> {
+    records
+        .iter()
+        .filter(|record| matches!(record, Record::Row { .. }))
+        .collect()
+}
+
+fn row_numbers(rows: &[&Record], original: bool) -> Vec<u32> {
+    rows.iter()
+        .filter_map(|record| match record {
+            Record::Row {
+                original: row_original,
+                modified,
+                ..
+            } => {
+                if original {
+                    row_original.to_owned()
+                } else {
+                    *modified
+                }
+            }
+            Record::Highlight { .. } => None,
+        })
+        .collect()
+}
+
+fn non_rows(records: &[Record]) -> Vec<Record> {
+    records
+        .iter()
+        .filter(|record| !matches!(record, Record::Row { .. }))
+        .cloned()
+        .collect()
 }
 
 pub fn parse(text: &str) -> Result<Vec<Record>> {
@@ -171,13 +227,6 @@ pub fn clear(paths: &OutputPaths) -> Result<()> {
 
 fn validate(record: &Record) -> Result<()> {
     match record {
-        Record::Row {
-            original: None,
-            modified: None,
-            ..
-        } => {
-            bail!("a row cannot contain two fillers")
-        }
         Record::Highlight {
             line_background,
             gutter_background,
@@ -289,9 +338,27 @@ mod tests {
     }
 
     #[test]
-    fn a_row_cannot_have_two_fillers() {
+    fn a_wrapped_row_can_have_two_blank_gutters() {
         let input = "{\"type\":\"row\",\"index\":0,\"original\":null,\"modified\":null}\n";
-        assert!(parse(input).is_err());
+        assert!(parse(input).is_ok());
+    }
+
+    #[test]
+    fn wrapped_side_rows_compare_each_side_in_order() {
+        let expected = parse(
+            "{\"type\":\"row\",\"index\":0,\"original\":1,\"modified\":null}\n{\"type\":\"row\",\"index\":1,\"original\":null,\"modified\":2}\n",
+        )
+        .unwrap();
+        let actual =
+            parse("{\"type\":\"row\",\"index\":0,\"original\":1,\"modified\":2}\n").unwrap();
+
+        assert!(records_match(
+            &expected,
+            &actual,
+            DiffLayout::SideBySide,
+            true
+        ));
+        assert!(!records_match(&expected, &actual, DiffLayout::Inline, true));
     }
 
     #[test]

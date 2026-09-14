@@ -4,7 +4,8 @@ use std::path::Path;
 use std::rc::Rc;
 
 use anyhow::{Context, Result};
-use file_types::{File, Oid, RepoPath, Revs};
+use file_types::{DiffVersion, File, Oid, RepoPath, Revs};
+use line_index::{ByteOff, CellCol, LineIndex};
 use serde::Serialize;
 
 use crate::cli::DiffLayout;
@@ -13,6 +14,9 @@ mod inline;
 mod side_by_side;
 
 const MIN_WIDTH: u16 = 200;
+const PARITY_WIDTH: u16 = 1_600;
+const WRAP_WIDTH: u16 = 40;
+const MAX_CHARACTER_CELLS: u32 = 10_000;
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -67,12 +71,15 @@ pub fn run(
     modified_path: &str,
     layout: DiffLayout,
     ignore_trim_whitespace: bool,
+    wrap: bool,
 ) -> Result<()> {
     match layout {
         DiffLayout::SideBySide => {
-            side_by_side::run(original_path, modified_path, ignore_trim_whitespace)
+            side_by_side::run(original_path, modified_path, ignore_trim_whitespace, wrap)
         }
-        DiffLayout::Inline => inline::run(original_path, modified_path, ignore_trim_whitespace),
+        DiffLayout::Inline => {
+            inline::run(original_path, modified_path, ignore_trim_whitespace, wrap)
+        }
     }
 }
 
@@ -101,59 +108,113 @@ fn load_diff_content(
     )))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn highlight_record(
-    cells: &ui::ratatui::buffer::Buffer,
-    row: u16,
-    row_start: u16,
-    gutter_width: u16,
-    row_end: u16,
-    line_number: u32,
-    side: Side,
-    line_background_colour: Option<ui::ratatui::style::Color>,
-    changed_background_colour: Option<ui::ratatui::style::Color>,
-) -> Option<Record> {
-    let line_background = (cells
-        .cell((row_start, row))
-        .and_then(|cell| cell.style().bg)
-        == line_background_colour)
-        .then(|| side.role());
-    let gutter_background = line_background;
-    let code_start = row_start + gutter_width;
-    let empty_markers = (code_start..row_end)
-        .filter(|&column| {
-            cells
-                .cell((column, row))
-                .is_some_and(|cell| cell.style().underline_color == changed_background_colour)
-        })
-        .map(|column| u32::from(column - code_start))
-        .collect::<Vec<_>>();
-    let mut characters = Vec::new();
-    let mut column = code_start;
-    while column < row_end {
-        if cells.cell((column, row)).and_then(|cell| cell.style().bg) != changed_background_colour {
-            column += 1;
-            continue;
+fn leading_indent_cells(text: &str) -> u32 {
+    let mut cells = 0u32;
+    for character in text.chars() {
+        match character {
+            ' ' => cells = cells.saturating_add(1),
+            '\t' => cells = line_index::tab_advance(CellCol(cells), line_index::DEFAULT_TAB_WIDTH),
+            _ => break,
         }
-        let range_start = column;
-        while column < row_end
-            && cells.cell((column, row)).and_then(|cell| cell.style().bg)
-                == changed_background_colour
-        {
-            column += 1;
-        }
-        characters.push(Character {
-            start: u32::from(range_start - code_start),
-            end: (column < row_end).then(|| u32::from(column - code_start)),
-            fill_to_edge: column == row_end,
-        });
     }
-    if line_background.is_none() && characters.is_empty() && empty_markers.is_empty() {
+    cells
+}
+
+#[allow(clippy::too_many_arguments)]
+fn semantic_highlight_record(
+    code_width: u32,
+    line: u32,
+    side: Side,
+    alignment: &align::Alignment,
+    terminal: &ui::components::TerminalLine,
+    version: DiffVersion,
+) -> Option<Record> {
+    let ui::components::TerminalLine::SourceCode { bytes, .. } = terminal else {
+        return None;
+    };
+    let decorations = alignment.decorations(version, line);
+    if !decorations.line_background
+        && !decorations.gutter_background
+        && decorations.characters.is_empty()
+        && decorations.empty_markers.is_empty()
+    {
         return None;
     }
+    let text = alignment.line(version, line).unwrap_or("");
+    let index = LineIndex::new(text, line_index::DEFAULT_TAB_WIDTH);
+    let continuation_indent = (bytes.start > 0).then(|| {
+        let indent = leading_indent_cells(text);
+        if indent.saturating_add(1) > code_width {
+            0
+        } else {
+            indent
+        }
+    });
+    let role = side.role();
+    let line_background = decorations.line_background.then_some(role);
+    let gutter_background = decorations.gutter_background.then_some(role);
+    let fragment_start = index.byte_to_cell(ByteOff(bytes.start)).get();
+    let local_cell = |byte| {
+        index
+            .byte_to_cell(ByteOff(byte))
+            .get()
+            .saturating_sub(fragment_start)
+            .min(code_width)
+    };
+    let mut characters = Vec::new();
+    for decoration in &decorations.characters {
+        let start = decoration.bytes.start.max(bytes.start);
+        let end = decoration.bytes.end.min(bytes.end);
+        if start < end {
+            let mut start_cell = local_cell(start);
+            let mut end_cell = local_cell(end);
+            if let Some(indent) = continuation_indent {
+                if decoration.bytes.start >= bytes.start {
+                    start_cell = start_cell.saturating_add(indent);
+                }
+                end_cell = end_cell.saturating_add(indent);
+            }
+            if start_cell < MAX_CHARACTER_CELLS {
+                let fill_to_edge = decoration.fill_to_edge || decoration.bytes.end > bytes.end;
+                characters.push(Character {
+                    start: start_cell,
+                    end: (!fill_to_edge).then(|| end_cell.min(MAX_CHARACTER_CELLS)),
+                    fill_to_edge,
+                });
+            }
+        }
+        if decoration.fill_to_edge
+            && decoration.bytes.start == bytes.end
+            && bytes.end == text.len() as u32
+        {
+            characters.push(Character {
+                start: local_cell(bytes.end).saturating_add(continuation_indent.unwrap_or(0)),
+                end: None,
+                fill_to_edge: true,
+            });
+        }
+    }
+    let mut empty_markers = decorations
+        .empty_markers
+        .into_iter()
+        .filter(|marker| {
+            *marker >= bytes.start
+                && (*marker < bytes.end || (*marker == bytes.end && bytes.end == text.len() as u32))
+        })
+        .map(|marker| {
+            local_cell(marker).saturating_add(
+                continuation_indent
+                    .filter(|_| marker >= bytes.start)
+                    .unwrap_or(0),
+            )
+        })
+        .filter(|marker| *marker < MAX_CHARACTER_CELLS)
+        .collect::<Vec<_>>();
+    empty_markers.sort_unstable();
+    empty_markers.dedup();
     Some(Record::Highlight {
         side,
-        line: line_number,
+        line,
         line_background,
         gutter_background,
         characters,
@@ -161,17 +222,66 @@ fn highlight_record(
     })
 }
 
-fn line_number(
-    cells: &ui::ratatui::buffer::Buffer,
-    gutter_start: u16,
-    gutter_width: u16,
-    row: u16,
-) -> Option<u32> {
-    let text: String = (gutter_start..gutter_start + gutter_width)
-        .filter_map(|column| cells.cell((column, row)))
-        .map(|cell| cell.symbol())
-        .collect();
-    text.trim().parse().ok()
+fn rendered_line_number(line: &ui::components::TerminalLine) -> Option<u32> {
+    match line {
+        ui::components::TerminalLine::SourceCode { source_line, bytes } if bytes.start == 0 => {
+            Some(*source_line)
+        }
+        _ => None,
+    }
+}
+
+fn source_line(line: &ui::components::TerminalLine) -> Option<u32> {
+    match line {
+        ui::components::TerminalLine::SourceCode { source_line, .. } => Some(*source_line),
+        ui::components::TerminalLine::Filler => None,
+    }
+}
+
+fn merge_highlight(highlights: &mut std::collections::BTreeMap<u32, Record>, record: Record) {
+    let Record::Highlight {
+        side,
+        line,
+        line_background,
+        gutter_background,
+        mut characters,
+        mut empty_markers,
+    } = record
+    else {
+        return;
+    };
+    let Some(existing) = highlights.get_mut(&line) else {
+        highlights.insert(
+            line,
+            Record::Highlight {
+                side,
+                line,
+                line_background,
+                gutter_background,
+                characters,
+                empty_markers,
+            },
+        );
+        return;
+    };
+    let Record::Highlight {
+        line_background: existing_line_background,
+        gutter_background: existing_gutter_background,
+        characters: existing_characters,
+        empty_markers: existing_empty_markers,
+        ..
+    } = existing
+    else {
+        unreachable!("highlight map contains only highlights");
+    };
+    if line_background.is_some() {
+        *existing_line_background = line_background;
+    }
+    if gutter_background.is_some() {
+        *existing_gutter_background = gutter_background;
+    }
+    existing_characters.append(&mut characters);
+    existing_empty_markers.append(&mut empty_markers);
 }
 
 fn gutter_width(line_count: u32) -> u16 {

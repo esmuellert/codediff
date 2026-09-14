@@ -15,6 +15,7 @@ mod welcome;
 mod wrap;
 
 pub(crate) use wrap::WrappedViewLine;
+pub use wrap::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};

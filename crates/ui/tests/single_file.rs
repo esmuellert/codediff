@@ -58,6 +58,30 @@ fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harnes
     harness_with_syntax_service(lines, deleted, width, height, None)
 }
 
+fn harness_unwrapped(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
+    let file = file(deleted);
+    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file,
+            lines: Arc::new(lines),
+        },
+    ));
+    let mut harness = Harness::new::<SingleFile>(
+        SingleFileProps {
+            content,
+            wrap: false,
+        },
+        width,
+        height,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    harness
+}
+
 fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
     let cells = harness.cells();
     (start..end)
@@ -83,6 +107,55 @@ fn a_long_line_renders_its_continuation() {
         "wrapped continuation is missing: {:?}",
         harness.screen()
     );
+}
+
+#[test]
+fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
+    let line = "SINGLE_UNWRAPPED ".to_owned() + &"0123456789".repeat(8);
+    let mut harness = harness_unwrapped(vec![line], false, 24, 4);
+    let before = harness.screen();
+
+    harness.press(crokey::key!('$')).force_draw();
+
+    assert_ne!(harness.screen(), before);
+    assert!(harness.screen().iter().any(|row| row.contains("789")));
+    assert_eq!(harness.screen().len(), 4);
+}
+
+#[test]
+fn toggling_wrap_preserves_the_current_terminal_line() {
+    let long = "SINGLE_TOGGLE ".to_owned() + &"0123456789".repeat(12);
+    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file: named_file("toggle.rs", false),
+            lines: Arc::new(vec![long, "second".into(), "third".into()]),
+        },
+    ));
+    let mut harness = Harness::new::<SingleFile>(
+        SingleFileProps {
+            content: Rc::clone(&content),
+            wrap: true,
+        },
+        32,
+        2,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    harness
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .force_draw();
+
+    harness.set_props::<SingleFile>(SingleFileProps {
+        content,
+        wrap: false,
+    });
+    harness.force_draw().force_draw();
+
+    assert!(harness.screen_row(0).contains("SINGLE_TOGGLE"));
 }
 
 #[test]

@@ -112,7 +112,10 @@ pub(crate) fn prepare_code_text_inputs(
     let empty_markers = empty_markers
         .iter()
         .filter_map(|marker| {
-            if *marker >= source_start && *marker < source_end {
+            if *marker >= source_start
+                && (*marker < source_end
+                    || (*marker == source_end && source_end == text.len() as u32))
+            {
                 Some(*marker - source_start)
             } else {
                 None

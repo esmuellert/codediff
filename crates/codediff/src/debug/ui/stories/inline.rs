@@ -32,6 +32,11 @@ pub const STORIES: &[StoryDefinition] = &[
         "Long lines and rows for two-axis scrolling",
         long_lines,
     ),
+    story(
+        "inline/wrapped-lines",
+        "Long changed lines with real continuation rows",
+        wrapped_lines,
+    ),
     StoryDefinition {
         id: "inline/edge-matrix",
         description: "Many diff edge cases with two three-digit gutters",
@@ -138,6 +143,19 @@ fn long_lines() -> Result<StoryFixture> {
     let modified: Vec<&str> = modified.iter().map(String::as_str).collect();
     Ok(StoryFixture::Inline(
         DiffFixture::from_lines("inline-long-lines.rs", &original, &modified).build()?,
+    ))
+}
+
+fn wrapped_lines() -> Result<StoryFixture> {
+    let original = long_rust_line("INLINE_WRAPPED_ORIGINAL", "0123456789");
+    let modified = long_rust_line("INLINE_WRAPPED_MODIFIED", "9876543210");
+    Ok(StoryFixture::Inline(
+        DiffFixture::from_lines(
+            "inline-wrapped-lines.rs",
+            &[original.as_str(), "tail"],
+            &[modified.as_str(), "tail"],
+        )
+        .build()?,
     ))
 }
 

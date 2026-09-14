@@ -16,7 +16,7 @@ use super::diff_viewer::ViewState;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
     TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
-    unwrapped_view_lines, wrap_view_lines, wrapped_view_line_range_for_terminal_lines,
+    terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -71,11 +71,7 @@ pub fn Inline(
         .saturating_sub(original_gutter_width)
         .saturating_sub(modified_gutter_width);
     let wrapped_lines = use_memo(scope, (content_id, code_width, wrap), || {
-        if wrap {
-            wrap_view_lines(alignment, DiffType::Inline, code_width, code_width)
-        } else {
-            unwrapped_view_lines(alignment, DiffType::Inline)
-        }
+        terminal_view_lines(alignment, DiffType::Inline, code_width, code_width, wrap)
     });
     let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap), || {
         if wrap {

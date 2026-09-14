@@ -40,6 +40,21 @@ fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
     }
 }
 
+#[component]
+fn TestInlineUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+    let view_state = use_ref(scope, ViewState::default);
+    let content_id = Rc::as_ptr(content) as usize;
+    rsx! {
+        Inline {
+            key: content_id,
+            content: Rc::clone(content),
+            view_state: view_state,
+            wrap: false,
+            auto_focus: false,
+        }
+    }
+}
+
 fn make_diff(path: &str, original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
     let diff = pipeline::diff::compute(original, modified).expect("a diff");
     let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
@@ -69,6 +84,22 @@ fn harness_with_syntax_service(
 
 fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
     let mut harness = harness_with_syntax_service(original, modified, width, height, None);
+    settle(&mut harness);
+    harness
+}
+
+fn harness_unwrapped(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
+    let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+        "unwrapped.rs",
+        original,
+        modified,
+    )));
+    let mut harness =
+        Harness::new::<TestInlineUnwrapped>(TestInlineUnwrappedProps { content }, width, height)
+            .provide::<Ui>(Context {
+                theme: Rc::new(Theme::DARK),
+                ..Context::default()
+            });
     settle(&mut harness);
     harness
 }
@@ -297,6 +328,26 @@ fn a_long_line_renders_its_continuation() {
             .any(|line| line.contains("INLINE_WRAP_MODIFIED_END")),
         "wrapped continuation is missing: {:?}",
         harness.screen()
+    );
+}
+
+#[test]
+fn unwrapped_long_lines_scroll_instead_of_creating_continuations() {
+    let original = "INLINE_UNWRAPPED_ORIGINAL ".to_owned() + &"0123456789".repeat(8);
+    let modified = "INLINE_UNWRAPPED_MODIFIED ".to_owned() + &"abcdefghij".repeat(8);
+    let mut harness = harness_unwrapped(&[original.as_str()], &[modified.as_str()], 32, 4);
+    let before = harness.screen();
+
+    harness.press(crokey::key!('$')).force_draw();
+
+    assert_ne!(harness.screen(), before);
+    assert!(harness.screen().iter().any(|line| line.contains("hij")));
+    assert!(
+        !harness
+            .screen()
+            .iter()
+            .skip(2)
+            .any(|line| line.contains("hij"))
     );
 }
 

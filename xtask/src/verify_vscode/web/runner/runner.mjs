@@ -10,14 +10,21 @@ const [workspace, results, cache] = process.argv.slice(2);
 if (!workspace || !results || !cache) {
   throw new Error('usage: runner.mjs <workspace> <results> <cache>');
 }
+
 const options = JSON.parse(await fs.readFile(path.join(workspace, 'options.json'), 'utf8'));
 if (!['side-by-side', 'inline'].includes(options.layout)) {
   throw new Error('layout must be side-by-side or inline');
 }
+if (typeof options.wrap !== 'boolean') {
+  throw new Error('wrap must be boolean');
+}
+if (!Number.isInteger(options.wrap_column) || options.wrap_column < 1) {
+  throw new Error('wrap_column must be a positive integer');
+}
 
 const manifestPath = require.resolve('@codediff/vscode-extension/package.json');
 const extension = path.dirname(manifestPath);
-const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+const manifest = JSON.parse(await fs.readFile(path.join(extension, 'package.json'), 'utf8'));
 const commit = manifest.vscodeCommit;
 
 const pairs = (await fs.readFile(path.join(workspace, 'pairs.txt'), 'utf8'))
@@ -25,8 +32,14 @@ const pairs = (await fs.readFile(path.join(workspace, 'pairs.txt'), 'utf8'))
   .split('\n')
   .filter(Boolean)
   .map(line => {
-    const [id, , , originalLines, modifiedLines] = line.split('\t');
-    return { id, originalLines: Number(originalLines), modifiedLines: Number(modifiedLines) };
+    const [id, original, modified, originalLines, modifiedLines] = line.split('\t');
+    return {
+      id,
+      original,
+      modified,
+      originalLines: Number(originalLines),
+      modifiedLines: Number(modifiedLines),
+    };
   });
 
 const port = await freePort();
@@ -44,14 +57,22 @@ const server = await open({
 });
 
 const browser = await chromium.launch({ headless: true });
-const height = Math.min(100000, Math.max(...pairs.map(p => p.originalLines + p.modifiedLines)) * 18 + 500);
-const page = await browser.newPage({ viewport: { width: 1600, height } });
+const page = await browser.newPage({
+  viewport: {
+    width: viewportWidth(),
+    height: await viewportHeight(pairs[0]),
+  },
+});
 
 try {
   await page.goto(`http://localhost:${port}`);
   await fs.mkdir(results, { recursive: true });
   for (let index = 0; index < pairs.length; index++) {
     const pair = pairs[index];
+    await page.setViewportSize({
+      width: viewportWidth(),
+      height: await viewportHeight(pair),
+    });
     await page.getByText(`PARITY:${pair.id}`, { exact: true }).waitFor({ timeout: 60_000 });
     const diffEditor = options.layout === 'side-by-side'
       ? page.locator('.monaco-diff-editor.side-by-side')
@@ -65,7 +86,7 @@ try {
     await page.waitForFunction(
       ({ originalLines, modifiedLines }) => {
         const count = selector => new Set(
-          [...document.querySelectorAll(selector)].map(e => Number(e.textContent))
+          [...document.querySelectorAll(selector)].map(e => Number(e.textContent)),
         ).size;
         return count('.original-in-monaco-diff-editor .line-numbers') >= originalLines
           && count('.modified-in-monaco-diff-editor .line-numbers') >= modifiedLines;
@@ -74,7 +95,7 @@ try {
       { timeout: 60_000 },
     );
 
-    const records = await page.evaluate(extractRecords);
+    const records = await page.evaluate(extractRecords, options);
     validateRecords(records, pair);
     await fs.writeFile(path.join(results, `${pair.id}.jsonl`), records);
     if (index + 1 < pairs.length) {
@@ -95,7 +116,7 @@ function validateRecords(text, pair) {
   if (original.size !== pair.originalLines || modified.size !== pair.modifiedLines) {
     throw new Error(
       `${options.layout} extractor missed lines for ${pair.id}: `
-      + `original ${original.size}/${pair.originalLines}, modified ${modified.size}/${pair.modifiedLines}`
+      + `original ${original.size}/${pair.originalLines}, modified ${modified.size}/${pair.modifiedLines}`,
     );
   }
   let previousOriginal = 0;
@@ -103,14 +124,34 @@ function validateRecords(text, pair) {
   rows.forEach((row, index) => {
     if (row.index !== index) throw new Error(`${pair.id}: row indices are not contiguous`);
     if (row.original !== null) {
-      if (row.original <= previousOriginal) throw new Error(`${pair.id}: original lines are not ordered`);
+      if (row.original < previousOriginal) throw new Error(`${pair.id}: original lines are not ordered`);
       previousOriginal = row.original;
     }
     if (row.modified !== null) {
-      if (row.modified <= previousModified) throw new Error(`${pair.id}: modified lines are not ordered`);
+      if (row.modified < previousModified) throw new Error(`${pair.id}: modified lines are not ordered`);
       previousModified = row.modified;
     }
   });
+}
+
+function viewportWidth() {
+  return options.wrap ? 800 : 1600;
+}
+
+async function viewportHeight(pair) {
+  const lineHeight = 18;
+  if (!options.wrap) {
+    return Math.min(100000, (pair.originalLines + pair.modifiedLines) * lineHeight + 500);
+  }
+  const sizes = await Promise.all([pair.original, pair.modified].map(async file => (
+    (await fs.stat(path.join(workspace, file))).size
+  )));
+  const estimatedRows = Math.max(
+    pair.originalLines,
+    pair.modifiedLines,
+    Math.ceil((sizes[0] + sizes[1]) / options.wrap_column) * 3,
+  );
+  return Math.min(1000000, estimatedRows * lineHeight + 500);
 }
 
 async function freePort() {
@@ -124,14 +165,58 @@ async function freePort() {
   return port;
 }
 
-function extractRecords() {
+function extractRecords(options) {
+  function alignWrappedReplacementRows(records) {
+    const rows = records.filter(record => record.type === 'row');
+    for (let index = 0; index + 1 < rows.length; index++) {
+      const first = rows[index];
+      const second = rows[index + 1];
+      if (first.original !== null && first.modified === null
+        && second.original === null && second.modified !== null) {
+        second.original = first.original;
+        first.original = null;
+      }
+    }
+  }
+
+  function topOf(editor, node) {
+    return Math.round(node.getBoundingClientRect().top - editor.getBoundingClientRect().top);
+  }
+
   function lines(editor) {
-    const result = new Map();
+    const rows = new Map();
+    const highlights = new Map();
+    const numbered = new Map();
     for (const row of editor.querySelectorAll('.margin-view-overlays > div')) {
       const number = row.querySelector('.line-numbers');
-      if (number) result.set(Math.round(parseFloat(row.style.top)), Number(number.textContent));
+      if (number) numbered.set(topOf(editor, row), Number(number.textContent));
     }
-    return result;
+
+    const physical = [];
+    for (const row of editor.querySelectorAll('.view-line')) {
+      physical.push({ top: topOf(editor, row), filler: false });
+    }
+    for (const zone of editor.querySelectorAll('.diagonal-fill')) {
+      const lineHeight = Math.round(
+        editor.querySelector('.view-line')?.getBoundingClientRect().height || 18,
+      );
+      const top = topOf(editor, zone);
+      const count = Math.max(1, Math.round(zone.getBoundingClientRect().height / lineHeight));
+      for (let index = 0; index < count; index++) {
+        physical.push({ top: top + index * lineHeight, filler: true });
+      }
+    }
+    physical.sort((a, b) => a.top - b.top);
+
+    let previous = null;
+    for (const row of physical) {
+      const number = numbered.get(row.top);
+      if (number !== undefined) previous = number;
+      else if (row.filler) previous = null;
+      rows.set(row.top, number ?? null);
+      highlights.set(row.top, number ?? (row.filler ? null : previous));
+    }
+    return { rows, highlights, numbered, physical };
   }
 
   function cellWidth(editor) {
@@ -172,23 +257,26 @@ function extractRecords() {
     return record;
   }
 
-  // Inline keeps the original editor as a narrow line-number and decoration
-  // surface while rendering deleted text in modified-editor view zones. The
-  // two line maps therefore describe both layouts with the same row schema.
   const original = document.querySelector('.original-in-monaco-diff-editor');
   const modified = document.querySelector('.modified-in-monaco-diff-editor');
   const originalLines = lines(original);
   const modifiedLines = lines(modified);
   const records = [];
-  const tops = [...new Set([...originalLines.keys(), ...modifiedLines.keys()])].sort((a, b) => a - b);
+  const tops = [...new Set([
+    ...originalLines.rows.keys(),
+    ...modifiedLines.rows.keys(),
+  ])].sort((a, b) => a - b);
   tops.forEach((top, index) => {
     records.push({
       type: 'row',
       index,
-      original: originalLines.get(top) ?? null,
-      modified: modifiedLines.get(top) ?? null,
+      original: originalLines.rows.get(top) ?? null,
+      modified: modifiedLines.rows.get(top) ?? null,
     });
   });
+  if (options.wrap && options.layout === 'side-by-side') {
+    alignWrappedReplacementRows(records);
+  }
 
   for (const [side, editor, lineMap] of [
     ['original', original, originalLines],
@@ -198,8 +286,9 @@ function extractRecords() {
     const width = cellWidth(editor);
     const byLine = new Map();
     for (const row of editor.querySelectorAll('.view-overlays > div')) {
-      const line = lineMap.get(Math.round(parseFloat(row.style.top)));
-      if (!line) continue;
+      const top = topOf(editor, row);
+      const line = lineMap.highlights.get(top);
+      if (line === undefined || line === null) continue;
       for (const decoration of row.querySelectorAll('.cdr')) {
         if (decoration.classList.contains(`line-${role}`)) {
           highlight(byLine, side, line).line_background = role;
@@ -221,8 +310,8 @@ function extractRecords() {
       }
     }
     for (const row of editor.querySelectorAll('.margin-view-overlays > div')) {
-      const line = lineMap.get(Math.round(parseFloat(row.style.top)));
-      if (line && row.querySelector(`.gutter-${role}`)) {
+      const line = lineMap.highlights.get(topOf(editor, row));
+      if (line !== undefined && line !== null && row.querySelector(`.gutter-${role}`)) {
         highlight(byLine, side, line).gutter_background = role;
       }
     }

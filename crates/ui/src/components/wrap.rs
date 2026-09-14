@@ -157,6 +157,37 @@ pub(crate) fn wrap_view_lines(
         .collect()
 }
 
+pub(crate) fn terminal_view_lines(
+    alignment: &Alignment,
+    diff_type: DiffType,
+    original_width: u16,
+    modified_width: u16,
+    wrap: bool,
+) -> Vec<WrappedViewLine> {
+    if wrap {
+        wrap_view_lines(alignment, diff_type, original_width, modified_width)
+    } else {
+        unwrapped_view_lines(alignment, diff_type)
+    }
+}
+
+/// Returns the paired terminal lines produced by the current diff layout.
+///
+/// Each tuple is one displayed line. The same producer is used by the
+/// components; parity uses this only to describe the lines it measures.
+pub fn terminal_line_pairs(
+    alignment: &Alignment,
+    diff_type: DiffType,
+    original_width: u16,
+    modified_width: u16,
+    wrap: bool,
+) -> Vec<(TerminalLine, TerminalLine)> {
+    terminal_view_lines(alignment, diff_type, original_width, modified_width, wrap)
+        .into_iter()
+        .flat_map(|line| line.original.into_iter().zip(line.modified))
+        .collect()
+}
+
 fn unwrapped_source_line(content: ViewLineContent, source: Option<&str>) -> Vec<TerminalLine> {
     let ViewLineContent::SourceLine(source_line) = content else {
         return Vec::new();
@@ -524,6 +555,23 @@ mod tests {
         assert_eq!(wrapped.len(), 1);
         assert_eq!(wrapped[0].original.len(), 2);
         assert_eq!(wrapped[0].modified.len(), 2);
+    }
+
+    #[test]
+    fn terminal_line_pairs_switch_between_wrapped_and_unwrapped_modes() {
+        let original = ["abcdef"];
+        let modified = ["abcdef"];
+        let diff = pipeline::diff::compute(&original, &modified).unwrap();
+        let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
+
+        assert_eq!(
+            terminal_line_pairs(&alignment, DiffType::SideBySide, 3, 3, true).len(),
+            2
+        );
+        assert_eq!(
+            terminal_line_pairs(&alignment, DiffType::SideBySide, 3, 3, false).len(),
+            1
+        );
     }
 
     #[test]

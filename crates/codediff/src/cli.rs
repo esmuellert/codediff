@@ -71,6 +71,9 @@ pub enum Debug {
         layout: DiffLayout,
         #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
         ignore_trim_whitespace: bool,
+        /// Render with source wrapping enabled or disabled.
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        wrap: bool,
     },
 
     /// Print where each character of a line sits

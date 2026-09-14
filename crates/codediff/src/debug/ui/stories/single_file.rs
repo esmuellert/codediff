@@ -28,6 +28,11 @@ pub const STORIES: &[StoryDefinition] = &[
         long_lines,
     ),
     story(
+        "single-file/wrapped-lines",
+        "A one-sided file with continuation rows",
+        wrapped_lines,
+    ),
+    story(
         "single-file/empty",
         "A present but empty one-sided file",
         empty,
@@ -100,6 +105,15 @@ fn long_lines() -> Result<StoryFixture> {
         "long-lines.rs",
         FilePresence::Added,
         &[long.as_str(), "// short tail"],
+    )))
+}
+
+fn wrapped_lines() -> Result<StoryFixture> {
+    let long = long_rust_line("SINGLE_WRAPPED", "0123456789");
+    Ok(single_file(SingleFileFixture::from_lines(
+        "wrapped-lines.rs",
+        FilePresence::Added,
+        &[long.as_str(), "tail"],
     )))
 }
 

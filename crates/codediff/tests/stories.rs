@@ -50,6 +50,16 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &[],
     ),
     (
+        "side-by-side/wrapped-lines",
+        &[
+            "ORIGINAL_WRAPPED",
+            "MODIFIED_WRAPPED",
+            "old tail",
+            "new tail",
+        ],
+        &[],
+    ),
+    (
         "side-by-side/edge-matrix",
         &["whitespace only", "deleted only", "你好"],
         &[],
@@ -63,6 +73,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
     ),
     ("inline/tabs-unicode", &["你好", "您好"], &["│", "╱"]),
     ("inline/long-lines", &["INLINE_ORIGINAL"], &["│", "╱"]),
+    (
+        "inline/wrapped-lines",
+        &["INLINE_WRAPPED_ORIGINAL", "INLINE_WRAPPED_MODIFIED"],
+        &["│", "╱"],
+    ),
     ("inline/edge-matrix", &["whitespace", "你好"], &["│", "╱"]),
     (
         "single-file/added",
@@ -82,6 +97,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
     (
         "single-file/long-lines",
         &["SINGLE_LONG_PREFIX", "short tail"],
+        &["│", "╱"],
+    ),
+    (
+        "single-file/wrapped-lines",
+        &["SINGLE_WRAPPED", "tail"],
         &["│", "╱"],
     ),
     ("single-file/empty", &[], &["  1 ", "│", "╱"]),
@@ -147,7 +167,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  27"));
+    assert_eq!(lines.next(), Some(" STORIES  30"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");
@@ -207,8 +227,16 @@ fn every_story_draws_on_a_real_terminal() {
         let marker = match *story {
             "explorer/empty"
             | "side-by-side/long-lines"
+            | "side-by-side/wrapped-lines"
             | "inline/long-lines"
-            | "single-file/empty" => *story,
+            | "inline/wrapped-lines"
+            | "single-file/empty"
+            | "single-file/wrapped-lines" => match *story {
+                "side-by-side/wrapped-lines" => "ORIGINAL_WRAPPED",
+                "inline/wrapped-lines" => "INLINE_WRAPPED_",
+                "single-file/wrapped-lines" => "SINGLE_WRAPPED",
+                _ => *story,
+            },
             "explorer/awkward-paths" => "with spaces.rs",
             "side-by-side/tabs-unicode" | "inline/tabs-unicode" => "您",
             "single-file/rust-syntax" => "highlighted",
@@ -284,8 +312,8 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
     assert!(output.contains(ENTER_ALT));
     let resized_frame = output.rsplit("\u{1b}[2J").next().unwrap_or(&output);
     assert!(
-        resized_frame.contains("row 31"),
-        "the vertical viewport never moved: {output:?}"
+        resized_frame.contains("789abcdef"),
+        "the vertical viewport never moved into the wrapped continuation: {output:?}"
     );
     assert!(
         resized_frame.contains("line row"),

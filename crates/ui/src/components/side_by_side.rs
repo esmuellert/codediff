@@ -16,8 +16,8 @@ use super::diff_viewer::ViewState;
 use super::filler::Filler;
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, find_terminal_line_index, longest_terminal_line_cells, unwrapped_view_lines,
-    wrap_view_lines, wrapped_view_line_range_for_terminal_lines,
+    TerminalLine, find_terminal_line_index, longest_terminal_line_cells, terminal_view_lines,
+    wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -60,16 +60,13 @@ pub fn SideBySide(
         scope,
         (content_id, original_width, modified_width, wrap),
         || {
-            if wrap {
-                wrap_view_lines(
-                    alignment,
-                    DiffType::SideBySide,
-                    original_width,
-                    modified_width,
-                )
-            } else {
-                unwrapped_view_lines(alignment, DiffType::SideBySide)
-            }
+            terminal_view_lines(
+                alignment,
+                DiffType::SideBySide,
+                original_width,
+                modified_width,
+                wrap,
+            )
         },
     );
     let maximum_line_cells = use_memo(

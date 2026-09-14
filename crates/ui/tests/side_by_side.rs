@@ -40,6 +40,21 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     }
 }
 
+#[component]
+fn TestSideBySideUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+    let view_state = use_ref(scope, ViewState::default);
+    let content_id = Rc::as_ptr(content) as usize;
+    rsx! {
+        SideBySide {
+            key: content_id,
+            content: Rc::clone(content),
+            view_state: view_state,
+            wrap: false,
+            auto_focus: false,
+        }
+    }
+}
+
 fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
     let diff = pipeline::diff::compute(original, modified).expect("a diff");
     let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
@@ -75,6 +90,23 @@ fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Har
 
 fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<String> {
     harness(original, modified, width, height).screen()
+}
+
+fn harness_unwrapped(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
+    let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+        original, modified,
+    )));
+    let mut harness = Harness::new::<TestSideBySideUnwrapped>(
+        TestSideBySideUnwrappedProps { content },
+        width,
+        height,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    harness
 }
 
 fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
@@ -225,6 +257,19 @@ fn long_lines_render_continuations_on_both_sides() {
             .any(|line| line.contains("SIDE_WRAP_MODIFIED_END")),
         "modified continuation is missing: {screen:?}"
     );
+}
+
+#[test]
+fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
+    let original = "SIDE_UNWRAPPED_ORIGINAL ".to_owned() + &"0123456789".repeat(8);
+    let modified = "SIDE_UNWRAPPED_MODIFIED ".to_owned() + &"abcdefghij".repeat(8);
+    let mut harness = harness_unwrapped(&[original.as_str()], &[modified.as_str()], 44, 4);
+    let before = harness.screen();
+
+    harness.press(crokey::key!('$')).force_draw();
+
+    assert_ne!(harness.screen(), before);
+    assert!(harness.screen().iter().any(|line| line.contains("hij")));
 }
 
 #[test]

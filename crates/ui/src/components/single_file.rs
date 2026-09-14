@@ -14,8 +14,8 @@ use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
-    TerminalLine, WrappedViewLine, longest_terminal_line_cells, wrap_view_line,
-    wrapped_view_line_range_for_terminal_lines,
+    TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
+    wrap_view_line, wrapped_view_line_range_for_terminal_lines,
 };
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
@@ -23,9 +23,9 @@ use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct SingleFileViewState {
-    top: u32,
+    top: Option<TerminalLine>,
     first_cell: u32,
 }
 
@@ -36,7 +36,7 @@ struct SingleFileViewStateHistory {
 
 impl SingleFileViewStateHistory {
     fn load(&self, key: &str) -> SingleFileViewState {
-        self.entries.get(key).copied().unwrap_or_default()
+        self.entries.get(key).cloned().unwrap_or_default()
     }
 
     fn save(&mut self, key: &str, state: SingleFileViewState) {
@@ -112,8 +112,12 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
         .iter()
         .map(|line| line.original.len() as u32)
         .sum();
-    let (view, vertical_handle) =
-        use_scroll(scope, terminal_line_count, saved_state.top, size.height);
+    let initial_top = saved_state
+        .top
+        .as_ref()
+        .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
+        .unwrap_or(0);
+    let (view, vertical_handle) = use_scroll(scope, terminal_line_count, initial_top, size.height);
     let horizontal_limits = HorizontalDimensions::Single {
         longest_line_cells: *maximum_line_cells,
         gutter_cells: gutter_width,
@@ -129,14 +133,25 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
         view_states.current().save(
             &file_key,
             SingleFileViewState {
-                top: view.top,
+                top: (view.top > 0)
+                    .then(|| {
+                        wrapped_lines
+                            .iter()
+                            .flat_map(|line| line.original.iter().zip(&line.modified))
+                            .nth(view.top as usize)
+                    })
+                    .flatten()
+                    .and_then(|(original, modified)| match version {
+                        DiffVersion::Original => Some(original.clone()),
+                        DiffVersion::Modified => Some(modified.clone()),
+                    }),
                 first_cell: horizontal.requested_first_cell,
             },
         );
     }
     *previous_identity.current() = Some(identity.clone());
     use_layout_effect(scope, identity, move || {
-        vertical_handle.scroll_to(saved_state.top);
+        vertical_handle.scroll_to(initial_top);
         horizontal_handle.scroll_to(saved_state.first_cell);
     });
     let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
@@ -161,7 +176,9 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
         .flat_map(|wrapped_line| wrapped_line.original.iter().zip(&wrapped_line.modified))
         .skip(view.view_lines.start as usize)
         .take(view.view_lines.len())
-        .filter_map(|(original, modified)| {
+        .enumerate()
+        .filter_map(|(offset, (original, modified))| {
+            let line_index = view.view_lines.start + offset as u32;
             let terminal_line = match version {
                 DiffVersion::Original => original,
                 DiffVersion::Modified => modified,
@@ -191,7 +208,7 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
                 );
             let row = rsx! {
                 Row {
-                    key: number,
+                    key: line_index,
                     layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                     ..,
                     Gutter {

@@ -32,6 +32,11 @@ pub const STORIES: &[StoryDefinition] = &[
         "Long lines plus enough rows for two-axis scrolling",
         long_lines,
     ),
+    story(
+        "side-by-side/wrapped-lines",
+        "Unequal wrapped lines with continuation fillers",
+        wrapped_lines,
+    ),
     StoryDefinition {
         id: "side-by-side/edge-matrix",
         description: "Many diff edge cases with a three-digit gutter",
@@ -135,6 +140,19 @@ fn long_lines() -> Result<StoryFixture> {
     let modified: Vec<&str> = modified.iter().map(String::as_str).collect();
     Ok(StoryFixture::SideBySide(
         DiffFixture::from_lines("long-lines.rs", &original, &modified).build()?,
+    ))
+}
+
+fn wrapped_lines() -> Result<StoryFixture> {
+    let original = long_rust_line("ORIGINAL_WRAPPED", "0123456789");
+    let modified = long_rust_line("MODIFIED_WRAPPED", "9876543210");
+    Ok(StoryFixture::SideBySide(
+        DiffFixture::from_lines(
+            "side-by-side-wrapped-lines.rs",
+            &[original.as_str(), "old tail"],
+            &[modified.as_str(), "new tail", "extra tail"],
+        )
+        .build()?,
     ))
 }
 
