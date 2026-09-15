@@ -1,6 +1,5 @@
 //! One full-width column showing original and modified lines in sequence.
 
-use std::ops::Range;
 use std::rc::Rc;
 
 use align::DiffVersion;
@@ -175,27 +174,14 @@ pub fn Inline(
         let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
         let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);
         let text = alignment.line(version, line_number).unwrap_or("");
-        let changed_ranges: Vec<Range<u32>> = decorations
-            .characters
-            .iter()
-            .map(|character| character.bytes.clone())
-            .collect();
-        let fill_from = decorations
-            .characters
-            .iter()
-            .filter(|character| character.fill_to_edge)
-            .map(|character| character.bytes.start)
-            .min();
         let syntax_spans = syntax
             .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
             .unwrap_or_default();
         let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
-            code_text::prepare_code_text_inputs(
+            code_text::prepare_code_text_inputs_from_decorations(
                 text,
                 terminal_line,
-                &changed_ranges,
-                fill_from,
-                &decorations.empty_markers,
+                &decorations,
                 &syntax_spans,
             );
 

@@ -71,6 +71,39 @@ pub(crate) fn longest_line_cells(lines: &[String]) -> u32 {
         .unwrap_or(0)
 }
 
+pub(crate) fn prepare_code_text_inputs_from_decorations(
+    text: &str,
+    terminal_line: &TerminalLine,
+    decorations: &align::LineDecorations,
+    syntax: &[syntax::Span],
+) -> (
+    Rc<str>,
+    Rc<[Range<u32>]>,
+    Option<u32>,
+    Rc<[u32]>,
+    Rc<[syntax::Span]>,
+) {
+    let changed_ranges: Vec<Range<u32>> = decorations
+        .characters
+        .iter()
+        .map(|character| character.bytes.clone())
+        .collect();
+    let fill_from = decorations
+        .characters
+        .iter()
+        .filter(|character| character.fill_to_edge)
+        .map(|character| character.bytes.start)
+        .min();
+    prepare_code_text_inputs(
+        text,
+        terminal_line,
+        &changed_ranges,
+        fill_from,
+        &decorations.empty_markers,
+        syntax,
+    )
+}
+
 pub(crate) fn prepare_code_text_inputs(
     text: &str,
     terminal_line: &TerminalLine,
@@ -335,6 +368,73 @@ mod tests {
             source_line: 1,
             bytes,
         }
+    }
+
+    #[test]
+    fn diff_inputs_collect_ranges_and_use_the_earliest_fill() {
+        let decorations = align::LineDecorations {
+            characters: vec![
+                align::CharacterDecoration {
+                    bytes: 5..6,
+                    fill_to_edge: true,
+                },
+                align::CharacterDecoration {
+                    bytes: 0..1,
+                    fill_to_edge: false,
+                },
+                align::CharacterDecoration {
+                    bytes: 2..6,
+                    fill_to_edge: true,
+                },
+            ],
+            empty_markers: vec![1, 6],
+            ..Default::default()
+        };
+        let syntax = vec![syntax::Span::new(1..3, syntax::Style::pen(syntax::Pen(1)))];
+        let (text, diff, fill_from, empty_markers, spans) =
+            prepare_code_text_inputs_from_decorations(
+                "abcdef",
+                &source(0..6),
+                &decorations,
+                &syntax,
+            );
+
+        assert_eq!(&*text, "abcdef");
+        assert_eq!(&*diff, &[5..6, 0..1, 2..6]);
+        assert_eq!(fill_from, Some(2));
+        assert_eq!(&*empty_markers, &[1, 6]);
+        assert_eq!(spans.as_ref(), syntax.as_slice());
+    }
+
+    #[test]
+    fn diff_inputs_preserve_fragment_markers_and_syntax_without_character_ranges() {
+        let decorations = align::LineDecorations {
+            empty_markers: vec![0, 1, 4, 5, 6],
+            ..Default::default()
+        };
+        let syntax = vec![
+            syntax::Span::new(0..4, syntax::Style::pen(syntax::Pen(1))),
+            syntax::Span::new(4..6, syntax::Style::pen(syntax::Pen(2))),
+        ];
+        let (text, diff, fill_from, empty_markers, spans) =
+            prepare_code_text_inputs_from_decorations(
+                "a日bc",
+                &source(1..5),
+                &decorations,
+                &syntax,
+            );
+
+        assert_eq!(&*text, "日b");
+        assert!(diff.is_empty());
+        assert_eq!(fill_from, None);
+        assert_eq!(&*empty_markers, &[0, 3]);
+        assert_eq!(
+            spans.as_ref(),
+            &[
+                syntax::Span::new(0..3, syntax::Style::pen(syntax::Pen(1))),
+                syntax::Span::new(3..4, syntax::Style::pen(syntax::Pen(2))),
+            ]
+        );
     }
 
     #[test]

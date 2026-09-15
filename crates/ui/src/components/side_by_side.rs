@@ -1,6 +1,5 @@
 //! Two columns showing both versions of a file, paired line by line.
 
-use std::ops::Range;
 use std::rc::Rc;
 
 use align::DiffVersion;
@@ -248,27 +247,14 @@ fn make_side(
                 gutter::style_for_diff(theme, version, decorations.gutter_background);
             let gutter_number = line.gutter_number();
             let text = alignment.line(version, line_number).unwrap_or("");
-            let changed_ranges: Vec<Range<u32>> = decorations
-                .characters
-                .iter()
-                .map(|character| character.bytes.clone())
-                .collect();
-            let fill_from = decorations
-                .characters
-                .iter()
-                .filter(|character| character.fill_to_edge)
-                .map(|character| character.bytes.start)
-                .min();
             let syntax_spans = syntax
                 .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
                 .unwrap_or_default();
             let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
-                code_text::prepare_code_text_inputs(
+                code_text::prepare_code_text_inputs_from_decorations(
                     text,
                     line,
-                    &changed_ranges,
-                    fill_from,
-                    &decorations.empty_markers,
+                    &decorations,
                     &syntax_spans,
                 );
             vec![
