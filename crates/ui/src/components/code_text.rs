@@ -19,6 +19,14 @@ const TAB_WIDTH: u8 = 4;
 
 type Emphasis = Range<u32>;
 
+pub(crate) type CodeTextInputs = (
+    Rc<str>,
+    Rc<[Range<u32>]>,
+    Option<u32>,
+    Rc<[u32]>,
+    Rc<[syntax::Span]>,
+);
+
 /// Diff backgrounds and syntax foregrounds for one source line.
 #[derive(Debug, Clone, Copy)]
 struct CodeTextInk<'a> {
@@ -76,13 +84,7 @@ pub(crate) fn prepare_code_text_inputs_from_decorations(
     terminal_line: &TerminalLine,
     decorations: &align::LineDecorations,
     syntax: &[syntax::Span],
-) -> (
-    Rc<str>,
-    Rc<[Range<u32>]>,
-    Option<u32>,
-    Rc<[u32]>,
-    Rc<[syntax::Span]>,
-) {
+) -> CodeTextInputs {
     let changed_ranges: Vec<Range<u32>> = decorations
         .characters
         .iter()
@@ -111,13 +113,7 @@ pub(crate) fn prepare_code_text_inputs(
     fill_from: Option<u32>,
     empty_markers: &[u32],
     syntax: &[syntax::Span],
-) -> (
-    Rc<str>,
-    Rc<[Range<u32>]>,
-    Option<u32>,
-    Rc<[u32]>,
-    Rc<[syntax::Span]>,
-) {
+) -> CodeTextInputs {
     let source_range = match terminal_line {
         TerminalLine::SourceCode { bytes, .. } => bytes.clone(),
         TerminalLine::Filler => 0..text.len() as u32,
@@ -481,10 +477,12 @@ mod tests {
 
     #[test]
     fn fragments_preserve_utf8_boundaries() {
+        let diff = std::iter::once(1..4).collect::<Vec<_>>();
         let (text, diff, _, _, _) =
-            prepare_code_text_inputs("a日b", &source(1..4), &[1..4], None, &[], &[]);
+            prepare_code_text_inputs("a日b", &source(1..4), &diff, None, &[], &[]);
+        let expected = std::iter::once(0..3).collect::<Vec<_>>();
 
         assert_eq!(&*text, "日");
-        assert_eq!(&*diff, &[0..3]);
+        assert_eq!(&*diff, expected.as_slice());
     }
 }

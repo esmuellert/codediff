@@ -226,33 +226,31 @@ pub fn clear(paths: &OutputPaths) -> Result<()> {
 }
 
 fn validate(record: &Record) -> Result<()> {
-    match record {
-        Record::Highlight {
-            line_background,
-            gutter_background,
-            characters,
-            empty_markers,
-            ..
-        } => {
-            if line_background.is_none()
-                && gutter_background.is_none()
-                && characters.is_empty()
-                && empty_markers.is_empty()
-            {
-                bail!("an empty highlight record is meaningless");
-            }
-            for character in characters {
-                match (character.end, character.fill_to_edge) {
-                    (None, false) => bail!("a character range without an end must fill to edge"),
-                    (Some(_), true) => bail!("a character range that fills to edge has no end"),
-                    (Some(end), false) if end < character.start => {
-                        bail!("a character range ends before it starts")
-                    }
-                    _ => {}
+    if let Record::Highlight {
+        line_background,
+        gutter_background,
+        characters,
+        empty_markers,
+        ..
+    } = record
+    {
+        if line_background.is_none()
+            && gutter_background.is_none()
+            && characters.is_empty()
+            && empty_markers.is_empty()
+        {
+            bail!("an empty highlight record is meaningless");
+        }
+        for character in characters {
+            match (character.end, character.fill_to_edge) {
+                (None, false) => bail!("a character range without an end must fill to edge"),
+                (Some(_), true) => bail!("a character range that fills to edge has no end"),
+                (Some(end), false) if end < character.start => {
+                    bail!("a character range ends before it starts")
                 }
+                _ => {}
             }
         }
-        _ => {}
     }
     Ok(())
 }

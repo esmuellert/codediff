@@ -86,6 +86,7 @@ pub(super) fn run(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_records(
     harness: &mut Harness,
     width: u16,

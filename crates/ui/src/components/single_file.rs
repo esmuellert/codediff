@@ -103,9 +103,9 @@ pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
                             .nth(view.top as usize)
                     })
                     .flatten()
-                    .and_then(|(original, modified)| match version {
-                        DiffVersion::Original => Some(original.clone()),
-                        DiffVersion::Modified => Some(modified.clone()),
+                    .map(|(original, modified)| match version {
+                        DiffVersion::Original => original.clone(),
+                        DiffVersion::Modified => modified.clone(),
                     }),
                 first_cell: horizontal.requested_first_cell,
             },

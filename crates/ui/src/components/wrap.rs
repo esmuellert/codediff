@@ -219,7 +219,7 @@ fn wrap_ranges(line: &str, width: u16) -> Vec<Range<u32>> {
     let index = LineIndex::new(line, TAB_WIDTH);
     let graphemes: Vec<_> = index.graphemes().collect();
     if graphemes.is_empty() {
-        return vec![0..0];
+        return std::iter::once(0..0).collect();
     }
 
     let width = u32::from(width.max(1));
