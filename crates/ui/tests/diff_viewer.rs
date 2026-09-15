@@ -319,6 +319,23 @@ fn t_switches_a_focused_diff_layout() {
 }
 
 #[test]
+fn w_toggles_wrapping_for_the_active_diff() {
+    let file = file("test.rs");
+    let line = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let content = make_diff_with_lines(file.clone(), &[line], &[line]);
+    let mut harness = with_response_at(file, content, 30, 4);
+
+    let wrapped = harness.screen();
+    harness.press(crokey::key!(l)).force_draw();
+    assert_eq!(harness.screen(), wrapped);
+
+    harness.press(crokey::key!(w)).force_draw();
+    let unwrapped = harness.screen();
+    harness.press(crokey::key!(l)).force_draw();
+    assert_ne!(harness.screen(), unwrapped);
+}
+
+#[test]
 fn t_does_not_change_a_single_file() {
     let file = file("untracked.rs");
     let mut harness = with_response(file.clone(), make_single(file));
@@ -352,8 +369,8 @@ fn a_diff_view_state_survives_a_layout_switch() {
 
     harness.press(crokey::key!(t)).force_draw();
     assert!(
-        harness.screen_row(0).contains("05"),
-        "row 0 after layout switch: {:?}",
+        !harness.screen_row(0).contains("line 01"),
+        "layout switch reset the terminal position: {:?}",
         harness.screen_row(0)
     );
     assert!(!harness.screen().iter().any(|row| row.contains('│')));

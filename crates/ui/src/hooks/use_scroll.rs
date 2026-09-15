@@ -2,21 +2,18 @@
 
 use std::ops::Range;
 
-use loom::{NodeHandle, Ref, Scope, SetState, use_measure, use_state};
+use loom::{Scope, SetState, use_effect, use_ref, use_state};
 
-/// The values a component reads during render: where to look and
-/// what to attach to its host element.
+/// The values a component reads during render: where to look.
 pub struct ScrollView {
     pub top: u32,
-    pub width: u16,
     pub view_lines: Range<u32>,
-    pub node_ref: Ref<Option<NodeHandle>>,
 }
 
 /// A `Copy` handle for closures. Every viewport movement lives here.
 #[derive(Clone, Copy)]
 pub struct ScrollHandle {
-    total: u32,
+    line_count: u32,
     height: u32,
     set_top: SetState<u32>,
 }
@@ -24,15 +21,15 @@ pub struct ScrollHandle {
 impl ScrollHandle {
     /// Move the viewport to an absolute row.
     pub fn scroll_to(self, top: u32) {
-        let last_top = self.total.saturating_sub(self.height);
+        let last_top = self.line_count.saturating_sub(self.height);
         (self.set_top)(&move |_| top.min(last_top));
     }
 
-    /// Move the viewport by a signed number of rows.
-    pub fn scroll_by(self, rows: i32) {
-        let last_top = self.total.saturating_sub(self.height);
-        let down = rows.is_positive();
-        let step = rows.unsigned_abs();
+    /// Move the viewport by a signed number of lines.
+    pub fn scroll_by(self, lines: i32) {
+        let last_top = self.line_count.saturating_sub(self.height);
+        let down = lines.is_positive();
+        let step = lines.unsigned_abs();
         (self.set_top)(&move |top| {
             let top = top.min(last_top);
             if down {
@@ -43,11 +40,11 @@ impl ScrollHandle {
         });
     }
 
-    /// Move the viewport as little as possible to keep one row visible.
+    /// Move the viewport as little as possible to keep one line visible.
     pub fn keep_line_visible(self, line: u32, margin: u32) {
-        let total = self.total;
+        let line_count = self.line_count;
         let height = self.height;
-        (self.set_top)(&move |top| top_with_line_visible(line, total, height, margin, top));
+        (self.set_top)(&move |top| top_with_line_visible(line, line_count, height, margin, top));
     }
 }
 
@@ -55,20 +52,34 @@ impl ScrollHandle {
 ///
 /// The hook owns only the active viewport. A component that needs history
 /// supplies the initial position and stores its own state.
-pub fn use_scroll(scope: &mut Scope, total: u32, initial_top: u32) -> (ScrollView, ScrollHandle) {
+pub fn use_scroll(
+    scope: &mut Scope,
+    line_count: u32,
+    initial_top: u32,
+    height: u16,
+) -> (ScrollView, ScrollHandle) {
     let (requested_top, set_top) = use_state(scope, || initial_top);
-    let (node_ref, size) = use_measure(scope);
-    let height = u32::from(size.height);
+    let height = u32::from(height);
+    let signature = (line_count, height);
+    let previous_signature = use_ref(scope, || signature);
+    let dimensions_changed = *previous_signature.current() != signature;
+    *previous_signature.current() = signature;
+    use_effect(scope, signature, move || {
+        set_top(&move |_| initial_top);
+    });
 
-    let top = requested_top.min(total.saturating_sub(height));
+    let requested_top = if dimensions_changed {
+        initial_top
+    } else {
+        requested_top
+    };
+    let top = requested_top.min(line_count.saturating_sub(height));
     let view = ScrollView {
         top,
-        width: size.width,
-        view_lines: top..top.saturating_add(height).min(total),
-        node_ref,
+        view_lines: top..top.saturating_add(height).min(line_count),
     };
     let handle = ScrollHandle {
-        total,
+        line_count,
         height,
         set_top,
     };
@@ -76,10 +87,10 @@ pub fn use_scroll(scope: &mut Scope, total: u32, initial_top: u32) -> (ScrollVie
     (view, handle)
 }
 
-/// Returns the first row needed to keep `line` visible with a margin.
+/// Returns the first line needed to keep `line` visible with a margin.
 pub fn top_with_line_visible(
     line: u32,
-    total: u32,
+    line_count: u32,
     height: u32,
     margin: u32,
     previous_top: u32,
@@ -87,8 +98,8 @@ pub fn top_with_line_visible(
     if height == 0 {
         return 0;
     }
-    let last_top = total.saturating_sub(height);
-    let line = line.min(total.saturating_sub(1));
+    let last_top = line_count.saturating_sub(height);
+    let line = line.min(line_count.saturating_sub(1));
     let margin = margin.min(height.saturating_sub(1) / 2);
 
     let mut top = previous_top.min(last_top);

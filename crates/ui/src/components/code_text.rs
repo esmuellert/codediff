@@ -12,11 +12,20 @@ use ratatui::{
 };
 
 use super::context::Ui;
+use super::wrap::TerminalLine;
 use crate::theme::Code;
 
 const TAB_WIDTH: u8 = 4;
 
 type Emphasis = Range<u32>;
+
+pub(crate) type CodeTextInputs = (
+    Rc<str>,
+    Rc<[Range<u32>]>,
+    Option<u32>,
+    Rc<[u32]>,
+    Rc<[syntax::Span]>,
+);
 
 /// Diff backgrounds and syntax foregrounds for one source line.
 #[derive(Debug, Clone, Copy)]
@@ -68,6 +77,96 @@ pub(crate) fn longest_line_cells(lines: &[String]) -> u32 {
         .map(|line| width_in_cells(line))
         .max()
         .unwrap_or(0)
+}
+
+pub(crate) fn prepare_code_text_inputs_from_decorations(
+    text: &str,
+    terminal_line: &TerminalLine,
+    decorations: &align::LineDecorations,
+    syntax: &[syntax::Span],
+) -> CodeTextInputs {
+    let changed_ranges: Vec<Range<u32>> = decorations
+        .characters
+        .iter()
+        .map(|character| character.bytes.clone())
+        .collect();
+    let fill_from = decorations
+        .characters
+        .iter()
+        .filter(|character| character.fill_to_edge)
+        .map(|character| character.bytes.start)
+        .min();
+    prepare_code_text_inputs(
+        text,
+        terminal_line,
+        &changed_ranges,
+        fill_from,
+        &decorations.empty_markers,
+        syntax,
+    )
+}
+
+pub(crate) fn prepare_code_text_inputs(
+    text: &str,
+    terminal_line: &TerminalLine,
+    diff: &[Range<u32>],
+    fill_from: Option<u32>,
+    empty_markers: &[u32],
+    syntax: &[syntax::Span],
+) -> CodeTextInputs {
+    let source_range = match terminal_line {
+        TerminalLine::SourceCode { bytes, .. } => bytes.clone(),
+        TerminalLine::Filler => 0..text.len() as u32,
+    };
+    let source_start = source_range.start;
+    let source_end = source_range.end;
+    let fragment = text
+        .get(source_start as usize..source_end as usize)
+        .unwrap_or("");
+    let local_range = |range: &Range<u32>| {
+        let start = range.start.max(source_start);
+        let end = range.end.min(source_end);
+        (start < end).then(|| (start - source_start)..(end - source_start))
+    };
+    let diff = diff.iter().filter_map(local_range).collect::<Vec<_>>();
+    let fill_from = fill_from.and_then(|from| {
+        if from <= source_start {
+            Some(0)
+        } else if from < source_end {
+            Some(from - source_start)
+        } else {
+            None
+        }
+    });
+    let empty_markers = empty_markers
+        .iter()
+        .filter_map(|marker| {
+            if *marker >= source_start
+                && (*marker < source_end
+                    || (*marker == source_end && source_end == text.len() as u32))
+            {
+                Some(*marker - source_start)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let syntax = syntax
+        .iter()
+        .filter_map(|span| {
+            let bytes = local_range(&span.bytes)?;
+            let mut span = span.clone();
+            span.bytes = bytes;
+            Some(span)
+        })
+        .collect::<Vec<_>>();
+    (
+        Rc::from(fragment),
+        Rc::from(diff.into_boxed_slice()),
+        fill_from,
+        Rc::from(empty_markers.into_boxed_slice()),
+        Rc::from(syntax.into_boxed_slice()),
+    )
 }
 
 fn fill_terminal_line(paint: &mut Paint<'_>, line: Rect, style: Style) {
@@ -253,5 +352,137 @@ pub fn CodeText(
             }),
             ..
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(bytes: Range<u32>) -> TerminalLine {
+        TerminalLine::SourceCode {
+            source_line: 1,
+            bytes,
+        }
+    }
+
+    #[test]
+    fn diff_inputs_collect_ranges_and_use_the_earliest_fill() {
+        let decorations = align::LineDecorations {
+            characters: vec![
+                align::CharacterDecoration {
+                    bytes: 5..6,
+                    fill_to_edge: true,
+                },
+                align::CharacterDecoration {
+                    bytes: 0..1,
+                    fill_to_edge: false,
+                },
+                align::CharacterDecoration {
+                    bytes: 2..6,
+                    fill_to_edge: true,
+                },
+            ],
+            empty_markers: vec![1, 6],
+            ..Default::default()
+        };
+        let syntax = vec![syntax::Span::new(1..3, syntax::Style::pen(syntax::Pen(1)))];
+        let (text, diff, fill_from, empty_markers, spans) =
+            prepare_code_text_inputs_from_decorations(
+                "abcdef",
+                &source(0..6),
+                &decorations,
+                &syntax,
+            );
+
+        assert_eq!(&*text, "abcdef");
+        assert_eq!(&*diff, &[5..6, 0..1, 2..6]);
+        assert_eq!(fill_from, Some(2));
+        assert_eq!(&*empty_markers, &[1, 6]);
+        assert_eq!(spans.as_ref(), syntax.as_slice());
+    }
+
+    #[test]
+    fn diff_inputs_preserve_fragment_markers_and_syntax_without_character_ranges() {
+        let decorations = align::LineDecorations {
+            empty_markers: vec![0, 1, 4, 5, 6],
+            ..Default::default()
+        };
+        let syntax = vec![
+            syntax::Span::new(0..4, syntax::Style::pen(syntax::Pen(1))),
+            syntax::Span::new(4..6, syntax::Style::pen(syntax::Pen(2))),
+        ];
+        let (text, diff, fill_from, empty_markers, spans) =
+            prepare_code_text_inputs_from_decorations(
+                "a日bc",
+                &source(1..5),
+                &decorations,
+                &syntax,
+            );
+
+        assert_eq!(&*text, "日b");
+        assert!(diff.is_empty());
+        assert_eq!(fill_from, None);
+        assert_eq!(&*empty_markers, &[0, 3]);
+        assert_eq!(
+            spans.as_ref(),
+            &[
+                syntax::Span::new(0..3, syntax::Style::pen(syntax::Pen(1))),
+                syntax::Span::new(3..4, syntax::Style::pen(syntax::Pen(2))),
+            ]
+        );
+    }
+
+    #[test]
+    fn full_line_inputs_are_unchanged() {
+        let syntax = vec![syntax::Span::new(1..3, syntax::Style::pen(syntax::Pen(1)))];
+        let (text, diff, fill_from, empty_markers, syntax) = prepare_code_text_inputs(
+            "abcdef",
+            &source(0..6),
+            &[0..2, 4..6],
+            Some(4),
+            &[2],
+            &syntax,
+        );
+
+        assert_eq!(&*text, "abcdef");
+        assert_eq!(&*diff, &[0..2, 4..6]);
+        assert_eq!(fill_from, Some(4));
+        assert_eq!(&*empty_markers, &[2]);
+        assert_eq!(syntax[0].bytes, 1..3);
+    }
+
+    #[test]
+    fn fragment_inputs_are_clipped_and_shifted() {
+        let syntax = vec![
+            syntax::Span::new(0..3, syntax::Style::pen(syntax::Pen(1))),
+            syntax::Span::new(3..6, syntax::Style::pen(syntax::Pen(2))),
+        ];
+        let (text, diff, fill_from, empty_markers, syntax) = prepare_code_text_inputs(
+            "abcdef",
+            &source(2..5),
+            &[0..2, 1..4, 4..6],
+            Some(1),
+            &[1, 2, 5],
+            &syntax,
+        );
+
+        assert_eq!(&*text, "cde");
+        assert_eq!(&*diff, &[0..2, 2..3]);
+        assert_eq!(fill_from, Some(0));
+        assert_eq!(&*empty_markers, &[0]);
+        assert_eq!(syntax[0].bytes, 0..1);
+        assert_eq!(syntax[1].bytes, 1..3);
+    }
+
+    #[test]
+    fn fragments_preserve_utf8_boundaries() {
+        let diff = std::iter::once(1..4).collect::<Vec<_>>();
+        let (text, diff, _, _, _) =
+            prepare_code_text_inputs("a日b", &source(1..4), &diff, None, &[], &[]);
+        let expected = std::iter::once(0..3).collect::<Vec<_>>();
+
+        assert_eq!(&*text, "日");
+        assert_eq!(&*diff, expected.as_slice());
     }
 }

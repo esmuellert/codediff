@@ -3,7 +3,7 @@
 use diff_types::{DetailedLineRangeMapping, LinesDiff};
 use file_types::DiffVersion;
 
-use crate::view_line::{Slot, ViewLine};
+use crate::view_line::{ViewLine, ViewLineContent};
 
 /// Every view line of the unified document.
 pub fn view_lines(diff: &LinesDiff, original_lines: u32, modified_lines: u32) -> ViewLines<'_> {
@@ -59,11 +59,14 @@ impl Iterator for ViewLines<'_> {
                 let i = self.within;
                 self.within += 1;
                 return Some(if i < deleted {
-                    ViewLine::new(Slot::Line(change.original.start_line + i), Slot::Filler)
+                    ViewLine::new(
+                        ViewLineContent::SourceLine(change.original.start_line + i),
+                        ViewLineContent::Filler,
+                    )
                 } else {
                     ViewLine::new(
-                        Slot::Filler,
-                        Slot::Line(change.modified.start_line + (i - deleted)),
+                        ViewLineContent::Filler,
+                        ViewLineContent::SourceLine(change.modified.start_line + (i - deleted)),
                     )
                 });
             }
@@ -107,11 +110,11 @@ pub fn view_line_at(
     version: DiffVersion,
     line: u32,
 ) -> Option<u32> {
-    let slot = |line: &ViewLine| match version {
+    let content = |line: &ViewLine| match version {
         DiffVersion::Original => line.original,
         DiffVersion::Modified => line.modified,
     };
     view_lines(diff, original_lines, modified_lines)
-        .position(|l| slot(&l).line() == Some(line))
+        .position(|l| content(&l).line() == Some(line))
         .map(|n| n as u32)
 }

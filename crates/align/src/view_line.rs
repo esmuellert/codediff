@@ -6,23 +6,23 @@ use diff_types::LinesDiff;
 
 /// What a side shows on one view line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Slot {
+pub enum ViewLineContent {
     /// A line of that side's file, numbered from 1.
-    Line(u32),
+    SourceLine(u32),
     /// Nothing — the other side has a line here and this one does not.
     Filler,
 }
 
-impl Slot {
+impl ViewLineContent {
     pub fn line(self) -> Option<u32> {
         match self {
-            Slot::Line(n) => Some(n),
-            Slot::Filler => None,
+            ViewLineContent::SourceLine(n) => Some(n),
+            ViewLineContent::Filler => None,
         }
     }
 
     pub fn is_filler(self) -> bool {
-        self == Slot::Filler
+        self == ViewLineContent::Filler
     }
 }
 
@@ -41,16 +41,16 @@ pub enum ViewLineType {
 /// One row of the paired document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewLine {
-    pub original: Slot,
-    pub modified: Slot,
+    pub original: ViewLineContent,
+    pub modified: ViewLineContent,
     pub kind: ViewLineType,
 }
 
 impl ViewLine {
-    pub(crate) fn new(original: Slot, modified: Slot) -> Self {
+    pub(crate) fn new(original: ViewLineContent, modified: ViewLineContent) -> Self {
         let kind = match (original, modified) {
-            (Slot::Line(_), Slot::Filler) => ViewLineType::Deleted,
-            (Slot::Filler, Slot::Line(_)) => ViewLineType::Inserted,
+            (ViewLineContent::SourceLine(_), ViewLineContent::Filler) => ViewLineType::Deleted,
+            (ViewLineContent::Filler, ViewLineContent::SourceLine(_)) => ViewLineType::Inserted,
             _ => ViewLineType::Modified,
         };
         Self {
@@ -62,8 +62,8 @@ impl ViewLine {
 
     pub(crate) fn unchanged(original: u32, modified: u32) -> Self {
         Self {
-            original: Slot::Line(original),
-            modified: Slot::Line(modified),
+            original: ViewLineContent::SourceLine(original),
+            modified: ViewLineContent::SourceLine(modified),
             kind: ViewLineType::Unchanged,
         }
     }

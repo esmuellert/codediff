@@ -1,4 +1,4 @@
-//! Rendering records from the production SideBySide component.
+//! Records the production SideBySide renderer for the VS Code oracle.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -10,14 +10,15 @@ use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
 use ui::components::diff_viewer::ViewState;
 use ui::components::side_by_side::{SideBySide, SideBySideProps};
-use ui::components::{Context as UiContext, Ui};
+use ui::components::{Context as UiContext, TerminalLine, Ui, terminal_line_pairs};
 
 use super::{
-    MIN_WIDTH, Record, Side, gutter_width, highlight_record, line_number, load_diff_content,
+    MIN_WIDTH, PARITY_WIDTH, Record, Side, WRAP_WIDTH, gutter_width, load_diff_content,
+    rendered_line_number, source_line,
 };
 
 #[component]
-fn SideBySideHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+fn SideBySideHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Rc::as_ptr(content) as usize;
     rsx! {
@@ -25,6 +26,7 @@ fn SideBySideHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             key: content_id,
             content: Rc::clone(content),
             view_state: view_state,
+            wrap: *wrap,
             auto_focus: false,
         }
     }
@@ -34,30 +36,39 @@ pub(super) fn run(
     original_path: &str,
     modified_path: &str,
     ignore_trim_whitespace: bool,
+    wrap: bool,
 ) -> Result<()> {
     let content = load_diff_content(original_path, modified_path, ignore_trim_whitespace)?;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!()
     };
-    let height = u16::try_from(diff.alignment.view_line_count(DiffType::SideBySide).max(1))?;
-    let width = render_width(
-        diff.alignment.lines(DiffVersion::Original),
-        diff.alignment.lines(DiffVersion::Modified),
-    )?;
-    let file = diff.file.clone();
-    let original_line_count = diff.alignment.lines(DiffVersion::Original).len() as u32;
-    let modified_line_count = diff.alignment.lines(DiffVersion::Modified).len() as u32;
+    let original = diff.alignment.lines(DiffVersion::Original);
+    let modified = diff.alignment.lines(DiffVersion::Modified);
+    let width = render_width(original, modified, wrap)?;
+    let original_gutter = gutter_width(original.len() as u32);
+    let modified_gutter = gutter_width(modified.len() as u32);
+    let (original_width, modified_width) = pane_widths(width, original_gutter, modified_gutter);
+    let rows = terminal_line_pairs(
+        &diff.alignment,
+        DiffType::SideBySide,
+        original_width,
+        modified_width,
+        wrap,
+    );
+    let height =
+        u16::try_from(rows.len().max(1)).context("side-by-side parity height overflowed")?;
     let theme = Theme::DARK;
     let mut harness = Harness::new::<SideBySideHost>(
         SideBySideHostProps {
             content: Rc::clone(&content),
+            wrap,
         },
         width,
         height,
     )
     .provide::<Ui>(UiContext {
         theme: Rc::new(theme),
-        file: Some(Rc::new(file)),
+        file: Some(Rc::new(diff.file.clone())),
         ..UiContext::default()
     });
     for _ in 0..4 {
@@ -65,69 +76,81 @@ pub(super) fn run(
     }
     print_records(
         &mut harness,
-        original_line_count,
-        modified_line_count,
-        theme,
         width,
         height,
+        original.len() as u32,
+        modified.len() as u32,
+        &rows,
+        &diff.alignment,
+        wrap,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_records(
     harness: &mut Harness,
-    original_line_count: u32,
-    modified_line_count: u32,
-    theme: Theme,
     width: u16,
     height: u16,
+    original_line_count: u32,
+    modified_line_count: u32,
+    rows: &[(TerminalLine, TerminalLine)],
+    alignment: &align::Alignment,
+    wrap: bool,
 ) -> Result<()> {
-    let original_gutter_width = gutter_width(original_line_count);
-    let modified_gutter_width = gutter_width(modified_line_count);
+    let cells = harness.cells();
+    let original_gutter = gutter_width(original_line_count);
+    let modified_gutter = gutter_width(modified_line_count);
+    let mut row_records = Vec::new();
     let mut original_highlights = BTreeMap::new();
     let mut modified_highlights = BTreeMap::new();
-    let mut row_records = Vec::new();
-    let cells = harness.cells();
 
     for row in 0..height {
-        let divider = divider_at(cells, width, row).expect("SideBySide has a divider");
-        let original_line_number = line_number(cells, 0, original_gutter_width, row);
-        let modified_pane_start = divider + 1;
-        let modified_line_number =
-            line_number(cells, modified_pane_start, modified_gutter_width, row);
+        let Some((original, modified)) = rows.get(usize::from(row)) else {
+            row_records.push(Record::Row {
+                index: u32::from(row),
+                original: None,
+                modified: None,
+            });
+            continue;
+        };
+        let divider = divider_at(cells, width, row).context("side-by-side divider missing")?;
+        let modified_start = divider + 1;
         row_records.push(Record::Row {
             index: u32::from(row),
-            original: original_line_number,
-            modified: modified_line_number,
+            original: rendered_line_number(original),
+            modified: rendered_line_number(modified),
         });
-        if let Some(line_number) = original_line_number
-            && let Some(record) = highlight_record(
-                cells,
-                row,
-                0,
-                original_gutter_width,
-                divider,
-                line_number,
+        if let Some(line) = source_line(original)
+            && let Some(record) = super::semantic_highlight_record(
+                if wrap {
+                    u32::from(divider.saturating_sub(original_gutter))
+                } else {
+                    u32::MAX
+                },
+                line,
                 Side::Original,
-                theme.normal.patch(theme.deleted).bg,
-                theme.normal.patch(theme.deleted_text).bg,
+                alignment,
+                original,
+                DiffVersion::Original,
             )
         {
-            original_highlights.insert(line_number, record);
+            super::merge_highlight(&mut original_highlights, record);
         }
-        if let Some(line_number) = modified_line_number
-            && let Some(record) = highlight_record(
-                cells,
-                row,
-                modified_pane_start,
-                modified_gutter_width,
-                width,
-                line_number,
+        if let Some(line) = source_line(modified)
+            && let Some(record) = super::semantic_highlight_record(
+                if wrap {
+                    u32::from(width.saturating_sub(modified_start + modified_gutter))
+                } else {
+                    u32::MAX
+                },
+                line,
                 Side::Modified,
-                theme.normal.patch(theme.inserted).bg,
-                theme.normal.patch(theme.inserted_text).bg,
+                alignment,
+                modified,
+                DiffVersion::Modified,
             )
         {
-            modified_highlights.insert(line_number, record);
+            super::merge_highlight(&mut modified_highlights, record);
         }
     }
 
@@ -151,8 +174,18 @@ fn divider_at(cells: &ui::ratatui::buffer::Buffer, width: u16, row: u16) -> Opti
         .min_by_key(|&column| column.abs_diff(width / 2))
 }
 
-fn render_width<T: AsRef<str>>(original: &[T], modified: &[T]) -> Result<u16> {
-    let longest_line_width = original
+fn render_width<T: AsRef<str>>(original: &[T], modified: &[T], wrap: bool) -> Result<u16> {
+    let original_gutter = gutter_width(original.len() as u32);
+    let modified_gutter = gutter_width(modified.len() as u32);
+    if wrap {
+        let width = u32::from(original_gutter)
+            .checked_add(u32::from(modified_gutter))
+            .and_then(|width| width.checked_add(u32::from(WRAP_WIDTH) * 2))
+            .and_then(|width| width.checked_add(1))
+            .context("side-by-side wrapped parity width overflowed")?;
+        return Ok(u16::try_from(width)?);
+    }
+    let longest = original
         .iter()
         .chain(modified)
         .map(|line| {
@@ -162,13 +195,25 @@ fn render_width<T: AsRef<str>>(original: &[T], modified: &[T]) -> Result<u16> {
         })
         .max()
         .unwrap_or(0);
-    let maximum_gutter_width =
-        gutter_width(original.len() as u32).max(gutter_width(modified.len() as u32));
-    let width = (longest_line_width + u32::from(maximum_gutter_width) + 1)
-        .checked_mul(2)
+    let maximum_gutter = original_gutter.max(modified_gutter);
+    let width = longest
+        .checked_add(u32::from(maximum_gutter))
         .and_then(|width| width.checked_add(1))
-        .context("side-by-side render width overflowed")?;
-    Ok(u16::try_from(width)?.max(MIN_WIDTH))
+        .and_then(|width| width.checked_mul(2))
+        .and_then(|width| width.checked_add(1))
+        .context("side-by-side parity width overflowed")?;
+    Ok(u16::try_from(width.min(u32::from(PARITY_WIDTH)))?.max(MIN_WIDTH))
+}
+
+fn pane_widths(width: u16, original_gutter: u16, modified_gutter: u16) -> (u16, u16) {
+    let text = u32::from(width)
+        .saturating_sub(u32::from(original_gutter))
+        .saturating_sub(u32::from(modified_gutter))
+        .saturating_sub(1);
+    (
+        u16::try_from(text.div_ceil(2)).unwrap_or(u16::MAX),
+        u16::try_from(text / 2).unwrap_or(u16::MAX),
+    )
 }
 
 #[cfg(test)]
@@ -178,7 +223,7 @@ mod tests {
     use ui::ratatui::layout::Rect;
 
     #[test]
-    fn a_vertical_bar_in_code_is_not_mistaken_for_the_pane_divider() {
+    fn a_code_bar_is_not_mistaken_for_the_divider() {
         let mut cells = Buffer::empty(Rect::new(0, 0, 200, 1));
         cells[(20, 0)].set_symbol("│");
         cells[(99, 0)].set_symbol("│");
@@ -187,12 +232,8 @@ mod tests {
     }
 
     #[test]
-    fn render_width_contains_the_longest_line_on_both_sides() {
-        let original = ["short"];
-        let modified = [
-            "a line which is longer than one hundred terminal cells ....................................................................",
-        ];
-
-        assert!(render_width(&original, &modified).unwrap() > 200);
+    fn wrapped_panes_have_the_requested_code_width() {
+        let width = render_width(&["long"], &["long"], true).unwrap();
+        assert_eq!(pane_widths(width, 4, 4), (40, 40));
     }
 }

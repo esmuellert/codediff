@@ -17,4 +17,4 @@ pub use decoration::{CharacterDecoration, LineDecorations};
 pub use hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 pub use inner::{Span, span_on, spans, spans_with_tab_width};
 pub use layout::ViewLines;
-pub use view_line::{Slot, ViewLine, ViewLineType, blocks, is_well_formed};
+pub use view_line::{ViewLine, ViewLineContent, ViewLineType, blocks, is_well_formed};

@@ -1,6 +1,6 @@
 //! Hunks: how changes group, and what keeps a hunk's identity across a refresh.
 
-use align::{Alignment, Slot, ViewLineType};
+use align::{Alignment, ViewLineContent, ViewLineType};
 use file_types::DiffType;
 use vscode_diff::{LinesDiff, Options};
 
@@ -114,8 +114,8 @@ fn a_file_with_no_changes_has_no_hunks_and_only_unchanged_rows() {
     assert!(alignment.hunks().is_empty());
     for (i, line) in alignment.view_lines(DiffType::SideBySide).enumerate() {
         assert_eq!(line.kind, ViewLineType::Unchanged);
-        assert_eq!(line.original, Slot::Line(i as u32 + 1));
-        assert_eq!(line.modified, Slot::Line(i as u32 + 1));
+        assert_eq!(line.original, ViewLineContent::SourceLine(i as u32 + 1));
+        assert_eq!(line.modified, ViewLineContent::SourceLine(i as u32 + 1));
     }
 }
 

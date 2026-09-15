@@ -2,7 +2,7 @@
 //!
 //! These tests pin the pairing of lines and fillers.
 
-use align::{Alignment, Malformed, Slot, ViewLineType};
+use align::{Alignment, Malformed, ViewLineContent, ViewLineType};
 use file_types::DiffType;
 use vscode_diff::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, Options, RangeMapping,
@@ -285,11 +285,11 @@ fn a_change_running_past_the_end_of_its_file_is_refused() {
 }
 
 #[test]
-fn slot_reports_filler_correctly() {
-    assert!(Slot::Filler.is_filler());
-    assert_eq!(Slot::Filler.line(), None);
-    assert!(!Slot::Line(3).is_filler());
-    assert_eq!(Slot::Line(3).line(), Some(3));
+fn view_line_content_reports_filler_correctly() {
+    assert!(ViewLineContent::Filler.is_filler());
+    assert_eq!(ViewLineContent::Filler.line(), None);
+    assert!(!ViewLineContent::SourceLine(3).is_filler());
+    assert_eq!(ViewLineContent::SourceLine(3).line(), Some(3));
 }
 
 // --- filler placement inside a change --------------------------------------

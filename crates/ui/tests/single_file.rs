@@ -39,7 +39,15 @@ fn harness_with_syntax_service(
             lines: Arc::new(lines),
         },
     ));
-    Harness::new::<SingleFile>(SingleFileProps { content }, width, height).provide::<Ui>(Context {
+    Harness::new::<SingleFile>(
+        SingleFileProps {
+            content,
+            wrap: true,
+        },
+        width,
+        height,
+    )
+    .provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         syntax_service,
         ..Context::default()
@@ -50,12 +58,119 @@ fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harnes
     harness_with_syntax_service(lines, deleted, width, height, None)
 }
 
+fn harness_unwrapped(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
+    let file = file(deleted);
+    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file,
+            lines: Arc::new(lines),
+        },
+    ));
+    let mut harness = Harness::new::<SingleFile>(
+        SingleFileProps {
+            content,
+            wrap: false,
+        },
+        width,
+        height,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    harness
+}
+
 fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
     let cells = harness.cells();
     (start..end)
         .filter_map(|x| cells.cell((x, 0)))
         .map(|cell| cell.symbol())
         .collect()
+}
+
+#[test]
+fn a_long_line_renders_its_continuation() {
+    let line = format!(
+        "SINGLE_WRAP_START {} SINGLE_WRAP_END",
+        "0123456789 ".repeat(4)
+    );
+    let mut harness = harness(vec![line], false, 32, 8);
+
+    assert!(
+        harness
+            .screen()
+            .iter()
+            .skip(1)
+            .any(|screen_line| screen_line.contains("SINGLE_WRAP_END")),
+        "wrapped continuation is missing: {:?}",
+        harness.screen()
+    );
+}
+
+#[test]
+fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
+    let line = "SINGLE_UNWRAPPED ".to_owned() + &"0123456789".repeat(8);
+    let mut harness = harness_unwrapped(vec![line], false, 24, 4);
+    let before = harness.screen();
+
+    harness.press(crokey::key!('$')).force_draw();
+
+    assert_ne!(harness.screen(), before);
+    assert!(harness.screen().iter().any(|row| row.contains("789")));
+    assert_eq!(harness.screen().len(), 4);
+}
+
+#[test]
+fn toggling_wrap_preserves_the_current_terminal_line() {
+    let long = "SINGLE_TOGGLE ".to_owned() + &"0123456789".repeat(12);
+    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file: named_file("toggle.rs", false),
+            lines: Arc::new(vec![long, "second".into(), "third".into()]),
+        },
+    ));
+    let mut harness = Harness::new::<SingleFile>(
+        SingleFileProps {
+            content: Rc::clone(&content),
+            wrap: true,
+        },
+        32,
+        2,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    harness
+        .press(crokey::key!(j))
+        .press(crokey::key!(j))
+        .force_draw();
+
+    harness.set_props::<SingleFile>(SingleFileProps {
+        content,
+        wrap: false,
+    });
+    harness.force_draw().force_draw();
+
+    assert!(harness.screen_row(0).contains("SINGLE_TOGGLE"));
+}
+
+#[test]
+fn both_file_sides_keep_line_numbers_when_wrapping_changes() {
+    for deleted in [false, true] {
+        let lines = vec!["abcdefghijkl".to_owned(), "tail".to_owned()];
+        let mut wrapped = harness(lines.clone(), deleted, 12, 3);
+        let mut unwrapped = harness_unwrapped(lines, deleted, 12, 3);
+
+        assert_eq!(
+            wrapped.screen(),
+            vec!["  1 abcdefgh", "    ijkl", "  2 tail"]
+        );
+        assert_eq!(unwrapped.screen(), vec!["  1 abcdefgh", "  2 tail", ""]);
+    }
 }
 
 #[test]
@@ -114,30 +229,24 @@ fn syntax_is_requested_for_the_present_side() {
 }
 
 #[test]
-fn horizontal_scroll_keeps_the_gutter_and_four_trailing_cells() {
+fn horizontal_input_does_not_move_wrapped_text() {
     let mut harness = harness(vec!["ABCDEFGHIJKL".into()], false, 12, 2);
-    harness.force_draw().force_draw();
-    let gutter = symbols(&mut harness, 0, 4);
+    let before = harness.screen();
 
-    for _ in 0..12 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
+    harness
+        .press(crokey::key!(l))
+        .wheel_horizontal(10, 1, 1)
+        .press(crokey::key!('$'))
+        .force_draw();
 
-    assert_eq!(symbols(&mut harness, 0, 4), gutter);
-    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+    assert_eq!(harness.screen(), before);
 }
 
 #[test]
-fn an_offscreen_longest_line_sets_the_horizontal_endpoint() {
+fn an_offscreen_longest_line_stays_at_the_start() {
     let mut harness = harness(vec!["short".into(), "ABCDEFGHIJKL".into()], false, 12, 1);
-    harness.force_draw().force_draw();
-    for _ in 0..12 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-
-    harness.press(crokey::key!(j)).force_draw();
-
-    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
+    harness.press(crokey::key!('$')).force_draw();
+    assert!(symbols(&mut harness, 4, 12).starts_with("short"));
 }
 
 #[test]
@@ -173,6 +282,7 @@ fn each_file_restores_its_position() {
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
             content: first.clone(),
+            wrap: true,
         },
         30,
         4,
@@ -189,12 +299,16 @@ fn each_file_restores_its_position() {
 
     harness.set_props::<SingleFile>(SingleFileProps {
         content: second.clone(),
+        wrap: true,
     });
     harness.force_draw().force_draw();
     assert!(harness.screen_row(0).contains("second 01"));
     harness.press(crokey::key!(j)).force_draw();
 
-    harness.set_props::<SingleFile>(SingleFileProps { content: first });
+    harness.set_props::<SingleFile>(SingleFileProps {
+        content: first,
+        wrap: true,
+    });
     harness.force_draw().force_draw();
     assert!(harness.screen_row(0).contains("first 04"));
 }

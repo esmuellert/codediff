@@ -107,6 +107,62 @@ fn inline_emits_unified_rendering_records() {
 }
 
 #[test]
+fn wrap_setting_changes_the_rendered_row_count_for_long_lines() {
+    let fixture = Fixture::new("wrap");
+    let original = format!("before {}", "0123456789 ".repeat(12));
+    let modified = format!("after {}", "abcdefghij ".repeat(12));
+    std::fs::write(fixture.dir.join("original.txt"), format!("{original}\n"))
+        .expect("writing long original");
+    std::fs::write(fixture.dir.join("modified.txt"), format!("{modified}\n"))
+        .expect("writing long modified");
+
+    let wrapped = fixture.run(&[
+        "debug",
+        "parity",
+        "--layout",
+        "side-by-side",
+        "--wrap",
+        "true",
+        "original.txt",
+        "modified.txt",
+    ]);
+    let unwrapped = fixture.run(&[
+        "debug",
+        "parity",
+        "--layout",
+        "side-by-side",
+        "--wrap",
+        "false",
+        "original.txt",
+        "modified.txt",
+    ]);
+    assert!(
+        wrapped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&wrapped.stderr)
+    );
+    assert!(
+        unwrapped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&unwrapped.stderr)
+    );
+    let wrapped_rows = String::from_utf8(wrapped.stdout)
+        .unwrap()
+        .lines()
+        .filter(|line| line.contains("\"type\":\"row\""))
+        .count();
+    let unwrapped_rows = String::from_utf8(unwrapped.stdout)
+        .unwrap()
+        .lines()
+        .filter(|line| line.contains("\"type\":\"row\""))
+        .count();
+    assert!(
+        wrapped_rows > unwrapped_rows,
+        "wrapped={wrapped_rows}, unwrapped={unwrapped_rows}"
+    );
+}
+
+#[test]
 fn an_unknown_layout_is_command_line_misuse() {
     let fixture = Fixture::new("unknown");
     let output = fixture.run(&[

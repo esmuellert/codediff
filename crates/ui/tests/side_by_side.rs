@@ -23,7 +23,7 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
     let previous_key = active_key.current().clone();
     if previous_key.as_deref() != Some(key.as_str()) {
         if let Some(previous_key) = previous_key {
-            let state = *active_view_state.current();
+            let state = active_view_state.current().clone();
             view_states.current().save(&previous_key, state);
         }
         *active_view_state.current() = view_states.current().load(&key);
@@ -34,6 +34,22 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             key: content_id,
             content: Rc::clone(content),
             view_state: active_view_state,
+            wrap: true,
+            auto_focus: false,
+        }
+    }
+}
+
+#[component]
+fn TestSideBySideUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+    let view_state = use_ref(scope, ViewState::default);
+    let content_id = Rc::as_ptr(content) as usize;
+    rsx! {
+        SideBySide {
+            key: content_id,
+            content: Rc::clone(content),
+            view_state: view_state,
+            wrap: false,
             auto_focus: false,
         }
     }
@@ -74,6 +90,23 @@ fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Har
 
 fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<String> {
     harness(original, modified, width, height).screen()
+}
+
+fn harness_unwrapped(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
+    let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+        original, modified,
+    )));
+    let mut harness = Harness::new::<TestSideBySideUnwrapped>(
+        TestSideBySideUnwrappedProps { content },
+        width,
+        height,
+    )
+    .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    });
+    harness.force_draw().force_draw();
+    harness
 }
 
 fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
@@ -154,93 +187,109 @@ fn syntax_is_requested_for_both_sides() {
 }
 
 #[test]
-fn horizontal_scroll_keeps_gutters_and_divider_fixed() {
+fn horizontal_input_does_not_move_wrapped_text() {
     let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 25, 2);
-    harness.force_draw().force_draw();
-    let left_gutter = symbols(&mut harness, 0, 4);
-    let divider = symbols(&mut harness, 12, 13);
-    let right_gutter = symbols(&mut harness, 13, 17);
+    let before = harness.screen();
 
-    for _ in 0..3 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
+    harness
+        .press(crokey::key!(l))
+        .wheel_horizontal(10, 1, 1)
+        .press(crokey::key!('$'))
+        .force_draw();
 
-    assert_eq!(symbols(&mut harness, 0, 4), left_gutter);
-    assert_eq!(symbols(&mut harness, 12, 13), divider);
-    assert_eq!(symbols(&mut harness, 13, 17), right_gutter);
-    assert_eq!(symbols(&mut harness, 4, 12), "DEFGHIJK");
-    assert_eq!(symbols(&mut harness, 17, 25), "defghijk");
+    assert_eq!(harness.screen(), before);
 }
 
 #[test]
-fn horizontal_wheel_scrolls_both_text_columns() {
-    let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 25, 2);
-    harness.force_draw().force_draw();
-
-    harness.wheel_horizontal(10, 1, 1).force_draw();
-
-    assert_eq!(symbols(&mut harness, 4, 12), "DEFGHIJK");
-    assert_eq!(symbols(&mut harness, 17, 25), "defghijk");
-
-    harness.wheel_horizontal(10, 1, -1).force_draw();
-
-    assert_eq!(symbols(&mut harness, 4, 12), "ABCDEFGH");
-    assert_eq!(symbols(&mut harness, 17, 25), "abcdefgh");
-}
-
-#[test]
-fn an_odd_text_cell_goes_to_the_original_side() {
+fn an_odd_text_cell_still_leaves_the_divider_in_place() {
     let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijklmnopqrst"], 26, 2);
     harness.force_draw().force_draw();
 
-    assert_eq!(symbols(&mut harness, 4, 13), "ABCDEFGHI");
     assert_eq!(symbols(&mut harness, 13, 14), "│");
-    assert_eq!(symbols(&mut harness, 18, 26), "abcdefgh");
-
-    for _ in 0..20 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-    assert_eq!(symbols(&mut harness, 4, 13), "PQRST    ");
-    assert_eq!(symbols(&mut harness, 18, 26), "qrst    ");
+    assert!(symbols(&mut harness, 4, 13).starts_with("ABCDEFGHI"));
+    assert!(symbols(&mut harness, 18, 26).starts_with("abcdefgh"));
 }
 
 #[test]
-fn the_shorter_side_stops_while_the_longer_side_continues() {
+fn the_shorter_side_starts_with_its_first_fragment() {
     let mut harness = harness(&["ABCDEFGHIJKL"], &["abcdefghijklmnopqrst"], 25, 2);
-    harness.force_draw().force_draw();
+    harness.press(crokey::key!('$')).force_draw();
 
-    for _ in 0..10 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-
-    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
-    assert_eq!(symbols(&mut harness, 17, 25), "klmnopqr");
+    assert!(symbols(&mut harness, 4, 12).starts_with("ABCDEFGH"));
+    assert!(symbols(&mut harness, 17, 25).starts_with("abcdefgh"));
 }
 
 #[test]
-fn the_modified_side_can_stop_before_the_original() {
+fn the_modified_side_starts_with_its_first_fragment() {
     let mut harness = harness(&["ABCDEFGHIJKLMNOPQRST"], &["abcdefghijkl"], 25, 2);
-    harness.force_draw().force_draw();
+    harness.press(crokey::key!('$')).force_draw();
 
-    for _ in 0..10 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-
-    assert_eq!(symbols(&mut harness, 4, 12), "KLMNOPQR");
-    assert_eq!(symbols(&mut harness, 17, 25), "ijkl    ");
+    assert!(symbols(&mut harness, 4, 12).starts_with("ABCDEFGH"));
+    assert!(symbols(&mut harness, 17, 25).starts_with("abcdefgh"));
 }
 
 #[test]
-fn the_endpoint_keeps_four_cells_after_each_longest_line() {
-    let mut harness = harness(&["ABCDEFGHIJKL"], &["abcdefghijklmnopqrst"], 25, 2);
+fn long_lines_render_continuations_on_both_sides() {
+    let original = format!(
+        "SIDE_WRAP_ORIGINAL_START {} SIDE_WRAP_ORIGINAL_END",
+        "0123456789 ".repeat(4)
+    );
+    let modified = format!(
+        "SIDE_WRAP_MODIFIED_START {} SIDE_WRAP_MODIFIED_END",
+        "abcdefghij ".repeat(4)
+    );
+    let original = [original.as_str()];
+    let modified = [modified.as_str()];
+    let mut harness = harness(&original, &modified, 60, 8);
+    let screen = harness.screen();
+
+    assert!(
+        screen
+            .iter()
+            .skip(1)
+            .any(|line| line.contains("SIDE_WRAP_ORIGINAL_END")),
+        "original continuation is missing: {screen:?}"
+    );
+    assert!(
+        screen
+            .iter()
+            .skip(1)
+            .any(|line| line.contains("SIDE_WRAP_MODIFIED_END")),
+        "modified continuation is missing: {screen:?}"
+    );
+}
+
+#[test]
+fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
+    let original = "SIDE_UNWRAPPED_ORIGINAL ".to_owned() + &"0123456789".repeat(8);
+    let modified = "SIDE_UNWRAPPED_MODIFIED ".to_owned() + &"abcdefghij".repeat(8);
+    let mut harness = harness_unwrapped(&[original.as_str()], &[modified.as_str()], 44, 4);
+    let before = harness.screen();
+
+    harness.press(crokey::key!('$')).force_draw();
+
+    assert_ne!(harness.screen(), before);
+    assert!(harness.screen().iter().any(|line| line.contains("hij")));
+}
+
+#[test]
+fn a_wrapped_fragment_keeps_its_side_style_and_opposite_filler() {
+    let mut harness = harness(&["abcdefghijkl"], &["ABC"], 25, 2);
     harness.force_draw().force_draw();
 
-    for _ in 0..20 {
-        harness.press(crokey::key!(l)).force_draw();
-    }
-
-    assert_eq!(symbols(&mut harness, 4, 12), "IJKL    ");
-    assert_eq!(symbols(&mut harness, 17, 25), "qrst    ");
+    assert_eq!(harness.screen_row(1), "    ijkl    │    ╱╱╱╱╱╱╱╱");
+    assert_eq!(
+        harness.style_at(4, 1).bg,
+        Theme::DARK.normal.patch(Theme::DARK.deleted_text).bg
+    );
+    assert_eq!(
+        harness.style_at(17, 0).bg,
+        Theme::DARK.normal.patch(Theme::DARK.inserted_text).bg
+    );
+    assert_eq!(
+        harness.style_at(17, 1).bg,
+        Theme::DARK.normal.patch(Theme::DARK.filler).bg
+    );
 }
 
 #[test]

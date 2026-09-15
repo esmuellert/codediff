@@ -1,4 +1,4 @@
-//! Rendering records from the production Inline component.
+//! Records the production Inline renderer for the VS Code oracle.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -10,14 +10,15 @@ use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
 use ui::components::diff_viewer::ViewState;
 use ui::components::inline::{Inline, InlineProps};
-use ui::components::{Context as UiContext, Ui};
+use ui::components::{Context as UiContext, TerminalLine, Ui, terminal_line_pairs};
 
 use super::{
-    MIN_WIDTH, Record, Side, gutter_width, highlight_record, line_number, load_diff_content,
+    MIN_WIDTH, PARITY_WIDTH, Record, Side, WRAP_WIDTH, gutter_width, load_diff_content,
+    rendered_line_number, source_line,
 };
 
 #[component]
-fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Rc::as_ptr(content) as usize;
     rsx! {
@@ -25,6 +26,7 @@ fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
             key: content_id,
             content: Rc::clone(content),
             view_state: view_state,
+            wrap: *wrap,
             auto_focus: false,
         }
     }
@@ -34,99 +36,115 @@ pub(super) fn run(
     original_path: &str,
     modified_path: &str,
     ignore_trim_whitespace: bool,
+    wrap: bool,
 ) -> Result<()> {
     let content = load_diff_content(original_path, modified_path, ignore_trim_whitespace)?;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!()
     };
-    let height = u16::try_from(diff.alignment.view_line_count(DiffType::Inline).max(1))?;
-    let width = render_width(
-        diff.alignment.lines(DiffVersion::Original),
-        diff.alignment.lines(DiffVersion::Modified),
-    )?;
-    let file = diff.file.clone();
-    let original_line_count = diff.alignment.lines(DiffVersion::Original).len() as u32;
-    let modified_line_count = diff.alignment.lines(DiffVersion::Modified).len() as u32;
+    let original = diff.alignment.lines(DiffVersion::Original);
+    let modified = diff.alignment.lines(DiffVersion::Modified);
+    let width = render_width(original, modified, wrap)?;
+    let gutters = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
+    let rows = terminal_line_pairs(
+        &diff.alignment,
+        DiffType::Inline,
+        width.saturating_sub(gutters),
+        width.saturating_sub(gutters),
+        wrap,
+    );
+    let height = u16::try_from(rows.len().max(1)).context("inline parity height overflowed")?;
     let theme = Theme::DARK;
     let mut harness = Harness::new::<InlineHost>(
         InlineHostProps {
             content: Rc::clone(&content),
+            wrap,
         },
         width,
         height,
     )
     .provide::<Ui>(UiContext {
         theme: Rc::new(theme),
-        file: Some(Rc::new(file)),
+        file: Some(Rc::new(diff.file.clone())),
         ..UiContext::default()
     });
     for _ in 0..4 {
         harness.force_draw();
     }
     print_records(
-        &mut harness,
-        original_line_count,
-        modified_line_count,
-        theme,
         width,
         height,
+        original.len() as u32,
+        modified.len() as u32,
+        &rows,
+        &diff.alignment,
+        wrap,
     )
 }
 
 fn print_records(
-    harness: &mut Harness,
-    original_line_count: u32,
-    modified_line_count: u32,
-    theme: Theme,
     width: u16,
     height: u16,
+    original_line_count: u32,
+    modified_line_count: u32,
+    rows: &[(TerminalLine, TerminalLine)],
+    alignment: &align::Alignment,
+    wrap: bool,
 ) -> Result<()> {
-    let original_gutter_width = gutter_width(original_line_count);
-    let modified_gutter_width = gutter_width(modified_line_count);
-    let code_start = original_gutter_width + modified_gutter_width;
+    let mut row_records = Vec::new();
     let mut original_highlights = BTreeMap::new();
     let mut modified_highlights = BTreeMap::new();
-    let mut row_records = Vec::new();
-    let cells = harness.cells();
+    let code_start = gutter_width(original_line_count) + gutter_width(modified_line_count);
+
+    for (index, text) in alignment.lines(DiffVersion::Original).iter().enumerate() {
+        let line = index as u32 + 1;
+        let terminal = TerminalLine::SourceCode {
+            source_line: line,
+            bytes: 0..text.len() as u32,
+        };
+        if let Some(record) = super::semantic_highlight_record(
+            u32::MAX,
+            line,
+            Side::Original,
+            alignment,
+            &terminal,
+            DiffVersion::Original,
+        ) {
+            super::merge_highlight(&mut original_highlights, record);
+        }
+    }
 
     for row in 0..height {
-        let original_line_number = line_number(cells, 0, original_gutter_width, row);
-        let modified_line_number =
-            line_number(cells, original_gutter_width, modified_gutter_width, row);
+        let Some((original, modified)) = rows.get(usize::from(row)) else {
+            row_records.push(Record::Row {
+                index: u32::from(row),
+                original: None,
+                modified: None,
+            });
+            continue;
+        };
         row_records.push(Record::Row {
             index: u32::from(row),
-            original: original_line_number,
-            modified: modified_line_number,
+            original: rendered_line_number(original),
+            modified: rendered_line_number(modified),
         });
-        if let Some(line_number) = original_line_number
-            && let Some(record) = highlight_record(
-                cells,
-                row,
-                0,
-                code_start,
-                width,
-                line_number,
-                Side::Original,
-                theme.normal.patch(theme.deleted).bg,
-                theme.normal.patch(theme.deleted_text).bg,
-            )
-        {
-            original_highlights.insert(line_number, record);
-        }
-        if let Some(line_number) = modified_line_number
-            && let Some(record) = highlight_record(
-                cells,
-                row,
-                0,
-                code_start,
-                width,
-                line_number,
-                Side::Modified,
-                theme.normal.patch(theme.inserted).bg,
-                theme.normal.patch(theme.inserted_text).bg,
-            )
-        {
-            modified_highlights.insert(line_number, record);
+
+        let Some(line) = source_line(modified) else {
+            continue;
+        };
+        if let Some(record) = super::semantic_highlight_record(
+            if wrap {
+                u32::from(width.saturating_sub(code_start))
+            } else {
+                u32::MAX
+            },
+            line,
+            Side::Modified,
+            alignment,
+            modified,
+            DiffVersion::Modified,
+        ) {
+            super::merge_highlight(&mut modified_highlights, record);
         }
     }
 
@@ -140,8 +158,14 @@ fn print_records(
     Ok(())
 }
 
-fn render_width<T: AsRef<str>>(original: &[T], modified: &[T]) -> Result<u16> {
-    let longest_line_width = original
+fn render_width<T: AsRef<str>>(original: &[T], modified: &[T], wrap: bool) -> Result<u16> {
+    let gutters = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
+    if wrap {
+        return gutters
+            .checked_add(WRAP_WIDTH)
+            .context("inline wrapped parity width overflowed");
+    }
+    let longest = original
         .iter()
         .chain(modified)
         .map(|line| {
@@ -151,12 +175,11 @@ fn render_width<T: AsRef<str>>(original: &[T], modified: &[T]) -> Result<u16> {
         })
         .max()
         .unwrap_or(0);
-    let gutter_cells = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
-    let width = longest_line_width
-        .checked_add(u32::from(gutter_cells))
+    let width = longest
+        .checked_add(u32::from(gutters))
         .and_then(|width| width.checked_add(1))
-        .context("inline render width overflowed")?;
-    Ok(u16::try_from(width)?.max(MIN_WIDTH))
+        .context("inline parity width overflowed")?;
+    Ok(u16::try_from(width.min(u32::from(PARITY_WIDTH)))?.max(MIN_WIDTH))
 }
 
 #[cfg(test)]
@@ -164,11 +187,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn width_contains_the_longest_line_after_both_gutters() {
-        let long = "x".repeat(250);
-        let original = ["short"];
-        let modified = [long.as_str()];
+    fn wrapped_width_is_the_code_column_plus_both_gutters() {
+        assert_eq!(render_width(&["long"], &["long"], true).unwrap(), 48);
+    }
 
-        assert_eq!(render_width(&original, &modified).unwrap(), 259);
+    #[test]
+    fn unwrapped_width_keeps_a_long_line_visible() {
+        let line = "x".repeat(250);
+        assert_eq!(render_width(&[line.as_str()], &["x"], false).unwrap(), 259);
     }
 }
