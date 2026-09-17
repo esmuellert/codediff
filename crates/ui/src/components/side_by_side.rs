@@ -169,68 +169,33 @@ pub fn SideBySide(
         .enumerate()
     {
         let view_line = view.view_lines.start + offset as u32;
-        if is_fold_marker(original, modified) {
-            let blank = theme.normal;
-            rows.push(rsx! {
-                Row {
-                    key: view_line,
-                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
-                    ..,
-                    Row {
-                        key: 0u32,
-                        layout: Layout { grow: 1, ..Default::default() },
-                        ..,
-                        Gutter {
-                            key: 0u32,
-                            number: None,
-                            style: blank,
-                            blank: blank,
-                            width: original_gutter_width,
-                        }
-                        FoldMarker { key: 1u32 }
-                    }
-                    Divider {
-                        key: 1u32,
-                        layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
-                        symbol: "│",
-                        style: divider_style,
-                        ..
-                    }
-                    Row {
-                        key: 2u32,
-                        layout: Layout { grow: 1, ..Default::default() },
-                        ..,
-                        Gutter {
-                            key: 0u32,
-                            number: None,
-                            style: blank,
-                            blank: blank,
-                            width: modified_gutter_width,
-                        }
-                        FoldMarker { key: 1u32 }
-                    }
-                }
-            });
-            continue;
-        }
-        let original_nodes = make_side(
-            DiffVersion::Original,
-            original,
-            original_gutter_width,
-            diff,
-            theme,
-            syntax,
-            horizontal,
-        );
-        let modified_nodes = make_side(
-            DiffVersion::Modified,
-            modified,
-            modified_gutter_width,
-            diff,
-            theme,
-            syntax,
-            horizontal,
-        );
+        let fold_marker = is_fold_marker(original, modified);
+        let original_nodes = if fold_marker {
+            fold_side(original_gutter_width, theme)
+        } else {
+            make_side(
+                DiffVersion::Original,
+                original,
+                original_gutter_width,
+                diff,
+                theme,
+                syntax,
+                horizontal,
+            )
+        };
+        let modified_nodes = if fold_marker {
+            fold_side(modified_gutter_width, theme)
+        } else {
+            make_side(
+                DiffVersion::Modified,
+                modified,
+                modified_gutter_width,
+                diff,
+                theme,
+                syntax,
+                horizontal,
+            )
+        };
 
         rows.push(rsx! {
             Row {
@@ -271,6 +236,22 @@ pub fn SideBySide(
             { rows }
         }
     }
+}
+
+fn fold_side(gutter_width: u16, theme: &crate::theme::Theme) -> Vec<Node> {
+    let blank = theme.normal;
+    vec![
+        rsx! {
+            Gutter {
+                key: 0u32,
+                number: None,
+                style: blank,
+                blank: blank,
+                width: gutter_width,
+            }
+        },
+        rsx! { FoldMarker { key: 1u32 } },
+    ]
 }
 
 fn make_side(
