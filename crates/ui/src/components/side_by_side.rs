@@ -10,9 +10,11 @@ use loom::{
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
+use super::compact::view_lines as compact_view_lines;
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::filler::Filler;
+use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
     TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
@@ -32,9 +34,11 @@ pub fn SideBySide(
     content: Rc<pipeline::diff::DiffContent>,
     view_state: Ref<ViewState>,
     wrap: bool,
+    compact: bool,
     auto_focus: bool,
 ) -> Node {
     let wrap = *wrap;
+    let compact = *compact;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -59,11 +63,12 @@ pub fn SideBySide(
     let modified_width = (text_width / 2) as u16;
     let wrapped_lines = use_memo(
         scope,
-        (content_id, original_width, modified_width, wrap),
+        (content_id, original_width, modified_width, wrap, compact),
         || {
             terminal_view_lines(
                 alignment,
                 DiffType::SideBySide,
+                compact_view_lines(alignment, DiffType::SideBySide, compact),
                 original_width,
                 modified_width,
                 wrap,
@@ -72,9 +77,9 @@ pub fn SideBySide(
     );
     let maximum_line_cells = use_memo(
         scope,
-        (content_id, original_width, modified_width, wrap),
+        (content_id, original_width, modified_width, wrap, compact),
         || {
-            if wrap {
+            if wrap || compact {
                 (
                     longest_terminal_line_cells(
                         &wrapped_lines,
@@ -164,6 +169,50 @@ pub fn SideBySide(
         .enumerate()
     {
         let view_line = view.view_lines.start + offset as u32;
+        if is_fold_marker(original, modified) {
+            let blank = theme.normal;
+            rows.push(rsx! {
+                Row {
+                    key: view_line,
+                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                    ..,
+                    Row {
+                        key: 0u32,
+                        layout: Layout { grow: 1, ..Default::default() },
+                        ..,
+                        Gutter {
+                            key: 0u32,
+                            number: None,
+                            style: blank,
+                            blank: blank,
+                            width: original_gutter_width,
+                        }
+                        FoldMarker { key: 1u32 }
+                    }
+                    Divider {
+                        key: 1u32,
+                        layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                        symbol: "│",
+                        style: divider_style,
+                        ..
+                    }
+                    Row {
+                        key: 2u32,
+                        layout: Layout { grow: 1, ..Default::default() },
+                        ..,
+                        Gutter {
+                            key: 0u32,
+                            number: None,
+                            style: blank,
+                            blank: blank,
+                            width: modified_gutter_width,
+                        }
+                        FoldMarker { key: 1u32 }
+                    }
+                }
+            });
+            continue;
+        }
         let original_nodes = make_side(
             DiffVersion::Original,
             original,

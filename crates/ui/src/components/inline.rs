@@ -10,8 +10,10 @@ use loom::{
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
+use super::compact::view_lines as compact_view_lines;
 use super::context::Ui;
 use super::diff_viewer::ViewState;
+use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use super::wrap::{
     TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
@@ -48,9 +50,11 @@ pub fn Inline(
     content: Rc<pipeline::diff::DiffContent>,
     view_state: Ref<ViewState>,
     wrap: bool,
+    compact: bool,
     auto_focus: bool,
 ) -> Node {
     let wrap = *wrap;
+    let compact = *compact;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -69,11 +73,18 @@ pub fn Inline(
         .width
         .saturating_sub(original_gutter_width)
         .saturating_sub(modified_gutter_width);
-    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap), || {
-        terminal_view_lines(alignment, DiffType::Inline, code_width, code_width, wrap)
+    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap, compact), || {
+        terminal_view_lines(
+            alignment,
+            DiffType::Inline,
+            compact_view_lines(alignment, DiffType::Inline, compact),
+            code_width,
+            code_width,
+            wrap,
+        )
     });
-    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap), || {
-        if wrap {
+    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap, compact), || {
+        if wrap || compact {
             longest_inline_terminal_line_cells(
                 &wrapped_lines,
                 alignment.lines(DiffVersion::Original),
@@ -148,6 +159,32 @@ pub fn Inline(
         .enumerate()
     {
         let view_line_index = view.view_lines.start + offset as u32;
+        if is_fold_marker(original, modified) {
+            let blank = theme.normal;
+            rows.push(rsx! {
+                Row {
+                    key: view_line_index,
+                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                    ..,
+                    Gutter {
+                        key: 0u32,
+                        number: None,
+                        style: blank,
+                        blank: blank,
+                        width: original_gutter_width,
+                    }
+                    Gutter {
+                        key: 1u32,
+                        number: None,
+                        style: blank,
+                        blank: blank,
+                        width: modified_gutter_width,
+                    }
+                    FoldMarker { key: 2u32 }
+                }
+            });
+            continue;
+        }
         let terminal_line = match modified {
             TerminalLine::SourceCode { .. } => modified,
             TerminalLine::Filler => match original {

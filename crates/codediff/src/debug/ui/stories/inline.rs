@@ -38,9 +38,19 @@ pub const STORIES: &[StoryDefinition] = &[
         wrapped_lines,
     ),
     StoryDefinition {
+        id: "inline/compact",
+        description: "Hunks with nearby context and folded gaps",
+        component: StoryComponent::Inline,
+        compact: true,
+        snapshot_size: (100, 24),
+        initial_keys: &[],
+        make_fixture: compact,
+    },
+    StoryDefinition {
         id: "inline/edge-matrix",
         description: "Many diff edge cases with two three-digit gutters",
         component: StoryComponent::Inline,
+        compact: false,
         snapshot_size: (120, 30),
         initial_keys: &[],
         make_fixture: edge_matrix,
@@ -56,6 +66,7 @@ const fn story(
         id,
         description,
         component: StoryComponent::Inline,
+        compact: false,
         snapshot_size: (100, 24),
         initial_keys: &[],
         make_fixture,
@@ -156,6 +167,12 @@ fn wrapped_lines() -> Result<StoryFixture> {
             &[modified.as_str(), "tail"],
         )
         .build()?,
+    ))
+}
+
+fn compact() -> Result<StoryFixture> {
+    Ok(StoryFixture::Inline(
+        DiffFixture::compact("inline-compact.rs").build()?,
     ))
 }
 

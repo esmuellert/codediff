@@ -102,6 +102,7 @@ pub(super) fn StoryPreview(
                 content: Rc::clone(content.as_ref().expect("side-by-side story content")),
                 view_state: view_state,
                 wrap: true,
+                compact: definition.compact,
                 auto_focus: false,
             }
         },
@@ -111,6 +112,7 @@ pub(super) fn StoryPreview(
                 content: Rc::clone(content.as_ref().expect("inline story content")),
                 view_state: view_state,
                 wrap: true,
+                compact: definition.compact,
                 auto_focus: false,
             }
         },
@@ -118,6 +120,7 @@ pub(super) fn StoryPreview(
             SingleFile {
                 content: Rc::clone(content.as_ref().expect("single-file story content")),
                 wrap: true,
+                compact: definition.compact,
             }
         },
     };

@@ -43,6 +43,7 @@ fn harness_with_syntax_service(
         SingleFileProps {
             content,
             wrap: true,
+            compact: false,
         },
         width,
         height,
@@ -70,6 +71,7 @@ fn harness_unwrapped(lines: Vec<String>, deleted: bool, width: u16, height: u16)
         SingleFileProps {
             content,
             wrap: false,
+            compact: false,
         },
         width,
         height,
@@ -135,6 +137,7 @@ fn toggling_wrap_preserves_the_current_terminal_line() {
         SingleFileProps {
             content: Rc::clone(&content),
             wrap: true,
+            compact: false,
         },
         32,
         2,
@@ -152,6 +155,7 @@ fn toggling_wrap_preserves_the_current_terminal_line() {
     harness.set_props::<SingleFile>(SingleFileProps {
         content,
         wrap: false,
+        compact: false,
     });
     harness.force_draw().force_draw();
 
@@ -283,6 +287,7 @@ fn each_file_restores_its_position() {
         SingleFileProps {
             content: first.clone(),
             wrap: true,
+            compact: false,
         },
         30,
         4,
@@ -300,6 +305,7 @@ fn each_file_restores_its_position() {
     harness.set_props::<SingleFile>(SingleFileProps {
         content: second.clone(),
         wrap: true,
+        compact: false,
     });
     harness.force_draw().force_draw();
     assert!(harness.screen_row(0).contains("second 01"));
@@ -308,6 +314,7 @@ fn each_file_restores_its_position() {
     harness.set_props::<SingleFile>(SingleFileProps {
         content: first,
         wrap: true,
+        compact: false,
     });
     harness.force_draw().force_draw();
     assert!(harness.screen_row(0).contains("first 04"));

@@ -143,6 +143,7 @@ fn render_content_view(
                             content: Rc::clone(&content),
                             view_state: view_state,
                             wrap: wrap,
+                            compact: false,
                             auto_focus: true,
                         }
                     },
@@ -152,6 +153,7 @@ fn render_content_view(
                             content: Rc::clone(&content),
                             view_state: view_state,
                             wrap: wrap,
+                            compact: false,
                             auto_focus: true,
                         }
                     },
@@ -163,6 +165,7 @@ fn render_content_view(
                     SingleFile {
                         content: Rc::clone(&content),
                         wrap: wrap,
+                        compact: false,
                     }
                 }
             }

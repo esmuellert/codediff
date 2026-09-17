@@ -3,10 +3,12 @@
 mod app;
 pub mod border;
 pub mod code_text;
+mod compact;
 mod context;
 pub mod diff_viewer;
 pub mod explorer;
 pub mod filler;
+mod fold;
 pub mod gutter;
 pub mod inline;
 pub mod side_by_side;

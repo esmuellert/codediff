@@ -41,9 +41,19 @@ pub const STORIES: &[StoryDefinition] = &[
         id: "single-file/long-syntax-file",
         description: "Two hundred syntax-coloured lines for scrolling and chunking",
         component: StoryComponent::SingleFile,
+        compact: false,
         snapshot_size: (100, 30),
         initial_keys: &[],
         make_fixture: long_syntax_file,
+    },
+    StoryDefinition {
+        id: "single-file/compact",
+        description: "One-sided compact mode keeps the complete file",
+        component: StoryComponent::SingleFile,
+        compact: true,
+        snapshot_size: (100, 24),
+        initial_keys: &[],
+        make_fixture: compact,
     },
 ];
 
@@ -56,6 +66,7 @@ const fn story(
         id,
         description,
         component: StoryComponent::SingleFile,
+        compact: false,
         snapshot_size: (100, 24),
         initial_keys: &[],
         make_fixture,
@@ -128,6 +139,13 @@ fn long_syntax_file() -> Result<StoryFixture> {
     Ok(single_file(SingleFileFixture::generated_rust(
         "long-syntax-file.rs",
         200,
+    )))
+}
+
+fn compact() -> Result<StoryFixture> {
+    Ok(single_file(SingleFileFixture::generated_rust(
+        "compact-one-sided.rs",
+        400,
     )))
 }
 

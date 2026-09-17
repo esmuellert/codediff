@@ -64,6 +64,7 @@ const fn story(
         id,
         description,
         component: StoryComponent::Explorer,
+        compact: false,
         snapshot_size: (100, 24),
         initial_keys,
         make_fixture,

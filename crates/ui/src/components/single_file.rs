@@ -45,8 +45,14 @@ impl SingleFileViewStateHistory {
 }
 
 #[component]
-pub fn SingleFile(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
+pub fn SingleFile(
+    scope: &mut Scope,
+    content: Rc<pipeline::diff::DiffContent>,
+    wrap: bool,
+    compact: bool,
+) -> Node {
     let wrap = *wrap;
+    let _ = compact;
     let ctx = use_context::<Ui>(scope);
     let pipeline::diff::DiffContent::SingleFile(single) = content.as_ref() else {
         unreachable!("DiffViewer sends one-sided files to SingleFile")

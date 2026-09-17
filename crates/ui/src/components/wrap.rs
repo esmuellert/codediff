@@ -85,26 +85,6 @@ pub(crate) fn terminal_line_count(lines: &[WrappedViewLine]) -> u32 {
     lines.iter().map(|line| line.original.len() as u32).sum()
 }
 
-pub(crate) fn unwrapped_view_lines(
-    alignment: &Alignment,
-    diff_type: DiffType,
-) -> Vec<WrappedViewLine> {
-    alignment
-        .view_lines_from(diff_type, 0)
-        .map(|view_line| {
-            let original = view_line
-                .original
-                .line()
-                .and_then(|line| alignment.line(DiffVersion::Original, line));
-            let modified = view_line
-                .modified
-                .line()
-                .and_then(|line| alignment.line(DiffVersion::Modified, line));
-            WrappedViewLine::from_view_line(view_line, original, modified)
-        })
-        .collect()
-}
-
 pub(crate) fn wrap_view_line(
     view_line: ViewLine,
     original_source: Option<&str>,
@@ -145,14 +125,16 @@ pub(crate) fn wrap_view_line(
     }
 }
 
-pub(crate) fn wrap_view_lines(
+pub(crate) fn terminal_view_lines(
     alignment: &Alignment,
     diff_type: DiffType,
+    view_lines: Vec<ViewLine>,
     original_width: u16,
     modified_width: u16,
+    wrap: bool,
 ) -> Vec<WrappedViewLine> {
-    alignment
-        .view_lines_from(diff_type, 0)
+    view_lines
+        .into_iter()
         .map(|view_line| {
             let original_source = view_line
                 .original
@@ -162,30 +144,20 @@ pub(crate) fn wrap_view_lines(
                 .modified
                 .line()
                 .and_then(|line| alignment.line(DiffVersion::Modified, line));
-            wrap_view_line(
-                view_line,
-                original_source,
-                modified_source,
-                original_width,
-                modified_width,
-                diff_type,
-            )
+            if wrap {
+                wrap_view_line(
+                    view_line,
+                    original_source,
+                    modified_source,
+                    original_width,
+                    modified_width,
+                    diff_type,
+                )
+            } else {
+                WrappedViewLine::from_view_line(view_line, original_source, modified_source)
+            }
         })
         .collect()
-}
-
-pub(crate) fn terminal_view_lines(
-    alignment: &Alignment,
-    diff_type: DiffType,
-    original_width: u16,
-    modified_width: u16,
-    wrap: bool,
-) -> Vec<WrappedViewLine> {
-    if wrap {
-        wrap_view_lines(alignment, diff_type, original_width, modified_width)
-    } else {
-        unwrapped_view_lines(alignment, diff_type)
-    }
 }
 
 /// Returns the paired terminal lines produced by the current diff layout.
@@ -199,10 +171,17 @@ pub fn terminal_line_pairs(
     modified_width: u16,
     wrap: bool,
 ) -> Vec<(TerminalLine, TerminalLine)> {
-    terminal_view_lines(alignment, diff_type, original_width, modified_width, wrap)
-        .into_iter()
-        .flat_map(|line| line.original.into_iter().zip(line.modified))
-        .collect()
+    terminal_view_lines(
+        alignment,
+        diff_type,
+        super::compact::view_lines(alignment, diff_type, false),
+        original_width,
+        modified_width,
+        wrap,
+    )
+    .into_iter()
+    .flat_map(|line| line.original.into_iter().zip(line.modified))
+    .collect()
 }
 
 fn unwrapped_source_line(content: ViewLineContent, source: Option<&str>) -> Vec<TerminalLine> {
@@ -665,7 +644,14 @@ mod tests {
         let modified = ["abc"];
         let diff = pipeline::diff::compute(&original, &modified).unwrap();
         let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
-        let wrapped = wrap_view_lines(&alignment, DiffType::SideBySide, 3, 3);
+        let wrapped = terminal_view_lines(
+            &alignment,
+            DiffType::SideBySide,
+            super::super::compact::view_lines(&alignment, DiffType::SideBySide, false),
+            3,
+            3,
+            true,
+        );
 
         assert_eq!(wrapped.len(), 1);
         assert_eq!(wrapped[0].original.len(), 2);
@@ -687,6 +673,49 @@ mod tests {
             terminal_line_pairs(&alignment, DiffType::SideBySide, 3, 3, false).len(),
             1
         );
+    }
+
+    #[test]
+    fn compact_view_keeps_context_and_marks_hidden_runs() {
+        let original = (1..=20)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>();
+        let mut modified = original.clone();
+        modified[4] = "line 5 changed".to_owned();
+        modified[14] = "line 15 changed".to_owned();
+        let original = original.iter().map(String::as_str).collect::<Vec<_>>();
+        let modified = modified.iter().map(String::as_str).collect::<Vec<_>>();
+        let diff = pipeline::diff::compute(&original, &modified).unwrap();
+        let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
+        let lines = terminal_view_lines(
+            &alignment,
+            DiffType::SideBySide,
+            super::super::compact::view_lines(&alignment, DiffType::SideBySide, true),
+            80,
+            80,
+            false,
+        );
+        let pairs = lines
+            .iter()
+            .flat_map(WrappedViewLine::terminal_line_pairs)
+            .collect::<Vec<_>>();
+        let source_lines = pairs
+            .iter()
+            .filter_map(|(original, modified)| {
+                modified.source_line().or_else(|| original.source_line())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            pairs
+                .iter()
+                .filter(|(original, modified)| {
+                    super::super::fold::is_fold_marker(original, modified)
+                })
+                .count(),
+            2
+        );
+        assert_eq!(source_lines, (2..=8).chain(12..=18).collect::<Vec<_>>());
     }
 
     #[test]

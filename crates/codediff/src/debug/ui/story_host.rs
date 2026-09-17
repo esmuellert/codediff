@@ -260,9 +260,12 @@ mod tests {
             let normal = Theme::DARK.normal.fg;
             let cells = harness.cells();
             let coloured = |start: u16, end: u16| {
-                (start..end).any(|x| {
-                    cells.cell((x, 2)).is_some_and(|cell| {
-                        cell.symbol().chars().any(char::is_alphabetic) && cell.style().fg != normal
+                (2..24).any(|y| {
+                    (start..end).any(|x| {
+                        cells.cell((x, y)).is_some_and(|cell| {
+                            cell.symbol().chars().any(char::is_alphabetic)
+                                && cell.style().fg != normal
+                        })
                     })
                 })
             };
