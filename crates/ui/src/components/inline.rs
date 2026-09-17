@@ -159,13 +159,10 @@ pub fn Inline(
         .enumerate()
     {
         let view_line_index = view.view_lines.start + offset as u32;
-        if is_fold_marker(original, modified) {
+        let row = if is_fold_marker(original, modified) {
             let blank = theme.normal;
-            rows.push(rsx! {
-                Row {
-                    key: view_line_index,
-                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
-                    ..,
+            vec![
+                rsx! {
                     Gutter {
                         key: 0u32,
                         number: None,
@@ -173,6 +170,8 @@ pub fn Inline(
                         blank: blank,
                         width: original_gutter_width,
                     }
+                },
+                rsx! {
                     Gutter {
                         key: 1u32,
                         number: None,
@@ -180,79 +179,91 @@ pub fn Inline(
                         blank: blank,
                         width: modified_gutter_width,
                     }
-                    FoldMarker { key: 2u32 }
-                }
-            });
-            continue;
-        }
-        let terminal_line = match modified {
-            TerminalLine::SourceCode { .. } => modified,
-            TerminalLine::Filler => match original {
-                TerminalLine::SourceCode { .. } => original,
-                TerminalLine::Filler => continue,
-            },
-        };
-        let TerminalLine::SourceCode {
-            source_line: line_number,
-            ..
-        } = terminal_line
-        else {
-            continue;
-        };
-        let line_number = *line_number;
-        let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
-            DiffVersion::Modified
+                },
+                rsx! { FoldMarker { key: 2u32 } },
+            ]
         } else {
-            DiffVersion::Original
+            let terminal_line = match modified {
+                TerminalLine::SourceCode { .. } => modified,
+                TerminalLine::Filler => match original {
+                    TerminalLine::SourceCode { .. } => original,
+                    TerminalLine::Filler => continue,
+                },
+            };
+            let TerminalLine::SourceCode {
+                source_line: line_number,
+                ..
+            } = terminal_line
+            else {
+                continue;
+            };
+            let line_number = *line_number;
+            let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
+                DiffVersion::Modified
+            } else {
+                DiffVersion::Original
+            };
+            let original_number = original.gutter_number();
+            let modified_number = modified.gutter_number();
+            let decorations = alignment.decorations(version, line_number);
+            let code_styles =
+                code_text::styles_for_diff(theme, version, decorations.line_background);
+            let gutter_style =
+                gutter::style_for_diff(theme, version, decorations.gutter_background);
+            let text = alignment.line(version, line_number).unwrap_or("");
+            let syntax_spans = syntax
+                .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
+                .unwrap_or_default();
+            let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
+                code_text::prepare_code_text_inputs_from_decorations(
+                    text,
+                    terminal_line,
+                    &decorations,
+                    &syntax_spans,
+                );
+
+            vec![
+                rsx! {
+                    Gutter {
+                        key: 0u32,
+                        number: original_number,
+                        style: gutter_style,
+                        blank: gutter_style,
+                        width: original_gutter_width,
+                    }
+                },
+                rsx! {
+                    Gutter {
+                        key: 1u32,
+                        number: modified_number,
+                        style: gutter_style,
+                        blank: gutter_style,
+                        width: modified_gutter_width,
+                    }
+                },
+                rsx! {
+                    CodeText {
+                        key: 2u32,
+                        text: text,
+                        first_cell: horizontal.first_cell(version),
+                        diff: changed_ranges,
+                        fill_from: fill_from,
+                        empty_markers: empty_markers,
+                        syntax: syntax_spans,
+                        unchanged_style: code_styles.unchanged,
+                        changed_style: code_styles.changed,
+                        selection: None,
+                    }
+                },
+            ]
         };
-        let original_number = original.gutter_number();
-        let modified_number = modified.gutter_number();
-        let decorations = alignment.decorations(version, line_number);
-        let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
-        let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);
-        let text = alignment.line(version, line_number).unwrap_or("");
-        let syntax_spans = syntax
-            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-            .unwrap_or_default();
-        let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
-            code_text::prepare_code_text_inputs_from_decorations(
-                text,
-                terminal_line,
-                &decorations,
-                &syntax_spans,
-            );
 
         rows.push(rsx! {
             Row {
                 key: view_line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 ..,
-                Gutter {
-                    key: 0u32,
-                    number: original_number,
-                    style: gutter_style,
-                    blank: gutter_style,
-                    width: original_gutter_width,
-                }
-                Gutter {
-                    key: 1u32,
-                    number: modified_number,
-                    style: gutter_style,
-                    blank: gutter_style,
-                    width: modified_gutter_width,
-                }
-                CodeText {
-                    key: 2u32,
-                    text: text,
-                    first_cell: horizontal.first_cell(version),
-                    diff: changed_ranges,
-                    fill_from: fill_from,
-                    empty_markers: empty_markers,
-                    syntax: syntax_spans,
-                    unchanged_style: code_styles.unchanged,
-                    changed_style: code_styles.changed,
-                    selection: None,
-                }
+                { row }
             }
         });
     }
