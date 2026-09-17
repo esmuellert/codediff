@@ -710,7 +710,10 @@ mod tests {
             pairs
                 .iter()
                 .filter(|(original, modified)| {
-                    super::super::fold::is_fold_marker(original, modified)
+                    matches!(
+                        (original, modified),
+                        (TerminalLine::Filler, TerminalLine::Filler)
+                    )
                 })
                 .count(),
             2

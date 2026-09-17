@@ -10,20 +10,20 @@ use loom::{
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
-use super::compact::view_lines as compact_view_lines;
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use super::wrap::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
-    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
-};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
+use crate::view::compact::view_lines as compact_view_lines;
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
+    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
+};
 
 fn longest_inline_terminal_line_cells(
     lines: &[WrappedViewLine],

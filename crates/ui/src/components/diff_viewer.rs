@@ -15,7 +15,7 @@ use super::inline::{Inline, InlineProps};
 use super::side_by_side::{SideBySide, SideBySideProps};
 use super::single_file::{SingleFile, SingleFileProps};
 use super::welcome::Welcome;
-use super::wrap::TerminalLine;
+use crate::view::terminal_lines::TerminalLine;
 
 /// The screen position of one two-sided diff.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

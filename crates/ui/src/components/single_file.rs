@@ -13,15 +13,15 @@ use loom::{
 use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
-use super::wrap::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
-    terminal_line_count, wrap_view_line, wrapped_view_line_range_for_terminal_lines,
-};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
+    terminal_line_count, wrap_view_line, wrapped_view_line_range_for_terminal_lines,
+};
 
 #[derive(Clone, Default)]
 struct SingleFileViewState {
