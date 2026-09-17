@@ -12,16 +12,18 @@ use loom::{
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer::ViewState;
+use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use super::wrap::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
-    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
-};
 use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
 use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
+use crate::view::compact::view_lines as compact_view_lines;
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
+    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
+};
 
 fn longest_inline_terminal_line_cells(
     lines: &[WrappedViewLine],
@@ -48,9 +50,11 @@ pub fn Inline(
     content: Rc<pipeline::diff::DiffContent>,
     view_state: Ref<ViewState>,
     wrap: bool,
+    compact: bool,
     auto_focus: bool,
 ) -> Node {
     let wrap = *wrap;
+    let compact = *compact;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -69,11 +73,18 @@ pub fn Inline(
         .width
         .saturating_sub(original_gutter_width)
         .saturating_sub(modified_gutter_width);
-    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap), || {
-        terminal_view_lines(alignment, DiffType::Inline, code_width, code_width, wrap)
+    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap, compact), || {
+        terminal_view_lines(
+            alignment,
+            DiffType::Inline,
+            compact_view_lines(alignment, DiffType::Inline, compact),
+            code_width,
+            code_width,
+            wrap,
+        )
     });
-    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap), || {
-        if wrap {
+    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap, compact), || {
+        if wrap || compact {
             longest_inline_terminal_line_cells(
                 &wrapped_lines,
                 alignment.lines(DiffVersion::Original),
@@ -148,74 +159,111 @@ pub fn Inline(
         .enumerate()
     {
         let view_line_index = view.view_lines.start + offset as u32;
-        let terminal_line = match modified {
-            TerminalLine::SourceCode { .. } => modified,
-            TerminalLine::Filler => match original {
-                TerminalLine::SourceCode { .. } => original,
-                TerminalLine::Filler => continue,
-            },
-        };
-        let TerminalLine::SourceCode {
-            source_line: line_number,
-            ..
-        } = terminal_line
-        else {
-            continue;
-        };
-        let line_number = *line_number;
-        let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
-            DiffVersion::Modified
+        let row = if is_fold_marker(original, modified) {
+            let blank = theme.normal;
+            vec![
+                rsx! {
+                    Gutter {
+                        key: 0u32,
+                        number: None,
+                        style: blank,
+                        blank: blank,
+                        width: original_gutter_width,
+                    }
+                },
+                rsx! {
+                    Gutter {
+                        key: 1u32,
+                        number: None,
+                        style: blank,
+                        blank: blank,
+                        width: modified_gutter_width,
+                    }
+                },
+                rsx! { FoldMarker { key: 2u32 } },
+            ]
         } else {
-            DiffVersion::Original
+            let terminal_line = match modified {
+                TerminalLine::SourceCode { .. } => modified,
+                TerminalLine::Filler => match original {
+                    TerminalLine::SourceCode { .. } => original,
+                    TerminalLine::Filler => continue,
+                },
+            };
+            let TerminalLine::SourceCode {
+                source_line: line_number,
+                ..
+            } = terminal_line
+            else {
+                continue;
+            };
+            let line_number = *line_number;
+            let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
+                DiffVersion::Modified
+            } else {
+                DiffVersion::Original
+            };
+            let original_number = original.gutter_number();
+            let modified_number = modified.gutter_number();
+            let decorations = alignment.decorations(version, line_number);
+            let code_styles =
+                code_text::styles_for_diff(theme, version, decorations.line_background);
+            let gutter_style =
+                gutter::style_for_diff(theme, version, decorations.gutter_background);
+            let text = alignment.line(version, line_number).unwrap_or("");
+            let syntax_spans = syntax
+                .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
+                .unwrap_or_default();
+            let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
+                code_text::prepare_code_text_inputs_from_decorations(
+                    text,
+                    terminal_line,
+                    &decorations,
+                    &syntax_spans,
+                );
+
+            vec![
+                rsx! {
+                    Gutter {
+                        key: 0u32,
+                        number: original_number,
+                        style: gutter_style,
+                        blank: gutter_style,
+                        width: original_gutter_width,
+                    }
+                },
+                rsx! {
+                    Gutter {
+                        key: 1u32,
+                        number: modified_number,
+                        style: gutter_style,
+                        blank: gutter_style,
+                        width: modified_gutter_width,
+                    }
+                },
+                rsx! {
+                    CodeText {
+                        key: 2u32,
+                        text: text,
+                        first_cell: horizontal.first_cell(version),
+                        diff: changed_ranges,
+                        fill_from: fill_from,
+                        empty_markers: empty_markers,
+                        syntax: syntax_spans,
+                        unchanged_style: code_styles.unchanged,
+                        changed_style: code_styles.changed,
+                        selection: None,
+                    }
+                },
+            ]
         };
-        let original_number = original.gutter_number();
-        let modified_number = modified.gutter_number();
-        let decorations = alignment.decorations(version, line_number);
-        let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
-        let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);
-        let text = alignment.line(version, line_number).unwrap_or("");
-        let syntax_spans = syntax
-            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-            .unwrap_or_default();
-        let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
-            code_text::prepare_code_text_inputs_from_decorations(
-                text,
-                terminal_line,
-                &decorations,
-                &syntax_spans,
-            );
 
         rows.push(rsx! {
             Row {
                 key: view_line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 ..,
-                Gutter {
-                    key: 0u32,
-                    number: original_number,
-                    style: gutter_style,
-                    blank: gutter_style,
-                    width: original_gutter_width,
-                }
-                Gutter {
-                    key: 1u32,
-                    number: modified_number,
-                    style: gutter_style,
-                    blank: gutter_style,
-                    width: modified_gutter_width,
-                }
-                CodeText {
-                    key: 2u32,
-                    text: text,
-                    first_cell: horizontal.first_cell(version),
-                    diff: changed_ranges,
-                    fill_from: fill_from,
-                    empty_markers: empty_markers,
-                    syntax: syntax_spans,
-                    unchanged_style: code_styles.unchanged,
-                    changed_style: code_styles.changed,
-                    selection: None,
-                }
+                { row }
             }
         });
     }

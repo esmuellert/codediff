@@ -35,6 +35,7 @@ fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
             content: Rc::clone(content),
             view_state: active_view_state,
             wrap: true,
+            compact: false,
             auto_focus: false,
         }
     }
@@ -50,6 +51,7 @@ fn TestInlineUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffConten
             content: Rc::clone(content),
             view_state: view_state,
             wrap: false,
+            compact: false,
             auto_focus: false,
         }
     }

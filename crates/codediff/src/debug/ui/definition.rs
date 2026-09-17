@@ -20,6 +20,7 @@ pub struct StoryDefinition {
     pub id: &'static str,
     pub description: &'static str,
     pub component: StoryComponent,
+    pub compact: bool,
     pub snapshot_size: (u16, u16),
     pub initial_keys: &'static [KeyCombination],
     pub make_fixture: fn() -> Result<StoryFixture>,

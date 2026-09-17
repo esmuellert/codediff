@@ -12,8 +12,8 @@ use ratatui::{
 };
 
 use super::context::Ui;
-use super::wrap::TerminalLine;
 use crate::theme::Code;
+use crate::view::terminal_lines::TerminalLine;
 
 const TAB_WIDTH: u8 = 4;
 

@@ -60,6 +60,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &[],
     ),
     (
+        "side-by-side/compact",
+        &["before_one", "first", "second", "···"],
+        &[],
+    ),
+    (
         "side-by-side/edge-matrix",
         &["whitespace only", "deleted only", "你好"],
         &[],
@@ -77,6 +82,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         "inline/wrapped-lines",
         &["INLINE_WRAPPED_ORIGINAL", "INLINE_WRAPPED_MODIFIED"],
         &["│", "╱"],
+    ),
+    (
+        "inline/compact",
+        &["before_one", "first", "second", "···"],
+        &[],
     ),
     ("inline/edge-matrix", &["whitespace", "你好"], &["│", "╱"]),
     (
@@ -107,6 +117,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
     ("single-file/empty", &[], &["  1 ", "│", "╱"]),
     (
         "single-file/long-syntax-file",
+        &["generated_001", "generated_020"],
+        &["│", "╱"],
+    ),
+    (
+        "single-file/compact",
         &["generated_001", "generated_020"],
         &["│", "╱"],
     ),
@@ -167,7 +182,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  30"));
+    assert_eq!(lines.next(), Some(" STORIES  33"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");

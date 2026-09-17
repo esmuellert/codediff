@@ -4,6 +4,7 @@ pub mod components;
 pub mod hooks;
 pub mod services;
 pub mod theme;
+mod view;
 
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 

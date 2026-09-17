@@ -6,6 +6,7 @@ pub const STORIES: &[StoryDefinition] = &[StoryDefinition {
     id: "welcome/default",
     description: "DiffViewer with no selected file",
     component: StoryComponent::Welcome,
+    compact: false,
     snapshot_size: (100, 24),
     initial_keys: &[],
     make_fixture: welcome_fixture,

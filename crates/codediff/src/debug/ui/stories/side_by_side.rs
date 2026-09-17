@@ -38,9 +38,19 @@ pub const STORIES: &[StoryDefinition] = &[
         wrapped_lines,
     ),
     StoryDefinition {
+        id: "side-by-side/compact",
+        description: "Hunks with nearby context and folded gaps",
+        component: StoryComponent::SideBySide,
+        compact: true,
+        snapshot_size: (100, 24),
+        initial_keys: &[],
+        make_fixture: compact,
+    },
+    StoryDefinition {
         id: "side-by-side/edge-matrix",
         description: "Many diff edge cases with a three-digit gutter",
         component: StoryComponent::SideBySide,
+        compact: false,
         snapshot_size: (120, 30),
         initial_keys: &[],
         make_fixture: edge_matrix,
@@ -56,6 +66,7 @@ const fn story(
         id,
         description,
         component: StoryComponent::SideBySide,
+        compact: false,
         snapshot_size: (100, 24),
         initial_keys: &[],
         make_fixture,
@@ -156,6 +167,12 @@ fn wrapped_lines() -> Result<StoryFixture> {
     ))
 }
 
+fn compact() -> Result<StoryFixture> {
+    Ok(StoryFixture::SideBySide(
+        DiffFixture::compact("side-by-side-compact.rs").build()?,
+    ))
+}
+
 fn edge_matrix() -> Result<StoryFixture> {
     let fixture = DiffFixture::from_text(
         "edge-matrix.rs",
@@ -195,6 +212,20 @@ mod tests {
                 "{version:?} has only {cells} cells"
             );
         }
+    }
+
+    #[test]
+    fn compact_fixture_has_hundreds_of_lines() {
+        let StoryFixture::SideBySide(content) = compact().unwrap() else {
+            unreachable!()
+        };
+        let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+            unreachable!()
+        };
+
+        assert!(diff.alignment.lines(DiffVersion::Original).len() >= 400);
+        assert!(diff.alignment.lines(DiffVersion::Modified).len() >= 400);
+        assert!(diff.alignment.hunks().len() >= 5);
     }
 
     #[test]

@@ -13,11 +13,8 @@ use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::filler::Filler;
+use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use super::wrap::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
-    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
-};
 use crate::hooks::use_diff_viewer_navigation::{
     HorizontalDimensions, HorizontalView, use_diff_viewer_navigation,
 };
@@ -25,6 +22,11 @@ use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
 use crate::hooks::use_scroll::use_scroll;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
+use crate::view::compact::view_lines as compact_view_lines;
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, find_terminal_line_index, longest_terminal_line_cells,
+    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
+};
 
 #[component]
 pub fn SideBySide(
@@ -32,9 +34,11 @@ pub fn SideBySide(
     content: Rc<pipeline::diff::DiffContent>,
     view_state: Ref<ViewState>,
     wrap: bool,
+    compact: bool,
     auto_focus: bool,
 ) -> Node {
     let wrap = *wrap;
+    let compact = *compact;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
@@ -59,11 +63,12 @@ pub fn SideBySide(
     let modified_width = (text_width / 2) as u16;
     let wrapped_lines = use_memo(
         scope,
-        (content_id, original_width, modified_width, wrap),
+        (content_id, original_width, modified_width, wrap, compact),
         || {
             terminal_view_lines(
                 alignment,
                 DiffType::SideBySide,
+                compact_view_lines(alignment, DiffType::SideBySide, compact),
                 original_width,
                 modified_width,
                 wrap,
@@ -72,9 +77,9 @@ pub fn SideBySide(
     );
     let maximum_line_cells = use_memo(
         scope,
-        (content_id, original_width, modified_width, wrap),
+        (content_id, original_width, modified_width, wrap, compact),
         || {
-            if wrap {
+            if wrap || compact {
                 (
                     longest_terminal_line_cells(
                         &wrapped_lines,
@@ -164,24 +169,33 @@ pub fn SideBySide(
         .enumerate()
     {
         let view_line = view.view_lines.start + offset as u32;
-        let original_nodes = make_side(
-            DiffVersion::Original,
-            original,
-            original_gutter_width,
-            diff,
-            theme,
-            syntax,
-            horizontal,
-        );
-        let modified_nodes = make_side(
-            DiffVersion::Modified,
-            modified,
-            modified_gutter_width,
-            diff,
-            theme,
-            syntax,
-            horizontal,
-        );
+        let fold_marker = is_fold_marker(original, modified);
+        let original_nodes = if fold_marker {
+            fold_side(original_gutter_width, theme)
+        } else {
+            make_side(
+                DiffVersion::Original,
+                original,
+                original_gutter_width,
+                diff,
+                theme,
+                syntax,
+                horizontal,
+            )
+        };
+        let modified_nodes = if fold_marker {
+            fold_side(modified_gutter_width, theme)
+        } else {
+            make_side(
+                DiffVersion::Modified,
+                modified,
+                modified_gutter_width,
+                diff,
+                theme,
+                syntax,
+                horizontal,
+            )
+        };
 
         rows.push(rsx! {
             Row {
@@ -222,6 +236,22 @@ pub fn SideBySide(
             { rows }
         }
     }
+}
+
+fn fold_side(gutter_width: u16, theme: &crate::theme::Theme) -> Vec<Node> {
+    let blank = theme.normal;
+    vec![
+        rsx! {
+            Gutter {
+                key: 0u32,
+                number: None,
+                style: blank,
+                blank: blank,
+                width: gutter_width,
+            }
+        },
+        rsx! { FoldMarker { key: 1u32 } },
+    ]
 }
 
 fn make_side(

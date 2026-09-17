@@ -37,6 +37,42 @@ impl DiffFixture {
         }
     }
 
+    pub fn compact(path: &str) -> Self {
+        let mut original = vec![
+            "fn compact_demo() {".to_owned(),
+            "    let before_one = 1;".to_owned(),
+            "    let before_two = 2;".to_owned(),
+            "    let before_three = 3;".to_owned(),
+            "    let first = \"old\";".to_owned(),
+        ];
+        for line in 6..=400 {
+            original.push(format!("    let unchanged_{line:03} = {line};"));
+        }
+        original.push("}".to_owned());
+
+        let mut modified = original.clone();
+        modified[379] = "    let third = \"new\";".to_owned();
+        modified.remove(380);
+        modified.insert(380, "    let third_added = true;".to_owned());
+        modified.remove(299);
+        modified[219] = "    let second = \"new\";".to_owned();
+        modified[220] = "    let second_context = 220;".to_owned();
+        modified.insert(221, "    let second_added = true;".to_owned());
+        modified.insert(99, "    let inserted_only = true;".to_owned());
+        modified[14] = "    let second = \"old\";".to_owned();
+        modified[15] = "    let second = \"new\";".to_owned();
+        modified.insert(16, "    let second_added = true;".to_owned());
+        modified[4] = "    let first = \"new\";".to_owned();
+        modified.insert(5, "    let first_added = true;".to_owned());
+        modified[6] = "    let first_context_changed = 6;".to_owned();
+
+        Self {
+            path: path.to_owned(),
+            original,
+            modified,
+        }
+    }
+
     pub fn with_line_pair(
         mut self,
         original: impl Into<String>,

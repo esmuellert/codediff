@@ -27,6 +27,7 @@ fn SideBySideHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, w
             content: Rc::clone(content),
             view_state: view_state,
             wrap: *wrap,
+            compact: false,
             auto_focus: false,
         }
     }

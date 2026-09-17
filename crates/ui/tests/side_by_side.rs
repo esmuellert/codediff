@@ -35,6 +35,7 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
             content: Rc::clone(content),
             view_state: active_view_state,
             wrap: true,
+            compact: false,
             auto_focus: false,
         }
     }
@@ -50,6 +51,7 @@ fn TestSideBySideUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffCo
             content: Rc::clone(content),
             view_state: view_state,
             wrap: false,
+            compact: false,
             auto_focus: false,
         }
     }
