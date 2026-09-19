@@ -323,6 +323,32 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
 }
 
 #[test]
+fn untracked_and_deleted_files_have_line_counts() {
+    let fixture = Fixture::new("one-sided-counts");
+    let mut git = fixture.git();
+    let files = git
+        .get_changed_files(&DiffType::Worktree, &[])
+        .expect("status runs");
+    let counts = git
+        .get_line_stats(&DiffType::Worktree, &[])
+        .expect("counting");
+
+    let untracked = file(&files, "untracked.txt");
+    assert_eq!(
+        counts.of(&untracked),
+        Some(Stats::new(1, 0)),
+        "an untracked text file is an addition"
+    );
+
+    let deleted = file(&files, "deleted.txt");
+    assert_eq!(
+        counts.of(&deleted),
+        Some(Stats::new(0, 1)),
+        "a deleted text file is a removal"
+    );
+}
+
+#[test]
 fn each_comparison_counts_its_own_lines() {
     // Count each comparison separately.
     let fixture = Fixture::new("counts");

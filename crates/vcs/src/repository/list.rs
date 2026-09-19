@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use file_types::{ChangeType, DiffVersion, File, RepoPath, Rev, Revs, Stage, Stats};
+use file_types::{ChangeType, DiffVersion, File, FileContent, RepoPath, Rev, Revs, Stage, Stats};
 
 use crate::git::diff::name_status::Change;
 use crate::git::diff::numstat::{self, Counts};
@@ -29,9 +29,10 @@ impl LineStats {
     /// Returns this file's counts, or `None` when they are unavailable.
     pub fn of(&self, file: &File) -> Option<Stats> {
         self.counts
-            .get(file.rev(DiffVersion::Modified))?
-            .get(file.path().as_str())
+            .get(file.rev(DiffVersion::Modified))
+            .and_then(|counts| counts.get(file.path().as_str()))
             .copied()
+            .or_else(|| untracked_stats(file))
     }
 }
 
@@ -78,6 +79,20 @@ impl Repository {
                 Ok(LineStats::new([(revs.after, counts)]))
             }
         }
+    }
+}
+
+/// Git's numstat omits untracked files, so count their text lines directly.
+fn untracked_stats(file: &File) -> Option<Stats> {
+    match file.get_change_type() {
+        ChangeType::Untracked => {
+            let bytes = crate::git::worktree::read(file.path()).ok()??;
+            let content = FileContent::from_bytes(Some(bytes));
+            let text = content.text()?;
+            let added = u32::try_from(text.lines().count()).ok()?;
+            Some(Stats::new(added, 0))
+        }
+        _ => None,
     }
 }
 
