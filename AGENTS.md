@@ -40,5 +40,7 @@ Write the file and show it. The user decides when it ships.
 
 **PR titles must use the conventional-commit prefixes defined in `cliff.toml` — git-cliff reads them to build the changelog.**
 
+**After opening a PR, watch GitHub Actions and fix clear failures until all checks pass; stop and report failures that are difficult or ambiguous.**
+
 **When you move code, only move it.**
 Do not rename, reword or reshape it in the same step. A reader cannot tell a move from an edit when both are in one diff.
