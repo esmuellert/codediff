@@ -45,50 +45,42 @@ impl Repository {
         pathspec: &[String],
     ) -> crate::Result<Vec<File>> {
         let command = git::resolve_command(&self.repo, diff_type)?;
-        let git_line_stats = self.read_git_line_stats(&command, pathspec)?;
-        let files = self.discover_changed_files(&command, pathspec)?;
+        let git_line_stats = read_git_line_stats(&self.repo, &command, pathspec)?;
+        let files = match &command {
+            GitCommand::Worktree => {
+                let entries = git::status_entries(&self.repo, Untracked::All, pathspec)?;
+                let commit = self.revs()?.before;
+                status_entries_to_files(entries, &self.repo.root, commit)
+            }
+            GitCommand::Diff { args, revs } => {
+                let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                git::diff::name_status::run(&self.repo, &args, pathspec)?
+                    .into_iter()
+                    .map(|change| diff_entry_to_file(change, &self.repo.root, revs.clone()))
+                    .collect()
+            }
+        };
         Ok(files
             .into_iter()
             .map(|file| apply_stats_to_file(file, &git_line_stats))
             .collect())
     }
+}
 
-    fn discover_changed_files(
-        &mut self,
-        command: &GitCommand,
-        pathspec: &[String],
-    ) -> crate::Result<Vec<File>> {
-        match command {
-            GitCommand::Worktree => {
-                let entries = git::status_entries(&self.repo, Untracked::All, pathspec)?;
-                let commit = self.revs()?.before;
-                Ok(status_entries_to_files(entries, &self.repo.root, commit))
-            }
-            GitCommand::Diff { args, revs } => {
-                let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                Ok(git::diff::name_status::run(&self.repo, &args, pathspec)?
-                    .into_iter()
-                    .map(|change| diff_entry_to_file(change, &self.repo.root, revs.clone()))
-                    .collect())
-            }
-        }
-    }
-
-    fn read_git_line_stats(
-        &self,
-        command: &GitCommand,
-        pathspec: &[String],
-    ) -> crate::Result<GitLineStats> {
-        match command {
-            GitCommand::Worktree => Ok(GitLineStats::new([
-                (Rev::Worktree, numstat::unstaged(&self.repo)?),
-                (Rev::Index, numstat::staged(&self.repo)?),
-            ])),
-            GitCommand::Diff { args, revs } => {
-                let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                let counts = numstat::diff(&self.repo, &args, pathspec)?;
-                Ok(GitLineStats::new([(revs.after.clone(), counts)]))
-            }
+fn read_git_line_stats(
+    repo: &crate::Repo,
+    command: &GitCommand,
+    pathspec: &[String],
+) -> crate::Result<GitLineStats> {
+    match command {
+        GitCommand::Worktree => Ok(GitLineStats::new([
+            (Rev::Worktree, numstat::unstaged(repo)?),
+            (Rev::Index, numstat::staged(repo)?),
+        ])),
+        GitCommand::Diff { args, revs } => {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            let counts = numstat::diff(repo, &args, pathspec)?;
+            Ok(GitLineStats::new([(revs.after.clone(), counts)]))
         }
     }
 }
