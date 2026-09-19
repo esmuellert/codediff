@@ -642,7 +642,9 @@ mod tests {
     fn wraps_an_alignment_into_wrapped_view_lines() {
         let original = ["abcdef"];
         let modified = ["abc"];
-        let diff = pipeline::diff::compute(&original, &modified).unwrap();
+        let diff =
+            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
+                .unwrap();
         let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
         let wrapped = terminal_view_lines(
             &alignment,
@@ -662,7 +664,9 @@ mod tests {
     fn terminal_line_pairs_switch_between_wrapped_and_unwrapped_modes() {
         let original = ["abcdef"];
         let modified = ["abcdef"];
-        let diff = pipeline::diff::compute(&original, &modified).unwrap();
+        let diff =
+            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
+                .unwrap();
         let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
 
         assert_eq!(
@@ -685,7 +689,9 @@ mod tests {
         modified[14] = "line 15 changed".to_owned();
         let original = original.iter().map(String::as_str).collect::<Vec<_>>();
         let modified = modified.iter().map(String::as_str).collect::<Vec<_>>();
-        let diff = pipeline::diff::compute(&original, &modified).unwrap();
+        let diff =
+            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
+                .unwrap();
         let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
         let lines = terminal_view_lines(
             &alignment,

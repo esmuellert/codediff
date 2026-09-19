@@ -6,7 +6,6 @@ mod entry;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crokey::key;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
@@ -17,6 +16,7 @@ use self::build::{Node, directory_key, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
 use super::context::Ui;
 use crate::hooks::use_scroll::use_scroll;
+use crate::keybindings::Action;
 use crate::services::version_control::VersionControlService;
 
 const SCROLLOFF: u32 = 3;
@@ -67,7 +67,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     let (selected_line, set_selected_line) = use_state(scope, || 0u32);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
-    let (tree_mode, set_tree_mode) = use_state(scope, || true);
+    let (tree_mode, set_tree_mode) = use_state(scope, || {
+        matches!(ctx.config.ui.explorer_mode, config::ExplorerMode::Tree)
+    });
 
     let base = theme.normal;
 
@@ -97,12 +99,13 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let selected_node = nodes.get(selected_line as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
     let nodes_keys = Rc::clone(&nodes);
+    let keybindings = Rc::clone(&ctx.keybindings);
     let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
         .on_key(move |k| match k {
-            k if k == key!(j) || k == key!(down) => {
+            k if keybindings.matches(Action::MoveDown, k) => {
                 let nodes = Rc::clone(&nodes_keys);
                 set_selected_line(&move |selected_line| {
                     let next = selected_line
@@ -116,7 +119,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 });
                 Bubble::Stop
             }
-            k if k == key!(k) || k == key!(up) => {
+            k if keybindings.matches(Action::MoveUp, k) => {
                 let nodes = Rc::clone(&nodes_keys);
                 set_selected_line(&move |selected_line| {
                     let next = selected_line.saturating_sub(1);
@@ -128,27 +131,27 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 });
                 Bubble::Stop
             }
-            k if k == key!(enter) => {
+            k if keybindings.matches(Action::Open, k) => {
                 if let Some(ref node) = selected_node {
                     activate_node(node, set_folded, set_file);
                 }
                 Bubble::Stop
             }
-            k if k == key!(q) => {
+            k if keybindings.matches(Action::Quit, k) => {
                 exit();
                 Bubble::Stop
             }
-            k if k == key!(i) => {
+            k if keybindings.matches(Action::ToggleExplorerMode, k) => {
                 set_tree_mode(&|mode| !mode);
                 Bubble::Stop
             }
-            k if k == key!(space) => {
+            k if keybindings.matches(Action::Stage, k) => {
                 if let Some(ref node) = selected_node {
                     toggle_stage(node, version_control_service.as_deref());
                 }
                 Bubble::Stop
             }
-            k if k == key!(right) => {
+            k if keybindings.matches(Action::FocusNext, k) => {
                 loom::focus_next();
                 Bubble::Stop
             }

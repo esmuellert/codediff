@@ -4,7 +4,7 @@ The application UI for `codediff`. It owns the terminal-facing component tree, n
 
 ## Shape
 
-`loom::Tree` mounts `components::App`. The root provides `ui::Context`, which contains the repository, selected file, theme, and stable service handles.
+`loom::Tree` mounts `components::App`. The root provides `ui::Context`, which contains the repository, selected file, typed user preferences, parsed key bindings, theme, and stable service handles.
 
 ```text
 App
@@ -31,7 +31,7 @@ The UI thread never runs Git or computes a diff while painting. The services del
 
 ## Navigation
 
-Explorer uses `j`/`k`, the arrow keys, `Enter`, `i`, `Space`, the right arrow, mouse clicks, and vertical wheel events. Diff views use `j`/`k`, `h`/`l`, `0`, `$`, the left arrow, mouse focus, and vertical or horizontal wheel events. `q` exits the application.
+Explorer uses configurable bindings (by default `j`/`k`, the arrow keys, `Enter`, `i`, `Space`, and the right arrow), mouse clicks, and vertical wheel events. Diff views use configurable bindings (by default `j`/`k`, `h`/`l`, `0`, `$`, and the left arrow), mouse focus, and vertical or horizontal wheel events. `q` exits the application by default.
 
 The main two-sided view starts side by side. When a diff view has focus, `t` switches between `SideBySide` and `Inline`. `DiffViewer` keeps one history entry per file: the entry stores the first `ViewLine` on screen and the first horizontal cell. Each layout resolves the same `ViewLine` in its own row sequence, so switching layouts preserves the visible screen position. `SingleFile` and `Explorer` do not respond to `t`.
 
@@ -41,7 +41,7 @@ Added, deleted, and untracked files are shown with `SingleFile`; they are not co
 
 `components::cells` paints terminal cells from line-indexed text. Diff backgrounds are applied first; syntax supplies foregrounds and text modifiers. Tabs, wide graphemes, clipped clusters, control characters, and bidi controls are handled before the text reaches the terminal.
 
-Themes are compiled into the UI. `Theme::from_environment` chooses between Catppuccin and basic dark/light themes from terminal environment variables. There is no current `--theme` CLI option.
+Themes are compiled into the UI. `Theme::from_environment` chooses between Catppuccin and basic dark/light themes from terminal environment variables; a config file can select a built-in theme explicitly. The composition root loads that JSON config before starting the terminal.
 
 ## Gallery and tests
 

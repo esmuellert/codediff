@@ -7,7 +7,8 @@ This file describes the implementation that is currently in the repository. It i
 ```text
 codediff
   └─ ui::main
-      ├─ files worker       Git status and line statistics
+      ├─ config              load user preferences before terminal setup
+      ├─ files worker        Git status and line statistics
       ├─ diff worker        Git content → VS Code diff → alignment
       ├─ syntax worker      syntax spans for visible file lines
       ├─ watcher             filesystem and Git-directory invalidations
@@ -33,6 +34,7 @@ The watcher sends refresh categories, not a list of changed paths. Explorer resc
 |---|---|
 | `codediff` | command-line entry point, debug commands, doctor, component stories |
 | `ui` | application components, services, navigation, themes, terminal integration |
+| `config` | versioned JSON user preferences, platform paths, and atomic persistence |
 | `loom` / `loom-macros` | terminal component tree, hooks, layout, paint, events, and RSX macros |
 | `pipeline` | background file-list and file-content pipelines |
 | `vcs` | Git commands, status parsing, revision reads, line statistics, staging |

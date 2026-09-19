@@ -297,6 +297,7 @@ dependencies = [
  "anyhow",
  "channel",
  "clap",
+ "config",
  "file-types",
  "fixtures",
  "line-index",
@@ -330,6 +331,14 @@ dependencies = [
  "rustversion",
  "ryu",
  "static_assertions",
+]
+
+[[package]]
+name = "config"
+version = "0.25.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2668,6 +2677,7 @@ dependencies = [
  "align",
  "anyhow",
  "channel",
+ "config",
  "crokey",
  "crossterm",
  "diff-types",

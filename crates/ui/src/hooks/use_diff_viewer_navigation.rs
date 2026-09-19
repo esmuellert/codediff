@@ -1,7 +1,10 @@
 //! Shared navigation and geometry for the views inside DiffViewer.
 
 use file_types::DiffVersion;
-use loom::{Bubble, Listeners};
+use loom::{Bubble, Listeners, Scope, use_context};
+
+use crate::components::Ui;
+use crate::keybindings::Action;
 
 use super::use_horizontal_scroll::HorizontalHandle;
 use super::use_scroll::ScrollHandle;
@@ -129,38 +132,40 @@ fn max_first_cell(longest_line_cells: u32, text_viewport_cells: u32) -> u32 {
     }
 }
 
-/// Connects code-view input to already-created viewport handles.
+/// Connects code-view input using the application's configured keys.
 pub fn use_diff_viewer_navigation(
+    scope: &mut Scope,
     vertical_handle: ScrollHandle,
     horizontal_handle: HorizontalHandle,
 ) -> Listeners {
+    let keybindings = use_context::<Ui>(scope).keybindings;
     Listeners::new()
         .on_key(move |key| match key {
-            key if key == crokey::key!(j) || key == crokey::key!(down) => {
+            key if keybindings.matches(Action::MoveDown, key) => {
                 vertical_handle.scroll_by(1);
                 Bubble::Stop
             }
-            key if key == crokey::key!(k) || key == crokey::key!(up) => {
+            key if keybindings.matches(Action::MoveUp, key) => {
                 vertical_handle.scroll_by(-1);
                 Bubble::Stop
             }
-            key if key == crokey::key!(h) => {
+            key if keybindings.matches(Action::MoveLeft, key) => {
                 horizontal_handle.scroll_by(-1);
                 Bubble::Stop
             }
-            key if key == crokey::key!(l) => {
+            key if keybindings.matches(Action::MoveRight, key) => {
                 horizontal_handle.scroll_by(1);
                 Bubble::Stop
             }
-            key if key == crokey::key!(0) => {
+            key if keybindings.matches(Action::Start, key) => {
                 horizontal_handle.scroll_to_start();
                 Bubble::Stop
             }
-            key if key == crokey::key!('$') => {
+            key if keybindings.matches(Action::End, key) => {
                 horizontal_handle.scroll_to_end();
                 Bubble::Stop
             }
-            key if key == crokey::key!(left) => {
+            key if keybindings.matches(Action::FocusPrevious, key) => {
                 loom::focus_previous();
                 Bubble::Stop
             }

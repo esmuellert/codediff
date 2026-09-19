@@ -6,7 +6,7 @@ use file_types::{DiffVersion, FileContent};
 use pipeline::diff::DiffContent;
 
 use crate::text::sanitize;
-use pipeline::diff::Runner;
+use pipeline::diff::{Runner, Settings};
 use pipeline::files;
 
 /// Finds a changed file, or an existing file for self-comparison.
@@ -32,7 +32,7 @@ fn find(path: &str) -> Result<file_types::File> {
 }
 
 pub fn run(path: &str, verbose: bool) -> Result<()> {
-    let runner = Runner::new(&find(path)?)?;
+    let runner = Runner::new(&find(path)?, Settings::default())?;
     let contents = &runner.contents;
     header(&contents.file, &contents.original, &contents.modified);
 

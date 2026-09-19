@@ -41,8 +41,16 @@ fn main() -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         None => {
+            let preferences = config::ConfigStore::open_default(cli.config.as_deref())?;
+            if let Some(warning) = preferences.warning() {
+                eprintln!("codediff: {warning}");
+            }
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            let code = ui::main(&cwd, cli.path.into_iter().collect())?;
+            let code = ui::main(
+                &cwd,
+                cli.path.into_iter().collect(),
+                preferences.get().clone(),
+            )?;
             Ok(ExitCode::from(code as u8))
         }
     }

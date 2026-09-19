@@ -2,6 +2,7 @@
 
 use std::thread;
 
+use crate::diff::Settings;
 use crate::diff::runner::{DiffContent, Runner};
 use channel::{Emitter, Slot, Worker};
 use file_types::File;
@@ -19,10 +20,10 @@ pub struct DiffWorker {
 }
 
 impl DiffWorker {
-    /// Starts the worker thread.
-    pub fn start(emitter: Emitter<Response>) -> Self {
+    /// Starts the worker thread with application settings.
+    pub fn start(emitter: Emitter<Response>, settings: Settings) -> Self {
         let job = move |file: File| {
-            let content = compare(&file);
+            let content = compare(&file, settings);
             tracing::info!(path = %file.path(), "diff ready");
             emitter.send(Response { file, content })
         };
@@ -68,9 +69,9 @@ impl Worker for DiffWorker {
 }
 
 /// Runs the four stages without caching between calls.
-fn compare(file: &File) -> Result<DiffContent, String> {
+fn compare(file: &File, settings: Settings) -> Result<DiffContent, String> {
     let path = file.path().as_str().to_owned();
-    let runner = Runner::new(file).map_err(|why| format!("{path}: {why:#}"))?;
+    let runner = Runner::new(file, settings).map_err(|why| format!("{path}: {why:#}"))?;
     if runner.is_binary() {
         return Err(format!("{path} is binary — there are no lines to review"));
     }
