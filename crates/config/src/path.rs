@@ -27,7 +27,7 @@ pub fn default_path() -> Result<PathBuf> {
         let app_data = std::env::var_os("APPDATA")
             .filter(|value| !value.is_empty())
             .ok_or(Error::MissingConfigDirectory)?;
-        return Ok(PathBuf::from(app_data).join("codediff").join("config.json"));
+        Ok(PathBuf::from(app_data).join("codediff").join("config.json"))
     }
 
     #[cfg(not(windows))]
