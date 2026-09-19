@@ -15,11 +15,11 @@ use super::Repository;
 ///
 /// Each comparison has its own map, so staged and unstaged versions stay separate.
 #[derive(Debug, Clone, Default)]
-struct LineStats {
+struct GitLineStats {
     counts: HashMap<Rev, Counts>,
 }
 
-impl LineStats {
+impl GitLineStats {
     fn new(comparisons: impl IntoIterator<Item = (Rev, Counts)>) -> Self {
         Self {
             counts: comparisons.into_iter().collect(),
@@ -45,15 +45,15 @@ impl Repository {
         pathspec: &[String],
     ) -> crate::Result<Vec<File>> {
         let command = git::resolve_command(&self.repo, diff_type)?;
-        let line_stats = self.line_stats(&command, pathspec)?;
-        let files = self.list_changed_files(&command, pathspec)?;
+        let git_line_stats = self.read_git_line_stats(&command, pathspec)?;
+        let files = self.discover_changed_files(&command, pathspec)?;
         Ok(files
             .into_iter()
-            .map(|file| attach_stats(file, &line_stats))
+            .map(|file| apply_stats_to_file(file, &git_line_stats))
             .collect())
     }
 
-    fn list_changed_files(
+    fn discover_changed_files(
         &mut self,
         command: &GitCommand,
         pathspec: &[String],
@@ -62,38 +62,42 @@ impl Repository {
             GitCommand::Worktree => {
                 let entries = git::status_entries(&self.repo, Untracked::All, pathspec)?;
                 let commit = self.revs()?.before;
-                Ok(from_status(entries, &self.repo.root, commit))
+                Ok(status_entries_to_files(entries, &self.repo.root, commit))
             }
             GitCommand::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 Ok(git::diff::name_status::run(&self.repo, &args, pathspec)?
                     .into_iter()
-                    .map(|change| from_diff_entry(change, &self.repo.root, revs.clone()))
+                    .map(|change| diff_entry_to_file(change, &self.repo.root, revs.clone()))
                     .collect())
             }
         }
     }
 
-    fn line_stats(&self, command: &GitCommand, pathspec: &[String]) -> crate::Result<LineStats> {
+    fn read_git_line_stats(
+        &self,
+        command: &GitCommand,
+        pathspec: &[String],
+    ) -> crate::Result<GitLineStats> {
         match command {
-            GitCommand::Worktree => Ok(LineStats::new([
+            GitCommand::Worktree => Ok(GitLineStats::new([
                 (Rev::Worktree, numstat::unstaged(&self.repo)?),
                 (Rev::Index, numstat::staged(&self.repo)?),
             ])),
             GitCommand::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 let counts = numstat::diff(&self.repo, &args, pathspec)?;
-                Ok(LineStats::new([(revs.after.clone(), counts)]))
+                Ok(GitLineStats::new([(revs.after.clone(), counts)]))
             }
         }
     }
 }
 
-fn attach_stats(file: File, line_stats: &LineStats) -> File {
-    match line_stats.of(&file) {
+fn apply_stats_to_file(file: File, git_line_stats: &GitLineStats) -> File {
+    match git_line_stats.of(&file) {
         Some(stats) => file.set_stats(stats),
         None => match file.get_change_type() {
-            ChangeType::Untracked => match untracked_stats(&file) {
+            ChangeType::Untracked => match count_untracked_lines(&file) {
                 Some(stats) => file.set_stats(stats),
                 None => file,
             },
@@ -102,7 +106,7 @@ fn attach_stats(file: File, line_stats: &LineStats) -> File {
     }
 }
 
-fn untracked_stats(file: &File) -> Option<Stats> {
+fn count_untracked_lines(file: &File) -> Option<Stats> {
     let bytes = crate::git::worktree::read(file.path()).ok()??;
     let content = FileContent::from_bytes(Some(bytes));
     let text = content.text()?;
@@ -113,7 +117,7 @@ fn untracked_stats(file: &File) -> Option<Stats> {
 // --- Turning git's output into files ---
 
 /// Converts status entries to files, with unstaged entries first.
-fn from_status(entries: Vec<Entry>, root: &std::path::Path, commit: Rev) -> Vec<File> {
+fn status_entries_to_files(entries: Vec<Entry>, root: &std::path::Path, commit: Rev) -> Vec<File> {
     let (mut unstaged, mut staged) = (Vec::new(), Vec::new());
     for entry in entries {
         if entry.xy.worktree != Code::Unmodified || is_conflicted(&entry) {
@@ -164,7 +168,7 @@ pub(crate) fn status_entry_to_file(entry: Entry, root: &std::path::Path, revs: R
 }
 
 /// One parsed `git diff --name-status` line → one `File`.
-fn from_diff_entry(change: Change, root: &std::path::Path, revs: Revs) -> File {
+fn diff_entry_to_file(change: Change, root: &std::path::Path, revs: Revs) -> File {
     let path = RepoPath::new(change.path, root);
     let file = match (change.letter, change.original) {
         ('A', _) => File::added(path, revs),
