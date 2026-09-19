@@ -14,4 +14,4 @@ mod repository;
 
 pub use error::{Error, Result};
 pub use repo::Repo;
-pub use repository::{DiffType, LineStats, Repository};
+pub use repository::{DiffType, Repository};

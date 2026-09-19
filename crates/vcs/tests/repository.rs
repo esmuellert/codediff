@@ -323,6 +323,29 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
 }
 
 #[test]
+fn untracked_and_deleted_files_have_line_counts() {
+    let fixture = Fixture::new("one-sided-counts");
+    let files = fixture
+        .git()
+        .get_changed_files(&DiffType::Worktree, &[])
+        .expect("status runs");
+
+    let untracked = file(&files, "untracked.txt");
+    assert_eq!(
+        untracked.get_stats(),
+        Some(Stats::new(1, 0)),
+        "an untracked text file is an addition"
+    );
+
+    let deleted = file(&files, "deleted.txt");
+    assert_eq!(
+        deleted.get_stats(),
+        Some(Stats::new(0, 1)),
+        "a deleted text file is a removal"
+    );
+}
+
+#[test]
 fn each_comparison_counts_its_own_lines() {
     // Count each comparison separately.
     let fixture = Fixture::new("counts");
@@ -330,14 +353,10 @@ fn each_comparison_counts_its_own_lines() {
     let files = git
         .get_changed_files(&DiffType::Worktree, &[])
         .expect("status runs");
-    let counts = git
-        .get_line_stats(&DiffType::Worktree, &[])
-        .expect("counting");
-
     let found: Vec<(&'static str, Option<Stats>)> = files
         .iter()
         .filter(|file| file.path().as_str() == "staged-then-edited.txt")
-        .map(|file| (file.revs().heading(), counts.of(file)))
+        .map(|file| (file.revs().heading(), file.get_stats()))
         .collect();
     assert_eq!(
         found,
