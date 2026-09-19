@@ -142,7 +142,7 @@ pub fn SideBySide(
             first_cell: horizontal.requested_first_cell,
         };
     }
-    let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
+    let listeners = use_diff_viewer_navigation(scope, vertical_handle, horizontal_handle);
 
     let visible_wrapped_lines = &wrapped_lines[wrapped_view_line_range_for_terminal_lines(
         &wrapped_lines,

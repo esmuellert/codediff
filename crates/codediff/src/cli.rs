@@ -14,6 +14,10 @@ pub struct Cli {
     #[arg(hide = true)]
     pub path: Option<String>,
 
+    /// Load user preferences from this file.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<std::path::PathBuf>,
+
     /// Write debug logs to this file.
     #[arg(long, hide = true, value_name = "PATH")]
     pub log: Option<std::path::PathBuf>,

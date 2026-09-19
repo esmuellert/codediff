@@ -29,7 +29,8 @@ fn make_diff_with_lines(
     original: &[&str],
     modified: &[&str],
 ) -> pipeline::diff::DiffContent {
-    let diff = pipeline::diff::compute(original, modified).expect("a diff");
+    let diff = pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())
+        .expect("a diff");
     let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
     pipeline::diff::DiffContent::Diff(pipeline::diff::Diff { file, alignment })
 }

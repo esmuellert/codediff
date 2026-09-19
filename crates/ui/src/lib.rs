@@ -2,10 +2,12 @@
 
 pub mod components;
 pub mod hooks;
+mod keybindings;
 pub mod services;
 pub mod theme;
 mod view;
 
+pub use keybindings::{Action, KeyMap};
 pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
 
 pub use crossterm;
@@ -41,17 +43,25 @@ enum Event {
     SyntaxReady(syntax::SyntaxResponse),
 }
 
-pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
+pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::io::Result<i32> {
+    let config = Rc::new(config);
+    let keybindings =
+        Rc::new(KeyMap::from_config(&config.keybindings).map_err(std::io::Error::other)?);
+    let diff_settings = pipeline::diff::Settings {
+        ignore_trim_whitespace: config.diff.ignore_trim_whitespace,
+    };
     let (events_tx, events_rx) = mpsc::channel::<Event>();
 
     let files_worker = pipeline::files::FilesWorker::start(channel::Emitter::new(
         events_tx.clone(),
         Event::FilesReady,
     ));
-    let diff_worker =
-        pipeline::diff::DiffWorker::start(channel::Emitter::new(events_tx.clone(), |response| {
+    let diff_worker = pipeline::diff::DiffWorker::start(
+        channel::Emitter::new(events_tx.clone(), |response| {
             Event::DiffReady(Box::new(response))
-        }));
+        }),
+        diff_settings,
+    );
     let syntax_worker =
         syntax::Syntax::start(channel::Emitter::new(events_tx.clone(), Event::SyntaxReady));
     let _watcher_subscription = watcher::subscribe(
@@ -71,6 +81,8 @@ pub fn main(cwd: &Path, pathspec: Vec<String>) -> std::io::Result<i32> {
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
+        config,
+        keybindings,
         files_service: Rc::clone(&files_service),
         diff_service: Rc::clone(&diff_service),
         syntax_service: Rc::clone(&syntax_service),

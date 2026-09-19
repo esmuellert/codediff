@@ -7,7 +7,7 @@ use anyhow::Result;
 use file_types::{DiffVersion, File};
 
 use crate::diff::contents::{self, Contents};
-use crate::diff::{align, compute};
+use crate::diff::{Settings, align, compute};
 
 /// What the pipeline produces for one file.
 pub enum DiffContent {
@@ -63,13 +63,15 @@ impl SingleFile {
 /// Drives the four stages for one file.
 pub struct Runner {
     pub contents: Contents,
+    settings: Settings,
 }
 
 impl Runner {
     /// Runs stage one: open the repository, read both sides.
-    pub fn new(file: &file_types::File) -> Result<Self> {
+    pub fn new(file: &file_types::File, settings: Settings) -> Result<Self> {
         Ok(Self {
             contents: contents::read(file)?,
+            settings,
         })
     }
 
@@ -103,7 +105,7 @@ impl Runner {
                 let original = self.contents.version(DiffVersion::Original);
                 let modified = self.contents.version(DiffVersion::Modified);
                 tracing::info!(path = %file.path(), lines = modified.len(), "computing diff");
-                let changed = compute(&original, &modified)?;
+                let changed = compute(&original, &modified, self.settings)?;
                 let alignment = align(changed, &original, &modified)?;
                 Ok(DiffContent::Diff(Diff { file, alignment }))
             }

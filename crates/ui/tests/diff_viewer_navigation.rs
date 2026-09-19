@@ -25,7 +25,7 @@ fn Probe(
         .saturating_sub(u32::from(size.width));
     let (horizontal, horizontal_handle) =
         use_horizontal_scroll(scope, maximum_first_cell, *initial_first_cell);
-    let listeners = use_diff_viewer_navigation(vertical_handle, horizontal_handle);
+    let listeners = use_diff_viewer_navigation(scope, vertical_handle, horizontal_handle);
     let state: Rc<str> = format!("{} {}", view.top, horizontal.first_cell).into();
     rsx! {
         Column {

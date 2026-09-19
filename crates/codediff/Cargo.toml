@@ -19,6 +19,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 channel.workspace = true
 clap.workspace = true
+config.workspace = true
 line-index.workspace = true
 align.workspace = true
 loom.workspace = true

@@ -95,7 +95,8 @@ impl DiffFixture {
     pub fn build(self) -> Result<Rc<DiffContent>> {
         let original: Vec<&str> = self.original.iter().map(String::as_str).collect();
         let modified: Vec<&str> = self.modified.iter().map(String::as_str).collect();
-        let changed = pipeline::diff::compute(&original, &modified)?;
+        let changed =
+            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())?;
         let alignment = pipeline::diff::align(changed, &original, &modified)?;
         Ok(Rc::new(DiffContent::Diff(Diff {
             file: File::unchanged_path(repo_path(&self.path), worktree_revs()),

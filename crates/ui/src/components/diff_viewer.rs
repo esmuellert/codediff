@@ -15,6 +15,7 @@ use super::inline::{Inline, InlineProps};
 use super::side_by_side::{SideBySide, SideBySideProps};
 use super::single_file::{SingleFile, SingleFileProps};
 use super::welcome::Welcome;
+use crate::keybindings::Action;
 use crate::view::terminal_lines::TerminalLine;
 
 /// The screen position of one two-sided diff.
@@ -109,15 +110,17 @@ fn sync_active_view_state(
 }
 
 fn layout_listener(
+    scope: &mut Scope,
     is_diff: bool,
     set_layout: SetState<DiffType>,
     set_wrap: SetState<bool>,
 ) -> Listeners {
+    let keybindings = use_context::<Ui>(scope).keybindings;
     Listeners::new().on_key(move |key| {
-        if is_diff && key == crokey::key!(t) {
+        if is_diff && keybindings.matches(Action::ToggleLayout, key) {
             set_layout(&|layout| layout.other());
             Bubble::Stop
-        } else if key == crokey::key!(w) {
+        } else if keybindings.matches(Action::ToggleWrap, key) {
             set_wrap(&|wrap| !wrap);
             Bubble::Stop
         } else {
@@ -178,8 +181,11 @@ fn render_content_view(
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let content = use_diff_content(scope, &ctx);
-    let (layout, set_layout) = use_state(scope, || DiffType::SideBySide);
-    let (wrap, set_wrap) = use_state(scope, || true);
+    let (layout, set_layout) = use_state(scope, || match ctx.config.ui.layout {
+        config::ViewLayout::SideBySide => DiffType::SideBySide,
+        config::ViewLayout::Inline => DiffType::Inline,
+    });
+    let (wrap, set_wrap) = use_state(scope, || ctx.config.ui.wrap);
     let view_states = use_ref(scope, ViewStateHistory::default);
     let active_view_state = use_ref(scope, ViewState::default);
     let active_file_key = use_ref(scope, || None::<String>);
@@ -191,7 +197,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     );
 
     let is_diff = matches!(content.as_deref(), Some(DiffContent::Diff(_)));
-    let toggle = layout_listener(is_diff, set_layout, set_wrap);
+    let toggle = layout_listener(scope, is_diff, set_layout, set_wrap);
     let content_view = render_content_view(content, layout, active_view_state, wrap);
 
     rsx! {

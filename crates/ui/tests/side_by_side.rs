@@ -58,7 +58,8 @@ fn TestSideBySideUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffCo
 }
 
 fn make_diff(original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
-    let diff = pipeline::diff::compute(original, modified).expect("a diff");
+    let diff = pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())
+        .expect("a diff");
     let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("test.rs", std::path::Path::new("/repo")),

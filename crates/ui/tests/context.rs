@@ -29,6 +29,7 @@ fn idle_app() -> Harness {
     let (diff_tx, _diff_responses) = mpsc::channel();
     let diff_service = DiffService::new(Rc::new(RefCell::new(pipeline::diff::DiffWorker::start(
         channel::Emitter::new(diff_tx, |response| response),
+        pipeline::diff::Settings::default(),
     ))));
     let (syntax_tx, _syntax_responses) = mpsc::channel();
     let syntax_service = SyntaxService::new(Rc::new(RefCell::new(syntax::Syntax::start(
@@ -38,6 +39,8 @@ fn idle_app() -> Harness {
     Harness::new::<App>(
         AppProps {
             cwd: Rc::from(Path::new("/tmp")),
+            config: Rc::new(config::Config::default()),
+            keybindings: Rc::new(ui::KeyMap::default()),
             files_service: Rc::new(files_service),
             diff_service: Rc::new(diff_service),
             syntax_service: Rc::new(syntax_service),

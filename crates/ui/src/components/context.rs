@@ -6,6 +6,7 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
 
+use crate::keybindings::KeyMap;
 use crate::services::diff::DiffService;
 use crate::services::files::FilesService;
 use crate::services::syntax::SyntaxService;
@@ -16,6 +17,8 @@ use crate::theme::Theme;
 /// Everything a component reads.
 #[derive(Clone)]
 pub struct Context {
+    pub config: Rc<config::Config>,
+    pub keybindings: Rc<KeyMap>,
     pub theme: Rc<Theme>,
     pub repo: Rc<Path>,
     pub file: Option<Rc<File>>,
@@ -31,6 +34,8 @@ pub struct Context {
 impl Default for Context {
     fn default() -> Self {
         Self {
+            config: Rc::new(config::Config::default()),
+            keybindings: Rc::new(KeyMap::default()),
             theme: Rc::new(Theme::DARK),
             repo: Rc::from(Path::new("")),
             file: None,
@@ -47,7 +52,9 @@ impl Default for Context {
 
 impl Context {
     fn same(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.theme, &other.theme)
+        Rc::ptr_eq(&self.config, &other.config)
+            && Rc::ptr_eq(&self.keybindings, &other.keybindings)
+            && Rc::ptr_eq(&self.theme, &other.theme)
             && Rc::ptr_eq(&self.repo, &other.repo)
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
@@ -81,6 +88,8 @@ context!(
 pub fn UiProvider(
     scope: &mut Scope,
     cwd: Rc<Path>,
+    config: Rc<config::Config>,
+    keybindings: Rc<KeyMap>,
     files_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
     syntax_service: Rc<SyntaxService>,
@@ -92,11 +101,16 @@ pub fn UiProvider(
     let (repo, set_repo) = use_state(scope, || initial);
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
 
-    let theme = use_memo(scope, (), Theme::from_environment);
+    let theme_name = config.ui.theme.clone();
+    let theme = use_memo(scope, theme_name.clone(), move || {
+        configured_theme(&theme_name)
+    });
 
     rsx! {
         Ui {
             value: Context {
+                config: Rc::clone(config),
+                keybindings: Rc::clone(keybindings),
                 theme,
                 repo,
                 file: file.as_ref().map(Rc::clone),
@@ -111,4 +125,11 @@ pub fn UiProvider(
             { children.clone() }
         }
     }
+}
+
+fn configured_theme(name: &str) -> Theme {
+    if name == "auto" {
+        return Theme::from_environment();
+    }
+    Theme::named(name).unwrap_or_else(Theme::from_environment)
 }
