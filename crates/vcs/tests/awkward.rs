@@ -41,6 +41,7 @@ impl Repo {
         Repository::open(&self.dir).expect("opening the repository")
     }
 
+    #[cfg(unix)]
     fn path(&self) -> &std::path::Path {
         &self.dir
     }
