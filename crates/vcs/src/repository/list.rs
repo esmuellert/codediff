@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use file_types::{ChangeType, DiffVersion, File, RepoPath, Rev, Revs, Stage, Stats};
+use file_types::{ChangeType, DiffVersion, File, FileContent, RepoPath, Rev, Revs, Stage, Stats};
 
 use crate::git::diff::name_status::Change;
 use crate::git::diff::numstat::{self, Counts};
@@ -15,7 +15,7 @@ use super::Repository;
 ///
 /// Each comparison has its own map, so staged and unstaged versions stay separate.
 #[derive(Debug, Clone, Default)]
-pub struct LineStats {
+struct LineStats {
     counts: HashMap<Rev, Counts>,
 }
 
@@ -27,7 +27,7 @@ impl LineStats {
     }
 
     /// Returns this file's counts, or `None` when they are unavailable.
-    pub fn of(&self, file: &File) -> Option<Stats> {
+    fn of(&self, file: &File) -> Option<Stats> {
         self.counts
             .get(file.rev(DiffVersion::Modified))?
             .get(file.path().as_str())
@@ -36,7 +36,7 @@ impl LineStats {
 }
 
 impl Repository {
-    /// Returns each changed file with its comparison revisions.
+    /// Returns each changed file with its revisions and line counts.
     ///
     /// A path can occur twice when it is staged and edited again.
     pub fn get_changed_files(
@@ -44,7 +44,21 @@ impl Repository {
         diff_type: &super::DiffType,
         pathspec: &[String],
     ) -> crate::Result<Vec<File>> {
-        match git::resolve_command(&self.repo, diff_type)? {
+        let command = git::resolve_command(&self.repo, diff_type)?;
+        let line_stats = self.line_stats(&command, pathspec)?;
+        let files = self.list_changed_files(&command, pathspec)?;
+        Ok(files
+            .into_iter()
+            .map(|file| attach_stats(file, &line_stats))
+            .collect())
+    }
+
+    fn list_changed_files(
+        &mut self,
+        command: &GitCommand,
+        pathspec: &[String],
+    ) -> crate::Result<Vec<File>> {
+        match command {
             GitCommand::Worktree => {
                 let entries = git::status_entries(&self.repo, Untracked::All, pathspec)?;
                 let commit = self.revs()?.before;
@@ -52,22 +66,16 @@ impl Repository {
             }
             GitCommand::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                let files = git::diff::name_status::run(&self.repo, &args, pathspec)?
+                Ok(git::diff::name_status::run(&self.repo, &args, pathspec)?
                     .into_iter()
                     .map(|change| from_diff_entry(change, &self.repo.root, revs.clone()))
-                    .collect();
-                Ok(files)
+                    .collect())
             }
         }
     }
 
-    /// Returns line counts for each comparison; uncountable files are omitted.
-    pub fn get_line_stats(
-        &mut self,
-        diff_type: &super::DiffType,
-        pathspec: &[String],
-    ) -> crate::Result<LineStats> {
-        match git::resolve_command(&self.repo, diff_type)? {
+    fn line_stats(&self, command: &GitCommand, pathspec: &[String]) -> crate::Result<LineStats> {
+        match command {
             GitCommand::Worktree => Ok(LineStats::new([
                 (Rev::Worktree, numstat::unstaged(&self.repo)?),
                 (Rev::Index, numstat::staged(&self.repo)?),
@@ -75,10 +83,31 @@ impl Repository {
             GitCommand::Diff { args, revs } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 let counts = numstat::diff(&self.repo, &args, pathspec)?;
-                Ok(LineStats::new([(revs.after, counts)]))
+                Ok(LineStats::new([(revs.after.clone(), counts)]))
             }
         }
     }
+}
+
+fn attach_stats(file: File, line_stats: &LineStats) -> File {
+    match line_stats.of(&file) {
+        Some(stats) => file.set_stats(stats),
+        None => match file.get_change_type() {
+            ChangeType::Untracked => match untracked_stats(&file) {
+                Some(stats) => file.set_stats(stats),
+                None => file,
+            },
+            _ => file,
+        },
+    }
+}
+
+fn untracked_stats(file: &File) -> Option<Stats> {
+    let bytes = crate::git::worktree::read(file.path()).ok()??;
+    let content = FileContent::from_bytes(Some(bytes));
+    let text = content.text()?;
+    let added = u32::try_from(text.lines().count()).ok()?;
+    Some(Stats::new(added, 0))
 }
 
 // --- Turning git's output into files ---

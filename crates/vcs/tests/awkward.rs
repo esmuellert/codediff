@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use file_types::{DiffVersion, File, RepoPath};
+use file_types::DiffVersion;
 use vcs::{DiffType, Repository};
 
 /// A repository built by hand, removed on drop.
@@ -90,25 +90,24 @@ fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
     let files = git
         .get_changed_files(&DiffType::Worktree, &[])
         .expect("listing");
-    let counts = git
-        .get_line_stats(&DiffType::Worktree, &[])
-        .expect("counting");
     let moved = files
         .iter()
         .find(|file| file.path().as_str() == "g.txt")
         .expect("the renamed file is listed");
     // The new name must be counted at all. Defaulting a missing entry to zero
-    // let an empty map pass, which is every way this could be broken.
-    let stats = counts
-        .of(moved)
-        .unwrap_or_else(|| panic!("g.txt is not counted at all: {counts:?}"));
+    // would let an empty map pass, which is every way this could be broken.
+    let stats = moved
+        .get_stats()
+        .unwrap_or_else(|| panic!("g.txt is not counted at all: {files:?}"));
     // A pure rename has no line changes.
     assert!(
         stats.is_empty(),
         "a pure rename changed no lines, whatever the config says: {stats:?}"
     );
-    let old = File::deleted(RepoPath::new("f.txt", repo.path()), moved.revs());
-    assert_eq!(counts.of(&old), None, "and the old name is not counted");
+    assert!(
+        !files.iter().any(|file| file.path().as_str() == "f.txt"),
+        "the old name is not listed"
+    );
 }
 
 #[test]
