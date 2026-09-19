@@ -22,6 +22,15 @@ fn a_side_that_did_not_change_is_left_out() {
 }
 
 #[test]
+fn an_untracked_file_looks_like_an_added_file() {
+    let file = file("a.rs")
+        .set_change_type(file_types::ChangeType::Untracked)
+        .set_stats(file_types::Stats::new(1, 0));
+    let rows = draw(vec![file], 30, 3);
+    assert!(rows[1].ends_with("+1 A"), "got {:?}", rows[1]);
+}
+
+#[test]
 fn a_file_with_no_counts_shows_only_its_letter() {
     let rows = draw(vec![file("a.rs")], 30, 3);
     assert!(rows[1].ends_with('M'), "got {:?}", rows[1]);

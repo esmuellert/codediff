@@ -214,7 +214,7 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
         file_types::ChangeType::Deleted => "D",
         file_types::ChangeType::Modified => "M",
         file_types::ChangeType::Moved => "R",
-        file_types::ChangeType::Untracked => "??",
+        file_types::ChangeType::Untracked => "A",
         file_types::ChangeType::Conflicted => "!",
     }
 }

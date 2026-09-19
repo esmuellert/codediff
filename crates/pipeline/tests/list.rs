@@ -26,6 +26,24 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn untracked_and_deleted_files_carry_one_sided_counts() {
+    let fixture = Fixture::new("one-sided-counts");
+    let files = files::get_files(&Request::worktree(&fixture.dir)).expect("listing");
+
+    let untracked = files
+        .iter()
+        .find(|file| file.path().as_str() == "untracked.txt")
+        .expect("untracked file is listed");
+    assert_eq!(untracked.get_stats(), Some(Stats::new(1, 0)));
+
+    let deleted = files
+        .iter()
+        .find(|file| file.path().as_str() == "deleted.txt")
+        .expect("deleted file is listed");
+    assert_eq!(deleted.get_stats(), Some(Stats::new(0, 1)));
+}
+
+#[test]
 fn a_file_staged_and_edited_again_carries_a_count_per_comparison() {
     // Each comparison has its own line counts.
     let fixture = Fixture::new("counts");

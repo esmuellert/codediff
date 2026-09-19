@@ -56,21 +56,9 @@ pub struct Response {
 pub fn get_files(request: &Request) -> Result<Vec<File>> {
     tracing::info!("listing files");
     let mut repository = Repository::open(&request.repo).context("opening a repository")?;
-    let changes = repository
+    let files = repository
         .get_changed_files(&request.diff_type, &request.pathspec)
-        .context("listing changed files")?;
-
-    let counts = repository
-        .get_line_stats(&request.diff_type, &request.pathspec)
-        .unwrap_or_default();
-
-    let files: Vec<File> = changes
-        .into_iter()
-        .map(|file| match counts.of(&file) {
-            Some(stats) => file.set_stats(stats),
-            None => file,
-        })
-        .collect();
+        .context("listing changed files and line counts")?;
     tracing::info!(count = files.len(), "listed files");
     Ok(files)
 }
