@@ -5,8 +5,8 @@ use std::rc::Rc;
 use align::DiffVersion;
 use file_types::DiffType;
 use loom::{
-    Basis, Column, ColumnProps, Layout, Node, Ref, Row, RowProps, Scope, component, rsx,
-    use_context, use_measure, use_memo,
+    Basis, Column, ColumnProps, Layout, Node, Ref, Row, RowProps, Scope, Scroll, ScrollOffset,
+    ScrollProps, component, rsx, use_context, use_layout_effect, use_measure, use_memo, use_scroll,
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
@@ -14,35 +14,13 @@ use super::context::Ui;
 use super::diff_viewer::ViewState;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_diff_viewer_navigation::{HorizontalDimensions, use_diff_viewer_navigation};
-use crate::hooks::use_horizontal_scroll::use_horizontal_scroll;
-use crate::hooks::use_scroll::use_scroll;
+use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
 use crate::view::terminal_lines::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_line_cells,
-    terminal_line_count, terminal_view_lines, wrapped_view_line_range_for_terminal_lines,
+    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_view_lines,
 };
-
-fn longest_inline_terminal_line_cells(
-    lines: &[WrappedViewLine],
-    original_lines: &[String],
-    modified_lines: &[String],
-) -> u32 {
-    lines
-        .iter()
-        .flat_map(WrappedViewLine::terminal_line_pairs)
-        .map(|(original, modified)| {
-            if matches!(modified, TerminalLine::SourceCode { .. }) {
-                terminal_line_cells(modified, modified_lines)
-            } else {
-                terminal_line_cells(original, original_lines)
-            }
-        })
-        .max()
-        .unwrap_or(0)
-}
 
 #[component]
 pub fn Inline(
@@ -85,11 +63,7 @@ pub fn Inline(
     });
     let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap, compact), || {
         if wrap || compact {
-            longest_inline_terminal_line_cells(
-                &wrapped_lines,
-                alignment.lines(DiffVersion::Original),
-                alignment.lines(DiffVersion::Modified),
-            )
+            u32::from(code_width)
         } else {
             longest_line_cells(alignment.lines(DiffVersion::Original))
                 .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
@@ -100,28 +74,45 @@ pub fn Inline(
         .as_ref()
         .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
         .unwrap_or(0);
-    let terminal_line_count = terminal_line_count(&wrapped_lines);
-    let (view, vertical_handle) = use_scroll(scope, terminal_line_count, initial_top, size.height);
-    let horizontal_limits = HorizontalDimensions::Inline {
-        longest_line_cells: *maximum_line_cells,
-        original_gutter_cells: original_gutter_width,
-        modified_gutter_cells: modified_gutter_width,
-    }
-    .limits(size.width);
-    let (horizontal_view, horizontal_handle) = use_horizontal_scroll(
-        scope,
-        horizontal_limits.maximum_first_cell(),
-        current_view_state.first_cell,
-    );
-    let horizontal = horizontal_limits.view(horizontal_view.first_cell);
+    let (vertical_view, vertical_handle) = use_scroll(scope, || ScrollOffset {
+        x: 0,
+        y: initial_top,
+    });
+    let (horizontal_view, horizontal_handle) = use_scroll(scope, || ScrollOffset {
+        x: current_view_state.first_cell,
+        y: 0,
+    });
+    let restore_vertical = vertical_handle.clone();
+    let restore_horizontal = horizontal_handle.clone();
+    use_layout_effect(scope, (content_id, code_width, wrap, compact), move || {
+        restore_vertical.scroll_to(ScrollOffset {
+            x: 0,
+            y: initial_top,
+        });
+        restore_horizontal.scroll_to(ScrollOffset {
+            x: current_view_state.first_cell,
+            y: 0,
+        });
+    });
+    let total_terminal_lines = wrapped_lines
+        .iter()
+        .flat_map(WrappedViewLine::terminal_line_pairs)
+        .count() as u32;
+    let visible_start = vertical_view
+        .clamped_offset()
+        .y
+        .min(total_terminal_lines.saturating_sub(1));
+    let visible_count = u32::from(size.height).saturating_add(4);
+    let vertical_position = vertical_view.requested_offset().y;
+    let horizontal_position = horizontal_view.requested_offset().x;
     if size.width > 0 && size.height > 0 {
         *view_state_ref.current() = ViewState {
-            first_terminal_line: (view.top > 0)
+            first_terminal_line: (vertical_position > 0)
                 .then(|| {
                     wrapped_lines
                         .iter()
                         .flat_map(WrappedViewLine::terminal_line_pairs)
-                        .nth(view.top as usize)
+                        .nth(vertical_position as usize)
                 })
                 .flatten()
                 .and_then(|(original, modified)| match modified {
@@ -132,37 +123,42 @@ pub fn Inline(
                     },
                 })
                 .cloned(),
-            first_cell: horizontal.requested_first_cell,
+            first_cell: horizontal_position,
         };
     }
-    let listeners = use_diff_viewer_navigation(scope, vertical_handle, horizontal_handle);
-    let visible_wrapped_lines = &wrapped_lines[wrapped_view_line_range_for_terminal_lines(
-        &wrapped_lines,
-        view.view_lines.start,
-        view.view_lines.end,
-    )];
+    let listeners = use_diff_viewer_navigation(
+        scope,
+        vertical_handle.clone(),
+        horizontal_handle.clone(),
+        None,
+    );
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
         Rc::clone(content),
         DiffType::Inline,
-        visible_wrapped_lines,
+        &wrapped_lines,
     );
     let syntax = syntax.as_deref();
 
-    let mut rows = Vec::with_capacity(view.view_lines.len());
+    let mut original_gutters = Vec::with_capacity(visible_count as usize);
+    let mut modified_gutters = Vec::with_capacity(visible_count as usize);
+    let mut code_rows = Vec::with_capacity(visible_count as usize);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
-        .skip(view.view_lines.start as usize)
-        .take(view.view_lines.len())
+        .skip(visible_start as usize)
+        .take(visible_count as usize)
         .enumerate()
     {
-        let view_line_index = view.view_lines.start + offset as u32;
-        let row = if is_fold_marker(original, modified) {
+        let view_line_index = visible_start + offset as u32;
+        if is_fold_marker(original, modified) {
             let blank = theme.normal;
-            vec![
-                rsx! {
+            original_gutters.push(rsx! {
+                Row {
+                    key: view_line_index,
+                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                    ..,
                     Gutter {
                         key: 0u32,
                         number: None,
@@ -170,100 +166,115 @@ pub fn Inline(
                         blank: blank,
                         width: original_gutter_width,
                     }
-                },
-                rsx! {
+                }
+            });
+            modified_gutters.push(rsx! {
+                Row {
+                    key: view_line_index,
+                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                    ..,
                     Gutter {
-                        key: 1u32,
+                        key: 0u32,
                         number: None,
                         style: blank,
                         blank: blank,
                         width: modified_gutter_width,
                     }
-                },
-                rsx! { FoldMarker { key: 2u32 } },
-            ]
-        } else {
-            let terminal_line = match modified {
-                TerminalLine::SourceCode { .. } => modified,
-                TerminalLine::Filler => match original {
-                    TerminalLine::SourceCode { .. } => original,
-                    TerminalLine::Filler => continue,
-                },
-            };
-            let TerminalLine::SourceCode {
-                source_line: line_number,
-                ..
-            } = terminal_line
-            else {
-                continue;
-            };
-            let line_number = *line_number;
-            let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
-                DiffVersion::Modified
-            } else {
-                DiffVersion::Original
-            };
-            let original_number = original.gutter_number();
-            let modified_number = modified.gutter_number();
-            let decorations = alignment.decorations(version, line_number);
-            let code_styles =
-                code_text::styles_for_diff(theme, version, decorations.line_background);
-            let gutter_style =
-                gutter::style_for_diff(theme, version, decorations.gutter_background);
-            let text = alignment.line(version, line_number).unwrap_or("");
-            let syntax_spans = syntax
-                .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-                .unwrap_or_default();
-            let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
-                code_text::prepare_code_text_inputs_from_decorations(
-                    text,
-                    terminal_line,
-                    &decorations,
-                    &syntax_spans,
-                );
+                }
+            });
+            code_rows.push(rsx! {
+                Row {
+                    key: view_line_index,
+                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                    ..,
+                    FoldMarker { key: 0u32 }
+                }
+            });
+            continue;
+        }
 
-            vec![
-                rsx! {
-                    Gutter {
-                        key: 0u32,
-                        number: original_number,
-                        style: gutter_style,
-                        blank: gutter_style,
-                        width: original_gutter_width,
-                    }
-                },
-                rsx! {
-                    Gutter {
-                        key: 1u32,
-                        number: modified_number,
-                        style: gutter_style,
-                        blank: gutter_style,
-                        width: modified_gutter_width,
-                    }
-                },
-                rsx! {
-                    CodeText {
-                        key: 2u32,
-                        text: text,
-                        first_cell: horizontal.first_cell(version),
-                        diff: changed_ranges,
-                        fill_from: fill_from,
-                        empty_markers: empty_markers,
-                        syntax: syntax_spans,
-                        unchanged_style: code_styles.unchanged,
-                        changed_style: code_styles.changed,
-                        selection: None,
-                    }
-                },
-            ]
+        let terminal_line = match modified {
+            TerminalLine::SourceCode { .. } => modified,
+            TerminalLine::Filler => match original {
+                TerminalLine::SourceCode { .. } => original,
+                TerminalLine::Filler => continue,
+            },
         };
+        let TerminalLine::SourceCode {
+            source_line: line_number,
+            ..
+        } = terminal_line
+        else {
+            continue;
+        };
+        let line_number = *line_number;
+        let version = if matches!(modified, TerminalLine::SourceCode { .. }) {
+            DiffVersion::Modified
+        } else {
+            DiffVersion::Original
+        };
+        let original_number = original.gutter_number();
+        let modified_number = modified.gutter_number();
+        let decorations = alignment.decorations(version, line_number);
+        let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
+        let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);
+        let text = alignment.line(version, line_number).unwrap_or("");
+        let syntax_spans = syntax
+            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
+            .unwrap_or_default();
+        let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
+            code_text::prepare_code_text_inputs_from_decorations(
+                text,
+                terminal_line,
+                &decorations,
+                &syntax_spans,
+            );
 
-        rows.push(rsx! {
+        original_gutters.push(rsx! {
             Row {
                 key: view_line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 ..,
-                { row }
+                Gutter {
+                    key: 0u32,
+                    number: original_number,
+                    style: gutter_style,
+                    blank: gutter_style,
+                    width: original_gutter_width,
+                }
+            }
+        });
+        modified_gutters.push(rsx! {
+            Row {
+                key: view_line_index,
+                layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                ..,
+                Gutter {
+                    key: 0u32,
+                    number: modified_number,
+                    style: gutter_style,
+                    blank: gutter_style,
+                    width: modified_gutter_width,
+                }
+            }
+        });
+        code_rows.push(rsx! {
+            Row {
+                key: view_line_index,
+                layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                ..,
+                CodeText {
+                    key: 0u32,
+                    text: text,
+                    first_cell: 0,
+                    diff: changed_ranges,
+                    fill_from: fill_from,
+                    empty_markers: empty_markers,
+                    syntax: syntax_spans,
+                    unchanged_style: code_styles.unchanged,
+                    changed_style: code_styles.changed,
+                    selection: None,
+                }
             }
         });
     }
@@ -276,7 +287,46 @@ pub fn Inline(
             listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
-            { rows }
+            Scroll {
+                view: vertical_view,
+                handle: Some(vertical_handle),
+                horizontal: false,
+                vertical: true,
+                wheel_step: 3,
+                content_height: Some(total_terminal_lines),
+                content_offset: ScrollOffset { x: 0, y: visible_start },
+                layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
+                ..,
+                Row {
+                    layout: Layout { grow: 1, ..Default::default() },
+                    ..,
+                    Column {
+                        layout: Layout { basis: Basis::Length(original_gutter_width), shrink: 0, ..Default::default() },
+                        ..,
+                        { original_gutters }
+                    }
+                    Column {
+                        layout: Layout { basis: Basis::Length(modified_gutter_width), shrink: 0, ..Default::default() },
+                        ..,
+                        { modified_gutters }
+                    }
+                    Scroll {
+                        view: horizontal_view,
+                        handle: Some(horizontal_handle),
+                        horizontal: true,
+                        vertical: false,
+                        wheel_step: 3,
+                        content_width: Some(*maximum_line_cells),
+                        layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
+                        ..,
+                        Column {
+                            layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
+                            ..,
+                            { code_rows }
+                        }
+                    }
+                }
+            }
         }
     }
 }

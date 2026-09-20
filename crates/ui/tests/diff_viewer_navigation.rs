@@ -2,12 +2,10 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use loom::{
-    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Text, TextProps, component,
-    rsx, use_measure,
+    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollOffset,
+    ScrollProps, Text, TextProps, component, rsx, use_scroll,
 };
 use ui::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
-use ui::hooks::use_horizontal_scroll::use_horizontal_scroll;
-use ui::hooks::use_scroll::use_scroll;
 
 #[component]
 fn Probe(
@@ -18,24 +16,37 @@ fn Probe(
     initial_top: u32,
     initial_first_cell: u32,
 ) -> Node {
-    let (node_ref, size) = use_measure(scope);
-    let (view, vertical_handle) = use_scroll(scope, *line_count, *initial_top, size.height);
-    let maximum_first_cell = longest_line_cells
-        .saturating_add(4)
-        .saturating_sub(u32::from(size.width));
-    let (horizontal, horizontal_handle) =
-        use_horizontal_scroll(scope, maximum_first_cell, *initial_first_cell);
-    let listeners = use_diff_viewer_navigation(scope, vertical_handle, horizontal_handle);
-    let state: Rc<str> = format!("{} {}", view.top, horizontal.first_cell).into();
+    let (view, scroll) = use_scroll(scope, || ScrollOffset {
+        x: *initial_first_cell,
+        y: *initial_top,
+    });
+    let listeners = use_diff_viewer_navigation(scope, scroll.clone(), scroll.clone(), None);
+    let offset = view.clamped_offset();
+    let state: Rc<str> = format!("{} {}", offset.y, offset.x).into();
+    let line = "x".repeat(longest_line_cells.saturating_add(4) as usize);
+    let rows: Vec<Node> = (0..*line_count)
+        .map(|_| rsx! { Text { text: line.clone().into(), .. } })
+        .collect();
     rsx! {
         Column {
-            ref: Some(node_ref),
             focusable: true,
             auto_focus: *auto_focus,
             listeners: listeners,
             layout: Layout { grow: 1, ..Default::default() },
             ..,
             Text { text: state, .. }
+            Scroll {
+                view: view,
+                handle: Some(scroll),
+                wheel_step: 3,
+                layout: Layout { grow: 1, ..Default::default() },
+                ..,
+                Column {
+                    layout: Layout { grow: 1, ..Default::default() },
+                    ..,
+                    { rows }
+                }
+            }
         }
     }
 }

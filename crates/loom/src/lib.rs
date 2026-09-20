@@ -13,6 +13,7 @@ mod run;
 mod runtime;
 mod scope;
 mod screen;
+mod scroll;
 pub mod testing;
 mod tree;
 
@@ -35,11 +36,12 @@ pub use layout::{Basis, Edges, Layout};
 pub use node::{Children, Element, Key, Node, NodeHandle};
 pub use paint::{
     Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps, Paint, Row,
-    RowProps, Stack, StackProps, Text, TextProps,
+    RowProps, Scroll, ScrollProps, Stack, StackProps, Text, TextProps,
 };
 pub use run::{Flow, deliver_input, run};
 pub use scope::{Scope, ScopeId};
 pub use screen::{Screen, restore};
+pub use scroll::{ScrollHandle, ScrollMetrics, ScrollOffset, ScrollView, use_scroll};
 pub use tree::Tree;
 
 pub use loom_macros::{component, context, rsx};

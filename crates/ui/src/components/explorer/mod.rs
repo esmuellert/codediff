@@ -8,14 +8,14 @@ use std::rc::Rc;
 
 use file_types::File;
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, component, rsx,
-    use_context, use_effect, use_exit, use_measure, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, Scroll, ScrollOffset,
+    ScrollProps, component, rsx, use_context, use_effect, use_exit, use_measure, use_ref,
+    use_scroll, use_state,
 };
 
 use self::build::{Node, directory_key, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
 use super::context::Ui;
-use crate::hooks::use_scroll::use_scroll;
 use crate::keybindings::Action;
 use crate::services::version_control::VersionControlService;
 
@@ -81,7 +81,12 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let nodes = Rc::new(nodes);
     let catalog_line_count = nodes.len() as u32;
     let (node_ref, size) = use_measure(scope);
-    let (view, scroll) = use_scroll(scope, catalog_line_count, 0, size.height);
+    let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
+    let visible_start = view
+        .clamped_offset()
+        .y
+        .min(catalog_line_count.saturating_sub(1));
+    let visible_count = u32::from(size.height).saturating_add(4);
 
     // When the file list changes, keep the selection on the same item.
     let prev_files = use_ref(scope, || Rc::clone(&files));
@@ -102,16 +107,19 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let keybindings = Rc::clone(&ctx.keybindings);
     let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
+    let scroll_for_keys = scroll.clone();
+    let view_for_mouse = view.clone();
 
     let listeners = Listeners::new()
         .on_key(move |k| match k {
             k if keybindings.matches(Action::MoveDown, k) => {
                 let nodes = Rc::clone(&nodes_keys);
+                let scroll = scroll_for_keys.clone();
                 set_selected_line(&move |selected_line| {
                     let next = selected_line
                         .saturating_add(1)
                         .min(catalog_line_count.saturating_sub(1));
-                    scroll.keep_line_visible(next, SCROLLOFF);
+                    scroll.keep_y_visible(next, SCROLLOFF);
                     if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
                         open_file(file, set_file);
                     }
@@ -121,9 +129,10 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             k if keybindings.matches(Action::MoveUp, k) => {
                 let nodes = Rc::clone(&nodes_keys);
+                let scroll = scroll_for_keys.clone();
                 set_selected_line(&move |selected_line| {
                     let next = selected_line.saturating_sub(1);
-                    scroll.keep_line_visible(next, SCROLLOFF);
+                    scroll.keep_y_visible(next, SCROLLOFF);
                     if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
                         open_file(file, set_file);
                     }
@@ -157,16 +166,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             _ => Bubble::Continue,
         })
-        .on_wheel(move |wheel| {
-            if wheel.vertical == 0 {
-                return Bubble::Continue;
-            }
-            scroll.scroll_by(wheel.vertical.saturating_mul(3));
-            Bubble::Stop
-        })
         .on_mouse_down(move |mouse| {
-            let line =
-                (view.top + u32::from(mouse.local.y)).min(catalog_line_count.saturating_sub(1));
+            let line = (view_for_mouse.clamped_offset().y + u32::from(mouse.local.y))
+                .min(catalog_line_count.saturating_sub(1));
             let already_selected = line == selected_line;
             set_selected_line(&move |_| line);
             if let Some(node) = nodes_click.get(line as usize) {
@@ -179,19 +181,20 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             Bubble::Stop
         });
 
-    let entries: Vec<LoomNode> = view
-        .view_lines
-        .clone()
-        .filter_map(|line| {
-            nodes.get(line as usize).map(|node| {
-                rsx! {
-                    Entry {
-                        key: line,
-                        node: node.clone(),
-                        selected: line == selected_line,
-                    }
+    let entries: Vec<LoomNode> = nodes
+        .iter()
+        .skip(visible_start as usize)
+        .take(visible_count as usize)
+        .enumerate()
+        .map(|(offset, node)| {
+            let line = visible_start as usize + offset;
+            rsx! {
+                Entry {
+                    key: line,
+                    node: node.clone(),
+                    selected: line as u32 == selected_line,
                 }
-            })
+            }
         })
         .collect();
 
@@ -203,7 +206,22 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             listeners: listeners,
             layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
             ..,
-            { entries }
+            Scroll {
+                view: view,
+                handle: Some(scroll.clone()),
+                horizontal: false,
+                vertical: true,
+                wheel_step: 3,
+                content_height: Some(catalog_line_count),
+                content_offset: ScrollOffset { x: 0, y: visible_start },
+                layout: Layout { grow: 1, fill: Some(base), ..Default::default() },
+                ..,
+                Column {
+                    layout: Layout { fill: Some(base), ..Default::default() },
+                    ..,
+                    { entries }
+                }
+            }
         }
     }
 }

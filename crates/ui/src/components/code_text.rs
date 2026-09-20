@@ -169,15 +169,34 @@ pub(crate) fn prepare_code_text_inputs(
     )
 }
 
-fn fill_terminal_line(paint: &mut Paint<'_>, line: Rect, style: Style) {
-    for x in line.x..line.right() {
-        paint.set(x, line.y, " ", style);
+fn set_at(paint: &mut Paint<'_>, x: i64, y: i64, symbol: &str, style: Style) {
+    if x >= 0 && y >= 0 && x <= i64::from(u16::MAX) && y <= i64::from(u16::MAX) {
+        paint.set(x as u16, y as u16, symbol, style);
+    }
+}
+
+fn set_style_at(paint: &mut Paint<'_>, x: i64, y: i64, style: Style) {
+    if x >= 0 && y >= 0 && x <= i64::from(u16::MAX) && y <= i64::from(u16::MAX) {
+        paint.set_style(x as u16, y as u16, style);
+    }
+}
+
+fn fill_terminal_line(paint: &mut Paint<'_>, width: u16, style: Style) {
+    let (origin_x, origin_y) = paint.origin();
+    for cell in 0..u32::from(width) {
+        set_at(
+            paint,
+            origin_x.saturating_add(i64::from(cell)),
+            origin_y,
+            " ",
+            style,
+        );
     }
 }
 
 fn paint_code_line(
     paint: &mut Paint<'_>,
-    line_area: Rect,
+    _line_area: Rect,
     line: &str,
     first_cell: u32,
     ink: CodeTextInk<'_>,
@@ -191,22 +210,29 @@ fn paint_code_line(
         syntax,
         code,
     } = ink;
-    fill_terminal_line(paint, line_area, base);
-    if line_area.width == 0 {
+    let width = paint.content_area().width;
+    if width == 0 {
         return;
     }
+    fill_terminal_line(paint, width, base);
 
     let index = LineIndex::new(line, TAB_WIDTH);
-    let right = first_cell.saturating_add(u32::from(line_area.width));
+    let right = first_cell.saturating_add(u32::from(width));
+    let (origin_x, origin_y) = paint.origin();
 
     if let Some(byte) = fill_from {
         let from = index
             .byte_to_cell(ByteOff(byte))
             .get()
             .saturating_sub(first_cell)
-            .min(u32::from(line_area.width));
-        for offset in from..u32::from(line_area.width) {
-            paint.set_style(line_area.x + offset as u16, line_area.y, emphasis);
+            .min(u32::from(width));
+        for offset in from..u32::from(width) {
+            set_style_at(
+                paint,
+                origin_x.saturating_add(i64::from(offset)),
+                origin_y,
+                emphasis,
+            );
         }
     }
 
@@ -227,9 +253,10 @@ fn paint_code_line(
 
         if clipped_left || clipped_right || grapheme.is_tab() {
             for cell in from..to {
-                paint.set(
-                    line_area.x + (cell - first_cell) as u16,
-                    line_area.y,
+                set_at(
+                    paint,
+                    origin_x.saturating_add(i64::from(cell.saturating_sub(first_cell))),
+                    origin_y,
                     " ",
                     style,
                 );
@@ -237,16 +264,18 @@ fn paint_code_line(
             continue;
         }
 
-        paint.set(
-            line_area.x + (from - first_cell) as u16,
-            line_area.y,
+        set_at(
+            paint,
+            origin_x.saturating_add(i64::from(from.saturating_sub(first_cell))),
+            origin_y,
             &line_index::sanitize(grapheme.text),
             style,
         );
         for cell in (from + 1)..to {
-            paint.set(
-                line_area.x + (cell - first_cell) as u16,
-                line_area.y,
+            set_at(
+                paint,
+                origin_x.saturating_add(i64::from(cell.saturating_sub(first_cell))),
+                origin_y,
                 "",
                 style,
             );
@@ -258,15 +287,23 @@ fn paint_code_line(
         if column < first_cell || column >= right {
             continue;
         }
-        let x = line_area.x + (column - first_cell) as u16;
-        let mut style = paint
-            .style_at(x, line_area.y)
-            .unwrap_or_default()
-            .add_modifier(Modifier::UNDERLINED);
-        if let Some(colour) = emphasis.bg {
-            style = style.underline_color(colour);
-        }
-        paint.set_style(x, line_area.y, style);
+        let x = origin_x.saturating_add(i64::from(column.saturating_sub(first_cell)));
+        let style = if x >= 0
+            && origin_y >= 0
+            && x <= i64::from(u16::MAX)
+            && origin_y <= i64::from(u16::MAX)
+        {
+            paint
+                .style_at(x as u16, origin_y as u16)
+                .unwrap_or_default()
+                .add_modifier(Modifier::UNDERLINED)
+        } else {
+            Style::default().add_modifier(Modifier::UNDERLINED)
+        };
+        let style = emphasis
+            .bg
+            .map_or(style, |colour| style.underline_color(colour));
+        set_style_at(paint, x, origin_y, style);
     }
 }
 
@@ -319,10 +356,11 @@ pub fn CodeText(
     let unchanged_style = *unchanged_style;
     let changed_style = *changed_style;
     let selection = selection.clone();
+    let content_width = width_in_cells(&text).clamp(1, u32::from(u16::MAX)) as u16;
 
     rsx! {
         Canvas {
-            layout: Layout { grow: 1, basis: Basis::Length(1), shrink: 0, ..Default::default() },
+            layout: Layout { grow: 1, basis: Basis::Length(content_width), shrink: 0, ..Default::default() },
             paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
                 let area = paint.area();
                 paint_code_line(
@@ -342,10 +380,16 @@ pub fn CodeText(
                 );
 
                 if let Some(ref selected) = selection {
-                    for x in area.x..area.right() {
-                        let col = first_cell + u32::from(x - area.x);
+                    let (origin_x, origin_y) = paint.origin();
+                    for offset in 0..u32::from(paint.content_area().width) {
+                        let col = first_cell + offset;
                         if selected.contains(&col) {
-                            paint.set_style(x, area.y, theme.selection);
+                            set_style_at(
+                                paint,
+                                origin_x.saturating_add(i64::from(offset)),
+                                origin_y,
+                                theme.selection,
+                            );
                         }
                     }
                 }

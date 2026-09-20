@@ -81,10 +81,6 @@ impl TerminalLine {
     }
 }
 
-pub(crate) fn terminal_line_count(lines: &[WrappedViewLine]) -> u32 {
-    lines.iter().map(|line| line.original.len() as u32).sum()
-}
-
 pub(crate) fn wrap_view_line(
     view_line: ViewLine,
     original_source: Option<&str>,
@@ -334,33 +330,6 @@ fn selected_terminal_line<'a>(
     }
 }
 
-pub(crate) fn terminal_line_cells(line: &TerminalLine, source_lines: &[String]) -> u32 {
-    let TerminalLine::SourceCode { source_line, bytes } = line else {
-        return 0;
-    };
-    source_lines
-        .get(source_line.saturating_sub(1) as usize)
-        .and_then(|source| source.get(bytes.start as usize..bytes.end as usize))
-        .map(|text| LineIndex::new(text, TAB_WIDTH).width().0)
-        .unwrap_or(0)
-}
-
-pub(crate) fn longest_terminal_line_cells(
-    lines: &[WrappedViewLine],
-    version: DiffVersion,
-    source_lines: &[String],
-) -> u32 {
-    lines
-        .iter()
-        .flat_map(|line| match version {
-            DiffVersion::Original => line.original.iter(),
-            DiffVersion::Modified => line.modified.iter(),
-        })
-        .map(|line| terminal_line_cells(line, source_lines))
-        .max()
-        .unwrap_or(0)
-}
-
 pub(crate) fn find_terminal_line_index(
     lines: &[WrappedViewLine],
     target: &TerminalLine,
@@ -406,33 +375,6 @@ pub(crate) fn find_terminal_line_index(
                 })
         })
         .map(|index| index as u32)
-}
-
-pub(crate) fn wrapped_view_line_range_for_terminal_lines(
-    lines: &[WrappedViewLine],
-    start: u32,
-    end: u32,
-) -> Range<usize> {
-    let mut offset = 0;
-    let first = lines
-        .iter()
-        .position(|line| {
-            offset += line.original.len() as u32;
-            offset > start
-        })
-        .unwrap_or(lines.len());
-
-    let mut offset = 0;
-    let last = lines
-        .iter()
-        .position(|line| {
-            let line_start = offset;
-            offset += line.original.len() as u32;
-            line_start >= end
-        })
-        .unwrap_or(lines.len());
-
-    first..last
 }
 
 #[cfg(test)]
@@ -496,31 +438,6 @@ mod tests {
                 .count(),
             0
         );
-    }
-
-    #[test]
-    fn terminal_line_count_counts_each_pair_once() {
-        let lines = ["abcdef", ""]
-            .into_iter()
-            .enumerate()
-            .map(|(index, text)| {
-                wrap_view_line(
-                    ViewLine {
-                        original: ViewLineContent::Filler,
-                        modified: ViewLineContent::SourceLine(index as u32 + 1),
-                        kind: ViewLineType::Inserted,
-                    },
-                    None,
-                    Some(text),
-                    3,
-                    3,
-                    DiffType::SideBySide,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(terminal_line_count(&lines), 3);
-        assert_eq!(terminal_line_count(&[]), 0);
     }
 
     #[test]
@@ -801,45 +718,6 @@ mod tests {
                 },
             ),
             Some(0)
-        );
-    }
-
-    #[test]
-    fn finds_the_wrapped_lines_for_a_terminal_viewport() {
-        let lines = vec![
-            wrap_view_line(
-                ViewLine {
-                    original: ViewLineContent::SourceLine(1),
-                    modified: ViewLineContent::SourceLine(1),
-                    kind: ViewLineType::Modified,
-                },
-                Some("abcdef"),
-                Some("abc"),
-                3,
-                3,
-                DiffType::SideBySide,
-            ),
-            wrap_view_line(
-                ViewLine {
-                    original: ViewLineContent::SourceLine(2),
-                    modified: ViewLineContent::Filler,
-                    kind: ViewLineType::Deleted,
-                },
-                Some("x"),
-                None,
-                3,
-                3,
-                DiffType::SideBySide,
-            ),
-        ];
-
-        assert_eq!(
-            wrapped_view_line_range_for_terminal_lines(&lines, 1, 2),
-            0..1
-        );
-        assert_eq!(
-            wrapped_view_line_range_for_terminal_lines(&lines, 2, 3),
-            1..2
         );
     }
 

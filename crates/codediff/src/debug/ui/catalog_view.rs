@@ -6,12 +6,11 @@ use anyhow::{Result, bail};
 use loom::crokey::crossterm::event::{KeyCode, KeyModifiers};
 use loom::crokey::{KeyCombination, OneToThree, key};
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_context,
-    use_effect, use_exit, use_measure, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, Scroll, ScrollOffset, ScrollProps,
+    component, rsx, use_context, use_exit, use_layout_effect, use_scroll, use_state,
 };
 use ui::Theme;
 use ui::components::{Context as UiContext, Ui, UiProps};
-use ui::hooks::use_scroll::use_scroll;
 #[cfg(test)]
 use ui::ratatui::style::Modifier;
 
@@ -80,13 +79,14 @@ fn CatalogView(
     let catalog_rows = Rc::new(filtered_rows(&query));
     let (selected_line, set_selected_line) = use_state(scope, || initial_line as u32);
     let catalog_line_count = catalog_rows.len() as u32;
-    let (node_ref, size) = use_measure(scope);
-    let (view, scroll) = use_scroll(scope, catalog_line_count, 0, size.height);
-    let initial_target = initial_line as u32;
-    let viewport_rows = view.view_lines.len() as u32;
-    use_effect(scope, (*initial_story_index, viewport_rows), move || {
-        scroll.keep_line_visible(initial_target, 2);
-    });
+    let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
+    let restore_scroll = scroll.clone();
+    let selected_target = selected_line;
+    use_layout_effect(
+        scope,
+        (catalog_line_count, selected_line, query.clone()),
+        move || restore_scroll.keep_y_visible(selected_target, 2),
+    );
     let selected_story_index = catalog_rows
         .get(selected_line as usize)
         .and_then(|row| match row {
@@ -96,6 +96,7 @@ fn CatalogView(
 
     let rows_for_keys = Rc::clone(&catalog_rows);
     let open_selected_story = Rc::clone(open_story);
+    let scroll_for_keys = scroll.clone();
     let has_query = !query.is_empty();
     let listeners = Listeners::new().on_key(move |pressed| {
         if searching {
@@ -116,7 +117,7 @@ fn CatalogView(
                     query
                 });
                 set_selected_line(&|_| 1);
-                scroll.keep_line_visible(1, 0);
+                scroll_for_keys.keep_y_visible(1, 0);
                 return Bubble::Stop;
             }
             if let Some(character) = plain_character(pressed) {
@@ -125,7 +126,7 @@ fn CatalogView(
                     query
                 });
                 set_selected_line(&|_| 1);
-                scroll.keep_line_visible(1, 0);
+                scroll_for_keys.keep_y_visible(1, 0);
                 return Bubble::Stop;
             }
             return Bubble::Continue;
@@ -137,25 +138,27 @@ fn CatalogView(
         } else if pressed == key!(esc) && has_query {
             set_query(&|_| String::new());
             set_selected_line(&|_| 1);
-            scroll.keep_line_visible(1, 0);
+            scroll_for_keys.keep_y_visible(1, 0);
             Bubble::Stop
         } else if pressed == key!('/') {
             set_searching(&|_| true);
             Bubble::Stop
         } else if pressed == key!(j) || pressed == key!(down) {
             let rows = Rc::clone(&rows_for_keys);
+            let scroll = scroll_for_keys.clone();
             set_selected_line(&move |line| {
                 let next = next_story_line(&rows, line as usize).unwrap_or(line as usize) as u32;
-                scroll.keep_line_visible(next, 2);
+                scroll.keep_y_visible(next, 2);
                 next
             });
             Bubble::Stop
         } else if pressed == key!(k) || pressed == key!(up) {
             let rows = Rc::clone(&rows_for_keys);
+            let scroll = scroll_for_keys.clone();
             set_selected_line(&move |line| {
                 let next =
                     previous_story_line(&rows, line as usize).unwrap_or(line as usize) as u32;
-                scroll.keep_line_visible(next, 2);
+                scroll.keep_y_visible(next, 2);
                 next
             });
             Bubble::Stop
@@ -247,16 +250,17 @@ fn CatalogView(
             ],
         )
     };
-    let visible: Vec<Node> = view
-        .view_lines
-        .clone()
-        .filter_map(|line| {
-            catalog_rows.get(line as usize).map(|row| match row {
-                CatalogRow::Heading(label) => heading_row(line, label, *theme),
-                CatalogRow::Story { definition, .. } => {
-                    story_row(line, definition, line == selected_line, *theme)
-                }
-            })
+    let visible: Vec<Node> = catalog_rows
+        .iter()
+        .enumerate()
+        .map(|(line, row)| match row {
+            CatalogRow::Heading(label) => heading_row(line as u32, label, *theme),
+            CatalogRow::Story { definition, .. } => story_row(
+                line as u32,
+                definition,
+                line as u32 == selected_line,
+                *theme,
+            ),
         })
         .collect();
 
@@ -273,12 +277,20 @@ fn CatalogView(
                 context: Rc::from(bar_context),
                 shortcuts: Rc::from(shortcuts),
             }
-            Column {
+            Scroll {
                 key: 1u32,
-                ref: Some(node_ref),
+                view: view,
+                handle: Some(scroll),
+                horizontal: false,
+                vertical: true,
+                wheel_step: 3,
                 layout: Layout { grow: 1, ..Default::default() },
                 ..,
-                { visible }
+                Column {
+                    layout: Layout { grow: 1, ..Default::default() },
+                    ..,
+                    { visible }
+                }
             }
         }
     }

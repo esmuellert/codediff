@@ -6,8 +6,8 @@ use std::rc::Rc;
 use loom::testing::Harness;
 use loom::{
     Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Layout, Listeners, Node, Row,
-    RowProps, Scope, Text, TextProps, component, rsx, use_effect, use_exit, use_memo, use_ref,
-    use_state,
+    RowProps, Scope, Scroll, ScrollOffset, ScrollProps, Text, TextProps, component, rsx,
+    use_effect, use_exit, use_memo, use_ref, use_scroll, use_state,
 };
 
 #[component]
@@ -86,6 +86,37 @@ fn Counter(scope: &mut Scope) -> Node {
 fn a_component_reads_its_own_state() {
     let mut screen = Harness::new::<Counter>(CounterProps {}, 10, 1);
     assert_eq!(screen.screen_row(0), "n=0");
+}
+
+#[component]
+fn Scrolled(scope: &mut Scope) -> Node {
+    let (view, handle) = use_scroll(scope, || ScrollOffset::ZERO);
+    rsx! {
+        Scroll {
+            handle: Some(handle),
+            view: view,
+            layout: Layout { grow: 1, ..Default::default() },
+            ..,
+            Column {
+                "abcdef"
+                "second"
+                "third"
+            }
+        }
+    }
+}
+
+#[test]
+fn a_scroll_host_moves_one_content_tree_in_two_dimensions() {
+    let mut screen = Harness::new::<Scrolled>(ScrolledProps {}, 4, 2);
+    assert_eq!(screen.screen(), vec!["abcd", "seco"]);
+
+    screen.wheel_horizontal(0, 0, 1);
+    assert!(screen.needs_draw());
+    assert_eq!(screen.screen(), vec!["bcde", "econ"]);
+
+    screen.wheel(0, 0, 1);
+    assert_eq!(screen.screen(), vec!["econ", "hird"]);
 }
 
 /// Repeated draws are stable.
@@ -379,6 +410,88 @@ fn a_keyed_child_keeps_its_state_when_the_list_reorders() {
     });
     // Each row kept the state it mounted with, so the pairs still match.
     assert_eq!(screen.screen(), vec!["3:3", "1:1", "2:2"]);
+}
+
+#[component]
+fn KeyedEntries(scope: &mut Scope, entries: Vec<(u32, u32)>) -> Node {
+    let _ = scope;
+    rsx! {
+        Column {
+            for (key, tag) in entries.clone() {
+                Tagged { key: key, tag: tag }
+            }
+        }
+    }
+}
+
+#[test]
+fn keyed_reconciliation_handles_insertions_deletions_and_duplicates() {
+    let mut screen = Harness::new::<KeyedEntries>(
+        KeyedEntriesProps {
+            entries: vec![(1, 10), (2, 20), (3, 30)],
+        },
+        10,
+        3,
+    );
+    assert_eq!(screen.screen(), vec!["10:10", "20:20", "30:30"]);
+
+    screen.set_props::<KeyedEntries>(KeyedEntriesProps {
+        entries: vec![(3, 31), (4, 40), (1, 11)],
+    });
+    assert_eq!(screen.screen(), vec!["31:30", "40:40", "11:10"]);
+
+    screen.set_props::<KeyedEntries>(KeyedEntriesProps {
+        entries: vec![(1, 50), (1, 60)],
+    });
+    assert_eq!(screen.screen(), vec!["50:10", "60:60", ""]);
+}
+
+#[test]
+fn a_large_keyed_sibling_list_reuses_scopes_after_a_rotation() {
+    let entries = (0..2_000).map(|n| (n, n)).collect::<Vec<_>>();
+    let mut screen = Harness::new::<KeyedEntries>(
+        KeyedEntriesProps {
+            entries: entries.clone(),
+        },
+        12,
+        2_000,
+    );
+    assert_eq!(screen.screen_row(0), "0:0");
+
+    let mut rotated = entries;
+    rotated.rotate_right(1);
+    screen.set_props::<KeyedEntries>(KeyedEntriesProps { entries: rotated });
+    assert_eq!(screen.screen_row(0), "1999:1999");
+}
+
+#[component]
+fn KeyedTypeA(scope: &mut Scope) -> Node {
+    let (state, _) = use_state(scope, || "A");
+    rsx! { Text { text: (*state).into(), .. } }
+}
+
+#[component]
+fn KeyedTypeB(scope: &mut Scope) -> Node {
+    let (state, _) = use_state(scope, || "B");
+    rsx! { Text { text: (*state).into(), .. } }
+}
+
+#[component]
+fn KeyedType(scope: &mut Scope, first: bool) -> Node {
+    let _ = scope;
+    if *first {
+        rsx! { KeyedTypeA { key: 1u32 } }
+    } else {
+        rsx! { KeyedTypeB { key: 1u32 } }
+    }
+}
+
+#[test]
+fn a_keyed_type_change_does_not_reuse_the_old_scope() {
+    let mut screen = Harness::new::<KeyedType>(KeyedTypeProps { first: true }, 4, 1);
+    assert_eq!(screen.screen_row(0), "A");
+    screen.set_props::<KeyedType>(KeyedTypeProps { first: false });
+    assert_eq!(screen.screen_row(0), "B");
 }
 
 /// A child state update reaches the screen through clean ancestors.
