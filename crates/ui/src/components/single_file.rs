@@ -9,20 +9,22 @@ use loom::{
     rsx, use_context,
 };
 
-use super::code_text::{CodeText, CodeTextProps, longest_line_cells};
+use super::code_text::{CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer_container::DiffVisibleRange;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
-use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, wrap_view_line};
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, terminal_line_count, wrap_view_line,
+};
 
 pub(crate) struct SingleFileLayout {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
     pub(crate) gutter_width: u16,
     pub(crate) code_width: u16,
     pub(crate) horizontal_scroll_extent: u32,
-    pub(crate) row_count: u32,
+    pub(crate) terminal_line_count: u32,
 }
 
 pub(crate) fn layout_single_file(
@@ -39,16 +41,13 @@ pub(crate) fn layout_single_file(
     } else {
         longest_line_cells(&single.lines)
     };
-    let row_count = wrapped_lines
-        .iter()
-        .flat_map(WrappedViewLine::terminal_line_pairs)
-        .count() as u32;
+    let terminal_line_count = terminal_line_count(&wrapped_lines);
     SingleFileLayout {
         wrapped_lines: Rc::new(wrapped_lines),
         gutter_width,
         code_width,
-        horizontal_scroll_extent: maximum_line_cells.saturating_sub(u32::from(code_width)),
-        row_count,
+        horizontal_scroll_extent: horizontal_scroll_extent(maximum_line_cells, code_width),
+        terminal_line_count,
     }
 }
 
@@ -73,10 +72,10 @@ pub(crate) fn SingleFile(
     };
     let version = single.side();
     let wrapped_lines = wrapped_lines.as_ref();
-    let visible_row_count = viewport
-        .visible_rows
+    let visible_terminal_line_count = viewport
+        .visible_terminal_lines
         .end
-        .saturating_sub(viewport.visible_rows.start);
+        .saturating_sub(viewport.visible_terminal_lines.start);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
@@ -88,16 +87,16 @@ pub(crate) fn SingleFile(
 
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
-    let mut gutter_rows = Vec::with_capacity(visible_row_count);
-    let mut code_rows = Vec::with_capacity(visible_row_count);
+    let mut gutter_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut code_rows = Vec::with_capacity(visible_terminal_line_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
-        .skip(viewport.visible_rows.start)
-        .take(visible_row_count)
+        .skip(viewport.visible_terminal_lines.start)
+        .take(visible_terminal_line_count)
         .enumerate()
     {
-        let line_index = viewport.visible_rows.start + offset;
+        let line_index = viewport.visible_terminal_lines.start + offset;
         let terminal_line = match version {
             DiffVersion::Original => original,
             DiffVersion::Modified => modified,

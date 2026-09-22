@@ -9,7 +9,9 @@ use loom::{
     ScrollProps, component, rsx, use_context,
 };
 
-use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
+use super::code_text::{
+    self, CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells,
+};
 use super::context::Ui;
 use super::diff_viewer_container::DiffVisibleRange;
 use super::filler::Filler;
@@ -18,7 +20,9 @@ use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
-use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, terminal_view_lines};
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
+};
 
 pub(crate) struct SideBySideLayout {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
@@ -28,7 +32,7 @@ pub(crate) struct SideBySideLayout {
     pub(crate) modified_width: u16,
     pub(crate) original_horizontal_scroll_extent: u32,
     pub(crate) modified_horizontal_scroll_extent: u32,
-    pub(crate) row_count: u32,
+    pub(crate) terminal_line_count: u32,
 }
 
 pub(crate) fn layout_side_by_side(
@@ -63,21 +67,22 @@ pub(crate) fn layout_side_by_side(
             longest_line_cells(alignment.lines(DiffVersion::Modified)),
         )
     };
-    let row_count = wrapped_lines
-        .iter()
-        .flat_map(WrappedViewLine::terminal_line_pairs)
-        .count() as u32;
+    let terminal_line_count = terminal_line_count(&wrapped_lines);
     SideBySideLayout {
         wrapped_lines: Rc::new(wrapped_lines),
         original_gutter_width,
         modified_gutter_width,
         original_width,
         modified_width,
-        original_horizontal_scroll_extent: original_longest
-            .saturating_sub(u32::from(original_width)),
-        modified_horizontal_scroll_extent: modified_longest
-            .saturating_sub(u32::from(modified_width)),
-        row_count,
+        original_horizontal_scroll_extent: horizontal_scroll_extent(
+            original_longest,
+            original_width,
+        ),
+        modified_horizontal_scroll_extent: horizontal_scroll_extent(
+            modified_longest,
+            modified_width,
+        ),
+        terminal_line_count,
     }
 }
 
@@ -108,10 +113,10 @@ pub(crate) fn SideBySide(
         unreachable!("DiffViewer sends diffs to SideBySide")
     };
     let wrapped_lines = wrapped_lines.as_ref();
-    let visible_row_count = viewport
-        .visible_rows
+    let visible_terminal_line_count = viewport
+        .visible_terminal_lines
         .end
-        .saturating_sub(viewport.visible_rows.start);
+        .saturating_sub(viewport.visible_terminal_lines.start);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
@@ -122,19 +127,19 @@ pub(crate) fn SideBySide(
     let syntax = syntax.as_deref();
     let divider_style = theme.normal.patch(theme.divider);
 
-    let mut original_gutters = Vec::with_capacity(visible_row_count);
-    let mut original_code_rows = Vec::with_capacity(visible_row_count);
-    let mut divider_rows = Vec::with_capacity(visible_row_count);
-    let mut modified_gutters = Vec::with_capacity(visible_row_count);
-    let mut modified_code_rows = Vec::with_capacity(visible_row_count);
+    let mut original_gutters = Vec::with_capacity(visible_terminal_line_count);
+    let mut original_code_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut divider_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut modified_gutters = Vec::with_capacity(visible_terminal_line_count);
+    let mut modified_code_rows = Vec::with_capacity(visible_terminal_line_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
-        .skip(viewport.visible_rows.start)
-        .take(visible_row_count)
+        .skip(viewport.visible_terminal_lines.start)
+        .take(visible_terminal_line_count)
         .enumerate()
     {
-        let view_line = viewport.visible_rows.start + offset;
+        let view_line = viewport.visible_terminal_lines.start + offset;
         let folded = is_fold_marker(original, modified);
         let (original_gutter, original_code) = if folded {
             let blank = theme.normal;

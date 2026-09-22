@@ -9,7 +9,9 @@ use loom::{
     rsx, use_context,
 };
 
-use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
+use super::code_text::{
+    self, CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells,
+};
 use super::context::Ui;
 use super::diff_viewer_container::DiffVisibleRange;
 use super::fold::{FoldMarker, is_fold_marker};
@@ -17,7 +19,9 @@ use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
-use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, terminal_view_lines};
+use crate::view::terminal_lines::{
+    TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
+};
 
 pub(crate) struct InlineLayout {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
@@ -25,7 +29,7 @@ pub(crate) struct InlineLayout {
     pub(crate) modified_gutter_width: u16,
     pub(crate) code_width: u16,
     pub(crate) horizontal_scroll_extent: u32,
-    pub(crate) row_count: u32,
+    pub(crate) terminal_line_count: u32,
 }
 
 pub(crate) fn layout_inline(
@@ -55,17 +59,14 @@ pub(crate) fn layout_inline(
         longest_line_cells(alignment.lines(DiffVersion::Original))
             .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
     };
-    let row_count = wrapped_lines
-        .iter()
-        .flat_map(WrappedViewLine::terminal_line_pairs)
-        .count() as u32;
+    let terminal_line_count = terminal_line_count(&wrapped_lines);
     InlineLayout {
         wrapped_lines: Rc::new(wrapped_lines),
         original_gutter_width,
         modified_gutter_width,
         code_width,
-        horizontal_scroll_extent: maximum_line_cells.saturating_sub(u32::from(code_width)),
-        row_count,
+        horizontal_scroll_extent: horizontal_scroll_extent(maximum_line_cells, code_width),
+        terminal_line_count,
     }
 }
 
@@ -93,10 +94,10 @@ pub(crate) fn Inline(
     };
     let alignment = &diff.alignment;
     let wrapped_lines = wrapped_lines.as_ref();
-    let visible_row_count = viewport
-        .visible_rows
+    let visible_terminal_line_count = viewport
+        .visible_terminal_lines
         .end
-        .saturating_sub(viewport.visible_rows.start);
+        .saturating_sub(viewport.visible_terminal_lines.start);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
@@ -106,17 +107,17 @@ pub(crate) fn Inline(
     );
     let syntax = syntax.as_deref();
 
-    let mut original_gutters = Vec::with_capacity(visible_row_count);
-    let mut modified_gutters = Vec::with_capacity(visible_row_count);
-    let mut code_rows = Vec::with_capacity(visible_row_count);
+    let mut original_gutters = Vec::with_capacity(visible_terminal_line_count);
+    let mut modified_gutters = Vec::with_capacity(visible_terminal_line_count);
+    let mut code_rows = Vec::with_capacity(visible_terminal_line_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
-        .skip(viewport.visible_rows.start)
-        .take(visible_row_count)
+        .skip(viewport.visible_terminal_lines.start)
+        .take(visible_terminal_line_count)
         .enumerate()
     {
-        let view_line_index = viewport.visible_rows.start + offset;
+        let view_line_index = viewport.visible_terminal_lines.start + offset;
         if is_fold_marker(original, modified) {
             let blank = theme.normal;
             original_gutters.push(rsx! {

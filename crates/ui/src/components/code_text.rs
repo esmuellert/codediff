@@ -79,6 +79,10 @@ pub(crate) fn longest_line_cells(lines: &[String]) -> u32 {
         .unwrap_or(0)
 }
 
+pub(crate) fn horizontal_scroll_extent(longest_line_cells: u32, viewport_width: u16) -> u32 {
+    longest_line_cells.saturating_sub(u32::from(viewport_width))
+}
+
 pub(crate) fn prepare_code_text_inputs_from_decorations(
     text: &str,
     terminal_line: &TerminalLine,

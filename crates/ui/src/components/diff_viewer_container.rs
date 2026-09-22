@@ -20,7 +20,7 @@ use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, find_terminal_l
 /// The part of the Loom viewport that a diff renderer is allowed to read.
 #[derive(Clone)]
 pub(crate) struct DiffVisibleRange {
-    pub(crate) visible_rows: Range<usize>,
+    pub(crate) visible_terminal_lines: Range<usize>,
     pub(crate) horizontal_view: ScrollView,
 }
 
@@ -41,12 +41,12 @@ impl ViewLayout {
         }
     }
 
-    fn row_count(&self) -> u32 {
+    fn terminal_line_count(&self) -> u32 {
         match self {
             Self::Empty => 0,
-            Self::Inline(layout) => layout.row_count,
-            Self::SideBySide(layout) => layout.row_count,
-            Self::SingleFile(layout) => layout.row_count,
+            Self::Inline(layout) => layout.terminal_line_count,
+            Self::SideBySide(layout) => layout.terminal_line_count,
+            Self::SingleFile(layout) => layout.terminal_line_count,
         }
     }
 
@@ -61,17 +61,17 @@ impl ViewLayout {
         }
     }
 
-    fn row_for_terminal_line(&self, line: &TerminalLine) -> Option<u32> {
+    fn terminal_line_index_for(&self, line: &TerminalLine) -> Option<u32> {
         self.wrapped_lines()
             .and_then(|wrapped_lines| find_terminal_line_index(wrapped_lines, line))
     }
 
-    fn terminal_line_at_row(&self, row: u32) -> Option<TerminalLine> {
+    fn terminal_line_at_index(&self, terminal_line_index: u32) -> Option<TerminalLine> {
         let wrapped_lines = self.wrapped_lines()?;
         let (original, modified) = wrapped_lines
             .iter()
             .flat_map(WrappedViewLine::terminal_line_pairs)
-            .nth(row as usize)?;
+            .nth(terminal_line_index as usize)?;
         match self {
             Self::Empty => None,
             Self::SingleFile(_) | Self::Inline(_) | Self::SideBySide(_) => match modified {
@@ -133,7 +133,7 @@ pub fn DiffViewerContainer(
     let initial_top = current_state
         .first_terminal_line
         .as_ref()
-        .and_then(|line| layout_data.row_for_terminal_line(line))
+        .and_then(|line| layout_data.terminal_line_index_for(line))
         .unwrap_or(0);
     let (scroll_view, scroll_handle) = use_scroll(scope, || ScrollOffset {
         x: current_state.first_cell,
@@ -151,14 +151,14 @@ pub fn DiffViewerContainer(
         },
     );
 
-    let row_count = layout_data.row_count();
+    let terminal_line_count = layout_data.terminal_line_count();
     let offset = scroll_view.clamped_offset();
-    let first_row = (offset.y as usize).min(row_count as usize);
-    let last_row = first_row
+    let first_terminal_line = (offset.y as usize).min(terminal_line_count as usize);
+    let last_terminal_line = first_terminal_line
         .saturating_add(usize::from(size.height).saturating_add(4))
-        .min(row_count as usize);
+        .min(terminal_line_count as usize);
     let visible_range = DiffVisibleRange {
-        visible_rows: first_row..last_row,
+        visible_terminal_lines: first_terminal_line..last_terminal_line,
         horizontal_view: scroll_view.clone().axes(true, false),
     };
 
@@ -166,13 +166,13 @@ pub fn DiffViewerContainer(
         let requested = scroll_view.requested_offset();
         view_state.current().clone_from(&ViewState {
             first_terminal_line: (requested.y > 0)
-                .then(|| layout_data.terminal_line_at_row(requested.y))
+                .then(|| layout_data.terminal_line_at_index(requested.y))
                 .flatten(),
             first_cell: requested.x,
         });
     }
 
-    let listeners = use_diff_viewer_navigation(scope, scroll_handle.clone(), scroll_handle, None);
+    let listeners = use_diff_viewer_navigation(scope, scroll_handle);
     let view_node = render_view(
         content,
         view_layout,
@@ -197,9 +197,9 @@ pub fn DiffViewerContainer(
                 vertical: true,
                 wheel_step: 0,
                 content_width: Some(scroll_content_width),
-                content_height: Some(row_count),
+                content_height: Some(terminal_line_count),
                 content_area_width: Some(size.width as u32),
-                content_offset: ScrollOffset { x: 0, y: first_row as u32 },
+                content_offset: ScrollOffset { x: 0, y: first_terminal_line as u32 },
                 layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                 ..,
                 { view_node }

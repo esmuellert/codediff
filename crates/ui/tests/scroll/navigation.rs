@@ -20,7 +20,7 @@ fn Probe(
         x: *initial_first_cell,
         y: *initial_top,
     });
-    let listeners = use_diff_viewer_navigation(scope, scroll.clone(), scroll.clone(), None);
+    let listeners = use_diff_viewer_navigation(scope, scroll.clone());
     let offset = view.clamped_offset();
     let state: Rc<str> = format!("{} {}", offset.y, offset.x).into();
     let line = "x".repeat(longest_line_cells.saturating_add(4) as usize);

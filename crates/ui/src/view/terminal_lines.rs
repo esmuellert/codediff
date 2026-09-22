@@ -180,6 +180,13 @@ pub fn terminal_line_pairs(
     .collect()
 }
 
+pub(crate) fn terminal_line_count(lines: &[WrappedViewLine]) -> u32 {
+    lines
+        .iter()
+        .flat_map(WrappedViewLine::terminal_line_pairs)
+        .count() as u32
+}
+
 fn unwrapped_source_line(content: ViewLineContent, source: Option<&str>) -> Vec<TerminalLine> {
     let ViewLineContent::SourceLine(source_line) = content else {
         return Vec::new();
