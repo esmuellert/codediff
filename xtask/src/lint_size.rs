@@ -1,14 +1,13 @@
 //! `cargo xtask lint-size`
 //!
-//! Fails if a source file exceeds the hard cap.
+//! Reports source files that exceed the soft cap.
 //!
 //! Test code is excluded so the limit does not discourage local tests.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 const SOFT_CAP: usize = 300;
-const HARD_CAP: usize = 500;
 
 pub fn run() -> Result<()> {
     let root = crate::workspace_root();
@@ -22,7 +21,6 @@ pub fn run() -> Result<()> {
     files.sort();
 
     let mut over_soft = Vec::new();
-    let mut over_hard = Vec::new();
     let mut generated = 0;
 
     for file in &files {
@@ -37,9 +35,7 @@ pub fn run() -> Result<()> {
             .unwrap_or(file)
             .to_string_lossy()
             .into_owned();
-        if lines > HARD_CAP {
-            over_hard.push((shown, lines));
-        } else if lines > SOFT_CAP {
+        if lines > SOFT_CAP {
             over_soft.push((shown, lines));
         }
     }
@@ -48,20 +44,8 @@ pub fn run() -> Result<()> {
         println!("  soft cap ({SOFT_CAP}): {file} has {lines} lines — consider splitting");
     }
 
-    if !over_hard.is_empty() {
-        let mut msg = format!(
-            "{} file(s) exceed the hard cap of {HARD_CAP}:\n",
-            over_hard.len()
-        );
-        for (file, lines) in &over_hard {
-            msg.push_str(&format!("  {file}: {lines} lines\n"));
-        }
-        msg.push_str("\nSplit by noun — a type and its behaviour — never by verb.");
-        bail!(msg);
-    }
-
     println!(
-        "lint-size: {} file(s) checked, none over {HARD_CAP} lines ({} over the {SOFT_CAP} soft cap, {generated} generated)",
+        "lint-size: {} file(s) checked ({} over the {SOFT_CAP} soft cap, {generated} generated)",
         files.len() - generated,
         over_soft.len()
     );

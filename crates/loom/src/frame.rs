@@ -53,22 +53,16 @@ pub(crate) fn draw(held: &RuntimeRef, cells: &mut Cells, area: Rect) {
 
         let tree = crate::reconcile::frame(held, root);
 
-        let mut placed = Vec::new();
-        let mut nth = HashMap::new();
-        let mut metrics_changed = false;
+        let mut state = LayoutState {
+            placed: Vec::new(),
+            nth: HashMap::new(),
+            metrics_changed: false,
+        };
         for node in &tree {
-            lay_out(
-                node,
-                area,
-                area,
-                None,
-                &mut placed,
-                &mut nth,
-                Transform::ZERO,
-                &mut metrics_changed,
-            );
+            lay_out(node, area, area, None, Transform::ZERO, &mut state);
         }
-        held.borrow_mut().placed = placed;
+        let metrics_changed = state.metrics_changed;
+        held.borrow_mut().placed = state.placed;
         if metrics_changed {
             held.borrow_mut().mark(root);
         }
@@ -131,6 +125,12 @@ impl Transform {
     }
 }
 
+struct LayoutState {
+    placed: Vec<FrameNode>,
+    nth: HashMap<ScopeId, u32>,
+    metrics_changed: bool,
+}
+
 /// Lays one host out, then its children, appending to `placed`.
 ///
 /// Returns whether this node cannot fit its children. A container uses its
@@ -140,10 +140,8 @@ fn lay_out(
     area: Rect,
     clip: Rect,
     parent: Option<usize>,
-    placed: &mut Vec<FrameNode>,
-    nth: &mut HashMap<ScopeId, u32>,
     transform: Transform,
-    metrics_changed: &mut bool,
+    state: &mut LayoutState,
 ) -> bool {
     let layout = node.host_desc.layout;
     if layout.hidden {
@@ -152,11 +150,11 @@ fn lay_out(
 
     let visible_area = translate(area, transform);
     let visible_clip = clip.intersection(visible_area);
-    let host_nth = nth.entry(node.scope).or_insert(0);
+    let host_nth = state.nth.entry(node.scope).or_insert(0);
     let host_nth_value = *host_nth;
     *host_nth = host_nth.saturating_add(1);
-    let here = placed.len();
-    placed.push(FrameNode {
+    let here = state.placed.len();
+    state.placed.push(FrameNode {
         scope: node.scope,
         nth: host_nth_value,
         parent,
@@ -177,16 +175,7 @@ fn lay_out(
     // content coordinates; only placed rectangles receive the transform.
     let inner = inset(area, layout.pad);
     if node.host_desc.scroll.is_some() {
-        lay_out_scroll(
-            node,
-            inner,
-            visible_clip,
-            here,
-            placed,
-            nth,
-            transform,
-            metrics_changed,
-        );
+        lay_out_scroll(node, inner, visible_clip, here, transform, state);
         return false;
     }
 
@@ -211,7 +200,7 @@ fn lay_out(
 
     // Everything below this node, so it can be taken back if the subtree
     // turns out not to fit.
-    let below = placed.len();
+    let below = state.placed.len();
 
     let mut short = out.too_small;
     if !short {
@@ -224,10 +213,8 @@ fn lay_out(
                 child_area,
                 inner_clip.intersection(visible_child),
                 Some(here),
-                placed,
-                nth,
                 transform,
-                metrics_changed,
+                state,
             );
         }
     }
@@ -237,21 +224,12 @@ fn lay_out(
     }
 
     // Replace children with the `too_small` fallback when they do not fit.
-    placed.truncate(below);
+    state.placed.truncate(below);
     let Some(message) = &node.too_small else {
         return true;
     };
     for child in message.iter() {
-        lay_out(
-            child,
-            inner,
-            inner_clip,
-            Some(here),
-            placed,
-            nth,
-            transform,
-            metrics_changed,
-        );
+        lay_out(child, inner, inner_clip, Some(here), transform, state);
     }
     false
 }
@@ -262,10 +240,8 @@ fn lay_out_scroll(
     inner: Rect,
     viewport_clip: Rect,
     parent: usize,
-    placed: &mut Vec<FrameNode>,
-    nth: &mut HashMap<ScopeId, u32>,
     transform: Transform,
-    metrics_changed: &mut bool,
+    state: &mut LayoutState,
 ) {
     let natural_width = node
         .children
@@ -304,7 +280,7 @@ fn lay_out_scroll(
     };
     if let Some(view) = &node.host_desc.scroll {
         if node.host_desc.scroll_write_metrics && view.state.replace(metrics) != metrics {
-            *metrics_changed = true;
+            state.metrics_changed = true;
         }
         let content_transform = transform
             .subtract(view.requested.clamp(metrics))
@@ -337,10 +313,8 @@ fn lay_out_scroll(
                 child_area,
                 viewport_clip.intersection(visible_child),
                 Some(parent),
-                placed,
-                nth,
                 content_transform,
-                metrics_changed,
+                state,
             );
         }
     }

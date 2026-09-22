@@ -120,12 +120,16 @@ impl Element for Scroll {
             let vertical = props.vertical;
             let wheel_step = props.wheel_step;
             props.listeners = props.listeners.on_wheel(move |wheel| {
-                let dx = horizontal
-                    .then_some(wheel.horizontal.saturating_mul(wheel_step))
-                    .unwrap_or(0);
-                let dy = vertical
-                    .then_some(wheel.vertical.saturating_mul(wheel_step))
-                    .unwrap_or(0);
+                let dx = if horizontal {
+                    wheel.horizontal.saturating_mul(wheel_step)
+                } else {
+                    0
+                };
+                let dy = if vertical {
+                    wheel.vertical.saturating_mul(wheel_step)
+                } else {
+                    0
+                };
                 if dx == 0 && dy == 0 {
                     Bubble::Continue
                 } else {
