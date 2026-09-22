@@ -1,5 +1,5 @@
-const COLS: u16 = 100;
-const ROWS: u16 = 24;
+const WIDTH: u16 = 100;
+const HEIGHT: u16 = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Colour {
@@ -27,13 +27,13 @@ pub(crate) struct Screen {
 impl Screen {
     pub(crate) fn parse(output: &str) -> Self {
         let mut screen = Self {
-            width: COLS as usize,
-            height: ROWS as usize,
+            width: WIDTH as usize,
+            height: HEIGHT as usize,
             cursor_x: 0,
             cursor_y: 0,
             foreground: None,
             background: None,
-            cells: vec![Cell::default(); COLS as usize * ROWS as usize],
+            cells: vec![Cell::default(); WIDTH as usize * HEIGHT as usize],
         };
         screen.feed(output.as_bytes());
         screen
@@ -145,9 +145,9 @@ impl Screen {
                 self.cells.fill(Cell::default());
             }
             'K' => {
-                let row = self.cursor_y;
+                let y = self.cursor_y;
                 for x in self.cursor_x..self.width {
-                    self.cells[row * self.width + x] = Cell::default();
+                    self.cells[y * self.width + x] = Cell::default();
                 }
             }
             'm' => self.sgr(&params),
@@ -209,18 +209,18 @@ impl Screen {
         self.cursor_x += 1;
     }
 
-    fn row(&self, y: usize) -> String {
+    fn line(&self, y: usize) -> String {
         (0..self.width)
             .map(|x| self.cells[y * self.width + x].symbol)
             .collect()
     }
 
     pub(crate) fn contains(&self, text: &str) -> bool {
-        (0..self.height).any(|y| self.row(y).contains(text))
+        (0..self.height).any(|y| self.line(y).contains(text))
     }
 
-    pub(crate) fn row_of(&self, text: &str) -> Option<usize> {
-        (0..self.height).find(|&y| self.row(y).contains(text))
+    pub(crate) fn line_of(&self, text: &str) -> Option<usize> {
+        (0..self.height).find(|&y| self.line(y).contains(text))
     }
 
     pub(crate) fn has_rgb_colour(&self) -> bool {
@@ -241,7 +241,7 @@ impl Screen {
             .collect()
     }
 
-    pub(crate) fn styled_cells_in_row(&self, y: usize, from: usize) -> usize {
+    pub(crate) fn styled_cells_in_line(&self, y: usize, from: usize) -> usize {
         (from..self.width)
             .filter(|&x| {
                 let cell = self.cells[y * self.width + x];

@@ -74,18 +74,18 @@ impl Harness {
         self
     }
 
-    /// The screen as text, one string per row, trailing blanks trimmed.
+    /// The screen as text, one string per terminal line, trailing blanks trimmed.
     pub fn screen(&mut self) -> Vec<String> {
         self.draw();
-        (0..self.area.height).map(|y| self.row(y)).collect()
+        (0..self.area.height).map(|y| self.screen_line(y)).collect()
     }
 
-    pub fn screen_row(&mut self, y: u16) -> String {
+    pub fn screen_line(&mut self, y: u16) -> String {
         self.draw();
-        self.row(y)
+        self.screen_line_at(y)
     }
 
-    fn row(&self, y: u16) -> String {
+    fn screen_line_at(&self, y: u16) -> String {
         let text: String = (0..self.area.width)
             .filter_map(|x| self.cells.cell((x, y)))
             .map(|cell| cell.symbol())

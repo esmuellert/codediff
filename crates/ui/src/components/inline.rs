@@ -109,7 +109,7 @@ pub(crate) fn Inline(
 
     let mut original_gutters = Vec::with_capacity(visible_terminal_line_count);
     let mut modified_gutters = Vec::with_capacity(visible_terminal_line_count);
-    let mut code_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut code_lines = Vec::with_capacity(visible_terminal_line_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
@@ -148,7 +148,7 @@ pub(crate) fn Inline(
                     }
                 }
             });
-            code_rows.push(rsx! {
+            code_lines.push(rsx! {
                 Row {
                     key: view_line_index,
                     layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -224,7 +224,7 @@ pub(crate) fn Inline(
                 }
             }
         });
-        code_rows.push(rsx! {
+        code_lines.push(rsx! {
             Row {
                 key: view_line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -277,7 +277,7 @@ pub(crate) fn Inline(
                     Column {
                         layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                         ..,
-                        { code_rows }
+                        { code_lines }
                     }
                 }
             }

@@ -227,7 +227,7 @@ fn settle_harness(harness: &mut Harness) {
 
 fn validate_dimensions(width: u16, height: u16) -> Result<()> {
     if width == 0 || height < 2 {
-        bail!("a UI story needs a non-zero width and at least two rows");
+        bail!("a UI story needs a non-zero width and at least two lines");
     }
     Ok(())
 }
@@ -243,7 +243,7 @@ mod tests {
         let selected = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
 
         assert_eq!(harness.style_at(0, 5).bg, selected);
-        assert!(harness.screen_row(5).contains("button.rs"));
+        assert!(harness.screen_line(5).contains("button.rs"));
     }
 
     #[test]
@@ -295,6 +295,6 @@ mod tests {
         let mut harness = story_harness(story, 100, 24).unwrap();
 
         assert_ne!(harness.style_at(4, 2).fg, Theme::DARK.normal.fg);
-        assert!(harness.screen_row(2).contains("fn highlighted"));
+        assert!(harness.screen_line(2).contains("fn highlighted"));
     }
 }

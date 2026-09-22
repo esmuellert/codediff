@@ -15,9 +15,9 @@ use ui::components::{Context as UiContext, Ui, UiProps};
 use ui::ratatui::style::Modifier;
 
 use super::catalog;
-use super::catalog_rows::{
-    CatalogRow, filtered_rows, first_story_line, heading_row, next_story_line, previous_story_line,
-    story_row,
+use super::catalog_items::{
+    CatalogItem, filtered_items, first_story_line, heading_item, next_story_line,
+    previous_story_line, story_item,
 };
 use super::gallery_header::{GalleryHeader, GalleryHeaderProps, Shortcut};
 
@@ -43,7 +43,7 @@ pub(super) fn CatalogRoot(
 
 pub(super) fn snapshot(width: u16, height: u16) -> Result<Vec<String>> {
     if width == 0 || height < 3 {
-        bail!("the UI catalog needs a non-zero width and at least three rows");
+        bail!("the UI catalog needs a non-zero width and at least three lines");
     }
     let mut harness = loom::testing::Harness::new::<CatalogRoot>(
         CatalogRootProps {
@@ -69,16 +69,16 @@ fn CatalogView(
     let exit = use_exit(scope);
     let (query, set_query) = use_state(scope, String::new);
     let (searching, set_searching) = use_state(scope, || false);
-    let initial_rows = filtered_rows("");
-    let initial_line = initial_rows
+    let initial_items = filtered_items("");
+    let initial_line = initial_items
         .iter()
         .position(
-            |row| matches!(row, CatalogRow::Story { index, .. } if *index == *initial_story_index),
+            |item| matches!(item, CatalogItem::Story { index, .. } if *index == *initial_story_index),
         )
-        .unwrap_or_else(|| first_story_line(&initial_rows));
-    let catalog_rows = Rc::new(filtered_rows(&query));
+        .unwrap_or_else(|| first_story_line(&initial_items));
+    let catalog_items = Rc::new(filtered_items(&query));
     let (selected_line, set_selected_line) = use_state(scope, || initial_line as u32);
-    let catalog_line_count = catalog_rows.len() as u32;
+    let catalog_line_count = catalog_items.len() as u32;
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
     let restore_scroll = scroll.clone();
     let selected_target = selected_line;
@@ -87,14 +87,15 @@ fn CatalogView(
         (catalog_line_count, selected_line, query.clone()),
         move || restore_scroll.keep_y_visible(selected_target, 2),
     );
-    let selected_story_index = catalog_rows
-        .get(selected_line as usize)
-        .and_then(|row| match row {
-            CatalogRow::Story { index, .. } => Some(*index),
-            CatalogRow::Heading(_) => None,
-        });
+    let selected_story_index =
+        catalog_items
+            .get(selected_line as usize)
+            .and_then(|item| match item {
+                CatalogItem::Story { index, .. } => Some(*index),
+                CatalogItem::Heading(_) => None,
+            });
 
-    let rows_for_keys = Rc::clone(&catalog_rows);
+    let items_for_keys = Rc::clone(&catalog_items);
     let open_selected_story = Rc::clone(open_story);
     let scroll_for_keys = scroll.clone();
     let has_query = !query.is_empty();
@@ -144,20 +145,20 @@ fn CatalogView(
             set_searching(&|_| true);
             Bubble::Stop
         } else if pressed == key!(j) || pressed == key!(down) {
-            let rows = Rc::clone(&rows_for_keys);
+            let items = Rc::clone(&items_for_keys);
             let scroll = scroll_for_keys.clone();
             set_selected_line(&move |line| {
-                let next = next_story_line(&rows, line as usize).unwrap_or(line as usize) as u32;
+                let next = next_story_line(&items, line as usize).unwrap_or(line as usize) as u32;
                 scroll.keep_y_visible(next, 2);
                 next
             });
             Bubble::Stop
         } else if pressed == key!(k) || pressed == key!(up) {
-            let rows = Rc::clone(&rows_for_keys);
+            let items = Rc::clone(&items_for_keys);
             let scroll = scroll_for_keys.clone();
             set_selected_line(&move |line| {
                 let next =
-                    previous_story_line(&rows, line as usize).unwrap_or(line as usize) as u32;
+                    previous_story_line(&items, line as usize).unwrap_or(line as usize) as u32;
                 scroll.keep_y_visible(next, 2);
                 next
             });
@@ -172,9 +173,9 @@ fn CatalogView(
         }
     });
 
-    let matching_story_count = catalog_rows
+    let matching_story_count = catalog_items
         .iter()
-        .filter(|row| matches!(row, CatalogRow::Story { .. }))
+        .filter(|item| matches!(item, CatalogItem::Story { .. }))
         .count();
     let (bar_title, bar_context, shortcuts) = if searching {
         (
@@ -250,12 +251,12 @@ fn CatalogView(
             ],
         )
     };
-    let visible: Vec<Node> = catalog_rows
+    let visible: Vec<Node> = catalog_items
         .iter()
         .enumerate()
-        .map(|(line, row)| match row {
-            CatalogRow::Heading(label) => heading_row(line as u32, label, *theme),
-            CatalogRow::Story { definition, .. } => story_row(
+        .map(|(line, item)| match item {
+            CatalogItem::Heading(label) => heading_item(line as u32, label, *theme),
+            CatalogItem::Story { definition, .. } => story_item(
                 line as u32,
                 definition,
                 line as u32 == selected_line,
@@ -355,7 +356,7 @@ mod tests {
             harness
                 .screen()
                 .iter()
-                .any(|row| row.contains("single-file/long-syntax-file"))
+                .any(|line| line.contains("single-file/long-syntax-file"))
         );
     }
 }

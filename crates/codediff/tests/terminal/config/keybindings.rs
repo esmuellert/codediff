@@ -57,7 +57,7 @@ fn move_up_keybinding_scrolls_back_to_the_first_line() {
     );
 
     assert_success(&run);
-    assert!(screen(&run).row_of("KEY_UP_LINE_01").is_some());
+    assert!(screen(&run).line_of("KEY_UP_LINE_01").is_some());
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn toggle_wrap_keybinding_changes_the_running_view() {
 
     assert_success(&toggled);
     assert_success(&default);
-    assert!(screen(&toggled).row_of("TAIL") < screen(&default).row_of("TAIL"));
+    assert!(screen(&toggled).line_of("TAIL") < screen(&default).line_of("TAIL"));
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn focus_next_keybinding_returns_to_the_diff_view() {
     );
 
     assert_success(&run);
-    assert!(screen(&run).row_of("KEY_FOCUS_LINE_01").is_none());
+    assert!(screen(&run).line_of("KEY_FOCUS_LINE_01").is_none());
 }
 
 #[test]

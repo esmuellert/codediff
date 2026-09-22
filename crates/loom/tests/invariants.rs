@@ -19,7 +19,7 @@ fn Hello(scope: &mut Scope) -> Node {
 #[test]
 fn a_component_paints_its_text() {
     let mut screen = Harness::new::<Hello>(HelloProps {}, 10, 1);
-    assert_eq!(screen.screen_row(0), "hello");
+    assert_eq!(screen.screen_line(0), "hello");
 }
 
 #[component]
@@ -34,9 +34,9 @@ fn Two(scope: &mut Scope) -> Node {
 }
 
 #[test]
-fn a_row_places_its_children_across() {
+fn a_horizontal_flex_container_places_its_children_across() {
     let mut screen = Harness::new::<Two>(TwoProps {}, 10, 1);
-    assert_eq!(screen.screen_row(0), "abcd");
+    assert_eq!(screen.screen_line(0), "abcd");
 }
 
 #[component]
@@ -57,7 +57,7 @@ fn a_column_places_its_children_down() {
 }
 
 /// A component that counts up when a key arrives, so a test can drive it.
-/// The canvas asks for one row, because a canvas measures as nothing.
+/// The canvas asks for one terminal line, because a canvas measures as nothing.
 #[component]
 fn Counter(scope: &mut Scope) -> Node {
     let (n, set) = use_state(scope, || 0u32);
@@ -85,7 +85,7 @@ fn Counter(scope: &mut Scope) -> Node {
 #[test]
 fn a_component_reads_its_own_state() {
     let mut screen = Harness::new::<Counter>(CounterProps {}, 10, 1);
-    assert_eq!(screen.screen_row(0), "n=0");
+    assert_eq!(screen.screen_line(0), "n=0");
 }
 
 /// Repeated draws are stable.
@@ -103,9 +103,9 @@ fn a_key_reaches_the_focused_node_and_state_moves() {
     screen.draw();
     screen.click(0, 0);
     screen.press(crokey::key!(a));
-    assert_eq!(screen.screen_row(0), "n=1");
+    assert_eq!(screen.screen_line(0), "n=1");
     screen.press(crokey::key!(a));
-    assert_eq!(screen.screen_row(0), "n=2");
+    assert_eq!(screen.screen_line(0), "n=2");
 }
 
 /// Child state survives a parent re-render.
@@ -127,12 +127,12 @@ fn a_component_at_the_same_place_keeps_its_state() {
     screen.draw();
     screen.click(0, 1);
     screen.press(crokey::key!(a));
-    assert_eq!(screen.screen_row(1), "n=1");
+    assert_eq!(screen.screen_line(1), "n=1");
 
     // The parent renders again with new props; the child's state stands.
     screen.set_props::<Parent>(ParentProps { tag: 2 });
-    assert_eq!(screen.screen_row(0), "tag=2");
-    assert_eq!(screen.screen_row(1), "n=1");
+    assert_eq!(screen.screen_line(0), "tag=2");
+    assert_eq!(screen.screen_line(1), "n=1");
 }
 
 /// A different component at the same position starts fresh.
@@ -154,14 +154,14 @@ fn a_different_component_at_the_same_place_starts_fresh() {
     screen.draw();
     screen.click(0, 0);
     screen.press(crokey::key!(a));
-    assert_eq!(screen.screen_row(0), "n=1");
+    assert_eq!(screen.screen_line(0), "n=1");
 
     screen.set_props::<Swap>(SwapProps { other: true });
-    assert_eq!(screen.screen_row(0), "hello");
+    assert_eq!(screen.screen_line(0), "hello");
 
     // Back again: a fresh Counter, because Hello stood in its place.
     screen.set_props::<Swap>(SwapProps { other: false });
-    assert_eq!(screen.screen_row(0), "n=0");
+    assert_eq!(screen.screen_line(0), "n=0");
 }
 
 /// Effect cleanup runs before the next setup.
@@ -309,7 +309,7 @@ fn every_child_rectangle_is_inside_its_parent() {
     let mut screen = Harness::new::<Overflowing>(OverflowingProps {}, 20, 5);
     screen.draw();
     let text = screen.tree_text();
-    // 20 wide less one cell of padding each side, whatever the row asked for.
+    // 20 wide less one cell of padding each side, whatever the layout asked for.
     assert!(text.contains("Row 18x1+1+1"), "{text}");
 }
 
@@ -340,7 +340,7 @@ fn padding_comes_off_before_the_children() {
 #[test]
 fn children_tile_the_container_in_order() {
     let mut screen = Harness::new::<Two>(TwoProps {}, 10, 1);
-    assert_eq!(screen.screen_row(0), "abcd");
+    assert_eq!(screen.screen_line(0), "abcd");
 }
 
 /// A key names a child wherever it moved to.
@@ -377,7 +377,7 @@ fn a_keyed_child_keeps_its_state_when_the_list_reorders() {
     screen.set_props::<Keyed>(KeyedProps {
         order: vec![3, 1, 2],
     });
-    // Each row kept the state it mounted with, so the pairs still match.
+    // Each line kept the state it mounted with, so the pairs still match.
     assert_eq!(screen.screen(), vec!["3:3", "1:1", "2:2"]);
 }
 
@@ -425,12 +425,12 @@ fn a_large_keyed_sibling_list_reuses_scopes_after_a_rotation() {
         12,
         2_000,
     );
-    assert_eq!(screen.screen_row(0), "0:0");
+    assert_eq!(screen.screen_line(0), "0:0");
 
     let mut rotated = entries;
     rotated.rotate_right(1);
     screen.set_props::<KeyedEntries>(KeyedEntriesProps { entries: rotated });
-    assert_eq!(screen.screen_row(0), "1999:1999");
+    assert_eq!(screen.screen_line(0), "1999:1999");
 }
 
 #[component]
@@ -458,9 +458,9 @@ fn KeyedType(scope: &mut Scope, first: bool) -> Node {
 #[test]
 fn a_keyed_type_change_does_not_reuse_the_old_scope() {
     let mut screen = Harness::new::<KeyedType>(KeyedTypeProps { first: true }, 4, 1);
-    assert_eq!(screen.screen_row(0), "A");
+    assert_eq!(screen.screen_line(0), "A");
     screen.set_props::<KeyedType>(KeyedTypeProps { first: false });
-    assert_eq!(screen.screen_row(0), "B");
+    assert_eq!(screen.screen_line(0), "B");
 }
 
 /// A child state update reaches the screen through clean ancestors.
@@ -486,10 +486,10 @@ fn Deep(scope: &mut Scope) -> Node {
 #[test]
 fn a_write_below_a_clean_parent_still_reaches_the_screen() {
     let mut screen = Harness::new::<Quiet>(QuietProps {}, 10, 1);
-    assert_eq!(screen.screen_row(0), "n=0");
+    assert_eq!(screen.screen_line(0), "n=0");
     // The effect ran after that paint; the next draw shows what it wrote.
     screen.draw();
-    assert_eq!(screen.screen_row(0), "n=42");
+    assert_eq!(screen.screen_line(0), "n=42");
 }
 
 /// A too-small condition reaches the nearest fallback.
@@ -511,10 +511,10 @@ fn Cramped(scope: &mut Scope) -> Node {
 #[test]
 fn too_small_climbs_until_someone_answers_for_it() {
     let mut wide = Harness::new::<Cramped>(CrampedProps {}, 50, 1);
-    assert_eq!(wide.screen_row(0), "");
+    assert_eq!(wide.screen_line(0), "");
 
     let mut narrow = Harness::new::<Cramped>(CrampedProps {}, 20, 1);
-    assert_eq!(narrow.screen_row(0), "too small");
+    assert_eq!(narrow.screen_line(0), "too small");
 }
 
 /// A component asks the loop to stop, and the flag the loop reads is set.
@@ -567,12 +567,12 @@ fn an_observer_delivered_from_outside_updates_the_screen() {
         1,
     );
     h.draw();
-    assert_eq!(h.screen_row(0), "waiting");
+    assert_eq!(h.screen_line(0), "waiting");
 
     // Deliver from outside — simulating what the event loop does.
     if let Some(obs) = sender.borrow().as_ref() {
         obs.next("arrived".to_string());
     }
     h.draw();
-    assert_eq!(h.screen_row(0), "arrived");
+    assert_eq!(h.screen_line(0), "arrived");
 }

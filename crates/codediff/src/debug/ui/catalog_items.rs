@@ -1,4 +1,4 @@
-//! Filtered catalog rows and their visual hierarchy.
+//! Filtered catalog items and their visual hierarchy.
 
 use std::rc::Rc;
 
@@ -9,7 +9,7 @@ use super::catalog;
 use super::definition::StoryDefinition;
 
 #[derive(Clone)]
-pub(super) enum CatalogRow {
+pub(super) enum CatalogItem {
     Heading(&'static str),
     Story {
         index: usize,
@@ -17,9 +17,9 @@ pub(super) enum CatalogRow {
     },
 }
 
-pub(super) fn filtered_rows(query: &str) -> Vec<CatalogRow> {
+pub(super) fn filtered_items(query: &str) -> Vec<CatalogItem> {
     let query = query.to_lowercase();
-    let mut rows = Vec::new();
+    let mut items = Vec::new();
     let mut index = 0usize;
     for group in catalog::GROUPS {
         let mut matching = Vec::new();
@@ -28,35 +28,36 @@ pub(super) fn filtered_rows(query: &str) -> Vec<CatalogRow> {
                 || definition.id.to_lowercase().contains(&query)
                 || definition.description.to_lowercase().contains(&query);
             if matches {
-                matching.push(CatalogRow::Story { index, definition });
+                matching.push(CatalogItem::Story { index, definition });
             }
             index += 1;
         }
         if !matching.is_empty() {
-            rows.push(CatalogRow::Heading(group.label));
-            rows.extend(matching);
+            items.push(CatalogItem::Heading(group.label));
+            items.extend(matching);
         }
     }
-    rows
+    items
 }
 
-pub(super) fn first_story_line(rows: &[CatalogRow]) -> usize {
-    rows.iter()
-        .position(|row| matches!(row, CatalogRow::Story { .. }))
+pub(super) fn first_story_line(items: &[CatalogItem]) -> usize {
+    items
+        .iter()
+        .position(|item| matches!(item, CatalogItem::Story { .. }))
         .unwrap_or(0)
 }
 
-pub(super) fn next_story_line(rows: &[CatalogRow], current: usize) -> Option<usize> {
-    ((current + 1)..rows.len()).find(|&line| matches!(rows[line], CatalogRow::Story { .. }))
+pub(super) fn next_story_line(items: &[CatalogItem], current: usize) -> Option<usize> {
+    ((current + 1)..items.len()).find(|&line| matches!(items[line], CatalogItem::Story { .. }))
 }
 
-pub(super) fn previous_story_line(rows: &[CatalogRow], current: usize) -> Option<usize> {
+pub(super) fn previous_story_line(items: &[CatalogItem], current: usize) -> Option<usize> {
     (0..current)
         .rev()
-        .find(|&line| matches!(rows[line], CatalogRow::Story { .. }))
+        .find(|&line| matches!(items[line], CatalogItem::Story { .. }))
 }
 
-pub(super) fn heading_row(line: u32, label: &str, theme: Theme) -> Node {
+pub(super) fn heading_item(line: u32, label: &str, theme: Theme) -> Node {
     let style = theme.normal.fg(theme.tree.heading);
     rsx! {
         Row {
@@ -78,7 +79,7 @@ pub(super) fn heading_row(line: u32, label: &str, theme: Theme) -> Node {
     }
 }
 
-pub(super) fn story_row(
+pub(super) fn story_item(
     line: u32,
     definition: &StoryDefinition,
     selected: bool,
@@ -146,12 +147,12 @@ mod tests {
 
     #[test]
     fn filtering_keeps_group_heading_and_global_story_index() {
-        let filtered = filtered_rows("edge-matrix");
+        let filtered = filtered_items("edge-matrix");
 
-        assert!(matches!(filtered[0], CatalogRow::Heading("Side by side")));
+        assert!(matches!(filtered[0], CatalogItem::Heading("Side by side")));
         assert!(matches!(
             filtered[1],
-            CatalogRow::Story {
+            CatalogItem::Story {
                 index: 16,
                 definition
             } if definition.id == "side-by-side/edge-matrix"
@@ -160,9 +161,9 @@ mod tests {
 
     #[test]
     fn navigation_skips_group_headings() {
-        let rows = filtered_rows("");
-        assert_eq!(first_story_line(&rows), 1);
-        assert_eq!(next_story_line(&rows, 1), Some(3));
-        assert_eq!(previous_story_line(&rows, 3), Some(1));
+        let items = filtered_items("");
+        assert_eq!(first_story_line(&items), 1);
+        assert_eq!(next_story_line(&items, 1), Some(3));
+        assert_eq!(previous_story_line(&items, 3), Some(1));
     }
 }

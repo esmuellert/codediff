@@ -51,7 +51,7 @@ struct Character {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Record {
-    Row {
+    Line {
         index: u32,
         original: Option<u32>,
         modified: Option<u32>,

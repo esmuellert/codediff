@@ -85,7 +85,7 @@ pub enum ExplorerMode {
 pub struct UiConfig {
     #[serde(default)]
     pub layout: ViewLayout,
-    /// Whether long source lines are split into terminal rows.
+    /// Whether long source lines are split into terminal lines.
     #[serde(default = "default_wrap")]
     pub wrap: bool,
     /// A built-in theme name, or `auto` for terminal detection.

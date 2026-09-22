@@ -1,4 +1,4 @@
-//! The file list a real repository produces, with the numbers the rows draw.
+//! The file list a real repository produces, with the numbers the lines draw.
 
 use std::path::PathBuf;
 

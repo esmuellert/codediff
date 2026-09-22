@@ -35,7 +35,7 @@ pub fn draw(files: Vec<File>, width: u16, height: u16) -> Vec<String> {
     for _ in 0..5 {
         h.force_draw();
     }
-    (0..height).map(|y| h.screen_row(y)).collect()
+    (0..height).map(|y| h.screen_line(y)).collect()
 }
 
 pub fn mock_files_service(

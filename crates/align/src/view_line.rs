@@ -38,7 +38,7 @@ pub enum ViewLineType {
     Inserted,
 }
 
-/// One row of the paired document.
+/// One aligned line of the paired document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewLine {
     pub original: ViewLineContent,

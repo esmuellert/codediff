@@ -33,7 +33,7 @@ The UI thread never runs Git or computes a diff while painting. The services del
 
 Explorer uses configurable bindings (by default `j`/`k`, the arrow keys, `Enter`, `i`, `Space`, and the right arrow), mouse clicks, and vertical wheel events. Diff views use configurable bindings (by default `j`/`k`, `h`/`l`, `0`, `$`, and the left arrow), mouse focus, and vertical or horizontal wheel events. `q` exits the application by default.
 
-The main two-sided view starts side by side. When a diff view has focus, `t` switches between `SideBySide` and `Inline`. `DiffViewer` keeps one history entry per file: the entry stores the first `ViewLine` on screen and the first horizontal cell. Each layout resolves the same `ViewLine` in its own row sequence, so switching layouts preserves the visible screen position. `SingleFile` and `Explorer` do not respond to `t`.
+The main two-sided view starts side by side. When a diff view has focus, `t` switches between `SideBySide` and `Inline`. `DiffViewer` keeps one history entry per file: the entry stores the first `ViewLine` on screen and the first horizontal cell. Each layout resolves the same `ViewLine` in its own terminal-line sequence, so switching layouts preserves the visible screen position. `SingleFile` and `Explorer` do not respond to `t`.
 
 Added, deleted, and untracked files are shown with `SingleFile`; they are not compared against an invented empty side. `SingleFile` keeps its own simple numeric position and does not use diff history.
 

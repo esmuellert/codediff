@@ -87,8 +87,8 @@ pub(crate) fn SingleFile(
 
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
-    let mut gutter_rows = Vec::with_capacity(visible_terminal_line_count);
-    let mut code_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut gutter_lines = Vec::with_capacity(visible_terminal_line_count);
+    let mut code_lines = Vec::with_capacity(visible_terminal_line_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
@@ -120,7 +120,7 @@ pub(crate) fn SingleFile(
                 &[],
                 &syntax_spans,
             );
-        gutter_rows.push(rsx! {
+        gutter_lines.push(rsx! {
             Row {
                 key: line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -134,7 +134,7 @@ pub(crate) fn SingleFile(
                 }
             }
         });
-        code_rows.push(rsx! {
+        code_lines.push(rsx! {
             Row {
                 key: line_index,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -167,7 +167,7 @@ pub(crate) fn SingleFile(
                 Column {
                     layout: Layout { basis: Basis::Length(gutter_width), shrink: 0, ..Default::default() },
                     ..,
-                    { gutter_rows }
+                    { gutter_lines }
                 }
                 Scroll {
                     view: viewport.horizontal_view,
@@ -182,7 +182,7 @@ pub(crate) fn SingleFile(
                     Column {
                         layout: Layout { grow: 1, fill: Some(base), ..Default::default() },
                         ..,
-                        { code_rows }
+                        { code_lines }
                     }
                 }
             }

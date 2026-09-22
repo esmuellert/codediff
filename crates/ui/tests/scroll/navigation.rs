@@ -24,7 +24,7 @@ fn Probe(
     let offset = view.clamped_offset();
     let state: Rc<str> = format!("{} {}", offset.y, offset.x).into();
     let line = "x".repeat(longest_line_cells.saturating_add(4) as usize);
-    let rows: Vec<Node> = (0..*line_count)
+    let lines: Vec<Node> = (0..*line_count)
         .map(|_| rsx! { Text { text: line.clone().into(), .. } })
         .collect();
     rsx! {
@@ -44,7 +44,7 @@ fn Probe(
                 Column {
                     layout: Layout { grow: 1, ..Default::default() },
                     ..,
-                    { rows }
+                    { lines }
                 }
             }
         }
@@ -72,8 +72,8 @@ fn navigation_harness(width: u16, longest_line_cells: u32) -> Harness {
 }
 
 fn state(harness: &mut Harness) -> (u32, u32) {
-    let row = harness.screen_row(0);
-    let mut values = row.split_whitespace().map(|value| value.parse().unwrap());
+    let line = harness.screen_line(0);
+    let mut values = line.split_whitespace().map(|value| value.parse().unwrap());
     (values.next().unwrap(), values.next().unwrap())
 }
 

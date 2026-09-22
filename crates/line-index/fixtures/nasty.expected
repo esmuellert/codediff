@@ -1,4 +1,4 @@
-# Expected measurements for nasty.txt, one row per line.
+# Expected measurements for nasty.txt, one entry per line.
 #
 #   line  bytes  utf16  cells  graphemes
 #
@@ -13,7 +13,7 @@
 #   bytes, utf16,        cross-checked against Node's ICU `Intl.Segmenter`,
 #   graphemes            `Buffer.byteLength` and `String.length` — a different
 #                        Unicode implementation from the `unicode-segmentation`
-#                        crate under test. All 14 rows agree exactly, including
+#                        crate under test. All 14 entries agree exactly, including
 #                        the ZWJ family (50) and the regional indicator pair
 #                        (25).
 #
@@ -34,7 +34,7 @@
 # Line 11 — the emoji ZWJ family sequence — is a deliberate choice rather than
 # a measurement. Unicode TR51 says it renders as a single glyph, so it is 2
 # cells; counting its three component emoji separately gives 6, and some
-# terminals do exactly that. If this row ever needs changing, the fix belongs
+# terminals do exactly that. If this entry ever needs changing, the fix belongs
 # in a per-terminal width override rather than in the measurement itself.
 
 1    47   47   47   47

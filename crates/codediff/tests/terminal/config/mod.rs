@@ -14,7 +14,7 @@ mod keybindings;
 mod screen;
 
 const COLS: u16 = 100;
-const ROWS: u16 = 24;
+const HEIGHT: u16 = 24;
 
 struct Fixture {
     dir: PathBuf,
@@ -79,7 +79,7 @@ fn run_app_steps(
     let config = fixture.config(config);
     let pty = native_pty_system()
         .openpty(PtySize {
-            rows: ROWS,
+            rows: HEIGHT,
             cols: COLS,
             pixel_width: 0,
             pixel_height: 0,
@@ -238,11 +238,11 @@ fn wrap_from_config_changes_where_the_following_line_is_drawn() {
         unwrapped.output
     );
 
-    let wrapped_tail = screen(&wrapped).row_of("TAIL");
-    let unwrapped_tail = screen(&unwrapped).row_of("TAIL");
+    let wrapped_tail = screen(&wrapped).line_of("TAIL");
+    let unwrapped_tail = screen(&unwrapped).line_of("TAIL");
     assert!(
         unwrapped_tail < wrapped_tail,
-        "wrap=false did not reduce continuation rows: wrapped={wrapped_tail:?}, unwrapped={unwrapped_tail:?}"
+        "wrap=false did not reduce continuation lines: wrapped={wrapped_tail:?}, unwrapped={unwrapped_tail:?}"
     );
 }
 
@@ -280,7 +280,7 @@ fn explorer_width_from_config_moves_the_pane_boundary() {
 }
 
 #[test]
-fn explorer_mode_from_config_changes_the_file_rows() {
+fn explorer_mode_from_config_changes_the_file_lines() {
     let fixture = Fixture::new("explorer-mode");
     let run = run_app(
         &fixture,
@@ -322,14 +322,14 @@ fn whitespace_policy_from_config_changes_diff_highlighting() {
 
     let strict_screen = screen(&strict);
     let ignored_screen = screen(&ignored);
-    let strict_row = strict_screen.row_of("two").expect("strict row");
-    let ignored_row = ignored_screen.row_of("two").expect("ignored row");
+    let strict_line = strict_screen.line_of("two").expect("strict line");
+    let ignored_line = ignored_screen.line_of("two").expect("ignored line");
     assert!(
-        strict_screen.styled_cells_in_row(strict_row, 45)
-            > ignored_screen.styled_cells_in_row(ignored_row, 45),
+        strict_screen.styled_cells_in_line(strict_line, 45)
+            > ignored_screen.styled_cells_in_line(ignored_line, 45),
         "ignoring trim whitespace did not remove the diff highlight: strict={:?}, ignored={:?}",
-        strict_screen.styled_cells_in_row(strict_row, 45),
-        ignored_screen.styled_cells_in_row(ignored_row, 45),
+        strict_screen.styled_cells_in_line(strict_line, 45),
+        ignored_screen.styled_cells_in_line(ignored_line, 45),
     );
 }
 

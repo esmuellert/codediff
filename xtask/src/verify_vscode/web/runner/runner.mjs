@@ -109,8 +109,8 @@ try {
 
 function validateRecords(text, pair) {
   const records = text.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-  const rows = records.filter(record => record.type === 'row');
-  const lineNumbers = side => new Set(rows.flatMap(row => row[side] === null ? [] : [row[side]]));
+  const lines = records.filter(record => record.type === 'line');
+  const lineNumbers = side => new Set(lines.flatMap(line => line[side] === null ? [] : [line[side]]));
   const original = lineNumbers('original');
   const modified = lineNumbers('modified');
   if (original.size !== pair.originalLines || modified.size !== pair.modifiedLines) {
@@ -121,15 +121,15 @@ function validateRecords(text, pair) {
   }
   let previousOriginal = 0;
   let previousModified = 0;
-  rows.forEach((row, index) => {
-    if (row.index !== index) throw new Error(`${pair.id}: row indices are not contiguous`);
-    if (row.original !== null) {
-      if (row.original < previousOriginal) throw new Error(`${pair.id}: original lines are not ordered`);
-      previousOriginal = row.original;
+  lines.forEach((line, index) => {
+    if (line.index !== index) throw new Error(`${pair.id}: line indices are not contiguous`);
+    if (line.original !== null) {
+      if (line.original < previousOriginal) throw new Error(`${pair.id}: original lines are not ordered`);
+      previousOriginal = line.original;
     }
-    if (row.modified !== null) {
-      if (row.modified < previousModified) throw new Error(`${pair.id}: modified lines are not ordered`);
-      previousModified = row.modified;
+    if (line.modified !== null) {
+      if (line.modified < previousModified) throw new Error(`${pair.id}: modified lines are not ordered`);
+      previousModified = line.modified;
     }
   });
 }
@@ -146,12 +146,12 @@ async function viewportHeight(pair) {
   const sizes = await Promise.all([pair.original, pair.modified].map(async file => (
     (await fs.stat(path.join(workspace, file))).size
   )));
-  const estimatedRows = Math.max(
+  const estimatedLines = Math.max(
     pair.originalLines,
     pair.modifiedLines,
     Math.ceil((sizes[0] + sizes[1]) / options.wrap_column) * 3,
   );
-  return Math.min(1000000, estimatedRows * lineHeight + 500);
+  return Math.min(1000000, estimatedLines * lineHeight + 500);
 }
 
 async function freePort() {
@@ -166,11 +166,11 @@ async function freePort() {
 }
 
 function extractRecords(options) {
-  function alignWrappedReplacementRows(records) {
-    const rows = records.filter(record => record.type === 'row');
-    for (let index = 0; index + 1 < rows.length; index++) {
-      const first = rows[index];
-      const second = rows[index + 1];
+  function alignWrappedReplacementLines(records) {
+    const lines = records.filter(record => record.type === 'line');
+    for (let index = 0; index + 1 < lines.length; index++) {
+      const first = lines[index];
+      const second = lines[index + 1];
       if (first.original !== null && first.modified === null
         && second.original === null && second.modified !== null) {
         second.original = first.original;
@@ -183,18 +183,18 @@ function extractRecords(options) {
     return Math.round(node.getBoundingClientRect().top - editor.getBoundingClientRect().top);
   }
 
-  function lines(editor) {
-    const rows = new Map();
+  function extractLines(editor) {
+    const lines = new Map();
     const highlights = new Map();
     const numbered = new Map();
-    for (const row of editor.querySelectorAll('.margin-view-overlays > div')) {
-      const number = row.querySelector('.line-numbers');
-      if (number) numbered.set(topOf(editor, row), Number(number.textContent));
+    for (const element of editor.querySelectorAll('.margin-view-overlays > div')) {
+      const number = element.querySelector('.line-numbers');
+      if (number) numbered.set(topOf(editor, element), Number(number.textContent));
     }
 
-    const physical = [];
-    for (const row of editor.querySelectorAll('.view-line')) {
-      physical.push({ top: topOf(editor, row), filler: false });
+    const physicalLines = [];
+    for (const element of editor.querySelectorAll('.view-line')) {
+      physicalLines.push({ top: topOf(editor, element), filler: false });
     }
     for (const zone of editor.querySelectorAll('.diagonal-fill')) {
       const lineHeight = Math.round(
@@ -203,20 +203,20 @@ function extractRecords(options) {
       const top = topOf(editor, zone);
       const count = Math.max(1, Math.round(zone.getBoundingClientRect().height / lineHeight));
       for (let index = 0; index < count; index++) {
-        physical.push({ top: top + index * lineHeight, filler: true });
+        physicalLines.push({ top: top + index * lineHeight, filler: true });
       }
     }
-    physical.sort((a, b) => a.top - b.top);
+    physicalLines.sort((a, b) => a.top - b.top);
 
     let previous = null;
-    for (const row of physical) {
-      const number = numbered.get(row.top);
+    for (const physicalLine of physicalLines) {
+      const number = numbered.get(physicalLine.top);
       if (number !== undefined) previous = number;
-      else if (row.filler) previous = null;
-      rows.set(row.top, number ?? null);
-      highlights.set(row.top, number ?? (row.filler ? null : previous));
+      else if (physicalLine.filler) previous = null;
+      lines.set(physicalLine.top, number ?? null);
+      highlights.set(physicalLine.top, number ?? (physicalLine.filler ? null : previous));
     }
-    return { rows, highlights, numbered, physical };
+    return { lines, highlights, numbered, physical: physicalLines };
   }
 
   function cellWidth(editor) {
@@ -259,23 +259,23 @@ function extractRecords(options) {
 
   const original = document.querySelector('.original-in-monaco-diff-editor');
   const modified = document.querySelector('.modified-in-monaco-diff-editor');
-  const originalLines = lines(original);
-  const modifiedLines = lines(modified);
+  const originalLines = extractLines(original);
+  const modifiedLines = extractLines(modified);
   const records = [];
   const tops = [...new Set([
-    ...originalLines.rows.keys(),
-    ...modifiedLines.rows.keys(),
+    ...originalLines.lines.keys(),
+    ...modifiedLines.lines.keys(),
   ])].sort((a, b) => a - b);
   tops.forEach((top, index) => {
     records.push({
-      type: 'row',
+      type: 'line',
       index,
-      original: originalLines.rows.get(top) ?? null,
-      modified: modifiedLines.rows.get(top) ?? null,
+      original: originalLines.lines.get(top) ?? null,
+      modified: modifiedLines.lines.get(top) ?? null,
     });
   });
   if (options.wrap && options.layout === 'side-by-side') {
-    alignWrappedReplacementRows(records);
+    alignWrappedReplacementLines(records);
   }
 
   for (const [side, editor, lineMap] of [
@@ -285,11 +285,11 @@ function extractRecords(options) {
     const role = side === 'original' ? 'delete' : 'insert';
     const width = cellWidth(editor);
     const byLine = new Map();
-    for (const row of editor.querySelectorAll('.view-overlays > div')) {
-      const top = topOf(editor, row);
+    for (const element of editor.querySelectorAll('.view-overlays > div')) {
+      const top = topOf(editor, element);
       const line = lineMap.highlights.get(top);
       if (line === undefined || line === null) continue;
-      for (const decoration of row.querySelectorAll('.cdr')) {
+      for (const decoration of element.querySelectorAll('.cdr')) {
         if (decoration.classList.contains(`line-${role}`)) {
           highlight(byLine, side, line).line_background = role;
           continue;
@@ -309,9 +309,9 @@ function extractRecords(options) {
         });
       }
     }
-    for (const row of editor.querySelectorAll('.margin-view-overlays > div')) {
-      const line = lineMap.highlights.get(topOf(editor, row));
-      if (line !== undefined && line !== null && row.querySelector(`.gutter-${role}`)) {
+    for (const element of editor.querySelectorAll('.margin-view-overlays > div')) {
+      const line = lineMap.highlights.get(topOf(editor, element));
+      if (line !== undefined && line !== null && element.querySelector(`.gutter-${role}`)) {
         highlight(byLine, side, line).gutter_background = role;
       }
     }

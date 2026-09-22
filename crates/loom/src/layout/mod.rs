@@ -1,4 +1,4 @@
-//! Layout primitives for rows, columns, and stacks.
+//! Layout primitives for horizontal, vertical, and stacked flex layouts.
 
 use ratatui::style::Style;
 
@@ -96,7 +96,7 @@ impl Edges {
             left: n,
         }
     }
-    pub const fn rows(n: u16) -> Self {
+    pub const fn vertical(n: u16) -> Self {
         Self {
             top: n,
             right: 0,
@@ -115,7 +115,7 @@ impl Edges {
 /// Which way a container lays its children out.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Axis {
-    /// `Row` — children across.
+    /// Horizontal flex layout — children across.
     Across,
     /// `Column` — children down.
     Down,

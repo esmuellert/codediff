@@ -1,7 +1,7 @@
 //! `codediff debug ui` — deterministic production-component stories.
 
 mod catalog;
-mod catalog_rows;
+mod catalog_items;
 mod catalog_view;
 mod definition;
 mod fixtures;
@@ -32,8 +32,8 @@ pub fn run(
 
     let Some(story_id) = story else {
         if snapshot {
-            for row in catalog_view::snapshot(width.unwrap_or(100), height.unwrap_or(24))? {
-                println!("{row}");
+            for line in catalog_view::snapshot(width.unwrap_or(100), height.unwrap_or(24))? {
+                println!("{line}");
             }
             return Ok(());
         }
@@ -42,12 +42,12 @@ pub fn run(
     let definition = catalog::by_id(&story_id)?;
     if snapshot {
         let (default_width, default_height) = definition.snapshot_size;
-        for row in story_host::snapshot(
+        for line in story_host::snapshot(
             definition,
             width.unwrap_or(default_width),
             height.unwrap_or(default_height),
         )? {
-            println!("{row}");
+            println!("{line}");
         }
     } else {
         story_host::run(definition)?;

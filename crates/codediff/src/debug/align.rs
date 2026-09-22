@@ -1,4 +1,4 @@
-//! Prints two files as aligned rows.
+//! Prints two files as aligned lines.
 
 use ::align::{Alignment, DiffVersion, ViewLine, ViewLineContent, ViewLineType};
 use anyhow::{Context, Result};
@@ -32,7 +32,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
     Ok(())
 }
 
-/// Prints aligned rows and optional details.
+/// Prints aligned lines and optional details.
 pub fn print(alignment: &Alignment, verbose: bool) {
     for line in alignment.view_lines(DiffType::SideBySide) {
         println!("{}", rendered(alignment, &line));

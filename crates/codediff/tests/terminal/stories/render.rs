@@ -330,7 +330,7 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
         "the vertical viewport never moved into the wrapped continuation: {output:?}"
     );
     assert!(
-        resized_frame.contains("line row"),
+        resized_frame.contains("inline line"),
         "the horizontal viewport never moved: {output:?}"
     );
     assert!(output.contains(LEAVE_ALT));

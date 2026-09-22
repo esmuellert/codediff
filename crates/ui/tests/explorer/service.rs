@@ -163,7 +163,7 @@ fn refresh_keeps_the_same_file_selected() {
     });
     receive(&mut harness, &files_service, &responses);
 
-    assert!(harness.screen_row(3).contains("b.rs"));
+    assert!(harness.screen_line(3).contains("b.rs"));
     assert_eq!(harness.style_at(0, 3).bg, selected_background);
     assert_ne!(harness.style_at(0, 2).bg, selected_background);
 }

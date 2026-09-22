@@ -51,7 +51,7 @@ mod overrides {
 
 /// Every language we parse. The engine stores a parser index into this table.
 ///
-/// Adding one: add the crate dependency and a row here.
+/// Adding one: add the crate dependency and a language entry here.
 pub static LANGUAGES: &[Parser] = &[
     Parser {
         name: "rust",

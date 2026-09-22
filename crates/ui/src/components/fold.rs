@@ -1,4 +1,4 @@
-//! A row marking an omitted unchanged region.
+//! A line marking an omitted unchanged region.
 
 use std::rc::Rc;
 

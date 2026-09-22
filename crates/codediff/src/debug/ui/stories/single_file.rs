@@ -29,7 +29,7 @@ pub const STORIES: &[StoryDefinition] = &[
     ),
     story(
         "single-file/wrapped-lines",
-        "A one-sided file with continuation rows",
+        "A one-sided file with continuation lines",
         wrapped_lines,
     ),
     story(

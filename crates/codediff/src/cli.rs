@@ -67,7 +67,7 @@ pub enum Debug {
         verbose: bool,
     },
 
-    /// Print rendered rows and highlight roles for VS Code comparison
+    /// Print rendered lines and highlight roles for VS Code comparison
     Parity {
         original: String,
         modified: String,

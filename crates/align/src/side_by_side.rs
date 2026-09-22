@@ -20,7 +20,7 @@ pub fn view_lines<'a>(
         modified_lines,
         original: 1,
         modified: 1,
-        rows: Vec::new(),
+        pending_lines: Vec::new(),
         within: 0,
     }
 }
@@ -117,7 +117,7 @@ fn ends_within_its_line(line: u32, end_col: u32, original: &[String]) -> bool {
     end_col as usize <= text.encode_utf16().count()
 }
 
-fn rows(change: &DetailedLineRangeMapping, original: &[String]) -> Vec<ViewLine> {
+fn lines_for_change(change: &DetailedLineRangeMapping, original: &[String]) -> Vec<ViewLine> {
     let (os, ms) = (change.original.start_line, change.modified.start_line);
 
     if change.inner_changes.is_empty() {
@@ -157,7 +157,7 @@ pub struct ViewLines<'a> {
     modified_lines: u32,
     original: u32,
     modified: u32,
-    rows: Vec<ViewLine>,
+    pending_lines: Vec<ViewLine>,
     within: usize,
 }
 
@@ -173,17 +173,17 @@ impl Iterator for ViewLines<'_> {
                 return Some(line);
             }
 
-            if self.within == 0 && self.rows.is_empty() {
-                self.rows = rows(change, self.original_text);
+            if self.within == 0 && self.pending_lines.is_empty() {
+                self.pending_lines = lines_for_change(change, self.original_text);
             }
-            if let Some(line) = self.rows.get(self.within) {
+            if let Some(line) = self.pending_lines.get(self.within) {
                 self.within += 1;
                 return Some(*line);
             }
 
             self.original = change.original.end_line;
             self.modified = change.modified.end_line;
-            self.rows.clear();
+            self.pending_lines.clear();
             self.within = 0;
             self.next_change += 1;
         }

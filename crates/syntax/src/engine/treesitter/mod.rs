@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn no_two_languages_claim_the_same_extension() {
-        // The first match wins, so a duplicate makes one row unreachable.
+        // The first match wins, so a duplicate makes one language unreachable.
         for (n, parser) in LANGUAGES.iter().enumerate() {
             for extension in parser.extensions {
                 let earlier = LANGUAGES[..n]

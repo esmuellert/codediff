@@ -76,7 +76,7 @@ fn clicking_a_changed_file_opens_its_diff() {
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
     let before = output.lock().expect("output lock").bytes.len();
-    // SGR mouse press/release at the first changed-file row in the Explorer.
+    // SGR mouse press/release at the first changed-file line in the Explorer.
     writer
         .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m")
         .expect("sending the Explorer click");

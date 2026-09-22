@@ -48,14 +48,15 @@ pub(super) fn run(
     let modified = diff.alignment.lines(DiffVersion::Modified);
     let width = render_width(original, modified, wrap)?;
     let gutters = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
-    let rows = terminal_line_pairs(
+    let terminal_lines = terminal_line_pairs(
         &diff.alignment,
         DiffType::Inline,
         width.saturating_sub(gutters),
         width.saturating_sub(gutters),
         wrap,
     );
-    let height = u16::try_from(rows.len().max(1)).context("inline parity height overflowed")?;
+    let height =
+        u16::try_from(terminal_lines.len().max(1)).context("inline parity height overflowed")?;
     let theme = Theme::DARK;
     let mut harness = Harness::new::<InlineHost>(
         InlineHostProps {
@@ -78,7 +79,7 @@ pub(super) fn run(
         height,
         original.len() as u32,
         modified.len() as u32,
-        &rows,
+        &terminal_lines,
         &diff.alignment,
         wrap,
     )
@@ -89,11 +90,11 @@ fn print_records(
     height: u16,
     original_line_count: u32,
     modified_line_count: u32,
-    rows: &[(TerminalLine, TerminalLine)],
+    terminal_lines: &[(TerminalLine, TerminalLine)],
     alignment: &align::Alignment,
     wrap: bool,
 ) -> Result<()> {
-    let mut row_records = Vec::new();
+    let mut line_records = Vec::new();
     let mut original_highlights = BTreeMap::new();
     let mut modified_highlights = BTreeMap::new();
     let code_start = gutter_width(original_line_count) + gutter_width(modified_line_count);
@@ -116,17 +117,18 @@ fn print_records(
         }
     }
 
-    for row in 0..height {
-        let Some((original, modified)) = rows.get(usize::from(row)) else {
-            row_records.push(Record::Row {
-                index: u32::from(row),
+    for terminal_line_index in 0..height {
+        let Some((original, modified)) = terminal_lines.get(usize::from(terminal_line_index))
+        else {
+            line_records.push(Record::Line {
+                index: u32::from(terminal_line_index),
                 original: None,
                 modified: None,
             });
             continue;
         };
-        row_records.push(Record::Row {
-            index: u32::from(row),
+        line_records.push(Record::Line {
+            index: u32::from(terminal_line_index),
             original: rendered_line_number(original),
             modified: rendered_line_number(modified),
         });
@@ -150,7 +152,7 @@ fn print_records(
         }
     }
 
-    for record in row_records
+    for record in line_records
         .into_iter()
         .chain(original_highlights.into_values())
         .chain(modified_highlights.into_values())

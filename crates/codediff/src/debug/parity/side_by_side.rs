@@ -50,15 +50,15 @@ pub(super) fn run(
     let original_gutter = gutter_width(original.len() as u32);
     let modified_gutter = gutter_width(modified.len() as u32);
     let (original_width, modified_width) = pane_widths(width, original_gutter, modified_gutter);
-    let rows = terminal_line_pairs(
+    let terminal_lines = terminal_line_pairs(
         &diff.alignment,
         DiffType::SideBySide,
         original_width,
         modified_width,
         wrap,
     );
-    let height =
-        u16::try_from(rows.len().max(1)).context("side-by-side parity height overflowed")?;
+    let height = u16::try_from(terminal_lines.len().max(1))
+        .context("side-by-side parity height overflowed")?;
     let theme = Theme::DARK;
     let mut harness = Harness::new::<SideBySideHost>(
         SideBySideHostProps {
@@ -82,7 +82,7 @@ pub(super) fn run(
         height,
         original.len() as u32,
         modified.len() as u32,
-        &rows,
+        &terminal_lines,
         &diff.alignment,
         wrap,
     )
@@ -95,30 +95,32 @@ fn print_records(
     height: u16,
     original_line_count: u32,
     modified_line_count: u32,
-    rows: &[(TerminalLine, TerminalLine)],
+    terminal_lines: &[(TerminalLine, TerminalLine)],
     alignment: &align::Alignment,
     wrap: bool,
 ) -> Result<()> {
     let cells = harness.cells();
     let original_gutter = gutter_width(original_line_count);
     let modified_gutter = gutter_width(modified_line_count);
-    let mut row_records = Vec::new();
+    let mut line_records = Vec::new();
     let mut original_highlights = BTreeMap::new();
     let mut modified_highlights = BTreeMap::new();
 
-    for row in 0..height {
-        let Some((original, modified)) = rows.get(usize::from(row)) else {
-            row_records.push(Record::Row {
-                index: u32::from(row),
+    for terminal_line_index in 0..height {
+        let Some((original, modified)) = terminal_lines.get(usize::from(terminal_line_index))
+        else {
+            line_records.push(Record::Line {
+                index: u32::from(terminal_line_index),
                 original: None,
                 modified: None,
             });
             continue;
         };
-        let divider = divider_at(cells, width, row).context("side-by-side divider missing")?;
+        let divider = divider_at(cells, width, terminal_line_index)
+            .context("side-by-side divider missing")?;
         let modified_start = divider + 1;
-        row_records.push(Record::Row {
-            index: u32::from(row),
+        line_records.push(Record::Line {
+            index: u32::from(terminal_line_index),
             original: rendered_line_number(original),
             modified: rendered_line_number(modified),
         });
@@ -156,7 +158,7 @@ fn print_records(
         }
     }
 
-    for record in row_records
+    for record in line_records
         .into_iter()
         .chain(original_highlights.into_values())
         .chain(modified_highlights.into_values())
@@ -166,11 +168,11 @@ fn print_records(
     Ok(())
 }
 
-fn divider_at(cells: &ui::ratatui::buffer::Buffer, width: u16, row: u16) -> Option<u16> {
+fn divider_at(cells: &ui::ratatui::buffer::Buffer, width: u16, y: u16) -> Option<u16> {
     (0..width)
         .filter(|&column| {
             cells
-                .cell((column, row))
+                .cell((column, y))
                 .is_some_and(|cell| cell.symbol() == "│")
         })
         .min_by_key(|&column| column.abs_diff(width / 2))

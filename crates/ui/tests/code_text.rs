@@ -104,29 +104,29 @@ fn the_text_appears_on_screen() {
         Style::default(),
         Style::default(),
     );
-    let row = h.screen_row(0);
-    assert!(row.contains("hello world"), "got {:?}", row);
+    let line = h.screen_line(0);
+    assert!(line.contains("hello world"), "got {:?}", line);
 }
 
 #[test]
 fn horizontal_start_selects_the_painted_cell_window() {
     let mut harness = scrolled_text("abcdef", 2, 4);
 
-    assert_eq!(harness.screen_row(0), "cdef");
+    assert_eq!(harness.screen_line(0), "cdef");
 }
 
 #[test]
 fn horizontal_start_does_not_split_a_wide_character() {
     let mut harness = scrolled_text("a日bc", 2, 3);
 
-    assert_eq!(harness.screen_row(0), " bc");
+    assert_eq!(harness.screen_line(0), " bc");
 }
 
 #[test]
 fn tabs_keep_their_cell_positions_after_horizontal_scrolling() {
     let mut harness = scrolled_text("a\tbc", 2, 4);
 
-    assert_eq!(harness.screen_row(0), "  bc");
+    assert_eq!(harness.screen_line(0), "  bc");
 }
 
 #[test]

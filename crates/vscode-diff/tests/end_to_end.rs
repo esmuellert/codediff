@@ -257,7 +257,7 @@ fn utf16_tree_glyphs_do_not_truncate_character_heuristics() {
         "│   ├── vscode-diff/          safe wrapper → Diff                      pure\n",
         "│   ├── metrics/              text measurement + coordinate mapping    pure\n",
         "│   ├── syntax/               text → normalized syntactic spans        pure\n",
-        "│   ├── align/                AlignedDoc · rows · hunks · projections  pure\n",
+        "│   ├── align/                AlignedDoc · lines · hunks · projections  pure\n",
         "│   ├── explorer/             entries · grouping · tree · filter       pure\n",
         "│   ├── vcs/                  git today, jj tomorrow\n",
         "│   ├── runtime/              events · commands · effects · watcher\n",

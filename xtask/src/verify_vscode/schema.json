@@ -7,7 +7,7 @@
       "additionalProperties": false,
       "required": ["type", "index", "original", "modified"],
       "properties": {
-        "type": { "const": "row" },
+        "type": { "const": "line" },
         "index": { "type": "integer", "minimum": 0 },
         "original": { "type": ["integer", "null"], "minimum": 1 },
         "modified": { "type": ["integer", "null"], "minimum": 1 }

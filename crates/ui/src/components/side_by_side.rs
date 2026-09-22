@@ -128,10 +128,10 @@ pub(crate) fn SideBySide(
     let divider_style = theme.normal.patch(theme.divider);
 
     let mut original_gutters = Vec::with_capacity(visible_terminal_line_count);
-    let mut original_code_rows = Vec::with_capacity(visible_terminal_line_count);
-    let mut divider_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut original_code_lines = Vec::with_capacity(visible_terminal_line_count);
+    let mut dividers = Vec::with_capacity(visible_terminal_line_count);
     let mut modified_gutters = Vec::with_capacity(visible_terminal_line_count);
-    let mut modified_code_rows = Vec::with_capacity(visible_terminal_line_count);
+    let mut modified_code_lines = Vec::with_capacity(visible_terminal_line_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
@@ -198,7 +198,7 @@ pub(crate) fn SideBySide(
                 { original_gutter }
             }
         });
-        original_code_rows.push(rsx! {
+        original_code_lines.push(rsx! {
             Row {
                 key: view_line,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -206,7 +206,7 @@ pub(crate) fn SideBySide(
                 { original_code }
             }
         });
-        divider_rows.push(rsx! {
+        dividers.push(rsx! {
             Row {
                 key: view_line,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -228,7 +228,7 @@ pub(crate) fn SideBySide(
                 { modified_gutter }
             }
         });
-        modified_code_rows.push(rsx! {
+        modified_code_lines.push(rsx! {
             Row {
                 key: view_line,
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
@@ -268,13 +268,13 @@ pub(crate) fn SideBySide(
                     Column {
                         layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                         ..,
-                        { original_code_rows }
+                        { original_code_lines }
                     }
                 }
                 Column {
                     layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                     ..,
-                    { divider_rows }
+                    { dividers }
                 }
                 Column {
                     layout: Layout { basis: Basis::Length(modified_gutter_width), shrink: 0, ..Default::default() },
@@ -297,7 +297,7 @@ pub(crate) fn SideBySide(
                     Column {
                         layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                         ..,
-                        { modified_code_rows }
+                        { modified_code_lines }
                     }
                 }
             }

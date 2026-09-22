@@ -363,7 +363,7 @@ fn a_block_with_nothing_matching_puts_its_fillers_first() {
 
 #[test]
 fn the_view_line_count_matches_the_walk() {
-    // Count rows from the same walk that produces them.
+    // Count lines from the same walk that produces them.
     for (original, modified) in [
         (
             "impl std::fmt::Debug for Highlighted {\n    /// How far it has got.\n    ///\n    /// Written out rather than derived because the derived form is tens of\n    /// thousands of byte ranges, which no failing test is easier to read for.\n    fn fmt(&self) {",

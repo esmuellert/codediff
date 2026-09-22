@@ -4,8 +4,8 @@ use super::common::*;
 
 #[test]
 fn the_counts_and_the_letter_sit_at_the_right_edge() {
-    let rows = draw(vec![file_with_stats("a.rs", 4, 3)], 30, 3);
-    assert!(rows[1].ends_with("+4 -3 M"), "got {:?}", rows[1]);
+    let lines = draw(vec![file_with_stats("a.rs", 4, 3)], 30, 3);
+    assert!(lines[1].ends_with("+4 -3 M"), "got {:?}", lines[1]);
 }
 
 #[test]
@@ -26,32 +26,32 @@ fn an_untracked_file_looks_like_an_added_file() {
     let file = file("a.rs")
         .set_change_type(file_types::ChangeType::Untracked)
         .set_stats(file_types::Stats::new(1, 0));
-    let rows = draw(vec![file], 30, 3);
-    assert!(rows[1].ends_with("+1 A"), "got {:?}", rows[1]);
+    let lines = draw(vec![file], 30, 3);
+    assert!(lines[1].ends_with("+1 A"), "got {:?}", lines[1]);
 }
 
 #[test]
 fn a_file_with_no_counts_shows_only_its_letter() {
-    let rows = draw(vec![file("a.rs")], 30, 3);
-    assert!(rows[1].ends_with('M'), "got {:?}", rows[1]);
-    assert!(!rows[1].contains('+'), "no counts to show: {:?}", rows[1]);
+    let lines = draw(vec![file("a.rs")], 30, 3);
+    assert!(lines[1].ends_with('M'), "got {:?}", lines[1]);
+    assert!(!lines[1].contains('+'), "no counts to show: {:?}", lines[1]);
 }
 
 #[test]
 fn a_directory_has_no_status() {
-    let rows = screen(&["src/a.rs"], 30, 3);
+    let lines = screen(&["src/a.rs"], 30, 3);
     assert!(
-        !rows[1].contains('M'),
+        !lines[1].contains('M'),
         "a directory has no letter: {:?}",
-        rows[1]
+        lines[1]
     );
 }
 
 #[test]
 fn the_counts_are_green_and_red() {
     let mut h = harness(vec![file_with_stats("a.rs", 4, 3)], 30, 3);
-    let row = h.screen_row(1);
-    let end = row.chars().count() as u16;
+    let line = h.screen_line(1);
+    let end = line.chars().count() as u16;
 
     let letter_at = end - 1;
     let letter = h.style_at(letter_at, 1);
@@ -67,49 +67,49 @@ fn the_counts_are_green_and_red() {
 }
 
 #[test]
-fn a_name_too_long_for_the_row_is_cut_and_says_so() {
-    let rows = draw(
+fn a_name_too_long_for_the_line_is_cut_and_says_so() {
+    let lines = draw(
         vec![file_with_stats("a-very-long-file-name.rs", 4, 3)],
         20,
         3,
     );
-    assert!(rows[1].contains('…'), "the name was cut: {:?}", rows[1]);
+    assert!(lines[1].contains('…'), "the name was cut: {:?}", lines[1]);
     assert!(
-        rows[1].ends_with("+4 -3 M"),
+        lines[1].ends_with("+4 -3 M"),
         "the status survives: {:?}",
-        rows[1]
+        lines[1]
     );
 }
 
 #[test]
 fn a_wide_name_is_cut_between_characters() {
-    let rows = draw(vec![file_with_stats("ファイル.txt", 4, 3)], 18, 3);
-    assert!(rows[1].contains('…'), "the name was cut: {:?}", rows[1]);
+    let lines = draw(vec![file_with_stats("ファイル.txt", 4, 3)], 18, 3);
+    assert!(lines[1].contains('…'), "the name was cut: {:?}", lines[1]);
     assert!(
-        rows[1].contains("フ…"),
+        lines[1].contains("フ…"),
         "whole characters survive: {:?}",
-        rows[1]
+        lines[1]
     );
     assert!(
-        rows[1].ends_with("+4 -3 M"),
+        lines[1].ends_with("+4 -3 M"),
         "the status is on screen: {:?}",
-        rows[1]
+        lines[1]
     );
 }
 
 #[test]
-fn no_row_is_wider_than_the_pane() {
+fn no_line_is_wider_than_the_pane() {
     for width in 8..40u16 {
-        let rows = draw(
+        let lines = draw(
             vec![file_with_stats("some/deep/path/file.rs", 12, 34)],
             width,
             4,
         );
-        for (y, row) in rows.iter().enumerate() {
-            let drawn = line_index::LineIndex::new(row, 1).width().0;
+        for (y, line) in lines.iter().enumerate() {
+            let drawn = line_index::LineIndex::new(line, 1).width().0;
             assert!(
                 drawn <= u32::from(width),
-                "row {y} drew {drawn} columns into {width}: {row:?}",
+                "line {y} drew {drawn} columns into {width}: {line:?}",
             );
         }
     }
@@ -117,13 +117,13 @@ fn no_row_is_wider_than_the_pane() {
 
 #[test]
 fn where_a_moved_file_came_from_follows_its_name() {
-    let rows = draw(vec![moved("old.rs", "new.rs")], 40, 3);
-    assert!(rows[1].contains("new.rs"), "got {:?}", rows[1]);
-    assert!(rows[1].contains("← old.rs"), "got {:?}", rows[1]);
+    let lines = draw(vec![moved("old.rs", "new.rs")], 40, 3);
+    assert!(lines[1].contains("new.rs"), "got {:?}", lines[1]);
+    assert!(lines[1].contains("← old.rs"), "got {:?}", lines[1]);
 }
 
 #[test]
-fn a_narrow_row_drops_where_it_came_from_before_the_name() {
+fn a_narrow_line_drops_where_it_came_from_before_the_name() {
     let file = moved("a-long-old-name.rs", "new.rs");
     let wide = draw(vec![file.clone()], 40, 3);
     assert!(
@@ -156,8 +156,8 @@ fn a_heading_name_is_not_bold_and_the_count_is_highlighted() {
         !name_style.add_modifier.contains(Modifier::BOLD),
         "the heading name is not bold",
     );
-    let row = h.screen_row(0);
-    let paren = row.find('(').expect("a parenthesized count");
+    let line = h.screen_line(0);
+    let paren = line.find('(').expect("a parenthesized count");
     let count_style = h.style_at(paren as u16, 0);
     assert_ne!(
         name_style.fg, count_style.fg,
@@ -170,8 +170,8 @@ fn the_indent_marker_has_its_own_colour() {
     let mut h = harness(vec![file("src/app.rs"), file("notes.txt")], 40, 10);
     h.draw();
     let marker_style = h.style_at(1, 1);
-    let row = h.screen_row(1);
-    let name_start = row.find('s').unwrap_or(6) as u16;
+    let line = h.screen_line(1);
+    let name_start = line.find('s').unwrap_or(6) as u16;
     let name_style = h.style_at(name_start, 1);
     assert_ne!(
         marker_style.fg, name_style.fg,
@@ -185,8 +185,8 @@ fn the_icon_has_its_own_colour() {
     let mut h = harness(files, 40, 10);
     h.draw();
     let icon_style = h.style_at(0, 1);
-    let row = h.screen_row(1);
-    let name_start = row.find("app").unwrap_or(4) as u16;
+    let line = h.screen_line(1);
+    let name_start = line.find("app").unwrap_or(4) as u16;
     let name_style = h.style_at(name_start, 1);
     let _ = (icon_style, name_style);
 }
@@ -197,8 +197,8 @@ fn the_heading_colour_differs_from_the_file_name_colour() {
     let mut h = harness(files, 40, 10);
     h.draw();
     let heading_style = h.style_at(1, 0);
-    let row1 = h.screen_row(1);
-    let name_start = row1.find("app").unwrap_or(3) as u16;
+    let line = h.screen_line(1);
+    let name_start = line.find("app").unwrap_or(3) as u16;
     let name_style = h.style_at(name_start, 1);
     assert_ne!(
         heading_style.fg, name_style.fg,

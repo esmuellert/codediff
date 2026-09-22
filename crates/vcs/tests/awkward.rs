@@ -172,7 +172,7 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
     assert_ne!(
         format!("{unstaged:?}"),
         format!("{staged:?}"),
-        "each row compares against its own revision"
+        "each line compares against its own revision"
     );
 }
 

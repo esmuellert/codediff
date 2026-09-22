@@ -141,20 +141,20 @@ impl Engine {
         }
     }
 
-    /// Appends coloured spans; Tree-sitter may read beyond `rows`.
+    /// Appends coloured spans; Tree-sitter may read beyond `line_range`.
     pub fn colour(
         &self,
         engine_state: &mut EngineState,
         palette: &Palette,
         lines: &[String],
-        rows: Range<usize>,
+        line_range: Range<usize>,
         into: &mut Vec<Vec<Span>>,
     ) {
         match engine_state {
             EngineState::Tree(grammar) => self.trees.colour(*grammar, &palette.trees, lines, into),
             EngineState::TextMate(state) => {
                 self.textmate
-                    .read(state, &palette.textmate, &lines[rows], into);
+                    .read(state, &palette.textmate, &lines[line_range], into);
             }
         }
     }
