@@ -29,12 +29,12 @@ pub const STORIES: &[StoryDefinition] = &[
     ),
     story(
         "inline/long-lines",
-        "Long lines and rows for two-axis scrolling",
+        "Long lines for two-axis scrolling",
         long_lines,
     ),
     story(
         "inline/wrapped-lines",
-        "Long changed lines with real continuation rows",
+        "Long changed lines with real continuations",
         wrapped_lines,
     ),
     StoryDefinition {
@@ -146,7 +146,7 @@ fn long_lines() -> Result<StoryFixture> {
         "fedcba9876543210",
     )];
     for line in 2..=40 {
-        let unchanged = format!("// inline row {line:02}");
+        let unchanged = format!("// inline line {line:02}");
         original.push(unchanged.clone());
         modified.push(unchanged);
     }

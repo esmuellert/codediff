@@ -1,6 +1,6 @@
-//! Checks aligned rows against the oracle files.
+//! Checks aligned lines against the oracle files.
 //!
-//! Filler rows contribute no file content.
+//! Filler lines contribute no file content.
 
 use align::{Alignment, DiffVersion, ViewLineType};
 use file_types::DiffType;
@@ -124,7 +124,7 @@ fn every_line_appears_exactly_once_and_in_order() {
 }
 
 #[test]
-fn no_row_is_blank_on_both_sides() {
+fn no_line_is_blank_on_both_sides() {
     for_each_pair(|name, alignment| {
         for (i, line) in alignment.view_lines(DiffType::SideBySide).enumerate() {
             assert!(
@@ -136,7 +136,7 @@ fn no_row_is_blank_on_both_sides() {
 }
 
 #[test]
-fn the_row_count_matches_the_rows_produced() {
+fn the_line_count_matches_the_lines_produced() {
     for_each_pair(|name, alignment| {
         assert_eq!(
             alignment.view_line_count(DiffType::SideBySide) as usize,
@@ -147,7 +147,7 @@ fn the_row_count_matches_the_rows_produced() {
 }
 
 #[test]
-fn unchanged_rows_hold_identical_text() {
+fn unchanged_lines_hold_identical_text() {
     for_each_pair(|name, alignment| {
         for line in alignment.view_lines(DiffType::SideBySide) {
             if line.kind != ViewLineType::Unchanged {

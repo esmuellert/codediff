@@ -19,7 +19,7 @@ pub const STORIES: &[StoryDefinition] = &[
     ),
     story(
         "side-by-side/insert-delete",
-        "Uneven insertion and deletion with filler rows",
+        "Uneven insertion and deletion with filler lines",
         insert_delete,
     ),
     story(
@@ -29,7 +29,7 @@ pub const STORIES: &[StoryDefinition] = &[
     ),
     story(
         "side-by-side/long-lines",
-        "Long lines plus enough rows for two-axis scrolling",
+        "Long lines for two-axis scrolling",
         long_lines,
     ),
     story(
@@ -141,10 +141,10 @@ fn long_lines() -> Result<StoryFixture> {
     let mut modified = vec![long_rust_line("MODIFIED_LONG_PREFIX", "fedcba9876543210")];
     for line in 2..=40 {
         original.push(format!(
-            "// original row {line:02} with enough text to scroll"
+            "// original line {line:02} with enough text to scroll"
         ));
         modified.push(format!(
-            "// modified row {line:02} with enough text to scroll"
+            "// modified line {line:02} with enough text to scroll"
         ));
     }
     let original: Vec<&str> = original.iter().map(String::as_str).collect();

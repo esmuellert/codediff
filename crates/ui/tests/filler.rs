@@ -18,18 +18,18 @@ fn filler(width: u16) -> Harness {
 fn every_cell_is_the_hatch_character() {
     let mut h = filler(10);
     h.draw();
-    let row = h.screen_row(0);
-    for ch in row.chars() {
-        assert_eq!(ch, '╱', "every cell is the hatch: {:?}", row);
+    let line = h.screen_line(0);
+    for ch in line.chars() {
+        assert_eq!(ch, '╱', "every cell is the hatch: {:?}", line);
     }
 }
 
 #[test]
-fn a_filler_is_one_row_tall() {
+fn a_filler_is_one_line_tall() {
     let mut h = filler(10);
     h.draw();
-    let row0 = h.screen_row(0);
-    assert!(!row0.is_empty(), "the filler drew something");
+    let line = h.screen_line(0);
+    assert!(!line.is_empty(), "the filler drew something");
 }
 
 #[test]
@@ -78,12 +78,12 @@ fn a_filler_beside_a_gutter_fills_the_remaining_width() {
     for _ in 0..3 {
         h.force_draw();
     }
-    let row = h.screen_row(0);
-    let hatches = row.chars().filter(|&c| c == '╱').count();
+    let line = h.screen_line(0);
+    let hatches = line.chars().filter(|&c| c == '╱').count();
     assert!(
         hatches > 1,
         "the filler should fill the space after the gutter, got {} hatches in {:?}",
         hatches,
-        row
+        line
     );
 }

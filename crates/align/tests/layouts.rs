@@ -108,7 +108,7 @@ fn a_counted_layout_is_as_tall_as_it_walks() {
 
 #[test]
 fn inline_is_never_shorter_than_side_by_side() {
-    // Inline uses both sides' rows; side-by-side uses the taller side.
+    // Inline uses both sides' lines; side-by-side uses the taller side.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         assert!(
@@ -121,7 +121,7 @@ fn inline_is_never_shorter_than_side_by_side() {
 
 #[test]
 fn no_inline_row_holds_both_versions_unless_they_agree() {
-    // Only unchanged rows contain both versions.
+    // Only unchanged lines contain both versions.
     for (name, before, after) in pairs() {
         let alignment = aligned(before, after);
         for line in alignment.view_lines(DiffType::Inline) {
@@ -205,7 +205,7 @@ fn blocks_cover_every_changed_row_and_nothing_else() {
                 .map(|(i, _)| i as u32)
                 .collect();
             assert_eq!(covered, changed, "{name}, {layout:?}");
-            // Adjacent changed rows share one block.
+            // Adjacent changed lines share one block.
             for pair in blocks.windows(2) {
                 assert!(
                     pair[1].start > pair[0].end,

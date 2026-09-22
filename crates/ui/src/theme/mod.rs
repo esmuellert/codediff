@@ -57,7 +57,7 @@ pub struct Theme {
     /// The colour of each kind of code. See [`code`].
     pub code: Code,
 
-    /// The colour of each part of a tree drawn in rows. See [`tree`].
+    /// The colour of each part of a tree drawn in terminal lines. See [`tree`].
     pub tree: Tree,
 
     /// The colour of each way a file can have changed. See [`change`].
@@ -263,8 +263,11 @@ mod tests {
     #[test]
     fn patching_a_role_over_normal_keeps_what_the_role_does_not_set() {
         let theme = Theme::DARK;
-        let row = theme.normal.patch(theme.inserted);
-        assert_eq!(row.fg, theme.normal.fg, "the role did not set a foreground");
-        assert_eq!(row.bg, theme.inserted.bg);
+        let colour = theme.normal.patch(theme.inserted);
+        assert_eq!(
+            colour.fg, theme.normal.fg,
+            "the role did not set a foreground"
+        );
+        assert_eq!(colour.bg, theme.inserted.bg);
     }
 }

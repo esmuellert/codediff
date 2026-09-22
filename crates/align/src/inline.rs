@@ -102,7 +102,7 @@ pub fn line_at(
     }
 }
 
-/// Which row shows a given line, if any.
+/// Which view line contains a given file line, if any.
 pub fn view_line_at(
     diff: &LinesDiff,
     original_lines: u32,

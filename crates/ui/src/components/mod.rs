@@ -5,6 +5,7 @@ pub mod border;
 pub mod code_text;
 mod context;
 pub mod diff_viewer;
+pub mod diff_viewer_container;
 pub mod explorer;
 pub mod filler;
 mod fold;

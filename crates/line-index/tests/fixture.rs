@@ -61,7 +61,7 @@ fn the_fixture_matches_its_reference_table() {
     assert_eq!(
         expected.len(),
         actual.len(),
-        "the reference table has {} rows but the fixture has {} lines",
+        "the reference table has {} entries but the fixture has {} lines",
         expected.len(),
         actual.len()
     );

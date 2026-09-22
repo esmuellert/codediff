@@ -11,21 +11,18 @@ use loom::{
 use pipeline::diff::DiffContent;
 
 use super::context::{Context, Ui};
-use super::inline::{Inline, InlineProps};
-use super::side_by_side::{SideBySide, SideBySideProps};
-use super::single_file::{SingleFile, SingleFileProps};
-use super::welcome::Welcome;
+use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
 use crate::view::terminal_lines::TerminalLine;
 
-/// The screen position of one two-sided diff.
+/// The semantic screen position shared by a file's layouts.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ViewState {
     pub(crate) first_terminal_line: Option<TerminalLine>,
     pub first_cell: u32,
 }
 
-/// Screen positions shared by a diff's layouts.
+/// Screen positions saved independently for each file.
 #[derive(Debug, Default)]
 pub struct ViewStateHistory {
     entries: HashMap<String, ViewState>,
@@ -112,13 +109,13 @@ fn sync_active_view_state(
 fn layout_listener(
     scope: &mut Scope,
     is_diff: bool,
-    set_layout: SetState<DiffType>,
+    set_view_layout: SetState<DiffType>,
     set_wrap: SetState<bool>,
 ) -> Listeners {
     let keybindings = use_context::<Ui>(scope).keybindings;
     Listeners::new().on_key(move |key| {
         if is_diff && keybindings.matches(Action::ToggleLayout, key) {
-            set_layout(&|layout| layout.other());
+            set_view_layout(&|view_layout| view_layout.other());
             Bubble::Stop
         } else if keybindings.matches(Action::ToggleWrap, key) {
             set_wrap(&|wrap| !wrap);
@@ -129,59 +126,11 @@ fn layout_listener(
     })
 }
 
-fn render_content_view(
-    content: Option<Rc<DiffContent>>,
-    layout: DiffType,
-    view_state: Ref<ViewState>,
-    wrap: bool,
-) -> Node {
-    match content {
-        Some(content) => match content.as_ref() {
-            DiffContent::Diff(_) => {
-                let content_id = Rc::as_ptr(&content) as usize;
-                match layout {
-                    DiffType::SideBySide => rsx! {
-                        SideBySide {
-                            key: content_id,
-                            content: Rc::clone(&content),
-                            view_state: view_state,
-                            wrap: wrap,
-                            compact: false,
-                            auto_focus: true,
-                        }
-                    },
-                    DiffType::Inline => rsx! {
-                        Inline {
-                            key: content_id,
-                            content: Rc::clone(&content),
-                            view_state: view_state,
-                            wrap: wrap,
-                            compact: false,
-                            auto_focus: true,
-                        }
-                    },
-                    DiffType::Single => unreachable!("DiffViewer's diff layout cannot be Single"),
-                }
-            }
-            DiffContent::SingleFile(_) => {
-                rsx! {
-                    SingleFile {
-                        content: Rc::clone(&content),
-                        wrap: wrap,
-                        compact: false,
-                    }
-                }
-            }
-        },
-        None => rsx! { Welcome {} },
-    }
-}
-
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let content = use_diff_content(scope, &ctx);
-    let (layout, set_layout) = use_state(scope, || match ctx.config.ui.layout {
+    let (view_layout, set_view_layout) = use_state(scope, || match ctx.config.ui.layout {
         config::ViewLayout::SideBySide => DiffType::SideBySide,
         config::ViewLayout::Inline => DiffType::Inline,
     });
@@ -197,15 +146,21 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     );
 
     let is_diff = matches!(content.as_deref(), Some(DiffContent::Diff(_)));
-    let toggle = layout_listener(scope, is_diff, set_layout, set_wrap);
-    let content_view = render_content_view(content, layout, active_view_state, wrap);
+    let toggle = layout_listener(scope, is_diff, set_view_layout, set_wrap);
 
     rsx! {
         Column {
             listeners: toggle,
             layout: Layout { grow: 1, ..Default::default() },
             ..,
-            { content_view }
+            DiffViewerContainer {
+                content: content,
+                view_layout: view_layout,
+                view_state: active_view_state,
+                wrap: wrap,
+                compact: false,
+                auto_focus: true,
+            }
         }
     }
 }

@@ -1,17 +1,13 @@
-//! Browsing and switching stories without restarting the binary.
-#![cfg(unix)]
-
-mod support;
-
 use std::io::Write;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-use support::{ENTER_ALT, LEAVE_ALT, Output, collect, drawn, drawn_after, written};
+
+use super::super::common::{all_output, send_and_wait};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, written};
 
 #[test]
-fn catalog_filters_opens_switches_resets_and_returns() {
+fn story_catalog_filters_opens_switches_resets_and_returns() {
     let pty = native_pty_system()
         .openpty(PtySize {
             rows: 24,
@@ -89,21 +85,4 @@ fn catalog_filters_opens_switches_resets_and_returns() {
     assert!(status.success(), "{output:?}");
     assert!(output.contains(ENTER_ALT));
     assert!(output.contains(LEAVE_ALT));
-}
-
-fn send_and_wait(writer: &mut dyn Write, output: &Arc<Mutex<Output>>, input: &[u8]) -> String {
-    let before = output
-        .lock()
-        .expect("nothing else holds the lock")
-        .bytes
-        .len();
-    writer.write_all(input).expect("sending input");
-    writer.flush().expect("flushing input");
-    drawn_after(output, before);
-    let held = output.lock().expect("nothing else holds the lock");
-    String::from_utf8_lossy(&held.bytes[before..]).into_owned()
-}
-
-fn all_output(output: &Arc<Mutex<Output>>) -> String {
-    String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes).into_owned()
 }

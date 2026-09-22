@@ -132,7 +132,7 @@ struct ViewLine {
     modified: String,
 }
 
-/// Splits a rendered row on its divider.
+/// Splits a rendered terminal line on its divider.
 ///
 /// The gutters are fixed-width ASCII, so character positions are display
 /// columns there; the text runs to the end of its half, which avoids having to
@@ -164,19 +164,19 @@ fn parse(line: &str) -> Option<ViewLine> {
 fn check_column(
     pair: &str,
     version: &str,
-    rows: &[ViewLine],
+    lines: &[ViewLine],
     pick: impl Fn(&ViewLine) -> (Option<u32>, &String),
     file: &str,
 ) {
     let expected: Vec<&str> = file.split('\n').collect();
     let mut next = 1u32;
 
-    for row in rows {
-        let (number, shown) = pick(row);
+    for line in lines {
+        let (number, shown) = pick(line);
         let Some(number) = number else {
             assert!(
                 shown.chars().all(|c| c == '\u{2571}'),
-                "{pair}/{version}: a row with no line number should be filler, got {shown:?}"
+                "{pair}/{version}: a line with no line number should be filler, got {shown:?}"
             );
             continue;
         };

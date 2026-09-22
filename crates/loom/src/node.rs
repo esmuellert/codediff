@@ -49,6 +49,18 @@ pub struct Host {
     pub children: Vec<Node>,
     /// Which way this host arranges its children.
     pub(crate) axis: crate::layout::Axis,
+    /// A Scroll host moves its subtree inside its clipped viewport.
+    pub(crate) scroll: Option<crate::scroll::ScrollView>,
+    /// Whether each content axis is allowed to extend past the viewport.
+    pub(crate) scroll_axes: (bool, bool),
+    /// Optional extent and origin supplied by a virtualized content producer.
+    pub(crate) scroll_content_width: Option<u32>,
+    pub(crate) scroll_content_height: Option<u32>,
+    pub(crate) scroll_content_offset: crate::scroll::ScrollOffset,
+    /// Optional width of the laid-out content area, separate from its extent.
+    pub(crate) scroll_content_area_width: Option<u32>,
+    /// Whether this host publishes its measured metrics to the shared view.
+    pub(crate) scroll_write_metrics: bool,
     /// `Text` carries its own string; `measure` reads it back through here.
     pub(crate) text: Option<Rc<str>>,
     pub(crate) style: ratatui::style::Style,
@@ -69,6 +81,13 @@ impl Default for Host {
             too_small: None,
             children: Vec::new(),
             axis: crate::layout::Axis::Across,
+            scroll: None,
+            scroll_axes: (true, true),
+            scroll_content_width: None,
+            scroll_content_height: None,
+            scroll_content_offset: crate::scroll::ScrollOffset::ZERO,
+            scroll_content_area_width: None,
+            scroll_write_metrics: true,
             text: None,
             style: ratatui::style::Style::new(),
         }

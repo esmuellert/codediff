@@ -281,7 +281,7 @@ fn every_changed_file_can_be_diffed_without_failing() {
     let fixture = Fixture::new("all");
     let status = fixture.run(&["debug", "status"]);
 
-    // Parse the status rows without splitting paths on spaces.
+    // Parse the status lines without splitting paths on spaces.
     let paths: Vec<String> = status
         .lines()
         .filter_map(|line| line.strip_prefix("  ")?.split_once("  "))

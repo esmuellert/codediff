@@ -9,7 +9,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
 use ui::components::diff_viewer::{ViewState, ViewStateHistory};
-use ui::components::inline::{Inline, InlineProps};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
 
@@ -30,9 +30,10 @@ fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
         *active_key.current() = Some(key);
     }
     rsx! {
-        Inline {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::Inline,
             view_state: active_view_state,
             wrap: true,
             compact: false,
@@ -46,9 +47,10 @@ fn TestInlineUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffConten
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Rc::as_ptr(content) as usize;
     rsx! {
-        Inline {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::Inline,
             view_state: view_state,
             wrap: false,
             compact: false,
@@ -113,10 +115,10 @@ fn settle(harness: &mut Harness) {
     }
 }
 
-fn symbols(harness: &mut Harness, start: u16, end: u16, row: u16) -> String {
+fn symbols(harness: &mut Harness, start: u16, end: u16, y: u16) -> String {
     let cells = harness.cells();
     (start..end)
-        .filter_map(|column| cells.cell((column, row)))
+        .filter_map(|column| cells.cell((column, y)))
         .map(|cell| cell.symbol())
         .collect()
 }
@@ -129,18 +131,18 @@ fn changes_read_original_then_modified_in_one_text_column() {
         40,
         6,
     );
-    let rows = harness.screen();
+    let lines = harness.screen();
 
-    assert!(rows[0].starts_with("  1   1 one"), "{:?}", rows[0]);
-    assert!(rows[1].starts_with("  2     before"), "{:?}", rows[1]);
-    assert!(rows[2].starts_with("      2 after"), "{:?}", rows[2]);
-    assert!(rows[3].starts_with("      3 extra"), "{:?}", rows[3]);
-    assert!(rows[4].starts_with("  3   4 three"), "{:?}", rows[4]);
-    assert!(!rows.iter().any(|row| row.contains(['│', '╱'])));
+    assert!(lines[0].starts_with("  1   1 one"), "{:?}", lines[0]);
+    assert!(lines[1].starts_with("  2     before"), "{:?}", lines[1]);
+    assert!(lines[2].starts_with("      2 after"), "{:?}", lines[2]);
+    assert!(lines[3].starts_with("      3 extra"), "{:?}", lines[3]);
+    assert!(lines[4].starts_with("  3   4 three"), "{:?}", lines[4]);
+    assert!(!lines.iter().any(|line| line.contains(['│', '╱'])));
 }
 
 #[test]
-fn changed_rows_colour_both_gutters_and_the_text_column() {
+fn changed_lines_colour_both_gutters_and_the_text_column() {
     let mut harness = harness(&["before shared"], &["after shared"], 30, 3);
     let deleted = Theme::DARK.normal.patch(Theme::DARK.deleted).bg;
     let inserted = Theme::DARK.normal.patch(Theme::DARK.inserted).bg;
@@ -192,29 +194,29 @@ fn syntax_is_requested_for_both_versions() {
 }
 
 #[test]
-fn vertical_keys_and_wheel_move_visual_rows() {
+fn vertical_keys_and_wheel_move_terminal_lines() {
     let lines: Vec<String> = (1..=20).map(|line| format!("line {line:02}")).collect();
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
     let mut harness = harness(&lines, &lines, 30, 4);
 
-    assert!(harness.screen_row(0).contains("line 01"));
+    assert!(harness.screen_line(0).contains("line 01"));
     for _ in 0..4 {
         harness.press(crokey::key!(j));
     }
     harness.force_draw();
-    assert!(harness.screen_row(0).contains("line 05"));
+    assert!(harness.screen_line(0).contains("line 05"));
 
     harness.wheel(1, 1, 1).force_draw();
-    assert!(harness.screen_row(0).contains("line 08"));
+    assert!(harness.screen_line(0).contains("line 08"));
 
     harness.wheel(1, 1, -1).force_draw();
-    assert!(harness.screen_row(0).contains("line 05"));
+    assert!(harness.screen_line(0).contains("line 05"));
     harness.press(crokey::key!(k)).force_draw();
-    assert!(harness.screen_row(0).contains("line 04"));
+    assert!(harness.screen_line(0).contains("line 04"));
     harness.press(crokey::key!(down)).force_draw();
-    assert!(harness.screen_row(0).contains("line 05"));
+    assert!(harness.screen_line(0).contains("line 05"));
     harness.press(crokey::key!(up)).force_draw();
-    assert!(harness.screen_row(0).contains("line 04"));
+    assert!(harness.screen_line(0).contains("line 04"));
 }
 
 #[test]
@@ -292,21 +294,21 @@ fn each_file_restores_its_vertical_position() {
         harness.press(crokey::key!(j));
     }
     harness.force_draw();
-    assert!(harness.screen_row(0).contains("first 05"));
+    assert!(harness.screen_line(0).contains("first 05"));
 
     harness.set_props::<TestInline>(TestInlineProps {
         content: Rc::clone(&second_content),
     });
     settle(&mut harness);
-    assert!(harness.screen_row(0).contains("second 01"));
+    assert!(harness.screen_line(0).contains("second 01"));
     harness.press(crokey::key!(j)).force_draw();
-    assert!(harness.screen_row(0).contains("second 02"));
+    assert!(harness.screen_line(0).contains("second 02"));
 
     harness.set_props::<TestInline>(TestInlineProps {
         content: first_content,
     });
     settle(&mut harness);
-    assert!(harness.screen_row(0).contains("first 05"));
+    assert!(harness.screen_line(0).contains("first 05"));
 }
 
 #[test]

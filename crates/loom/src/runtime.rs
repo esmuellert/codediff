@@ -2,7 +2,7 @@
 //! every node landed.
 
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use ratatui::layout::Rect;
@@ -102,15 +102,37 @@ impl Runtime {
         id
     }
 
-    /// Unmounts descendants before their parent.
-    pub fn unmount(&mut self, id: ScopeId) {
+    /// Detaches all children not in `keep`, then unmounts each detached
+    /// subtree without repeatedly scanning the parent's sibling list.
+    pub fn unmount_children_except(&mut self, parent: ScopeId, keep: &HashSet<ScopeId>) {
+        let gone = {
+            let Some(mounted) = self.scopes.get_mut(parent) else {
+                return;
+            };
+            let mut gone = Vec::new();
+            mounted.children.retain(|child| {
+                if keep.contains(child) {
+                    true
+                } else {
+                    gone.push(*child);
+                    false
+                }
+            });
+            gone
+        };
+        for child in gone {
+            self.unmount_subtree(child);
+        }
+    }
+
+    fn unmount_subtree(&mut self, id: ScopeId) {
         let children = self
             .scopes
             .get(id)
             .map(|m| m.children.clone())
             .unwrap_or_default();
         for child in children {
-            self.unmount(child);
+            self.unmount_subtree(child);
         }
 
         if let Some(hooks) = self.hooks.remove(&id) {
@@ -126,13 +148,7 @@ impl Runtime {
         if self.captured.is_some_and(|c| c.scope == id) {
             self.captured = None;
         }
-
-        if let Some(mounted) = self.scopes.remove(id)
-            && let Some(parent) = mounted.parent
-            && let Some(up) = self.scopes.get_mut(parent)
-        {
-            up.children.retain(|&c| c != id);
-        }
+        self.scopes.remove(id);
     }
 
     pub fn name_of(&self, id: ScopeId) -> &'static str {

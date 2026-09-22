@@ -4,7 +4,7 @@ mod host;
 
 pub use host::{
     Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Gap, GapProps, Row, RowProps,
-    Stack, StackProps, Text, TextProps,
+    Scroll, ScrollProps, Stack, StackProps, Text, TextProps,
 };
 
 use ratatui::buffer::Buffer as Cells;
@@ -15,15 +15,26 @@ pub struct Paint<'a> {
     cells: &'a mut Cells,
     area: Rect,
     clip: Rect,
+    content: Rect,
+    origin: (i64, i64),
     focused: bool,
 }
 
 impl<'a> Paint<'a> {
-    pub(crate) fn new(cells: &'a mut Cells, area: Rect, clip: Rect, focused: bool) -> Self {
+    pub(crate) fn new(
+        cells: &'a mut Cells,
+        area: Rect,
+        clip: Rect,
+        content: Rect,
+        origin: (i64, i64),
+        focused: bool,
+    ) -> Self {
         Self {
             cells,
             area,
             clip,
+            content,
+            origin,
             focused,
         }
     }
@@ -39,6 +50,14 @@ impl<'a> Paint<'a> {
     /// `area` intersected with every clipping ancestor.
     pub fn clip(&self) -> Rect {
         self.clip
+    }
+    /// The rectangle before scroll transforms.
+    pub fn content_area(&self) -> Rect {
+        self.content
+    }
+    /// The screen position of the node's unscrolled content origin.
+    pub fn origin(&self) -> (i64, i64) {
+        self.origin
     }
     /// Whether this node holds focus.
     pub fn has_focus(&self) -> bool {

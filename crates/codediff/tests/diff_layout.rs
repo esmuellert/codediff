@@ -86,10 +86,10 @@ fn inline_emits_unified_rendering_records() {
     assert_eq!(
         records,
         [
-            serde_json::json!({"type":"row","index":0,"original":1,"modified":1}),
-            serde_json::json!({"type":"row","index":1,"original":2,"modified":null}),
-            serde_json::json!({"type":"row","index":2,"original":null,"modified":2}),
-            serde_json::json!({"type":"row","index":3,"original":3,"modified":3}),
+            serde_json::json!({"type":"line","index":0,"original":1,"modified":1}),
+            serde_json::json!({"type":"line","index":1,"original":2,"modified":null}),
+            serde_json::json!({"type":"line","index":2,"original":null,"modified":2}),
+            serde_json::json!({"type":"line","index":3,"original":3,"modified":3}),
             serde_json::json!({
                 "type":"highlight","side":"original","line":2,
                 "line_background":"delete","gutter_background":"delete",
@@ -107,7 +107,7 @@ fn inline_emits_unified_rendering_records() {
 }
 
 #[test]
-fn wrap_setting_changes_the_rendered_row_count_for_long_lines() {
+fn wrap_setting_changes_the_rendered_line_count_for_long_lines() {
     let fixture = Fixture::new("wrap");
     let original = format!("before {}", "0123456789 ".repeat(12));
     let modified = format!("after {}", "abcdefghij ".repeat(12));
@@ -146,19 +146,19 @@ fn wrap_setting_changes_the_rendered_row_count_for_long_lines() {
         "{}",
         String::from_utf8_lossy(&unwrapped.stderr)
     );
-    let wrapped_rows = String::from_utf8(wrapped.stdout)
+    let wrapped_lines = String::from_utf8(wrapped.stdout)
         .unwrap()
         .lines()
-        .filter(|line| line.contains("\"type\":\"row\""))
+        .filter(|line| line.contains("\"type\":\"line\""))
         .count();
-    let unwrapped_rows = String::from_utf8(unwrapped.stdout)
+    let unwrapped_lines = String::from_utf8(unwrapped.stdout)
         .unwrap()
         .lines()
-        .filter(|line| line.contains("\"type\":\"row\""))
+        .filter(|line| line.contains("\"type\":\"line\""))
         .count();
     assert!(
-        wrapped_rows > unwrapped_rows,
-        "wrapped={wrapped_rows}, unwrapped={unwrapped_rows}"
+        wrapped_lines > unwrapped_lines,
+        "wrapped={wrapped_lines}, unwrapped={unwrapped_lines}"
     );
 }
 

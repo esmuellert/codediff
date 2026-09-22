@@ -256,7 +256,7 @@ impl Coverage {
     fn read(&mut self, records: &[output::Record]) {
         for record in records {
             match record {
-                output::Record::Row {
+                output::Record::Line {
                     original, modified, ..
                 } => {
                     self.filler |= original.is_none() || modified.is_none();

@@ -1,4 +1,4 @@
-//! A hatch across a whole row, where one side has no line.
+//! A hatch across a whole terminal line, where one side has no line.
 
 use std::rc::Rc;
 

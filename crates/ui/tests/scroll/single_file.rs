@@ -6,10 +6,46 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
-use ui::components::single_file::{SingleFile, SingleFileProps};
+use ui::components::diff_viewer::{ViewState, ViewStateHistory};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
+
+#[component]
+fn SingleFile(
+    scope: &mut Scope,
+    content: Rc<pipeline::diff::DiffContent>,
+    wrap: bool,
+    compact: bool,
+) -> Node {
+    let _ = compact;
+    let view_states = use_ref(scope, ViewStateHistory::default);
+    let active_state = use_ref(scope, ViewState::default);
+    let active_key = use_ref(scope, || None::<String>);
+    let key = content.file().path().as_str().to_owned();
+    let previous_key = active_key.current().clone();
+    if previous_key.as_deref() != Some(key.as_str()) {
+        if let Some(previous_key) = previous_key {
+            view_states
+                .current()
+                .save(&previous_key, active_state.current().clone());
+        }
+        *active_state.current() = view_states.current().load(&key);
+        *active_key.current() = Some(key);
+    }
+    rsx! {
+        DiffViewerContainer {
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::Single,
+            view_state: active_state,
+            wrap: *wrap,
+            compact: false,
+            auto_focus: false,
+        }
+    }
+}
 
 fn file(deleted: bool) -> file_types::File {
     named_file("plain.rs", deleted)
@@ -120,7 +156,7 @@ fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
     harness.press(crokey::key!('$')).force_draw();
 
     assert_ne!(harness.screen(), before);
-    assert!(harness.screen().iter().any(|row| row.contains("789")));
+    assert!(harness.screen().iter().any(|line| line.contains("789")));
     assert_eq!(harness.screen().len(), 4);
 }
 
@@ -159,7 +195,7 @@ fn toggling_wrap_preserves_the_current_terminal_line() {
     });
     harness.force_draw().force_draw();
 
-    assert!(harness.screen_row(0).contains("SINGLE_TOGGLE"));
+    assert!(harness.screen_line(0).contains("SINGLE_TOGGLE"));
 }
 
 #[test]
@@ -185,7 +221,7 @@ fn lines_are_numbered_in_one_full_width_pane() {
     assert!(screen[0].contains("1 alpha"), "got {screen:?}");
     assert!(screen[1].contains("2 beta"), "got {screen:?}");
     assert_eq!(screen[0].matches("alpha").count(), 1);
-    assert!(!screen.iter().any(|row| row.contains(['│', '╱'])));
+    assert!(!screen.iter().any(|line| line.contains(['│', '╱'])));
 }
 
 #[test]
@@ -300,7 +336,7 @@ fn each_file_restores_its_position() {
     for _ in 0..3 {
         harness.press(crokey::key!(j)).force_draw();
     }
-    assert!(harness.screen_row(0).contains("first 04"));
+    assert!(harness.screen_line(0).contains("first 04"));
 
     harness.set_props::<SingleFile>(SingleFileProps {
         content: second.clone(),
@@ -308,7 +344,7 @@ fn each_file_restores_its_position() {
         compact: false,
     });
     harness.force_draw().force_draw();
-    assert!(harness.screen_row(0).contains("second 01"));
+    assert!(harness.screen_line(0).contains("second 01"));
     harness.press(crokey::key!(j)).force_draw();
 
     harness.set_props::<SingleFile>(SingleFileProps {
@@ -317,5 +353,5 @@ fn each_file_restores_its_position() {
         compact: false,
     });
     harness.force_draw().force_draw();
-    assert!(harness.screen_row(0).contains("first 04"));
+    assert!(harness.screen_line(0).contains("first 04"));
 }

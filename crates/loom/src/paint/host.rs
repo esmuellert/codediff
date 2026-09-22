@@ -5,10 +5,11 @@ use std::rc::Rc;
 use ratatui::style::Style;
 
 use super::Paint;
-use crate::event::Listeners;
+use crate::event::{Bubble, Listeners};
 use crate::hook::Ref;
 use crate::layout::{Axis, Layout};
 use crate::node::{Children, Element, Host, Key, Node, NodeHandle};
+use crate::scroll::{ScrollHandle, ScrollView};
 
 /// Every host carries this, and `rsx!` spells it `ref`.
 type NodeRef = Option<Ref<Option<NodeHandle>>>;
@@ -58,6 +59,107 @@ container!(
     Axis::Over,
     "Children painted over one another, in declaration order."
 );
+
+/// A clipped viewport whose children move with one two-dimensional offset.
+pub struct Scroll;
+
+pub struct ScrollProps {
+    pub layout: Layout,
+    pub view: ScrollView,
+    /// When present, the host consumes wheel movement before it bubbles.
+    pub handle: Option<ScrollHandle>,
+    /// Which wheel axes this host owns.
+    pub horizontal: bool,
+    pub vertical: bool,
+    /// Number of content cells moved by one wheel notch.
+    pub wheel_step: i32,
+    /// Optional extent and origin for virtualized children.
+    pub content_width: Option<u32>,
+    pub content_height: Option<u32>,
+    pub content_offset: crate::scroll::ScrollOffset,
+    /// Optional width of the laid-out content area, separate from its extent.
+    pub content_area_width: Option<u32>,
+    /// Whether this host publishes its measured metrics to the shared view.
+    pub write_metrics: bool,
+    pub listeners: Listeners,
+    pub focusable: bool,
+    pub auto_focus: bool,
+    pub node_ref: NodeRef,
+    pub children: Children,
+}
+
+impl Default for ScrollProps {
+    fn default() -> Self {
+        Self {
+            layout: Layout::default(),
+            view: ScrollView::default(),
+            handle: None,
+            horizontal: true,
+            vertical: true,
+            wheel_step: 1,
+            content_width: None,
+            content_height: None,
+            content_offset: crate::scroll::ScrollOffset::ZERO,
+            content_area_width: None,
+            write_metrics: true,
+            listeners: Listeners::default(),
+            focusable: false,
+            auto_focus: false,
+            node_ref: None,
+            children: Vec::new(),
+        }
+    }
+}
+
+impl Element for Scroll {
+    type Props = ScrollProps;
+
+    fn build(mut props: Self::Props, key: Option<Key>) -> Node {
+        if let Some(handle) = props.handle.clone() {
+            let horizontal = props.horizontal;
+            let vertical = props.vertical;
+            let wheel_step = props.wheel_step;
+            props.listeners = props.listeners.on_wheel(move |wheel| {
+                let dx = if horizontal {
+                    wheel.horizontal.saturating_mul(wheel_step)
+                } else {
+                    0
+                };
+                let dy = if vertical {
+                    wheel.vertical.saturating_mul(wheel_step)
+                } else {
+                    0
+                };
+                if dx == 0 && dy == 0 {
+                    Bubble::Continue
+                } else {
+                    handle.scroll_by(dx, dy);
+                    Bubble::Stop
+                }
+            });
+        }
+        props.layout.clip = true;
+        Node::from_host(Host {
+            key,
+            name: "Scroll",
+            layout: props.layout,
+            listeners: props.listeners,
+            focusable: props.focusable,
+            auto_focus: props.auto_focus,
+            node_ref: props.node_ref,
+            children: props.children,
+            scroll: Some(props.view),
+            scroll_axes: (props.horizontal, props.vertical),
+            scroll_content_width: props.content_width,
+            scroll_content_height: props.content_height,
+            scroll_content_offset: props.content_offset,
+            scroll_content_area_width: props.content_area_width,
+            scroll_write_metrics: props.write_metrics,
+            axis: Axis::Down,
+            ..Host::default()
+        })
+    }
+}
 
 /// Empty space. `Gap { layout: Layout { grow: 1, .. } }` pushes what follows
 /// away.

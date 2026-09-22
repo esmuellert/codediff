@@ -14,7 +14,7 @@ pub struct CharacterDecoration {
     /// Byte offsets into the line's UTF-8 text.
     pub bytes: Range<u32>,
     /// The range crosses this line's line break, so its colour continues to
-    /// the edge of the terminal row.
+    /// the edge of the terminal line.
     pub fill_to_edge: bool,
 }
 

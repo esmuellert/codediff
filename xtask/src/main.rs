@@ -10,6 +10,7 @@ mod lint_size;
 mod oracle_output;
 #[cfg(test)]
 mod release_policy;
+mod terminal_scroll;
 mod verify_oracle;
 mod verify_vscode;
 
@@ -26,6 +27,7 @@ fn main() -> Result<()> {
         Some("lint-size") => lint_size::run(),
         Some("lint-arch") => lint_arch::run(),
         Some("dev") => dev::run(&args[1..]),
+        Some("terminal-scroll") => terminal_scroll::run(&args[1..]),
         Some("fixture-repo") => match args.get(1) {
             Some(dir) => fixtures::repo(std::path::Path::new(dir)).map_err(Into::into),
             None => anyhow::bail!("usage: cargo xtask fixture-repo <dir>"),
@@ -58,6 +60,10 @@ Architecture enforcement
 
 Fixtures
   fixture-repo <dir>                   build a git repository in a known state
+
+Scroll performance
+  terminal-scroll --baseline PATH --candidate PATH --max-ratio N
+                                       compare real-PTY scroll stress metrics
 
 Development
   dev [dir] [args...]                  run codediff, rebuilding it on F5

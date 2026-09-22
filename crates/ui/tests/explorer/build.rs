@@ -9,40 +9,40 @@ use ui::components::explorer::identity;
 use super::common::*;
 
 #[test]
-fn a_file_at_the_root_is_one_row() {
-    let rows = screen(&["README.md"], 40, 3);
-    assert!(rows[1].contains("README.md"), "got {:?}", rows[1]);
+fn a_file_at_the_root_is_one_line() {
+    let lines = screen(&["README.md"], 40, 3);
+    assert!(lines[1].contains("README.md"), "got {:?}", lines[1]);
 }
 
 #[test]
 fn files_in_a_directory_hang_below_it() {
-    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
-    assert!(rows[1].contains("src"), "got {:?}", rows[1]);
-    assert!(rows[2].contains("app.rs"), "got {:?}", rows[2]);
-    assert!(rows[3].contains("lib.rs"), "got {:?}", rows[3]);
+    let lines = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
+    assert!(lines[1].contains("src"), "got {:?}", lines[1]);
+    assert!(lines[2].contains("app.rs"), "got {:?}", lines[2]);
+    assert!(lines[3].contains("lib.rs"), "got {:?}", lines[3]);
 }
 
 #[test]
 fn the_last_of_its_siblings_gets_a_corner() {
-    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
+    let lines = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
     assert!(
-        rows[2].contains('├'),
+        lines[2].contains('├'),
         "app.rs has a sibling below: {:?}",
-        rows[2]
+        lines[2]
     );
-    assert!(rows[3].contains('└'), "lib.rs is the last: {:?}", rows[3]);
+    assert!(lines[3].contains('└'), "lib.rs is the last: {:?}", lines[3]);
 }
 
 #[test]
 fn a_deeper_file_carries_its_ancestors_line() {
     // Two files under src so the directory is not flattened.
-    let rows = screen(&["src/app.rs", "src/view/tab.rs", "notes.txt"], 40, 7);
+    let lines = screen(&["src/app.rs", "src/view/tab.rs", "notes.txt"], 40, 7);
     // src has siblings below, so its line continues through view.
     assert_eq!(
-        rows[3].chars().nth(1),
+        lines[3].chars().nth(1),
         Some('│'),
         "tab.rs sits under src: {:?}",
-        rows[3]
+        lines[3]
     );
 }
 
@@ -50,29 +50,29 @@ fn a_deeper_file_carries_its_ancestors_line() {
 
 #[test]
 fn a_single_child_directory_chain_is_flattened() {
-    let rows = screen(&["src/view/tab.rs"], 40, 4);
+    let lines = screen(&["src/view/tab.rs"], 40, 4);
     assert!(
-        rows[1].contains("src/view"),
+        lines[1].contains("src/view"),
         "the chain is merged: {:?}",
-        rows[1]
+        lines[1]
     );
 }
 
 #[test]
 fn a_directory_with_two_children_is_not_flattened() {
-    let rows = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
-    assert!(rows[1].contains("src"), "got {:?}", rows[1]);
+    let lines = screen(&["src/app.rs", "src/lib.rs"], 40, 5);
+    assert!(lines[1].contains("src"), "got {:?}", lines[1]);
     assert!(
-        !rows[1].contains('/'),
+        !lines[1].contains('/'),
         "src has two children, no merge: {:?}",
-        rows[1]
+        lines[1]
     );
 }
 
 #[test]
 fn a_three_level_chain_collapses_fully() {
-    let rows = screen(&["a/b/c/file.rs"], 40, 4);
-    assert!(rows[1].contains("a/b/c"), "got {:?}", rows[1]);
+    let lines = screen(&["a/b/c/file.rs"], 40, 4);
+    assert!(lines[1].contains("a/b/c"), "got {:?}", lines[1]);
 }
 
 // ---- folding ----
@@ -215,27 +215,35 @@ fn folding_a_directory_in_one_group_does_not_fold_the_same_name_in_another() {
 
 #[test]
 fn a_heading_shows_the_group_name_and_file_count() {
-    let rows = screen(&["a.rs", "b.rs"], 40, 5);
-    assert!(rows[0].contains("Changes"), "got {:?}", rows[0]);
-    assert!(rows[0].contains("(2"), "the count is shown: {:?}", rows[0]);
+    let lines = screen(&["a.rs", "b.rs"], 40, 5);
+    assert!(lines[0].contains("Changes"), "got {:?}", lines[0]);
+    assert!(
+        lines[0].contains("(2"),
+        "the count is shown: {:?}",
+        lines[0]
+    );
 }
 
 #[test]
 fn a_heading_with_stats_shows_the_totals() {
-    let rows = draw(
+    let lines = draw(
         vec![file_with_stats("a.rs", 4, 3), file_with_stats("b.rs", 2, 0)],
         40,
         5,
     );
-    assert!(rows[0].contains("+6"), "total added: {:?}", rows[0]);
-    assert!(rows[0].contains("-3"), "total removed: {:?}", rows[0]);
+    assert!(lines[0].contains("+6"), "total added: {:?}", lines[0]);
+    assert!(lines[0].contains("-3"), "total removed: {:?}", lines[0]);
 }
 
 #[test]
 fn a_heading_without_stats_shows_only_the_count() {
-    let rows = draw(vec![file("a.rs")], 30, 3);
-    assert!(rows[0].contains("(1)"), "just the count: {:?}", rows[0]);
-    assert!(!rows[0].contains('·'), "no stats separator: {:?}", rows[0]);
+    let lines = draw(vec![file("a.rs")], 30, 3);
+    assert!(lines[0].contains("(1)"), "just the count: {:?}", lines[0]);
+    assert!(
+        !lines[0].contains('·'),
+        "no stats separator: {:?}",
+        lines[0]
+    );
 }
 
 // ---- list mode ----

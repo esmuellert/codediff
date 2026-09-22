@@ -306,17 +306,17 @@ fn t_switches_a_focused_diff_layout() {
     let mut harness = with_response(file.clone(), make_diff(file));
 
     assert_eq!(harness.focused_name(), Some("SideBySide"));
-    assert!(harness.screen().iter().any(|row| row.contains('│')));
+    assert!(harness.screen().iter().any(|line| line.contains('│')));
 
     harness.press(crokey::key!(t)).force_draw();
 
     assert_eq!(harness.focused_name(), Some("Inline"));
-    assert!(!harness.screen().iter().any(|row| row.contains('│')));
+    assert!(!harness.screen().iter().any(|line| line.contains('│')));
 
     harness.press(crokey::key!(t)).force_draw();
 
     assert_eq!(harness.focused_name(), Some("SideBySide"));
-    assert!(harness.screen().iter().any(|row| row.contains('│')));
+    assert!(harness.screen().iter().any(|line| line.contains('│')));
 }
 
 #[test]
@@ -370,11 +370,11 @@ fn a_diff_view_state_survives_a_layout_switch() {
 
     harness.press(crokey::key!(t)).force_draw();
     assert!(
-        !harness.screen_row(0).contains("line 01"),
+        !harness.screen_line(0).contains("line 01"),
         "layout switch reset the terminal position: {:?}",
-        harness.screen_row(0)
+        harness.screen_line(0)
     );
-    assert!(!harness.screen().iter().any(|row| row.contains('│')));
+    assert!(!harness.screen().iter().any(|line| line.contains('│')));
 
     harness.press(crokey::key!(t)).force_draw();
 
@@ -403,8 +403,8 @@ fn the_first_screen_view_line_is_preserved_without_an_offset() {
 
     harness.press(crokey::key!(t)).force_draw();
 
-    assert!(harness.screen_row(0).contains("old 03"));
-    assert!(!harness.screen().iter().any(|row| row.contains('│')));
+    assert!(harness.screen_line(0).contains("old 03"));
+    assert!(!harness.screen().iter().any(|line| line.contains('│')));
 }
 
 #[test]
@@ -457,7 +457,7 @@ fn a_diff_view_state_survives_switching_files() {
     for _ in 0..3 {
         harness.press(crokey::key!(j)).force_draw();
     }
-    assert!(harness.screen_row(0).contains("first 04"));
+    assert!(harness.screen_line(0).contains("first 04"));
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(second),
@@ -471,7 +471,7 @@ fn a_diff_view_state_survives_switching_files() {
             .expect("second diff response"),
     );
     harness.force_draw().force_draw();
-    assert!(harness.screen_row(0).contains("second 01"));
+    assert!(harness.screen_line(0).contains("second 01"));
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(file("first.rs")),
@@ -485,7 +485,7 @@ fn a_diff_view_state_survives_switching_files() {
             .expect("third diff response"),
     );
     harness.force_draw().force_draw();
-    assert!(harness.screen_row(0).contains("first 04"));
+    assert!(harness.screen_line(0).contains("first 04"));
 }
 
 #[test]

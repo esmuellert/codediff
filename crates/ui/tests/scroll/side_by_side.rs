@@ -9,7 +9,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
 use ui::components::diff_viewer::{ViewState, ViewStateHistory};
-use ui::components::side_by_side::{SideBySide, SideBySideProps};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
 
@@ -30,9 +30,10 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
         *active_key.current() = Some(key);
     }
     rsx! {
-        SideBySide {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::SideBySide,
             view_state: active_view_state,
             wrap: true,
             compact: false,
@@ -46,9 +47,10 @@ fn TestSideBySideUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffCo
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Rc::as_ptr(content) as usize;
     rsx! {
-        SideBySide {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::SideBySide,
             view_state: view_state,
             wrap: false,
             compact: false,
@@ -122,37 +124,37 @@ fn symbols(harness: &mut Harness, start: u16, end: u16) -> String {
 
 #[test]
 fn unchanged_lines_appear_on_both_sides() {
-    let rows = render(&["hello", "world"], &["hello", "world"], 40, 4);
-    assert!(rows[0].contains("hello"), "left has hello: {:?}", rows[0]);
-    let has_two = rows[0].matches("hello").count();
-    assert_eq!(has_two, 2, "hello appears on both sides: {:?}", rows[0]);
+    let lines = render(&["hello", "world"], &["hello", "world"], 40, 4);
+    assert!(lines[0].contains("hello"), "left has hello: {:?}", lines[0]);
+    let has_two = lines[0].matches("hello").count();
+    assert_eq!(has_two, 2, "hello appears on both sides: {:?}", lines[0]);
 }
 
 #[test]
 fn a_deleted_line_shows_filler_on_the_right() {
-    let rows = render(&["removed", "kept"], &["kept"], 40, 4);
-    let filler_row = rows.iter().find(|r| r.contains('╱'));
-    assert!(filler_row.is_some(), "a filler appears: {:?}", rows);
+    let lines = render(&["removed", "kept"], &["kept"], 40, 4);
+    let filler_line = lines.iter().find(|line| line.contains('╱'));
+    assert!(filler_line.is_some(), "a filler appears: {:?}", lines);
 }
 
 #[test]
 fn an_inserted_line_shows_filler_on_the_left() {
-    let rows = render(&["kept"], &["kept", "added"], 40, 4);
-    let filler_row = rows.iter().find(|r| r.contains('╱'));
-    assert!(filler_row.is_some(), "a filler appears: {:?}", rows);
+    let lines = render(&["kept"], &["kept", "added"], 40, 4);
+    let filler_line = lines.iter().find(|line| line.contains('╱'));
+    assert!(filler_line.is_some(), "a filler appears: {:?}", lines);
 }
 
 #[test]
 fn line_numbers_are_drawn() {
-    let rows = render(&["one", "two", "three"], &["one", "two", "three"], 40, 5);
-    assert!(rows[0].contains('1'), "line 1: {:?}", rows[0]);
-    assert!(rows[1].contains('2'), "line 2: {:?}", rows[1]);
+    let lines = render(&["one", "two", "three"], &["one", "two", "three"], 40, 5);
+    assert!(lines[0].contains('1'), "line 1: {:?}", lines[0]);
+    assert!(lines[1].contains('2'), "line 2: {:?}", lines[1]);
 }
 
 #[test]
 fn a_divider_separates_the_two_sides() {
-    let rows = render(&["a"], &["a"], 40, 3);
-    assert!(rows[0].contains('│'), "a divider: {:?}", rows[0]);
+    let lines = render(&["a"], &["a"], 40, 3);
+    assert!(lines[0].contains('│'), "a divider: {:?}", lines[0]);
 }
 
 #[test]
@@ -280,7 +282,7 @@ fn a_wrapped_fragment_keeps_its_side_style_and_opposite_filler() {
     let mut harness = harness(&["abcdefghijkl"], &["ABC"], 25, 2);
     harness.force_draw().force_draw();
 
-    assert_eq!(harness.screen_row(1), "    ijkl    │    ╱╱╱╱╱╱╱╱");
+    assert_eq!(harness.screen_line(1), "    ijkl    │    ╱╱╱╱╱╱╱╱");
     assert_eq!(
         harness.style_at(4, 1).bg,
         Theme::DARK.normal.patch(Theme::DARK.deleted_text).bg

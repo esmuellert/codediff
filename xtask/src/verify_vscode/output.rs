@@ -31,7 +31,7 @@ pub struct Character {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Record {
-    Row {
+    Line {
         index: u32,
         original: Option<u32>,
         modified: Option<u32>,
@@ -133,33 +133,34 @@ pub fn records_match(
     if layout != DiffLayout::SideBySide || !wrap {
         return expected == actual;
     }
-    let expected_rows = rows(expected);
-    let actual_rows = rows(actual);
-    if row_numbers(&expected_rows, true) != row_numbers(&actual_rows, true)
-        || row_numbers(&expected_rows, false) != row_numbers(&actual_rows, false)
+    let expected_lines = lines(expected);
+    let actual_lines = lines(actual);
+    if line_numbers(&expected_lines, true) != line_numbers(&actual_lines, true)
+        || line_numbers(&expected_lines, false) != line_numbers(&actual_lines, false)
     {
         return false;
     }
-    non_rows(expected) == non_rows(actual)
+    non_lines(expected) == non_lines(actual)
 }
 
-fn rows(records: &[Record]) -> Vec<&Record> {
+fn lines(records: &[Record]) -> Vec<&Record> {
     records
         .iter()
-        .filter(|record| matches!(record, Record::Row { .. }))
+        .filter(|record| matches!(record, Record::Line { .. }))
         .collect()
 }
 
-fn row_numbers(rows: &[&Record], original: bool) -> Vec<u32> {
-    rows.iter()
+fn line_numbers(lines: &[&Record], original: bool) -> Vec<u32> {
+    lines
+        .iter()
         .filter_map(|record| match record {
-            Record::Row {
-                original: row_original,
+            Record::Line {
+                original: line_original,
                 modified,
                 ..
             } => {
                 if original {
-                    row_original.to_owned()
+                    line_original.to_owned()
                 } else {
                     *modified
                 }
@@ -169,10 +170,10 @@ fn row_numbers(rows: &[&Record], original: bool) -> Vec<u32> {
         .collect()
 }
 
-fn non_rows(records: &[Record]) -> Vec<Record> {
+fn non_lines(records: &[Record]) -> Vec<Record> {
     records
         .iter()
-        .filter(|record| !matches!(record, Record::Row { .. }))
+        .filter(|record| !matches!(record, Record::Line { .. }))
         .cloned()
         .collect()
 }
@@ -330,25 +331,25 @@ mod tests {
 
     #[test]
     fn record_order_does_not_change_the_result() {
-        let a = "{\"type\":\"row\",\"index\":1,\"original\":2,\"modified\":2}\n{\"type\":\"row\",\"index\":0,\"original\":1,\"modified\":1}\n";
-        let b = "{\"type\":\"row\",\"index\":0,\"original\":1,\"modified\":1}\n{\"type\":\"row\",\"index\":1,\"original\":2,\"modified\":2}\n";
+        let a = "{\"type\":\"line\",\"index\":1,\"original\":2,\"modified\":2}\n{\"type\":\"line\",\"index\":0,\"original\":1,\"modified\":1}\n";
+        let b = "{\"type\":\"line\",\"index\":0,\"original\":1,\"modified\":1}\n{\"type\":\"line\",\"index\":1,\"original\":2,\"modified\":2}\n";
         assert_eq!(parse(a).unwrap(), parse(b).unwrap());
     }
 
     #[test]
-    fn a_wrapped_row_can_have_two_blank_gutters() {
-        let input = "{\"type\":\"row\",\"index\":0,\"original\":null,\"modified\":null}\n";
+    fn a_wrapped_line_can_have_two_blank_gutters() {
+        let input = "{\"type\":\"line\",\"index\":0,\"original\":null,\"modified\":null}\n";
         assert!(parse(input).is_ok());
     }
 
     #[test]
-    fn wrapped_side_rows_compare_each_side_in_order() {
+    fn wrapped_side_lines_compare_each_side_in_order() {
         let expected = parse(
-            "{\"type\":\"row\",\"index\":0,\"original\":1,\"modified\":null}\n{\"type\":\"row\",\"index\":1,\"original\":null,\"modified\":2}\n",
+            "{\"type\":\"line\",\"index\":0,\"original\":1,\"modified\":null}\n{\"type\":\"line\",\"index\":1,\"original\":null,\"modified\":2}\n",
         )
         .unwrap();
         let actual =
-            parse("{\"type\":\"row\",\"index\":0,\"original\":1,\"modified\":2}\n").unwrap();
+            parse("{\"type\":\"line\",\"index\":0,\"original\":1,\"modified\":2}\n").unwrap();
 
         assert!(records_match(
             &expected,

@@ -1,11 +1,11 @@
-//! Colours for tree rows: headings, guides, directories, and names.
+//! Colours for tree lines: headings, guides, directories, and names.
 
 use ratatui::style::Color;
 
 use super::catppuccin::Palette;
 use super::colour::Rgb;
 
-/// The colour a theme gives each part of a row of a tree.
+/// The colour a theme gives each part of a tree line.
 #[derive(Debug, Clone, Copy)]
 pub struct Tree {
     /// A section heading — "Changes", "Staged Changes".
@@ -37,7 +37,7 @@ impl Tree {
     }
 }
 
-/// Basic-terminal colours for tree rows.
+/// Basic-terminal colours for tree lines.
 pub const BASIC_DARK: Tree = Tree {
     heading: Color::Cyan,
     marker: Color::DarkGray,

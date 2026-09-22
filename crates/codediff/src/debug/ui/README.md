@@ -7,7 +7,7 @@ before layout switching is added to the application.
 
 ```text
 catalog.rs            explicit group order and lookup
-catalog_rows.rs       filtering, row navigation, and row styles
+catalog_items.rs      filtering, story navigation, and item styles
 catalog_view.rs       searchable Catalog component
 gallery_controller.rs one terminal session that switches Catalog/Preview trees
 gallery_header.rs     shared two-line menu with semantic colour roles
@@ -31,7 +31,7 @@ to enter the new component.
 2. Build data through `fixtures/`; two-sided text must pass through the real
    diff and alignment pipeline. SideBySide and Inline fixtures use the real syntax
    worker for both versions.
-3. Add an independent expected-content row in `tests/stories.rs`.
+3. Add an independent expected-content line in `tests/stories.rs`.
 4. Run the story directly and through the PTY tests.
 
 Do not put expected output in `StoryDefinition`: the catalog and its test

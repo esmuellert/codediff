@@ -19,6 +19,6 @@ fn Branch(scope: &mut Scope, value: u8) -> Node {
 fn else_if_selects_each_branch() {
     for (value, expected) in [(0, "zero"), (1, "one"), (2, "many")] {
         let mut screen = Harness::new::<Branch>(BranchProps { value }, 10, 1);
-        assert_eq!(screen.screen_row(0), expected);
+        assert_eq!(screen.screen_line(0), expected);
     }
 }

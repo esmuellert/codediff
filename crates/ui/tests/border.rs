@@ -59,8 +59,8 @@ fn a_border_draws_rounded_corners() {
     )
     .provide::<Ui>(ctx());
     h.draw();
-    let top = h.screen_row(0);
-    let bottom = h.screen_row(4);
+    let top = h.screen_line(0);
+    let bottom = h.screen_line(4);
     assert!(top.contains('╭'), "top left corner: {:?}", top);
     assert!(top.contains('╮'), "top right corner: {:?}", top);
     assert!(bottom.contains('╰'), "bottom left corner: {:?}", bottom);

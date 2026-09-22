@@ -88,7 +88,7 @@ fn the_selected_line_follows_its_file_when_one_is_inserted_before_it() {
     let new = grouped_tree(&after, &HashSet::new());
 
     let landed = find_by_identity(Some(&saved), &new).expect("notes.txt is still listed");
-    assert_ne!(landed, on, "the row moved");
+    assert_ne!(landed, on, "the line moved");
     assert!(
         matches!(&new[landed],
         ui::components::explorer::build::Node::File { name, .. } if name == "notes.txt"),
@@ -172,7 +172,7 @@ fn the_selected_line_has_a_different_background() {
     let other_background = h1.style_at(0, 2).bg;
     assert_ne!(
         selected_background, other_background,
-        "the selected line has a different background from other rows"
+        "the selected line has a different background from other lines"
     );
 }
 
@@ -189,8 +189,8 @@ fn queued_j_keys_reveal_the_selected_line() {
         .press(crokey::key!(j))
         .force_draw();
 
-    assert!(harness.screen_row(0).contains("file0.rs"));
-    assert!(harness.screen_row(3).contains("file3.rs"));
+    assert!(harness.screen_line(0).contains("file0.rs"));
+    assert!(harness.screen_line(3).contains("file3.rs"));
     assert_ne!(harness.style_at(0, 3).bg, harness.style_at(0, 2).bg);
 }
 
@@ -198,20 +198,20 @@ fn queued_j_keys_reveal_the_selected_line() {
 
 #[test]
 fn an_empty_list_draws_nothing() {
-    let rows = draw(Vec::new(), 40, 5);
-    for row in &rows {
+    let lines = draw(Vec::new(), 40, 5);
+    for line in &lines {
         assert!(
-            row.is_empty() || row.chars().all(|c| c == ' '),
+            line.is_empty() || line.chars().all(|c| c == ' '),
             "an empty list is blank: {:?}",
-            row
+            line
         );
     }
 }
 
 #[test]
 fn a_single_file_renders_without_panic() {
-    let rows = draw(vec![file("only.rs")], 40, 5);
-    assert!(rows[1].contains("only.rs"), "got {:?}", rows[1]);
+    let lines = draw(vec![file("only.rs")], 40, 5);
+    assert!(lines[1].contains("only.rs"), "got {:?}", lines[1]);
 }
 
 // ---- enter opens a file ----
@@ -305,11 +305,11 @@ fn wheel_scrolls_the_view_without_moving_the_selected_line() {
 
     let after = h.screen();
 
-    // The view should have changed (different rows visible).
+    // The view should have changed (different lines visible).
     assert_ne!(before, after, "wheel should scroll the view");
 
     // The selected line should not have moved, though it is now offscreen.
-    // Press j once: selection moves to 1, not to the scrolled row plus one.
+    // Press j once: selection moves to 1, not to the scrolled line plus one.
     h.press(crokey::key!(j));
     for _ in 0..3 {
         h.force_draw();
@@ -348,10 +348,10 @@ fn j_moves_the_selected_line_and_the_view_follows() {
     let screen = h.screen();
     // The selected line is highlighted and the viewport followed it.
     let has_heading = screen.iter().any(|r| r.contains("Changes"));
-    // The heading at row 0 should have scrolled off.
+    // The heading at line 0 should have scrolled off.
     assert!(
         !has_heading,
-        "after pressing j 10 times in a 6-row viewport, the heading should be off screen: {:?}",
+        "after pressing j 10 times in a 6-line viewport, the heading should be off screen: {:?}",
         screen
     );
 }
@@ -359,7 +359,7 @@ fn j_moves_the_selected_line_and_the_view_follows() {
 #[test]
 fn wheel_cannot_scroll_past_the_last_line() {
     let files: Vec<File> = (0..10).map(|i| file(&format!("file{i}.rs"))).collect();
-    // 6-row viewport, ~11 nodes (heading + 10 files).
+    // 6-line viewport, ~11 nodes (heading + 10 files).
     let mut h = harness(files, 40, 6);
     for _ in 0..5 {
         h.force_draw();
@@ -373,12 +373,12 @@ fn wheel_cannot_scroll_past_the_last_line() {
 
     let screen = h.screen();
     // The last file should be visible at the bottom, not at the top
-    // with empty rows below.
+    // with empty lines below.
     let non_empty: Vec<&String> = screen.iter().filter(|r| !r.trim().is_empty()).collect();
     assert_eq!(
         non_empty.len(),
         6,
-        "every row should have content — no empty space below the last line: {:?}",
+        "every line should have content — no empty space below the last line: {:?}",
         screen
     );
 }
