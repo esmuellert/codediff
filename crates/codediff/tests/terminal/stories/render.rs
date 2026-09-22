@@ -1,18 +1,17 @@
 //! Every gallery story through the binary that users run.
 
 #[cfg(unix)]
-mod support;
-
-#[cfg(unix)]
 use std::io::Write;
 use std::process::Command;
 #[cfg(unix)]
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use super::super::pty::{
+    ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, on_a_terminal, written,
+};
 #[cfg(unix)]
-use support::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, on_a_terminal, written};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
     ("welcome/default", &["Select a file to review."], &[]),

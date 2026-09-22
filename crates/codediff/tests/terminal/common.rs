@@ -2,7 +2,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::support::{Output, drawn_after};
+use super::pty::{Output, drawn_after};
 
 pub(super) fn wait_for_output(output: &Arc<Mutex<Output>>, needle: &str) -> String {
     let deadline = Instant::now() + Duration::from_secs(20);

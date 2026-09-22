@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use super::common::{output_since, strip_csi};
-use super::support::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
+use super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
 
 #[test]
 fn a_real_repo_mouse_click_keeps_side_by_side_horizontal_endpoints() {

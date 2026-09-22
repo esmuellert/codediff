@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::common::{all_output, send_and_wait};
-use super::support::{ENTER_ALT, LEAVE_ALT, collect, drawn, written};
+use super::super::common::{all_output, send_and_wait};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, written};
 
 #[test]
 fn story_catalog_filters_opens_switches_resets_and_returns() {

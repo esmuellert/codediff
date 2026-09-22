@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use super::common::wait_for_output;
-use super::support::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
+use super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
 
 #[test]
 fn clicking_a_changed_file_opens_its_diff() {
