@@ -3,8 +3,9 @@
 mod common;
 mod config;
 mod explorer_click;
-mod horizontal;
 mod lifecycle;
+#[path = "scroll/mod.rs"]
+mod scroll;
 #[path = "stories/mod.rs"]
 mod stories;
 

@@ -1,17 +1,14 @@
-//! The UI uses Loom's generic two-dimensional scroll contract.
-
-use loom::{ScrollMetrics, ScrollOffset};
-
-#[test]
-fn a_scroll_offset_clamps_to_the_measured_viewport() {
-    let metrics = ScrollMetrics {
-        content_width: 40,
-        content_height: 20,
-        viewport_width: 10,
-        viewport_height: 5,
-    };
-    assert_eq!(
-        ScrollOffset { x: 99, y: 99 }.clamp(metrics),
-        ScrollOffset { x: 30, y: 15 }
-    );
-}
+#[path = "scroll/contract.rs"]
+mod contract;
+#[path = "scroll/diff_viewer.rs"]
+mod diff_viewer;
+#[path = "scroll/inline.rs"]
+mod inline;
+#[path = "scroll/navigation.rs"]
+mod navigation;
+#[path = "scroll/side_by_side.rs"]
+mod side_by_side;
+#[path = "scroll/single_file.rs"]
+mod single_file;
+#[path = "scroll/viewers.rs"]
+mod viewers;
