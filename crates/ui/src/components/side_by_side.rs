@@ -2,187 +2,139 @@
 
 use std::rc::Rc;
 
-use align::DiffVersion;
+use align::{Alignment, DiffVersion};
 use file_types::DiffType;
 use loom::{
-    Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Ref, Row, RowProps, Scope,
-    Scroll, ScrollOffset, ScrollProps, component, rsx, use_context, use_layout_effect, use_measure,
-    use_memo, use_scroll,
+    Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope, Scroll,
+    ScrollProps, component, rsx, use_context,
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
-use super::diff_viewer::ViewState;
+use super::diff_viewer_container::DiffVisibleRange;
 use super::filler::Filler;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
-use crate::view::terminal_lines::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_view_lines,
-};
+use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, terminal_view_lines};
 
-#[component]
-pub fn SideBySide(
-    scope: &mut Scope,
-    content: Rc<pipeline::diff::DiffContent>,
-    view_state: Ref<ViewState>,
+pub(crate) struct SideBySideLayout {
+    pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    pub(crate) original_gutter_width: u16,
+    pub(crate) modified_gutter_width: u16,
+    pub(crate) original_width: u16,
+    pub(crate) modified_width: u16,
+    pub(crate) original_horizontal_scroll_extent: u32,
+    pub(crate) modified_horizontal_scroll_extent: u32,
+    pub(crate) row_count: u32,
+}
+
+pub(crate) fn layout_side_by_side(
+    alignment: &Alignment,
+    width: u16,
     wrap: bool,
     compact: bool,
-    auto_focus: bool,
-) -> Node {
-    let wrap = *wrap;
-    let compact = *compact;
-    let ctx = use_context::<Ui>(scope);
-    let theme = &ctx.theme;
-    let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
-        unreachable!("DiffViewer sends diffs to SideBySide")
-    };
-    let alignment = &diff.alignment;
-    let view_state_ref = *view_state;
-    let current_view_state = view_state_ref.current().clone();
+) -> SideBySideLayout {
     let original_line_count = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter_width = width_for_line_count(original_line_count);
     let modified_gutter_width = width_for_line_count(modified_line_count);
-    let (node_ref, size) = use_measure(scope);
-    let content_id = Rc::as_ptr(content) as usize;
-    let text_width = size
-        .width
+    let text_width = width
         .saturating_sub(1)
         .saturating_sub(original_gutter_width)
         .saturating_sub(modified_gutter_width);
     let original_width = text_width.div_ceil(2);
     let modified_width = text_width / 2;
-    let wrapped_lines = use_memo(
-        scope,
-        (content_id, original_width, modified_width, wrap, compact),
-        || {
-            terminal_view_lines(
-                alignment,
-                DiffType::SideBySide,
-                compact_view_lines(alignment, DiffType::SideBySide, compact),
-                original_width,
-                modified_width,
-                wrap,
-            )
-        },
+    let wrapped_lines = terminal_view_lines(
+        alignment,
+        DiffType::SideBySide,
+        compact_view_lines(alignment, DiffType::SideBySide, compact),
+        original_width,
+        modified_width,
+        wrap,
     );
-    let maximum_line_cells = use_memo(
-        scope,
-        (content_id, original_width, modified_width, wrap, compact),
-        || {
-            if wrap || compact {
-                (u32::from(original_width), u32::from(modified_width))
-            } else {
-                (
-                    longest_line_cells(alignment.lines(DiffVersion::Original)),
-                    longest_line_cells(alignment.lines(DiffVersion::Modified)),
-                )
-            }
-        },
-    );
-    let initial_top = current_view_state
-        .first_terminal_line
-        .as_ref()
-        .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
-        .unwrap_or(0);
-    let (vertical_view, vertical_handle) = use_scroll(scope, || ScrollOffset {
-        x: 0,
-        y: initial_top,
-    });
-    let (original_horizontal_view, original_horizontal_handle) =
-        use_scroll(scope, || ScrollOffset {
-            x: current_view_state.first_cell,
-            y: 0,
-        });
-    let (modified_horizontal_view, modified_horizontal_handle) =
-        use_scroll(scope, || ScrollOffset {
-            x: current_view_state.first_cell,
-            y: 0,
-        });
-    let restore_vertical = vertical_handle.clone();
-    let restore_original_horizontal = original_horizontal_handle.clone();
-    let restore_modified_horizontal = modified_horizontal_handle.clone();
-    use_layout_effect(
-        scope,
-        (content_id, original_width, modified_width, wrap, compact),
-        move || {
-            restore_vertical.scroll_to(ScrollOffset {
-                x: 0,
-                y: initial_top,
-            });
-            let horizontal = ScrollOffset {
-                x: current_view_state.first_cell,
-                y: 0,
-            };
-            restore_original_horizontal.scroll_to(horizontal);
-            restore_modified_horizontal.scroll_to(horizontal);
-        },
-    );
-    let total_terminal_lines = wrapped_lines
+    let (original_longest, modified_longest) = if wrap || compact {
+        (u32::from(original_width), u32::from(modified_width))
+    } else {
+        (
+            longest_line_cells(alignment.lines(DiffVersion::Original)),
+            longest_line_cells(alignment.lines(DiffVersion::Modified)),
+        )
+    };
+    let row_count = wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
         .count() as u32;
-    let visible_start = vertical_view
-        .clamped_offset()
-        .y
-        .min(total_terminal_lines.saturating_sub(1));
-    let visible_count = u32::from(size.height).saturating_add(4);
-    let vertical_position = vertical_view.requested_offset().y;
-    let horizontal_position = original_horizontal_view.requested_offset().x;
-    if size.width > 0 && size.height > 0 {
-        *view_state_ref.current() = ViewState {
-            first_terminal_line: (vertical_position > 0)
-                .then(|| {
-                    wrapped_lines
-                        .iter()
-                        .flat_map(WrappedViewLine::terminal_line_pairs)
-                        .nth(vertical_position as usize)
-                })
-                .flatten()
-                .and_then(|(original, modified)| match modified {
-                    TerminalLine::SourceCode { .. } => Some(modified),
-                    TerminalLine::Filler => match original {
-                        TerminalLine::SourceCode { .. } => Some(original),
-                        TerminalLine::Filler => None,
-                    },
-                })
-                .cloned(),
-            first_cell: horizontal_position,
-        };
+    SideBySideLayout {
+        wrapped_lines: Rc::new(wrapped_lines),
+        original_gutter_width,
+        modified_gutter_width,
+        original_width,
+        modified_width,
+        original_horizontal_scroll_extent: original_longest
+            .saturating_sub(u32::from(original_width)),
+        modified_horizontal_scroll_extent: modified_longest
+            .saturating_sub(u32::from(modified_width)),
+        row_count,
     }
-    let listeners = use_diff_viewer_navigation(
-        scope,
-        vertical_handle.clone(),
-        original_horizontal_handle.clone(),
-        Some(modified_horizontal_handle.clone()),
-    );
+}
+
+#[component]
+pub(crate) fn SideBySide(
+    scope: &mut Scope,
+    content: Rc<pipeline::diff::DiffContent>,
+    wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    viewport: DiffVisibleRange,
+    original_gutter_width: u16,
+    modified_gutter_width: u16,
+    original_width: u16,
+    modified_width: u16,
+    original_horizontal_scroll_extent: u32,
+    modified_horizontal_scroll_extent: u32,
+    auto_focus: bool,
+) -> Node {
+    let original_gutter_width = *original_gutter_width;
+    let modified_gutter_width = *modified_gutter_width;
+    let original_width = *original_width;
+    let modified_width = *modified_width;
+    let original_horizontal_scroll_extent = *original_horizontal_scroll_extent;
+    let modified_horizontal_scroll_extent = *modified_horizontal_scroll_extent;
+    let viewport = viewport.clone();
+    let ctx = use_context::<Ui>(scope);
+    let theme = &ctx.theme;
+    let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+        unreachable!("DiffViewer sends diffs to SideBySide")
+    };
+    let wrapped_lines = wrapped_lines.as_ref();
+    let visible_row_count = viewport
+        .visible_rows
+        .end
+        .saturating_sub(viewport.visible_rows.start);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
         Rc::clone(content),
         DiffType::SideBySide,
-        &wrapped_lines,
+        wrapped_lines,
     );
     let syntax = syntax.as_deref();
     let divider_style = theme.normal.patch(theme.divider);
 
-    let mut original_gutters = Vec::with_capacity(visible_count as usize);
-    let mut original_code_rows = Vec::with_capacity(visible_count as usize);
-    let mut divider_rows = Vec::with_capacity(visible_count as usize);
-    let mut modified_gutters = Vec::with_capacity(visible_count as usize);
-    let mut modified_code_rows = Vec::with_capacity(visible_count as usize);
+    let mut original_gutters = Vec::with_capacity(visible_row_count);
+    let mut original_code_rows = Vec::with_capacity(visible_row_count);
+    let mut divider_rows = Vec::with_capacity(visible_row_count);
+    let mut modified_gutters = Vec::with_capacity(visible_row_count);
+    let mut modified_code_rows = Vec::with_capacity(visible_row_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
-        .skip(visible_start as usize)
-        .take(visible_count as usize)
+        .skip(viewport.visible_rows.start)
+        .take(visible_row_count)
         .enumerate()
     {
-        let view_line = visible_start + offset as u32;
+        let view_line = viewport.visible_rows.start + offset;
         let folded = is_fold_marker(original, modified);
         let (original_gutter, original_code) = if folded {
             let blank = theme.normal;
@@ -283,69 +235,64 @@ pub fn SideBySide(
 
     rsx! {
         Column {
-            ref: Some(node_ref),
             focusable: true,
             auto_focus: *auto_focus,
-            listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
-            Scroll {
-                view: vertical_view,
-                handle: Some(vertical_handle),
-                horizontal: false,
-                vertical: true,
-                wheel_step: 3,
-                content_height: Some(total_terminal_lines),
-                content_offset: ScrollOffset { x: 0, y: visible_start },
-                layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
+            Row {
+                layout: Layout { grow: 1, ..Default::default() },
                 ..,
-                Row {
-                    layout: Layout { grow: 1, ..Default::default() },
+                Column {
+                    layout: Layout { basis: Basis::Length(original_gutter_width), shrink: 0, ..Default::default() },
+                    ..,
+                    { original_gutters }
+                }
+                Scroll {
+                    view: viewport.horizontal_view.clone(),
+                    handle: None,
+                    horizontal: true,
+                    vertical: false,
+                    wheel_step: 0,
+                    write_metrics: false,
+                    content_width: Some(
+                        original_horizontal_scroll_extent
+                            .saturating_add(u32::from(original_width)),
+                    ),
+                    layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
                     ..,
                     Column {
-                        layout: Layout { basis: Basis::Length(original_gutter_width), shrink: 0, ..Default::default() },
+                        layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                         ..,
-                        { original_gutters }
+                        { original_code_rows }
                     }
-                    Scroll {
-                        view: original_horizontal_view,
-                        handle: Some(original_horizontal_handle),
-                        horizontal: true,
-                        vertical: false,
-                        wheel_step: 3,
-                        content_width: Some(maximum_line_cells.0),
-                        layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
-                        ..,
-                        Column {
-                            layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
-                            ..,
-                            { original_code_rows }
-                        }
-                    }
+                }
+                Column {
+                    layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                    ..,
+                    { divider_rows }
+                }
+                Column {
+                    layout: Layout { basis: Basis::Length(modified_gutter_width), shrink: 0, ..Default::default() },
+                    ..,
+                    { modified_gutters }
+                }
+                Scroll {
+                    view: viewport.horizontal_view,
+                    handle: None,
+                    horizontal: true,
+                    vertical: false,
+                    wheel_step: 0,
+                    write_metrics: false,
+                    content_width: Some(
+                        modified_horizontal_scroll_extent
+                            .saturating_add(u32::from(modified_width)),
+                    ),
+                    layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
+                    ..,
                     Column {
-                        layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                        layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                         ..,
-                        { divider_rows }
-                    }
-                    Column {
-                        layout: Layout { basis: Basis::Length(modified_gutter_width), shrink: 0, ..Default::default() },
-                        ..,
-                        { modified_gutters }
-                    }
-                    Scroll {
-                        view: modified_horizontal_view,
-                        handle: Some(modified_horizontal_handle),
-                        horizontal: true,
-                        vertical: false,
-                        wheel_step: 3,
-                        content_width: Some(maximum_line_cells.1),
-                        layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
-                        ..,
-                        Column {
-                            layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
-                            ..,
-                            { modified_code_rows }
-                        }
+                        { modified_code_rows }
                     }
                 }
             }

@@ -303,13 +303,17 @@ fn lay_out_scroll(
         viewport_height: u32::from(inner.height),
     };
     if let Some(view) = &node.host_desc.scroll {
-        if view.state.replace(metrics) != metrics {
+        if node.host_desc.scroll_write_metrics && view.state.replace(metrics) != metrics {
             *metrics_changed = true;
         }
         let content_transform = transform
             .subtract(view.requested.clamp(metrics))
             .add(node.host_desc.scroll_content_offset);
-        let content_width = metrics.content_width.min(u32::from(u16::MAX)) as u16;
+        let content_width = node
+            .host_desc
+            .scroll_content_area_width
+            .unwrap_or(metrics.content_width)
+            .min(u32::from(u16::MAX)) as u16;
         let content_height = metrics.content_height.min(u32::from(u16::MAX)) as u16;
         let content_area = Rect {
             x: inner.x,

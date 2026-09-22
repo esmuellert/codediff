@@ -8,10 +8,8 @@ use loom::{
 };
 use pipeline::diff::DiffContent;
 use ui::components::diff_viewer::{DiffViewer, ViewState};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
-use ui::components::inline::{Inline, InlineProps};
-use ui::components::side_by_side::{SideBySide, SideBySideProps};
-use ui::components::single_file::{SingleFile, SingleFileProps};
 use ui::components::{Context, Ui, UiProps};
 
 use super::definition::{StoryComponent, StoryDefinition};
@@ -97,9 +95,10 @@ pub(super) fn StoryPreview(
         StoryComponent::Welcome => rsx! { DiffViewer {} },
         StoryComponent::Explorer => rsx! { Explorer {} },
         StoryComponent::SideBySide => rsx! {
-            SideBySide {
+            DiffViewerContainer {
                 key: Rc::as_ptr(content.as_ref().expect("side-by-side story content")) as usize,
-                content: Rc::clone(content.as_ref().expect("side-by-side story content")),
+                content: Some(Rc::clone(content.as_ref().expect("side-by-side story content"))),
+                view_layout: file_types::DiffType::SideBySide,
                 view_state: view_state,
                 wrap: true,
                 compact: definition.compact,
@@ -107,9 +106,10 @@ pub(super) fn StoryPreview(
             }
         },
         StoryComponent::Inline => rsx! {
-            Inline {
+            DiffViewerContainer {
                 key: Rc::as_ptr(content.as_ref().expect("inline story content")) as usize,
-                content: Rc::clone(content.as_ref().expect("inline story content")),
+                content: Some(Rc::clone(content.as_ref().expect("inline story content"))),
+                view_layout: file_types::DiffType::Inline,
                 view_state: view_state,
                 wrap: true,
                 compact: definition.compact,
@@ -117,10 +117,13 @@ pub(super) fn StoryPreview(
             }
         },
         StoryComponent::SingleFile => rsx! {
-            SingleFile {
-                content: Rc::clone(content.as_ref().expect("single-file story content")),
+            DiffViewerContainer {
+                content: Some(Rc::clone(content.as_ref().expect("single-file story content"))),
+                view_layout: file_types::DiffType::Single,
+                view_state: view_state,
                 wrap: true,
-                compact: definition.compact,
+                compact: false,
+                auto_focus: false,
             }
         },
     };

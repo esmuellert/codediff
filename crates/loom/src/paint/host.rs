@@ -77,6 +77,10 @@ pub struct ScrollProps {
     pub content_width: Option<u32>,
     pub content_height: Option<u32>,
     pub content_offset: crate::scroll::ScrollOffset,
+    /// Optional width of the laid-out content area, separate from its extent.
+    pub content_area_width: Option<u32>,
+    /// Whether this host publishes its measured metrics to the shared view.
+    pub write_metrics: bool,
     pub listeners: Listeners,
     pub focusable: bool,
     pub auto_focus: bool,
@@ -96,6 +100,8 @@ impl Default for ScrollProps {
             content_width: None,
             content_height: None,
             content_offset: crate::scroll::ScrollOffset::ZERO,
+            content_area_width: None,
+            write_metrics: true,
             listeners: Listeners::default(),
             focusable: false,
             auto_focus: false,
@@ -143,6 +149,8 @@ impl Element for Scroll {
             scroll_content_width: props.content_width,
             scroll_content_height: props.content_height,
             scroll_content_offset: props.content_offset,
+            scroll_content_area_width: props.content_area_width,
+            scroll_write_metrics: props.write_metrics,
             axis: Axis::Down,
             ..Host::default()
         })

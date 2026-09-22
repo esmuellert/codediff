@@ -6,10 +6,46 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
-use ui::components::single_file::{SingleFile, SingleFileProps};
+use ui::components::diff_viewer::{ViewState, ViewStateHistory};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
+
+#[component]
+fn SingleFile(
+    scope: &mut Scope,
+    content: Rc<pipeline::diff::DiffContent>,
+    wrap: bool,
+    compact: bool,
+) -> Node {
+    let _ = compact;
+    let view_states = use_ref(scope, ViewStateHistory::default);
+    let active_state = use_ref(scope, ViewState::default);
+    let active_key = use_ref(scope, || None::<String>);
+    let key = content.file().path().as_str().to_owned();
+    let previous_key = active_key.current().clone();
+    if previous_key.as_deref() != Some(key.as_str()) {
+        if let Some(previous_key) = previous_key {
+            view_states
+                .current()
+                .save(&previous_key, active_state.current().clone());
+        }
+        *active_state.current() = view_states.current().load(&key);
+        *active_key.current() = Some(key);
+    }
+    rsx! {
+        DiffViewerContainer {
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::Single,
+            view_state: active_state,
+            wrap: *wrap,
+            compact: false,
+            auto_focus: false,
+        }
+    }
+}
 
 fn file(deleted: bool) -> file_types::File {
     named_file("plain.rs", deleted)

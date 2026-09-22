@@ -57,6 +57,10 @@ pub struct Host {
     pub(crate) scroll_content_width: Option<u32>,
     pub(crate) scroll_content_height: Option<u32>,
     pub(crate) scroll_content_offset: crate::scroll::ScrollOffset,
+    /// Optional width of the laid-out content area, separate from its extent.
+    pub(crate) scroll_content_area_width: Option<u32>,
+    /// Whether this host publishes its measured metrics to the shared view.
+    pub(crate) scroll_write_metrics: bool,
     /// `Text` carries its own string; `measure` reads it back through here.
     pub(crate) text: Option<Rc<str>>,
     pub(crate) style: ratatui::style::Style,
@@ -82,6 +86,8 @@ impl Default for Host {
             scroll_content_width: None,
             scroll_content_height: None,
             scroll_content_offset: crate::scroll::ScrollOffset::ZERO,
+            scroll_content_area_width: None,
+            scroll_write_metrics: true,
             text: None,
             style: ratatui::style::Style::new(),
         }

@@ -59,6 +59,19 @@ impl ScrollView {
         self.requested
     }
 
+    /// Returns a view that moves only along the selected axes.
+    pub fn axes(mut self, horizontal: bool, vertical: bool) -> Self {
+        if !horizontal {
+            self.offset.x = 0;
+            self.requested.x = 0;
+        }
+        if !vertical {
+            self.offset.y = 0;
+            self.requested.y = 0;
+        }
+        self
+    }
+
     /// The current request clamped to the metrics written by layout.
     pub fn clamped_offset(&self) -> ScrollOffset {
         self.requested.clamp(self.state.get())
@@ -99,6 +112,22 @@ impl ScrollHandle {
         self.scroll_to(ScrollOffset {
             x: metrics.max_x(),
             y: metrics.max_y(),
+        });
+    }
+
+    pub fn scroll_x_to_start(&self) {
+        let metrics = self.state.get();
+        (self.set_offset)(&move |offset| ScrollOffset {
+            x: 0,
+            y: offset.y.min(metrics.max_y()),
+        });
+    }
+
+    pub fn scroll_x_to_end(&self) {
+        let metrics = self.state.get();
+        (self.set_offset)(&move |offset| ScrollOffset {
+            x: metrics.max_x(),
+            y: offset.y.min(metrics.max_y()),
         });
     }
 

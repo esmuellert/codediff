@@ -2,156 +2,121 @@
 
 use std::rc::Rc;
 
-use align::DiffVersion;
+use align::{Alignment, DiffVersion};
 use file_types::DiffType;
 use loom::{
-    Basis, Column, ColumnProps, Layout, Node, Ref, Row, RowProps, Scope, Scroll, ScrollOffset,
-    ScrollProps, component, rsx, use_context, use_layout_effect, use_measure, use_memo, use_scroll,
+    Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollProps, component,
+    rsx, use_context,
 };
 
 use super::code_text::{self, CodeText, CodeTextProps, longest_line_cells};
 use super::context::Ui;
-use super::diff_viewer::ViewState;
+use super::diff_viewer_container::DiffVisibleRange;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use crate::hooks::use_syntax::use_syntax;
 use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
-use crate::view::terminal_lines::{
-    TerminalLine, WrappedViewLine, find_terminal_line_index, terminal_view_lines,
-};
+use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, terminal_view_lines};
 
-#[component]
-pub fn Inline(
-    scope: &mut Scope,
-    content: Rc<pipeline::diff::DiffContent>,
-    view_state: Ref<ViewState>,
+pub(crate) struct InlineLayout {
+    pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    pub(crate) original_gutter_width: u16,
+    pub(crate) modified_gutter_width: u16,
+    pub(crate) code_width: u16,
+    pub(crate) horizontal_scroll_extent: u32,
+    pub(crate) row_count: u32,
+}
+
+pub(crate) fn layout_inline(
+    alignment: &Alignment,
+    width: u16,
     wrap: bool,
     compact: bool,
+) -> InlineLayout {
+    let original_line_count = alignment.lines(DiffVersion::Original).len() as u32;
+    let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
+    let original_gutter_width = width_for_line_count(original_line_count);
+    let modified_gutter_width = width_for_line_count(modified_line_count);
+    let code_width = width
+        .saturating_sub(original_gutter_width)
+        .saturating_sub(modified_gutter_width);
+    let wrapped_lines = terminal_view_lines(
+        alignment,
+        DiffType::Inline,
+        compact_view_lines(alignment, DiffType::Inline, compact),
+        code_width,
+        code_width,
+        wrap,
+    );
+    let maximum_line_cells = if wrap || compact {
+        u32::from(code_width)
+    } else {
+        longest_line_cells(alignment.lines(DiffVersion::Original))
+            .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
+    };
+    let row_count = wrapped_lines
+        .iter()
+        .flat_map(WrappedViewLine::terminal_line_pairs)
+        .count() as u32;
+    InlineLayout {
+        wrapped_lines: Rc::new(wrapped_lines),
+        original_gutter_width,
+        modified_gutter_width,
+        code_width,
+        horizontal_scroll_extent: maximum_line_cells.saturating_sub(u32::from(code_width)),
+        row_count,
+    }
+}
+
+#[component]
+pub(crate) fn Inline(
+    scope: &mut Scope,
+    content: Rc<pipeline::diff::DiffContent>,
+    wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    viewport: DiffVisibleRange,
+    original_gutter_width: u16,
+    modified_gutter_width: u16,
+    code_width: u16,
+    horizontal_scroll_extent: u32,
     auto_focus: bool,
 ) -> Node {
-    let wrap = *wrap;
-    let compact = *compact;
+    let original_gutter_width = *original_gutter_width;
+    let modified_gutter_width = *modified_gutter_width;
+    let code_width = *code_width;
+    let horizontal_scroll_extent = *horizontal_scroll_extent;
+    let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to Inline")
     };
     let alignment = &diff.alignment;
-    let original_line_count = alignment.lines(DiffVersion::Original).len() as u32;
-    let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
-    let original_gutter_width = width_for_line_count(original_line_count);
-    let modified_gutter_width = width_for_line_count(modified_line_count);
-    let (node_ref, size) = use_measure(scope);
-    let view_state_ref = *view_state;
-    let current_view_state = view_state_ref.current().clone();
-    let content_id = Rc::as_ptr(content) as usize;
-    let code_width = size
-        .width
-        .saturating_sub(original_gutter_width)
-        .saturating_sub(modified_gutter_width);
-    let wrapped_lines = use_memo(scope, (content_id, code_width, wrap, compact), || {
-        terminal_view_lines(
-            alignment,
-            DiffType::Inline,
-            compact_view_lines(alignment, DiffType::Inline, compact),
-            code_width,
-            code_width,
-            wrap,
-        )
-    });
-    let maximum_line_cells = use_memo(scope, (content_id, code_width, wrap, compact), || {
-        if wrap || compact {
-            u32::from(code_width)
-        } else {
-            longest_line_cells(alignment.lines(DiffVersion::Original))
-                .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
-        }
-    });
-    let initial_top = current_view_state
-        .first_terminal_line
-        .as_ref()
-        .and_then(|line| find_terminal_line_index(&wrapped_lines, line))
-        .unwrap_or(0);
-    let (vertical_view, vertical_handle) = use_scroll(scope, || ScrollOffset {
-        x: 0,
-        y: initial_top,
-    });
-    let (horizontal_view, horizontal_handle) = use_scroll(scope, || ScrollOffset {
-        x: current_view_state.first_cell,
-        y: 0,
-    });
-    let restore_vertical = vertical_handle.clone();
-    let restore_horizontal = horizontal_handle.clone();
-    use_layout_effect(scope, (content_id, code_width, wrap, compact), move || {
-        restore_vertical.scroll_to(ScrollOffset {
-            x: 0,
-            y: initial_top,
-        });
-        restore_horizontal.scroll_to(ScrollOffset {
-            x: current_view_state.first_cell,
-            y: 0,
-        });
-    });
-    let total_terminal_lines = wrapped_lines
-        .iter()
-        .flat_map(WrappedViewLine::terminal_line_pairs)
-        .count() as u32;
-    let visible_start = vertical_view
-        .clamped_offset()
-        .y
-        .min(total_terminal_lines.saturating_sub(1));
-    let visible_count = u32::from(size.height).saturating_add(4);
-    let vertical_position = vertical_view.requested_offset().y;
-    let horizontal_position = horizontal_view.requested_offset().x;
-    if size.width > 0 && size.height > 0 {
-        *view_state_ref.current() = ViewState {
-            first_terminal_line: (vertical_position > 0)
-                .then(|| {
-                    wrapped_lines
-                        .iter()
-                        .flat_map(WrappedViewLine::terminal_line_pairs)
-                        .nth(vertical_position as usize)
-                })
-                .flatten()
-                .and_then(|(original, modified)| match modified {
-                    TerminalLine::SourceCode { .. } => Some(modified),
-                    TerminalLine::Filler => match original {
-                        TerminalLine::SourceCode { .. } => Some(original),
-                        TerminalLine::Filler => None,
-                    },
-                })
-                .cloned(),
-            first_cell: horizontal_position,
-        };
-    }
-    let listeners = use_diff_viewer_navigation(
-        scope,
-        vertical_handle.clone(),
-        horizontal_handle.clone(),
-        None,
-    );
+    let wrapped_lines = wrapped_lines.as_ref();
+    let visible_row_count = viewport
+        .visible_rows
+        .end
+        .saturating_sub(viewport.visible_rows.start);
     let syntax = use_syntax(
         scope,
         ctx.syntax_service.as_ref().map(Rc::clone),
         Rc::clone(content),
         DiffType::Inline,
-        &wrapped_lines,
+        wrapped_lines,
     );
     let syntax = syntax.as_deref();
 
-    let mut original_gutters = Vec::with_capacity(visible_count as usize);
-    let mut modified_gutters = Vec::with_capacity(visible_count as usize);
-    let mut code_rows = Vec::with_capacity(visible_count as usize);
+    let mut original_gutters = Vec::with_capacity(visible_row_count);
+    let mut modified_gutters = Vec::with_capacity(visible_row_count);
+    let mut code_rows = Vec::with_capacity(visible_row_count);
     for (offset, (original, modified)) in wrapped_lines
         .iter()
         .flat_map(WrappedViewLine::terminal_line_pairs)
-        .skip(visible_start as usize)
-        .take(visible_count as usize)
+        .skip(viewport.visible_rows.start)
+        .take(visible_row_count)
         .enumerate()
     {
-        let view_line_index = visible_start + offset as u32;
+        let view_line_index = viewport.visible_rows.start + offset;
         if is_fold_marker(original, modified) {
             let blank = theme.normal;
             original_gutters.push(rsx! {
@@ -281,49 +246,37 @@ pub fn Inline(
 
     rsx! {
         Column {
-            ref: Some(node_ref),
             focusable: true,
             auto_focus: *auto_focus,
-            listeners: listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
-            Scroll {
-                view: vertical_view,
-                handle: Some(vertical_handle),
-                horizontal: false,
-                vertical: true,
-                wheel_step: 3,
-                content_height: Some(total_terminal_lines),
-                content_offset: ScrollOffset { x: 0, y: visible_start },
-                layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
+            Row {
+                layout: Layout { grow: 1, ..Default::default() },
                 ..,
-                Row {
-                    layout: Layout { grow: 1, ..Default::default() },
+                Column {
+                    layout: Layout { basis: Basis::Length(original_gutter_width), shrink: 0, ..Default::default() },
+                    ..,
+                    { original_gutters }
+                }
+                Column {
+                    layout: Layout { basis: Basis::Length(modified_gutter_width), shrink: 0, ..Default::default() },
+                    ..,
+                    { modified_gutters }
+                }
+                Scroll {
+                    view: viewport.horizontal_view,
+                    handle: None,
+                    horizontal: true,
+                    vertical: false,
+                    wheel_step: 0,
+                    write_metrics: false,
+                    content_width: Some(horizontal_scroll_extent.saturating_add(u32::from(code_width))),
+                    layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
                     ..,
                     Column {
-                        layout: Layout { basis: Basis::Length(original_gutter_width), shrink: 0, ..Default::default() },
+                        layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                         ..,
-                        { original_gutters }
-                    }
-                    Column {
-                        layout: Layout { basis: Basis::Length(modified_gutter_width), shrink: 0, ..Default::default() },
-                        ..,
-                        { modified_gutters }
-                    }
-                    Scroll {
-                        view: horizontal_view,
-                        handle: Some(horizontal_handle),
-                        horizontal: true,
-                        vertical: false,
-                        wheel_step: 3,
-                        content_width: Some(*maximum_line_cells),
-                        layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
-                        ..,
-                        Column {
-                            layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
-                            ..,
-                            { code_rows }
-                        }
+                        { code_rows }
                     }
                 }
             }

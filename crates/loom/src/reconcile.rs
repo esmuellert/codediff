@@ -37,6 +37,8 @@ pub struct HostDesc {
     pub scroll_content_width: Option<u32>,
     pub scroll_content_height: Option<u32>,
     pub scroll_content_offset: crate::scroll::ScrollOffset,
+    pub scroll_content_area_width: Option<u32>,
+    pub scroll_write_metrics: bool,
     pub text: Option<Rc<str>>,
     pub style: ratatui::style::Style,
 }
@@ -200,6 +202,8 @@ fn host_into(held: &RuntimeRef, mut host: Host, owner: ScopeId, cursor: &mut Cur
             scroll_content_width: host.scroll_content_width,
             scroll_content_height: host.scroll_content_height,
             scroll_content_offset: host.scroll_content_offset,
+            scroll_content_area_width: host.scroll_content_area_width,
+            scroll_write_metrics: host.scroll_write_metrics,
             text: host.text,
             style: host.style,
         }),

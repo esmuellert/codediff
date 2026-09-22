@@ -9,7 +9,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
 use ui::components::diff_viewer::ViewState;
-use ui::components::inline::{Inline, InlineProps};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context as UiContext, TerminalLine, Ui, terminal_line_pairs};
 
 use super::{
@@ -22,9 +22,10 @@ fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap:
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Rc::as_ptr(content) as usize;
     rsx! {
-        Inline {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: DiffType::Inline,
             view_state: view_state,
             wrap: *wrap,
             compact: false,

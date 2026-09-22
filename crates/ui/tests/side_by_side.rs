@@ -9,7 +9,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
 use ui::components::diff_viewer::{ViewState, ViewStateHistory};
-use ui::components::side_by_side::{SideBySide, SideBySideProps};
+use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 use ui::services::syntax::SyntaxService;
 
@@ -30,9 +30,10 @@ fn TestSideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -
         *active_key.current() = Some(key);
     }
     rsx! {
-        SideBySide {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::SideBySide,
             view_state: active_view_state,
             wrap: true,
             compact: false,
@@ -46,9 +47,10 @@ fn TestSideBySideUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffCo
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Rc::as_ptr(content) as usize;
     rsx! {
-        SideBySide {
+        DiffViewerContainer {
             key: content_id,
-            content: Rc::clone(content),
+            content: Some(Rc::clone(content)),
+            view_layout: file_types::DiffType::SideBySide,
             view_state: view_state,
             wrap: false,
             compact: false,
