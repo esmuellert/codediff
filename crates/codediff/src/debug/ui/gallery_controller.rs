@@ -77,7 +77,8 @@ impl GalleryController {
             StoryFixture::Explorer(files) => (Some(files), None),
             StoryFixture::SideBySide(content)
             | StoryFixture::Inline(content)
-            | StoryFixture::SingleFile(content) => (None, Some(content)),
+            | StoryFixture::SingleFile(content)
+            | StoryFixture::Card(content) => (None, Some(content)),
         };
 
         self.generation += 1;

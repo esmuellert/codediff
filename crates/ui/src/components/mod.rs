@@ -4,6 +4,7 @@ mod app;
 pub mod border;
 pub mod code_text;
 mod context;
+pub mod diff_card;
 pub mod diff_viewer;
 pub mod diff_viewer_container;
 pub mod explorer;
@@ -20,4 +21,5 @@ pub use crate::view::terminal_lines::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
 pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
+pub use diff_card::{DiffCard, DiffCardProps};
 pub use explorer::{Explorer, ExplorerProps, letter};

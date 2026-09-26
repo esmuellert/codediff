@@ -14,6 +14,7 @@ pub enum StoryComponent {
     SideBySide,
     Inline,
     SingleFile,
+    Card,
 }
 
 pub struct StoryDefinition {
@@ -42,6 +43,7 @@ pub enum StoryFixture {
     SideBySide(Rc<DiffContent>),
     Inline(Rc<DiffContent>),
     SingleFile(Rc<DiffContent>),
+    Card(Rc<DiffContent>),
 }
 
 impl StoryFixture {
@@ -52,19 +54,20 @@ impl StoryFixture {
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,
+            Self::Card(_) => StoryComponent::Card,
         }
     }
 
     pub const fn needs_syntax(&self) -> bool {
         matches!(
             self,
-            Self::SideBySide(_) | Self::Inline(_) | Self::SingleFile(_)
+            Self::SideBySide(_) | Self::Inline(_) | Self::SingleFile(_) | Self::Card(_)
         )
     }
 
     pub fn initial_syntax_response_count(&self) -> usize {
         match self {
-            Self::SideBySide(content) | Self::Inline(content) => {
+            Self::SideBySide(content) | Self::Inline(content) | Self::Card(content) => {
                 let DiffContent::Diff(diff) = content.as_ref() else {
                     unreachable!()
                 };

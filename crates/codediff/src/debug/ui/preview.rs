@@ -7,6 +7,7 @@ use loom::{
     use_state,
 };
 use pipeline::diff::DiffContent;
+use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_viewer::{DiffViewer, ViewState};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
@@ -124,6 +125,13 @@ pub(super) fn StoryPreview(
                 wrap: true,
                 compact: false,
                 auto_focus: false,
+            }
+        },
+        StoryComponent::Card => rsx! {
+            DiffCard {
+                content: Rc::clone(content.as_ref().expect("card story content")),
+                view_layout: file_types::DiffType::SideBySide,
+                wrap: false,
             }
         },
     };

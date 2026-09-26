@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use anyhow::Result;
-use file_types::File;
+use file_types::{File, Stats};
 use pipeline::diff::{Diff, DiffContent};
 
 use super::{repo_path, worktree_revs};
@@ -12,6 +12,7 @@ pub struct DiffFixture {
     path: String,
     original: Vec<String>,
     modified: Vec<String>,
+    stats: Option<Stats>,
 }
 
 impl DiffFixture {
@@ -20,6 +21,7 @@ impl DiffFixture {
             path: path.to_owned(),
             original: original.iter().map(|line| (*line).to_owned()).collect(),
             modified: modified.iter().map(|line| (*line).to_owned()).collect(),
+            stats: None,
         }
     }
 
@@ -34,6 +36,7 @@ impl DiffFixture {
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
+            stats: None,
         }
     }
 
@@ -70,7 +73,13 @@ impl DiffFixture {
             path: path.to_owned(),
             original,
             modified,
+            stats: None,
         }
+    }
+
+    pub fn with_stats(mut self, stats: Stats) -> Self {
+        self.stats = Some(stats);
+        self
     }
 
     pub fn with_line_pair(
@@ -98,9 +107,10 @@ impl DiffFixture {
         let changed =
             pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())?;
         let alignment = pipeline::diff::align(changed, &original, &modified)?;
-        Ok(Rc::new(DiffContent::Diff(Diff {
-            file: File::unchanged_path(repo_path(&self.path), worktree_revs()),
-            alignment,
-        })))
+        let mut file = File::unchanged_path(repo_path(&self.path), worktree_revs());
+        if let Some(stats) = self.stats {
+            file = file.set_stats(stats);
+        }
+        Ok(Rc::new(DiffContent::Diff(Diff { file, alignment })))
     }
 }

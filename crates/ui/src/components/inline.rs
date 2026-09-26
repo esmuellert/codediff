@@ -270,7 +270,7 @@ pub(crate) fn Inline(
                     horizontal: true,
                     vertical: false,
                     wheel_step: 0,
-                    write_metrics: false,
+                    write_metrics: viewport.write_horizontal_metrics,
                     content_width: Some(horizontal_scroll_extent.saturating_add(u32::from(code_width))),
                     layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
                     ..,

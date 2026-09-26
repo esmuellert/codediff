@@ -22,6 +22,7 @@ use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, find_terminal_l
 pub(crate) struct DiffVisibleRange {
     pub(crate) visible_terminal_lines: Range<usize>,
     pub(crate) horizontal_view: ScrollView,
+    pub(crate) write_horizontal_metrics: bool,
 }
 
 enum ViewLayout {
@@ -160,6 +161,7 @@ pub fn DiffViewerContainer(
     let visible_range = DiffVisibleRange {
         visible_terminal_lines: first_terminal_line..last_terminal_line,
         horizontal_view: scroll_view.clone().axes(true, false),
+        write_horizontal_metrics: false,
     };
 
     if size.width > 0 && size.height > 0 {
