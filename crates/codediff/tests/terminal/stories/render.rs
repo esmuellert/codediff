@@ -129,6 +129,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &["diff_card.rs", "+23 -17", "···"],
         &[],
     ),
+    (
+        "cards/comprehensive",
+        &["alpha.rs", "beta.rs", "MODIFIED_PAYLOAD_START"],
+        &[],
+    ),
 ];
 
 fn snapshot(story: &str) -> String {
@@ -186,7 +191,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  34"));
+    assert_eq!(lines.next(), Some(" STORIES  35"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");
@@ -338,5 +343,62 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
         resized_frame.contains("inline line"),
         "the horizontal viewport never moved: {output:?}"
     );
+    assert!(output.contains(LEAVE_ALT));
+}
+
+#[test]
+#[cfg(unix)]
+fn cards_story_scrolls_a_long_diff_to_its_end() {
+    let pty = native_pty_system()
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("opening a pty");
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codediff"));
+    command.args(["debug", "ui", "cards/comprehensive"]);
+    command.env("TERM", "xterm-256color");
+    let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
+    drop(pty.slave);
+
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
+    drawn(&output);
+    let initial =
+        String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
+            .into_owned();
+    assert!(!initial.contains("PAYLOAD_END;"));
+    let initial_len = initial.len();
+
+    let mut writer = pty.master.take_writer().expect("writing to the pty");
+    writer.write_all(b"$").expect("scrolling to the line end");
+    writer.flush().expect("flushing the scroll key");
+    drawn_after(&output, initial_len);
+    let scrolled =
+        String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
+            .into_owned();
+    assert!(
+        scrolled.contains("PAYLOAD_END;"),
+        "the card never revealed the end of its long line: {scrolled:?}"
+    );
+
+    writer.write_all(b"q").expect("quitting");
+    writer.flush().expect("flushing quit");
+    drop(writer);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("waiting for codediff") {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "the cards story never exited");
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    drop(pty.master);
+    let output = written(collector, &output);
+
+    assert!(status.success(), "{output}");
+    assert!(output.contains(ENTER_ALT));
     assert!(output.contains(LEAVE_ALT));
 }

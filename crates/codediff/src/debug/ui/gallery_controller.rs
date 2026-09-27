@@ -72,13 +72,14 @@ impl GalleryController {
             .ok_or_else(|| anyhow::anyhow!("story index {index} is outside the catalog"))?;
         let fixture = definition.create_fixture()?;
         let syntax = fixture.needs_syntax();
-        let (files, content) = match fixture {
-            StoryFixture::Welcome => (None, None),
-            StoryFixture::Explorer(files) => (Some(files), None),
+        let (files, content, contents) = match fixture {
+            StoryFixture::Welcome => (None, None, None),
+            StoryFixture::Explorer(files) => (Some(files), None, None),
             StoryFixture::SideBySide(content)
             | StoryFixture::Inline(content)
             | StoryFixture::SingleFile(content)
-            | StoryFixture::Card(content) => (None, Some(content)),
+            | StoryFixture::Card(content) => (None, Some(content), None),
+            StoryFixture::Cards(contents) => (None, None, Some(contents)),
         };
 
         self.generation += 1;
@@ -110,6 +111,7 @@ impl GalleryController {
             definition,
             base_context: story_context(&files_service, &syntax_service),
             content,
+            contents,
             navigate: Some(Rc::new(move |action| {
                 let _ = navigation_tx.send(GalleryEvent::PreviewAction(action));
             })),

@@ -43,13 +43,14 @@ impl StoryHost {
         let fixture = definition.create_fixture()?;
         let syntax = fixture.needs_syntax();
         let initial_syntax_response_count = fixture.initial_syntax_response_count();
-        let (files, content) = match fixture {
-            StoryFixture::Welcome => (None, None),
-            StoryFixture::Explorer(files) => (Some(files), None),
+        let (files, content, contents) = match fixture {
+            StoryFixture::Welcome => (None, None, None),
+            StoryFixture::Explorer(files) => (Some(files), None, None),
             StoryFixture::SideBySide(content)
             | StoryFixture::Inline(content)
             | StoryFixture::SingleFile(content)
-            | StoryFixture::Card(content) => (None, Some(content)),
+            | StoryFixture::Card(content) => (None, Some(content), None),
+            StoryFixture::Cards(contents) => (None, None, Some(contents)),
         };
 
         let (events_tx, events_rx) = mpsc::channel();
@@ -71,6 +72,7 @@ impl StoryHost {
             definition,
             base_context: story_context(&files_service, &syntax_service),
             content,
+            contents,
             navigate: None,
         };
         Ok((
@@ -258,6 +260,7 @@ mod tests {
                     | StoryComponent::Inline
                     | StoryComponent::SingleFile
                     | StoryComponent::Card
+                    | StoryComponent::Cards
             ) && story.id != "single-file/empty"
         }) {
             let mut harness = story_harness(story, 100, 24).unwrap();
@@ -285,7 +288,10 @@ mod tests {
                         story.id
                     );
                 }
-                StoryComponent::Inline | StoryComponent::SingleFile | StoryComponent::Card => {
+                StoryComponent::Inline
+                | StoryComponent::SingleFile
+                | StoryComponent::Card
+                | StoryComponent::Cards => {
                     assert!(coloured(0, 100), "{} had no syntax-coloured text", story.id);
                 }
                 StoryComponent::Welcome | StoryComponent::Explorer => unreachable!(),

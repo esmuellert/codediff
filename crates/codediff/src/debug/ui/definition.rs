@@ -15,6 +15,7 @@ pub enum StoryComponent {
     Inline,
     SingleFile,
     Card,
+    Cards,
 }
 
 pub struct StoryDefinition {
@@ -44,6 +45,7 @@ pub enum StoryFixture {
     Inline(Rc<DiffContent>),
     SingleFile(Rc<DiffContent>),
     Card(Rc<DiffContent>),
+    Cards(Rc<Vec<Rc<DiffContent>>>),
 }
 
 impl StoryFixture {
@@ -55,13 +57,18 @@ impl StoryFixture {
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,
             Self::Card(_) => StoryComponent::Card,
+            Self::Cards(_) => StoryComponent::Cards,
         }
     }
 
     pub const fn needs_syntax(&self) -> bool {
         matches!(
             self,
-            Self::SideBySide(_) | Self::Inline(_) | Self::SingleFile(_) | Self::Card(_)
+            Self::SideBySide(_)
+                | Self::Inline(_)
+                | Self::SingleFile(_)
+                | Self::Card(_)
+                | Self::Cards(_)
         )
     }
 
@@ -80,6 +87,16 @@ impl StoryFixture {
                 };
                 usize::from(!single.lines.is_empty())
             }
+            Self::Cards(contents) => contents
+                .iter()
+                .map(|content| {
+                    let DiffContent::Diff(diff) = content.as_ref() else {
+                        unreachable!()
+                    };
+                    usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())
+                        + usize::from(!diff.alignment.lines(DiffVersion::Modified).is_empty())
+                })
+                .sum(),
             Self::Welcome | Self::Explorer(_) => 0,
         }
     }

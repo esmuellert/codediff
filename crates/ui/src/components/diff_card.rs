@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
+use align::Alignment;
 use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, Text,
@@ -21,6 +22,24 @@ use crate::keybindings::Action;
 enum CardLayout {
     Inline(InlineLayout),
     SideBySide(SideBySideLayout),
+}
+
+pub(crate) fn card_height(
+    alignment: &Alignment,
+    width: u16,
+    view_layout: DiffType,
+    wrap: bool,
+) -> u16 {
+    let terminal_line_count = match view_layout {
+        DiffType::Inline => layout_inline(alignment, width, wrap, true).terminal_line_count,
+        DiffType::SideBySide => {
+            layout_side_by_side(alignment, width, wrap, true).terminal_line_count
+        }
+        DiffType::Single => unreachable!("a diff card cannot render a single file"),
+    };
+    terminal_line_count
+        .saturating_add(3)
+        .min(u32::from(u16::MAX)) as u16
 }
 
 fn horizontal_listeners(scope: &mut Scope, scroll: loom::ScrollHandle) -> Listeners {
@@ -62,6 +81,8 @@ pub fn DiffCard(
     content: Rc<DiffContent>,
     view_layout: DiffType,
     wrap: bool,
+    height: Option<u16>,
+    auto_focus: bool,
 ) -> Node {
     let theme = *use_context::<Ui>(scope).theme;
     let view_layout = *view_layout;
@@ -120,10 +141,11 @@ pub fn DiffCard(
         CardLayout::Inline(layout) => layout.terminal_line_count,
         CardLayout::SideBySide(layout) => layout.terminal_line_count,
     } as usize;
+    let visible_terminal_line_count = usize::from(size.height.saturating_sub(1));
     let visible_range = DiffVisibleRange {
         visible_terminal_lines: Range {
             start: 0,
-            end: terminal_line_count,
+            end: terminal_line_count.min(visible_terminal_line_count),
         },
         horizontal_view: scroll_view.axes(true, false),
         write_horizontal_metrics: true,
@@ -166,6 +188,18 @@ pub fn DiffCard(
     let status = super::explorer::letter(change);
     let status_width = (status.chars().count() + 2) as u16;
     let stats = file.get_stats().filter(|stats| !stats.is_empty());
+    let border_layout = match height {
+        Some(height) => Layout {
+            basis: Basis::Length(height.saturating_sub(4)),
+            grow: 0,
+            shrink: 0,
+            ..Default::default()
+        },
+        None => Layout {
+            grow: 1,
+            ..Default::default()
+        },
+    };
 
     let mut header = vec![
         rsx! {
@@ -206,12 +240,12 @@ pub fn DiffCard(
 
     rsx! {
         Border {
-            layout: Layout { grow: 1, ..Default::default() },
+            layout: border_layout,
             Column {
                 ref: Some(node_ref),
                 listeners: listeners,
                 focusable: true,
-                auto_focus: true,
+                auto_focus: *auto_focus,
                 layout: Layout { grow: 1, ..Default::default() },
                 ..,
                 Row {

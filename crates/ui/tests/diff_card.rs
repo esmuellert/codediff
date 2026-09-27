@@ -6,23 +6,27 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
 use pipeline::diff::{self, DiffContent};
 use ui::Theme;
-use ui::components::{Context, DiffCard, DiffCardProps, Ui};
+use ui::components::{Context, DiffCard, DiffCardProps, DiffCards, DiffCardsProps, Ui};
 
-fn file() -> File {
+fn file_at(path: &str) -> File {
     File::unchanged_path(
-        RepoPath::new("src/card.rs", Path::new("/repo")),
+        RepoPath::new(path, Path::new("/repo")),
         Revs::worktree_against(Oid::new("card")),
     )
     .set_stats(Stats::new(4, 2))
 }
 
-fn diff(original: &[&str], modified: &[&str]) -> DiffContent {
+fn diff_at(path: &str, original: &[&str], modified: &[&str]) -> DiffContent {
     let changes = diff::compute(original, modified, diff::Settings::default()).unwrap();
     let alignment = diff::align(changes, original, modified).unwrap();
     DiffContent::Diff(diff::Diff {
-        file: file(),
+        file: file_at(path),
         alignment,
     })
+}
+
+fn diff(original: &[&str], modified: &[&str]) -> DiffContent {
+    diff_at("src/card.rs", original, modified)
 }
 
 #[component]
@@ -37,6 +41,8 @@ fn CardHost(
             content: Rc::clone(content),
             view_layout: *view_layout,
             wrap: *wrap,
+            height: None,
+            auto_focus: true,
         }
     }
 }
@@ -52,6 +58,24 @@ fn harness(content: DiffContent, width: u16, height: u16) -> Harness {
         height,
     )
     .provide::<Ui>(Context {
+        theme: Rc::new(Theme::DARK),
+        ..Context::default()
+    })
+}
+
+#[component]
+fn CardsHost(_scope: &mut Scope, contents: Rc<Vec<Rc<DiffContent>>>) -> Node {
+    rsx! {
+        DiffCards {
+            contents: Rc::clone(contents),
+            view_layout: DiffType::Inline,
+            wrap: false,
+        }
+    }
+}
+
+fn cards_harness(contents: Rc<Vec<Rc<DiffContent>>>, width: u16, height: u16) -> Harness {
+    Harness::new::<CardsHost>(CardsHostProps { contents }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         ..Context::default()
     })
@@ -101,4 +125,57 @@ fn card_scrolls_horizontally_without_vertical_scrolling() {
 
     harness.press(crokey::key!(j)).force_draw();
     assert_eq!(harness.screen().join("\n"), horizontal);
+}
+
+#[test]
+fn cards_scroll_vertically_as_one_collection() {
+    let first_original = [
+        "first old one",
+        "first old two",
+        "first old three",
+        "first old four",
+        "first old five",
+        "first old six",
+    ];
+    let first_modified = [
+        "first new one",
+        "first new two",
+        "first new three",
+        "first new four",
+        "first new five",
+        "first new six",
+    ];
+    let second_original = [
+        "second old one",
+        "second old two",
+        "second old three",
+        "second old four",
+        "second old five",
+        "second old six",
+    ];
+    let second_modified = [
+        "second new one",
+        "second new two",
+        "second new three",
+        "second new four",
+        "second new five",
+        "second new six",
+    ];
+    let contents = Rc::new(vec![
+        Rc::new(diff_at("src/first.rs", &first_original, &first_modified)),
+        Rc::new(diff_at("src/second.rs", &second_original, &second_modified)),
+    ]);
+    let mut harness = cards_harness(contents, 50, 8);
+    harness.force_draw().force_draw();
+    let start = harness.screen().join("\n");
+    assert!(start.contains("first.rs"), "{start}");
+    assert!(!start.contains("second.rs"), "{start}");
+
+    for _ in 0..15 {
+        harness.press(crokey::key!(j));
+    }
+    harness.force_draw();
+    let scrolled = harness.screen().join("\n");
+    assert!(scrolled.contains("second.rs"), "{scrolled}");
+    assert_ne!(scrolled, start);
 }

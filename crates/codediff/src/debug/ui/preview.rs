@@ -8,6 +8,7 @@ use loom::{
 };
 use pipeline::diff::DiffContent;
 use ui::components::diff_card::{DiffCard, DiffCardProps};
+use ui::components::diff_cards::{DiffCards, DiffCardsProps};
 use ui::components::diff_viewer::{DiffViewer, ViewState};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
@@ -30,6 +31,7 @@ pub(super) fn StoryPreview(
     definition: &'static StoryDefinition,
     base_context: Context,
     content: Option<Rc<DiffContent>>,
+    contents: Option<Rc<Vec<Rc<DiffContent>>>>,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
@@ -131,6 +133,15 @@ pub(super) fn StoryPreview(
             DiffCard {
                 content: Rc::clone(content.as_ref().expect("card story content")),
                 view_layout: file_types::DiffType::SideBySide,
+                wrap: false,
+                height: None,
+                auto_focus: true,
+            }
+        },
+        StoryComponent::Cards => rsx! {
+            DiffCards {
+                contents: Rc::clone(contents.as_ref().expect("cards story contents")),
+                view_layout: file_types::DiffType::Inline,
                 wrap: false,
             }
         },
