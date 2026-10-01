@@ -70,29 +70,3 @@ pub(super) fn send_and_wait_for_screen(
 pub(super) fn all_output(output: &Arc<Mutex<Output>>) -> String {
     String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes).into_owned()
 }
-
-pub(super) fn output_since(output: &Arc<Mutex<Output>>, before: usize) -> String {
-    let held = output.lock().expect("nothing else holds the lock");
-    String::from_utf8_lossy(&held.bytes[before..]).into_owned()
-}
-
-pub(super) fn strip_csi(input: &str) -> String {
-    let mut text = String::new();
-    let mut saw_escape = false;
-    let mut in_csi = false;
-    for character in input.chars() {
-        if in_csi {
-            if ('@'..='~').contains(&character) {
-                in_csi = false;
-            }
-        } else if saw_escape {
-            saw_escape = false;
-            in_csi = character == '[';
-        } else if character == '\u{1b}' {
-            saw_escape = true;
-        } else if !character.is_control() {
-            text.push(character);
-        }
-    }
-    text
-}
