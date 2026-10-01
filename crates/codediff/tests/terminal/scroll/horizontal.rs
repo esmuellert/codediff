@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::super::common::{output_since, strip_csi};
-use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
+use super::super::common::{send_and_wait, send_and_wait_for_screen, wait_for_screen};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, written};
 
 #[test]
 fn a_real_repo_mouse_click_keeps_side_by_side_horizontal_endpoints() {
@@ -64,36 +64,20 @@ fn a_real_repo_mouse_click_keeps_side_by_side_horizontal_endpoints() {
     drop(pty.slave);
     let reader = pty.master.try_clone_reader().expect("reading the pty");
     let (collector, output) = collect(reader);
-    drawn(&output);
+    let screen = wait_for_screen(&output, |screen| screen.contains("sample.txt"));
+    let sample_row = screen.line_of("sample.txt").expect("sample file row") + 1;
     let mut writer = pty.master.take_writer().expect("writing to the pty");
 
-    let before_click = output.lock().expect("output lock").bytes.len();
-    writer
-        .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m\x1b[<0;70;2M\x1b[<0;70;2m")
-        .expect("sending the Explorer and diff clicks");
-    writer
-        .flush()
-        .expect("flushing the Explorer and diff clicks");
-    drawn_after(&output, before_click);
+    let click = format!("\x1b[<0;10;{sample_row}M\x1b[<0;10;{sample_row}m");
+    send_and_wait_for_screen(&mut writer, &output, click.as_bytes(), |screen| {
+        screen.contains("LEFT_LONG_START") && screen.contains("RIGHT_LONG_START")
+    });
+    send_and_wait(&mut writer, &output, b"\x1b[<0;70;2M\x1b[<0;70;2m");
+    send_and_wait(&mut writer, &output, b"\x1b[C");
 
-    let before_focus = output.lock().expect("output lock").bytes.len();
-    writer.write_all(b"\x1b[C").expect("focusing the diff view");
-    writer.flush().expect("flushing the focus change");
-    drawn_after(&output, before_focus);
-
-    let before_end = output.lock().expect("output lock").bytes.len();
-    writer.write_all(b"$").expect("sending horizontal end");
-    writer.flush().expect("flushing horizontal end");
-    drawn_after(&output, before_end);
-    let end_text = strip_csi(&output_since(&output, before_end));
-    assert!(
-        end_text.contains("LEFT_END"),
-        "shorter original side did not reach its own end: {end_text:?}"
-    );
-    assert!(
-        end_text.contains("RIGHT_END"),
-        "longer modified side did not reach its own end: {end_text:?}"
-    );
+    send_and_wait_for_screen(&mut writer, &output, b"$", |screen| {
+        screen.contains("LEFT_END") && screen.contains("RIGHT_END")
+    });
 
     writer.write_all(b"q").expect("sending quit");
     writer.flush().expect("flushing quit");

@@ -11,7 +11,7 @@ use screen::Screen;
 use serde_json::{Value, json};
 
 mod keybindings;
-mod screen;
+pub(super) mod screen;
 
 const COLS: u16 = 100;
 const HEIGHT: u16 = 24;

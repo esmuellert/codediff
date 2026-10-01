@@ -7,11 +7,21 @@ enum Colour {
     Rgb(u8, u8, u8),
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 struct Cell {
     symbol: char,
     foreground: Option<Colour>,
     background: Option<Colour>,
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            symbol: ' ',
+            foreground: None,
+            background: None,
+        }
+    }
 }
 
 pub(crate) struct Screen {
@@ -248,5 +258,25 @@ impl Screen {
                 cell.foreground.is_some() || cell.background.is_some()
             })
             .count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Screen;
+
+    #[test]
+    fn cursor_addressed_words_keep_blank_cells_between_them() {
+        let output = "\x1b[2J\x1b[4;1Hsame\x1b[4;6Hin\x1b[4;9Hone\x1b[4;13Hcolumn";
+        assert!(!output.contains("same in one column"));
+        assert!(Screen::parse(output).contains("same in one column"));
+    }
+
+    #[test]
+    fn unchanged_text_remains_visible_after_a_control_only_update() {
+        let output = "\x1b[2J\x1b[3;1HLEFT_END\x1b[3;51HRIGHT_END\x1b[?2026h\x1b[?2026l";
+        let screen = Screen::parse(output);
+        assert!(screen.contains("LEFT_END"));
+        assert!(screen.contains("RIGHT_END"));
     }
 }
