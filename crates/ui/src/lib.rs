@@ -16,7 +16,7 @@ pub use ratatui;
 #[cfg(debug_assertions)]
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc;
 #[cfg(unix)]
@@ -43,6 +43,11 @@ enum Event {
     SyntaxReady(syntax::SyntaxResponse),
 }
 
+fn repository_root(cwd: &Path) -> std::io::Result<PathBuf> {
+    let repository = vcs::Repository::open(cwd).map_err(std::io::Error::other)?;
+    Ok(repository.repo_path().root.clone())
+}
+
 pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::io::Result<i32> {
     let config = Rc::new(config);
     let keybindings =
@@ -64,11 +69,12 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
     );
     let syntax_worker =
         syntax::Syntax::start(channel::Emitter::new(events_tx.clone(), Event::SyntaxReady));
+    let watcher_root = repository_root(cwd)?;
     let _watcher_subscription = watcher::subscribe(
-        cwd,
+        &watcher_root,
         channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
     )
-    .ok();
+    .map_err(std::io::Error::other)?;
 
     let files_service = Rc::new(FilesService::new(
         Rc::new(RefCell::new(files_worker)),
@@ -172,4 +178,31 @@ fn is_f5(event: &crossterm::event::Event) -> bool {
         Event::Key(key) if key.code == KeyCode::F(5)
             && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use super::*;
+
+    #[test]
+    fn repository_root_is_discovered_from_a_nested_directory() {
+        let repo = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(repo.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let nested = repo.path().join("nested/deep");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        assert_eq!(
+            repository_root(&nested).unwrap().canonicalize().unwrap(),
+            repo.path().canonicalize().unwrap()
+        );
+    }
 }
