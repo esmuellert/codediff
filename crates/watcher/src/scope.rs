@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use notify::EventKind;
 #[cfg(target_os = "linux")]
 use notify::event::{CreateKind, ModifyKind, RemoveKind};
-use notify::{Event, RecursiveMode, Watcher};
+use notify::{Event, PathOp, RecursiveMode, WatchPathConfig, Watcher};
 
 /// The paths and recursion modes currently registered with notify.
 #[derive(Default)]
@@ -21,14 +21,20 @@ pub(super) struct WatchScope {
 
 impl WatchScope {
     pub fn install(watcher: &mut impl Watcher, desired: Self) -> notify::Result<Self> {
-        let mut installed = Self::default();
-        for (path, mode) in desired.paths {
-            watcher
-                .watch(&path, mode)
-                .map_err(|error| error.add_path(path.clone()))?;
-            installed.paths.insert(path, mode);
-        }
-        Ok(installed)
+        // One batch lets FSEvents start a single stream instead of restarting
+        // it for every path.
+        let ops = desired
+            .paths
+            .iter()
+            .map(|(path, mode)| PathOp::Watch(path.clone(), WatchPathConfig::new(*mode)))
+            .collect();
+        watcher
+            .update_paths(ops)
+            .map_err(|error| match error.origin {
+                Some(op) => error.source.add_path(op.as_path().to_owned()),
+                None => error.source,
+            })?;
+        Ok(desired)
     }
 
     pub fn update(&mut self, watcher: &mut impl Watcher, desired: Self) {
