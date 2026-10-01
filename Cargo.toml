@@ -121,7 +121,7 @@ crokey = { version = "1.5", default-features = false }
 signal-hook = { version = "0.4", features = ["iterator"] }
 # Filesystem watcher: detects worktree and .git changes so the explorer stays
 # current without polling. The debouncer collapses rapid events into one.
-notify = "=9.0.0-rc.5"
+notify = "8.2"
 # Respects .gitignore so build output never triggers a refresh.
 ignore = "0.4"
 # Structured logging; the binary enables it with the hidden --log option.

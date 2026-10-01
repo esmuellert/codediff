@@ -14,13 +14,19 @@ name = "binary"
 path = "tests/binary/mod.rs"
 
 [dependencies]
-notify = { workspace = true }
 ignore = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 channel.workspace = true
+
+# Only Windows needs notify 9's ReadDirectoryChangesW overflow fix.
+[target.'cfg(windows)'.dependencies]
+notify = "=9.0.0-rc.5"
+
+[target.'cfg(not(windows))'.dependencies]
+notify = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
