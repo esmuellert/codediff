@@ -7,11 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-use screen::Screen;
+use super::screen::Screen;
 use serde_json::{Value, json};
 
 mod keybindings;
-mod screen;
 
 const COLS: u16 = 100;
 const HEIGHT: u16 = 24;

@@ -10,3 +10,4 @@ mod scroll;
 mod stories;
 
 mod pty;
+mod screen;
