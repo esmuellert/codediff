@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::common::wait_for_output;
-use super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
+use super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn_after, wait_for_screen, written};
 
 #[test]
 fn clicking_a_changed_file_opens_its_diff() {
@@ -71,22 +70,20 @@ fn clicking_a_changed_file_opens_its_diff() {
     drop(pty.slave);
     let reader = pty.master.try_clone_reader().expect("reading the pty");
     let (collector, output) = collect(reader);
-    drawn(&output);
-    std::thread::sleep(Duration::from_millis(500));
+    let size = (100, 24);
+    wait_for_screen(&output, size, "the Explorer listing sample.txt", |screen| {
+        screen.contains("sample.txt")
+    });
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
-    let before = output.lock().expect("output lock").bytes.len();
     // SGR mouse press/release at the first changed-file line in the Explorer.
     writer
         .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m")
         .expect("sending the Explorer click");
     writer.flush().expect("flushing the Explorer click");
-    drawn_after(&output, before);
-    let clicked = wait_for_output(&output, "changed");
-    assert!(
-        clicked.contains("line") && clicked.contains("changed"),
-        "Explorer click did not open the changed file: {clicked:?}"
-    );
+    wait_for_screen(&output, size, "the clicked file's diff", |screen| {
+        screen.contains("changed line 002")
+    });
 
     let before_navigation = output.lock().expect("output lock").bytes.len();
     writer

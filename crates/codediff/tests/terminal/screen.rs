@@ -1,5 +1,5 @@
-const WIDTH: u16 = 100;
-const HEIGHT: u16 = 24;
+const WIDTH: usize = 100;
+const HEIGHT: usize = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Colour {
@@ -26,14 +26,19 @@ pub(crate) struct Screen {
 
 impl Screen {
     pub(crate) fn parse(output: &str) -> Self {
+        Self::parse_sized(output, WIDTH, HEIGHT)
+    }
+
+    /// Replays `output` onto a `width` x `height` terminal.
+    pub(crate) fn parse_sized(output: &str, width: usize, height: usize) -> Self {
         let mut screen = Self {
-            width: WIDTH as usize,
-            height: HEIGHT as usize,
+            width,
+            height,
             cursor_x: 0,
             cursor_y: 0,
             foreground: None,
             background: None,
-            cells: vec![Cell::default(); WIDTH as usize * HEIGHT as usize],
+            cells: vec![Cell::default(); width * height],
         };
         screen.feed(output.as_bytes());
         screen
@@ -217,6 +222,14 @@ impl Screen {
 
     pub(crate) fn contains(&self, text: &str) -> bool {
         (0..self.height).any(|y| self.line(y).contains(text))
+    }
+
+    /// Every row, for failure messages.
+    pub(crate) fn text(&self) -> String {
+        (0..self.height)
+            .map(|y| self.line(y).replace('\0', " ").trim_end().to_owned())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     pub(crate) fn line_of(&self, text: &str) -> Option<usize> {

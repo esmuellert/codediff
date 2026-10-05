@@ -1,13 +1,13 @@
 //! End-to-end coverage for user configuration.
 #![cfg(unix)]
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use super::pty::{collect, wait_for_screen};
 use super::screen::Screen;
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde_json::{Value, json};
 
 mod keybindings;
@@ -53,28 +53,67 @@ impl Drop for Fixture {
     }
 }
 
-#[derive(Default)]
-struct Output {
-    bytes: Vec<u8>,
-    last_write: Option<Instant>,
-}
-
 struct Run {
     output: String,
     success: bool,
     timed_out: bool,
 }
 
-fn run_app(fixture: &Fixture, config: Value, path: Option<&str>, keys: &[u8]) -> Run {
-    run_app_steps(fixture, config, path, &[(keys, Duration::ZERO)])
+/// A screen state that ends a step.
+type Check = Box<dyn Fn(&Screen) -> bool>;
+
+/// Keys to send, and the screen state they must produce before the next step.
+struct Step {
+    keys: Vec<u8>,
+    what: String,
+    until: Option<Check>,
 }
 
-fn run_app_steps(
-    fixture: &Fixture,
-    config: Value,
-    path: Option<&str>,
-    steps: &[(&[u8], Duration)],
-) -> Run {
+/// Sends `keys` without waiting, for keys whose effect a later step checks.
+fn press(keys: &[u8]) -> Step {
+    Step {
+        keys: keys.to_vec(),
+        what: String::new(),
+        until: None,
+    }
+}
+
+/// Sends `keys`, then waits until `check` holds.
+fn until(keys: &[u8], what: &str, check: impl Fn(&Screen) -> bool + 'static) -> Step {
+    Step {
+        keys: keys.to_vec(),
+        what: what.to_owned(),
+        until: Some(Box::new(check)),
+    }
+}
+
+/// Sends `keys`, then waits until `text` is on screen.
+fn shows(keys: &[u8], text: &str) -> Step {
+    let text = text.to_owned();
+    until(keys, &format!("{text:?}"), move |screen| {
+        screen.contains(&text)
+    })
+}
+
+/// Sends `keys`, then waits until `text` is gone from the screen.
+fn hides(keys: &[u8], text: &str) -> Step {
+    let text = text.to_owned();
+    until(keys, &format!("no {text:?}"), move |screen| {
+        !screen.contains(&text)
+    })
+}
+
+/// Opens the selected file and waits for its diff to show `text`.
+fn open(text: &str) -> Step {
+    shows(b"j\r", text)
+}
+
+/// Runs codediff on a pty and plays `steps` once the Explorer has loaded.
+///
+/// The Explorer is loaded once it lists `path`, or `crlf.txt` when
+/// nothing narrows the run. Each step waits for its own result, because
+/// files, diffs and syntax all arrive asynchronously.
+fn run_app(fixture: &Fixture, config: Value, path: Option<&str>, steps: Vec<Step>) -> Run {
     let config = fixture.config(config);
     let pty = native_pty_system()
         .openpty(PtySize {
@@ -100,39 +139,23 @@ fn run_app_steps(
     drop(pty.slave);
 
     let reader = pty.master.try_clone_reader().expect("reading the pty");
-    let output = Arc::new(Mutex::new(Output::default()));
-    let filling = Arc::clone(&output);
-    let collector = std::thread::spawn(move || {
-        let mut reader = reader;
-        let mut chunk = [0u8; 4096];
-        while let Ok(read) = reader.read(&mut chunk) {
-            if read == 0 {
-                break;
-            }
-            let mut held = filling.lock().expect("output lock");
-            held.bytes.extend_from_slice(&chunk[..read]);
-            held.last_write = Some(Instant::now());
-        }
-    });
+    let (collector, output) = collect(reader);
+    let size = (usize::from(COLS), usize::from(HEIGHT));
 
-    wait_for_draw(&output);
-    if steps.iter().any(|(keys, _)| !keys.is_empty())
-        && child.try_wait().expect("checking codediff").is_none()
-    {
-        let mut writer = pty.master.take_writer().expect("writing to the pty");
-        if path.is_some() {
-            let _ = writer.write_all(b"j\r");
-            let _ = writer.flush();
-            std::thread::sleep(Duration::from_millis(600));
-        }
-        for (keys, pause) in steps {
-            if !keys.is_empty() {
-                let _ = writer.write_all(keys);
-                let _ = writer.flush();
-            }
-            if *pause > Duration::ZERO {
-                std::thread::sleep(*pause);
-            }
+    // `crlf.txt` is short enough to survive the narrowest Explorer.
+    let listed = path.unwrap_or("crlf.txt").to_owned();
+    wait_for_screen(
+        &output,
+        size,
+        &format!("the Explorer listing {listed:?}"),
+        |screen| screen.contains(&listed),
+    );
+    let mut writer = pty.master.take_writer().expect("writing to the pty");
+    for step in steps {
+        writer.write_all(&step.keys).expect("sending keys");
+        writer.flush().expect("flushing keys");
+        if let Some(check) = step.until {
+            wait_for_screen(&output, size, &step.what, check);
         }
     }
 
@@ -148,6 +171,7 @@ fn run_app_steps(
         std::thread::sleep(Duration::from_millis(10));
     };
 
+    drop(writer);
     drop(pty.master);
     collector.join().expect("collecting terminal output");
     let bytes = output.lock().expect("output lock").bytes.clone();
@@ -155,24 +179,6 @@ fn run_app_steps(
         output: String::from_utf8_lossy(&bytes).into_owned(),
         success,
         timed_out,
-    }
-}
-
-fn wait_for_draw(output: &Arc<Mutex<Output>>) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        {
-            let held = output.lock().expect("output lock");
-            if !held.bytes.is_empty()
-                && held
-                    .last_write
-                    .is_some_and(|last| last.elapsed() >= Duration::from_millis(250))
-            {
-                return;
-            }
-        }
-        assert!(Instant::now() < deadline, "codediff never drew a frame");
-        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -188,9 +194,14 @@ fn layout_from_config_changes_the_running_app() {
         &fixture,
         json!({"ui": {"layout": "inline"}}),
         Some("modified.txt"),
-        b"q",
+        vec![open("TWO"), press(b"q")],
     );
-    let side_by_side = run_app(&fixture, json!({}), Some("modified.txt"), b"q");
+    let side_by_side = run_app(
+        &fixture,
+        json!({}),
+        Some("modified.txt"),
+        vec![open("TWO"), press(b"q")],
+    );
 
     assert!(
         inline.success,
@@ -223,12 +234,17 @@ fn wrap_from_config_changes_where_the_following_line_is_drawn() {
     let long = "0123456789 ".repeat(12);
     fixture.write("modified.txt", &format!("one\nWRAP_FLAG {long}\nTAIL\n"));
 
-    let wrapped = run_app(&fixture, json!({}), Some("modified.txt"), b"q");
+    let wrapped = run_app(
+        &fixture,
+        json!({}),
+        Some("modified.txt"),
+        vec![open("TAIL"), press(b"q")],
+    );
     let unwrapped = run_app(
         &fixture,
         json!({"ui": {"wrap": false}}),
         Some("modified.txt"),
-        b"q",
+        vec![open("TAIL"), press(b"q")],
     );
     assert!(wrapped.success, "wrapped app failed: {}", wrapped.output);
     assert!(
@@ -252,7 +268,7 @@ fn theme_from_config_overrides_terminal_detection() {
         &fixture,
         json!({"ui": {"theme": "catppuccin-latte"}}),
         Some("modified.txt"),
-        b"q",
+        vec![open("TWO"), press(b"q")],
     );
 
     assert!(run.success, "codediff did not exit cleanly: {}", run.output);
@@ -265,8 +281,18 @@ fn theme_from_config_overrides_terminal_detection() {
 #[test]
 fn explorer_width_from_config_moves_the_pane_boundary() {
     let fixture = Fixture::new("explorer-width");
-    let narrow = run_app(&fixture, json!({"ui": {"explorer_width": 20}}), None, b"q");
-    let wide = run_app(&fixture, json!({"ui": {"explorer_width": 50}}), None, b"q");
+    let narrow = run_app(
+        &fixture,
+        json!({"ui": {"explorer_width": 20}}),
+        None,
+        vec![press(b"q")],
+    );
+    let wide = run_app(
+        &fixture,
+        json!({"ui": {"explorer_width": 50}}),
+        None,
+        vec![press(b"q")],
+    );
     assert!(narrow.success, "narrow explorer failed: {}", narrow.output);
     assert!(wide.success, "wide explorer failed: {}", wide.output);
 
@@ -285,7 +311,7 @@ fn explorer_mode_from_config_changes_the_file_lines() {
         &fixture,
         json!({"ui": {"explorer_mode": "list"}}),
         None,
-        b"q",
+        vec![press(b"q")],
     );
 
     assert!(run.success, "codediff did not exit cleanly: {}", run.output);
@@ -305,12 +331,17 @@ fn whitespace_policy_from_config_changes_diff_highlighting() {
     let fixture = Fixture::new("whitespace");
     fixture.write("modified.txt", "one\n two \nthree\n");
 
-    let strict = run_app(&fixture, json!({}), Some("modified.txt"), b"q");
+    let strict = run_app(
+        &fixture,
+        json!({}),
+        Some("modified.txt"),
+        vec![open("two"), press(b"q")],
+    );
     let ignored = run_app(
         &fixture,
         json!({"diff": {"ignore_trim_whitespace": true}}),
         Some("modified.txt"),
-        b"q",
+        vec![open("two"), press(b"q")],
     );
     assert!(strict.success, "strict diff failed: {}", strict.output);
     assert!(
@@ -339,7 +370,7 @@ fn quit_keybinding_from_config_exits_on_the_configured_key() {
         &fixture,
         json!({"keybindings": {"quit": ["x"]}}),
         Some("modified.txt"),
-        b"x",
+        vec![open("TWO"), press(b"x")],
     );
 
     assert!(

@@ -1,16 +1,10 @@
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 use serde_json::json;
 
-use super::{Fixture, Run, run_app_steps, screen};
-
-fn steps<'a>(items: &[(&'a [u8], u64)]) -> Vec<(&'a [u8], Duration)> {
-    items
-        .iter()
-        .map(|(keys, pause)| (*keys, Duration::from_millis(*pause)))
-        .collect()
-}
+use super::{Fixture, Run, hides, open, press, run_app, screen, shows, until};
 
 fn repeated(key: u8, count: usize) -> Vec<u8> {
     vec![key; count]
@@ -29,11 +23,11 @@ fn assert_success(run: &Run) {
 fn move_down_keybinding_opens_the_selected_file() {
     let fixture = Fixture::new("key-move-down");
     fixture.write("modified.txt", "one\nCUSTOM_DOWN\nthree\n");
-    let run = run_app_steps(
+    let run = run_app(
         &fixture,
         json!({"keybindings": {"move_down": ["n"]}}),
         Some("modified.txt"),
-        &steps(&[(b"n\r", 500), (b"q", 0)]),
+        vec![press(b"j\r"), shows(b"n\r", "CUSTOM_DOWN"), press(b"q")],
     );
 
     assert_success(&run);
@@ -49,11 +43,16 @@ fn move_up_keybinding_scrolls_back_to_the_first_line() {
     fixture.write("modified.txt", &text);
     let down = repeated(b'j', 20);
     let up = repeated(b'p', 20);
-    let run = run_app_steps(
+    let run = run_app(
         &fixture,
         json!({"keybindings": {"move_up": ["p"]}}),
         Some("modified.txt"),
-        &steps(&[(&down, 200), (&up, 200), (b"q", 0)]),
+        vec![
+            open("KEY_UP_LINE_01"),
+            press(&down),
+            shows(&up, "KEY_UP_LINE_01"),
+            press(b"q"),
+        ],
     );
 
     assert_success(&run);
@@ -64,7 +63,7 @@ fn move_up_keybinding_scrolls_back_to_the_first_line() {
 fn open_keybinding_expands_a_directory() {
     let fixture = Fixture::new("key-open");
     fixture.write("aaa/inside.txt", "inside directory\n");
-    let run = run_app_steps(
+    let run = run_app(
         &fixture,
         json!({
             "keybindings": {
@@ -73,7 +72,7 @@ fn open_keybinding_expands_a_directory() {
             }
         }),
         Some("aaa"),
-        &steps(&[(b"no", 500), (b"q", 0)]),
+        vec![press(b"j\r"), shows(b"no", "inside.txt"), press(b"q")],
     );
 
     assert_success(&run);
@@ -87,7 +86,14 @@ fn open_keybinding_expands_a_directory() {
 fn toggle_layout_keybinding_switches_the_running_view() {
     let fixture = Fixture::new("key-layout");
     fixture.write("modified.txt", "one\nTWO\nthree\n");
-    let toggled = run_app_steps(
+    let default = run_app(
+        &fixture,
+        json!({}),
+        Some("modified.txt"),
+        vec![open("TWO"), press(b"q")],
+    );
+    let default_bars = screen(&default).vertical_bar_columns().len();
+    let toggled = run_app(
         &fixture,
         json!({
             "keybindings": {
@@ -96,21 +102,18 @@ fn toggle_layout_keybinding_switches_the_running_view() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"fv", 400), (b"q", 0)]),
-    );
-    let default = run_app_steps(
-        &fixture,
-        json!({}),
-        Some("modified.txt"),
-        &steps(&[(b"q", 0)]),
+        vec![
+            open("TWO"),
+            until(b"fv", "fewer pane dividers", move |screen| {
+                screen.vertical_bar_columns().len() < default_bars
+            }),
+            press(b"q"),
+        ],
     );
 
     assert_success(&toggled);
     assert_success(&default);
-    assert!(
-        screen(&toggled).vertical_bar_columns().len()
-            < screen(&default).vertical_bar_columns().len()
-    );
+    assert!(screen(&toggled).vertical_bar_columns().len() < default_bars);
 }
 
 #[test]
@@ -118,7 +121,14 @@ fn toggle_wrap_keybinding_changes_the_running_view() {
     let fixture = Fixture::new("key-wrap");
     let long = "0123456789 ".repeat(12);
     fixture.write("modified.txt", &format!("one\nKEY_WRAP {long}\nTAIL\n"));
-    let toggled = run_app_steps(
+    let default = run_app(
+        &fixture,
+        json!({}),
+        Some("modified.txt"),
+        vec![open("TAIL"), press(b"q")],
+    );
+    let default_tail = screen(&default).line_of("TAIL");
+    let toggled = run_app(
         &fixture,
         json!({
             "keybindings": {
@@ -127,28 +137,30 @@ fn toggle_wrap_keybinding_changes_the_running_view() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"fz", 400), (b"q", 0)]),
-    );
-    let default = run_app_steps(
-        &fixture,
-        json!({}),
-        Some("modified.txt"),
-        &steps(&[(b"q", 0)]),
+        vec![
+            open("TAIL"),
+            until(b"fz", "TAIL on an earlier line", move |screen| {
+                screen
+                    .line_of("TAIL")
+                    .is_some_and(|line| Some(line) < default_tail)
+            }),
+            press(b"q"),
+        ],
     );
 
     assert_success(&toggled);
     assert_success(&default);
-    assert!(screen(&toggled).line_of("TAIL") < screen(&default).line_of("TAIL"));
+    assert!(screen(&toggled).line_of("TAIL") < default_tail);
 }
 
 #[test]
 fn toggle_explorer_mode_keybinding_switches_to_list_mode() {
     let fixture = Fixture::new("key-explorer-mode");
-    let run = run_app_steps(
+    let run = run_app(
         &fixture,
         json!({"keybindings": {"toggle_explorer_mode": ["m"]}}),
         None,
-        &steps(&[(b"m", 400), (b"q", 0)]),
+        vec![shows(b"m", "deep/only/one/chain/leaf.txt"), press(b"q")],
     );
 
     assert_success(&run);
@@ -160,7 +172,8 @@ fn toggle_explorer_mode_keybinding_switches_to_list_mode() {
 #[test]
 fn stage_keybinding_stages_after_focus_previous() {
     let fixture = Fixture::new("key-stage");
-    let run = run_app_steps(
+    let dir = fixture.dir.clone();
+    let run = run_app(
         &fixture,
         json!({
             "keybindings": {
@@ -169,7 +182,12 @@ fn stage_keybinding_stages_after_focus_previous() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"u", 200), (b"s", 800), (b"q", 0)]),
+        vec![
+            open("TWO"),
+            press(b"u"),
+            until(b"s", "modified.txt staged", move |_| staged(&dir)),
+            press(b"q"),
+        ],
     );
 
     assert_success(&run);
@@ -184,7 +202,7 @@ fn focus_next_keybinding_returns_to_the_diff_view() {
         .collect::<String>();
     fixture.write("modified.txt", &text);
     let down = repeated(b'n', 20);
-    let run = run_app_steps(
+    let run = run_app(
         &fixture,
         json!({
             "keybindings": {
@@ -194,7 +212,13 @@ fn focus_next_keybinding_returns_to_the_diff_view() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"u", 200), (b"o", 200), (&down, 500), (b"q", 0)]),
+        vec![
+            press(b"j\r"),
+            press(b"u"),
+            press(b"o"),
+            hides(&down, "KEY_FOCUS_LINE_01"),
+            press(b"q"),
+        ],
     );
 
     assert_success(&run);
@@ -208,31 +232,36 @@ fn horizontal_move_keybindings_change_the_scroll_position() {
     fixture.write("modified.txt", &format!("one\n{line}tail\n"));
     let right = repeated(b'r', 20);
     let left = repeated(b'l', 20);
-    let scrolled = run_app_steps(
+    let config = json!({
+        "ui": {"wrap": false},
+        "keybindings": {
+            "focus_next": ["f"],
+            "move_right": ["r"],
+            "move_left": ["l"]
+        }
+    });
+    let scrolled = run_app(
         &fixture,
-        json!({
-            "ui": {"wrap": false},
-            "keybindings": {
-                "focus_next": ["f"],
-                "move_right": ["r"],
-                "move_left": ["l"]
-            }
-        }),
+        config.clone(),
         Some("modified.txt"),
-        &steps(&[(b"f", 200), (&right, 400), (b"q", 0)]),
+        vec![
+            open("HORIZONTAL_KEY_MARKER"),
+            press(b"f"),
+            hides(&right, "HORIZONTAL_KEY_MARKER"),
+            press(b"q"),
+        ],
     );
-    let restored = run_app_steps(
+    let restored = run_app(
         &fixture,
-        json!({
-            "ui": {"wrap": false},
-            "keybindings": {
-                "focus_next": ["f"],
-                "move_right": ["r"],
-                "move_left": ["l"]
-            }
-        }),
+        config,
         Some("modified.txt"),
-        &steps(&[(b"f", 100), (&right, 100), (&left, 400), (b"q", 0)]),
+        vec![
+            open("HORIZONTAL_KEY_MARKER"),
+            press(b"f"),
+            hides(&right, "HORIZONTAL_KEY_MARKER"),
+            shows(&left, "HORIZONTAL_KEY_MARKER"),
+            press(b"q"),
+        ],
     );
 
     assert_success(&scrolled);
@@ -246,31 +275,36 @@ fn horizontal_endpoint_keybindings_reach_start_and_end() {
     let fixture = Fixture::new("key-endpoints");
     let line = format!("ENDPOINT_KEY_MARKER {}\n", "x".repeat(120));
     fixture.write("modified.txt", &format!("one\n{line}tail\n"));
-    let at_end = run_app_steps(
+    let config = json!({
+        "ui": {"wrap": false},
+        "keybindings": {
+            "focus_next": ["f"],
+            "end": ["e"],
+            "start": ["a"]
+        }
+    });
+    let at_end = run_app(
         &fixture,
-        json!({
-            "ui": {"wrap": false},
-            "keybindings": {
-                "focus_next": ["f"],
-                "end": ["e"],
-                "start": ["a"]
-            }
-        }),
+        config.clone(),
         Some("modified.txt"),
-        &steps(&[(b"f", 200), (b"e", 400), (b"q", 0)]),
+        vec![
+            open("ENDPOINT_KEY_MARKER"),
+            press(b"f"),
+            hides(b"e", "ENDPOINT_KEY_MARKER"),
+            press(b"q"),
+        ],
     );
-    let at_start = run_app_steps(
+    let at_start = run_app(
         &fixture,
-        json!({
-            "ui": {"wrap": false},
-            "keybindings": {
-                "focus_next": ["f"],
-                "end": ["e"],
-                "start": ["a"]
-            }
-        }),
+        config,
         Some("modified.txt"),
-        &steps(&[(b"f", 100), (b"e", 100), (b"a", 400), (b"q", 0)]),
+        vec![
+            open("ENDPOINT_KEY_MARKER"),
+            press(b"f"),
+            hides(b"e", "ENDPOINT_KEY_MARKER"),
+            shows(b"a", "ENDPOINT_KEY_MARKER"),
+            press(b"q"),
+        ],
     );
 
     assert_success(&at_end);
@@ -279,18 +313,21 @@ fn horizontal_endpoint_keybindings_reach_start_and_end() {
     assert!(screen(&at_start).contains("ENDPOINT_KEY_MARKER"));
 }
 
+fn staged(dir: &Path) -> bool {
+    let output = Command::new("git")
+        .args(["diff", "--cached", "--name-only"])
+        .current_dir(dir)
+        .output()
+        .expect("checking staged files");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|path| path == "modified.txt")
+}
+
 fn wait_for_staged(fixture: &Fixture) -> bool {
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     while std::time::Instant::now() < deadline {
-        let output = Command::new("git")
-            .args(["diff", "--cached", "--name-only"])
-            .current_dir(&fixture.dir)
-            .output()
-            .expect("checking staged files");
-        if String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .any(|path| path == "modified.txt")
-        {
+        if staged(&fixture.dir) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));

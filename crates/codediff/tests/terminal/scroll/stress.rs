@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn_after, wait_for_screen, written};
 
 #[derive(Debug, Default)]
 struct Peak {
@@ -94,7 +94,12 @@ fn large_scroll_workload_stays_responsive() {
 
     let reader = pty.master.try_clone_reader().expect("reading the pty");
     let (collector, output) = collect(reader);
-    drawn(&output);
+    wait_for_screen(
+        &output,
+        (100, 24),
+        "the Explorer listing sample.txt",
+        |screen| screen.contains("sample.txt"),
+    );
     let stop_sampling = Arc::new(AtomicBool::new(false));
     let peak = Arc::new(Mutex::new(Peak::default()));
     let sampler_stop = Arc::clone(&stop_sampling);
@@ -111,12 +116,17 @@ fn large_scroll_workload_stays_responsive() {
     });
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
-    let before_open = output.lock().expect("output lock").bytes.len();
     writer
-        .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m\x1b[<0;70;2M\x1b[<0;70;2m\x1b[C")
-        .expect("opening the changed file and focusing the diff");
+        .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m")
+        .expect("opening the changed file");
     writer.flush().expect("flushing the file click");
-    drawn_after(&output, before_open);
+    wait_for_screen(&output, (100, 24), "the opened diff", |screen| {
+        screen.contains("changed 0002")
+    });
+    writer
+        .write_all(b"\x1b[<0;70;2M\x1b[<0;70;2m\x1b[C")
+        .expect("focusing the diff");
+    writer.flush().expect("flushing the diff focus");
 
     let started = Instant::now();
     for _ in 0..20 {

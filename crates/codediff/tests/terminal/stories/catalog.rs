@@ -3,8 +3,19 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::super::common::{all_output, send_and_wait};
-use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, written};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, wait_for_screen, written};
+use super::super::screen::Screen;
+
+const SIZE: (usize, usize) = (100, 24);
+
+fn send(writer: &mut dyn Write, keys: &[u8]) {
+    writer.write_all(keys).expect("sending input");
+    writer.flush().expect("flushing input");
+}
+
+fn shows_all(texts: &'static [&'static str]) -> impl Fn(&Screen) -> bool {
+    move |screen| texts.iter().all(|text| screen.contains(text))
+}
 
 #[test]
 fn story_catalog_filters_opens_switches_resets_and_returns() {
@@ -24,49 +35,70 @@ fn story_catalog_filters_opens_switches_resets_and_returns() {
 
     let reader = pty.master.try_clone_reader().expect("reading the pty");
     let (collector, output) = collect(reader);
-    drawn(&output);
-    assert!(all_output(&output).contains("STORIES"));
+    wait_for_screen(&output, SIZE, "the catalog", shows_all(&["STORIES"]));
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
-    let search = send_and_wait(&mut writer, &output, b"/");
-    assert!(search.contains("FILTER"), "filter did not open: {search:?}");
-    let filtered = send_and_wait(&mut writer, &output, b"edge-matrix");
-    assert!(
-        filtered.contains("edge-matrix"),
-        "filter text did not arrive: {filtered:?}"
+    send(&mut writer, b"/");
+    wait_for_screen(&output, SIZE, "the filter", shows_all(&["FILTER"]));
+    send(&mut writer, b"edge-matrix");
+    // The filter has applied once a story it excludes is gone.
+    wait_for_screen(&output, SIZE, "the filtered list", |screen| {
+        screen.contains("edge-matrix") && !screen.contains("explorer/empty")
+    });
+
+    send(&mut writer, b"\r");
+    wait_for_screen(
+        &output,
+        SIZE,
+        "the opened story",
+        shows_all(&["fn edge_matrix()"]),
     );
 
-    let opened = send_and_wait(&mut writer, &output, b"\r");
-    assert!(
-        opened.contains("fn edge_matrix()"),
-        "story did not open: {opened:?}"
+    send(&mut writer, b"]");
+    wait_for_screen(
+        &output,
+        SIZE,
+        "the next story",
+        shows_all(&["inline/unchanged", "same in one column"]),
+    );
+    send(&mut writer, b"[");
+    wait_for_screen(
+        &output,
+        SIZE,
+        "the previous story",
+        shows_all(&["fn edge_matrix()"]),
+    );
+    send(&mut writer, b"r\x1b");
+    wait_for_screen(
+        &output,
+        SIZE,
+        "the catalog again",
+        shows_all(&["Welcome", "explorer/empty"]),
     );
 
-    let next = send_and_wait(&mut writer, &output, b"]");
-    assert!(
-        next.contains("inline/unchanged") && next.contains("same in one column"),
-        "next story did not open: {next:?}"
+    // Queued keys all go to the frame drawn before them, so the filter has
+    // to be on screen before its text is typed.
+    send(&mut writer, b"/");
+    wait_for_screen(&output, SIZE, "the filter", shows_all(&["FILTER"]));
+    send(&mut writer, b"explorer/list");
+    wait_for_screen(&output, SIZE, "the filtered list", |screen| {
+        screen.contains("explorer/list") && !screen.contains("explorer/empty")
+    });
+    send(&mut writer, b"\r");
+    wait_for_screen(
+        &output,
+        SIZE,
+        "the Explorer story's setup keys applied",
+        shows_all(&["src/app.rs"]),
     );
-    let previous = send_and_wait(&mut writer, &output, b"[");
-    assert!(
-        previous.contains("edge_matrix"),
-        "previous story did not open: {previous:?}"
+    send(&mut writer, b"\x1b");
+    // A lone Esc must be read before `q`, or the pair parses as Alt+q.
+    wait_for_screen(
+        &output,
+        SIZE,
+        "the catalog after the Explorer story",
+        |screen| !screen.contains("src/app.rs"),
     );
-    let _ = send_and_wait(&mut writer, &output, b"r");
-    let catalog = send_and_wait(&mut writer, &output, b"\x1b");
-    assert!(
-        catalog.contains("Welcome") && catalog.contains("explorer/empty"),
-        "catalog did not return: {catalog:?}"
-    );
-
-    let _ = send_and_wait(&mut writer, &output, b"/");
-    let _ = send_and_wait(&mut writer, &output, b"explorer/list");
-    let explorer = send_and_wait(&mut writer, &output, b"\r");
-    assert!(
-        explorer.contains("src/app.rs"),
-        "Explorer setup keys were not applied: {explorer:?}"
-    );
-    let _ = send_and_wait(&mut writer, &output, b"\x1b");
 
     writer.write_all(b"q").expect("quitting");
     writer.flush().expect("flushing quit");

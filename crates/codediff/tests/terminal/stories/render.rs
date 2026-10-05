@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use super::super::pty::{
-    ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, on_a_terminal, written,
+    ENTER_ALT, LEAVE_ALT, collect, drawn, on_a_terminal, wait_for_screen, written,
 };
 #[cfg(unix)]
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -287,11 +287,6 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
     let reader = pty.master.try_clone_reader().expect("reading the pty");
     let (collector, output) = collect(reader);
     drawn(&output);
-    let before = output
-        .lock()
-        .expect("nothing else holds the lock")
-        .bytes
-        .len();
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
     writer
@@ -306,7 +301,11 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
             pixel_height: 0,
         })
         .expect("resizing the pty");
-    drawn_after(&output, before);
+    // The vertical viewport moves into the wrapped continuation, and the
+    // horizontal one moves too.
+    wait_for_screen(&output, (100, 30), "both viewports moved", |screen| {
+        screen.contains("789abcdef") && screen.contains("inline line")
+    });
 
     writer.write_all(b"q").expect("quitting");
     writer.flush().expect("flushing quit");
@@ -324,14 +323,5 @@ fn a_story_accepts_keys_wheels_resize_and_quit() {
 
     assert!(status.success(), "{output}");
     assert!(output.contains(ENTER_ALT));
-    let resized_frame = output.rsplit("\u{1b}[2J").next().unwrap_or(&output);
-    assert!(
-        resized_frame.contains("789abcdef"),
-        "the vertical viewport never moved into the wrapped continuation: {output:?}"
-    );
-    assert!(
-        resized_frame.contains("inline line"),
-        "the horizontal viewport never moved: {output:?}"
-    );
     assert!(output.contains(LEAVE_ALT));
 }

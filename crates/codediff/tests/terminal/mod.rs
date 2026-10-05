@@ -1,6 +1,5 @@
 #![cfg(unix)]
 
-mod common;
 mod config;
 mod explorer_click;
 mod lifecycle;

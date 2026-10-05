@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
+use super::screen::Screen;
+
 /// Everything the child has written, and when it last wrote.
 #[derive(Default)]
 pub struct Output {
@@ -49,6 +51,34 @@ pub fn drawn_after(output: &Arc<Mutex<Output>>, before: usize) {
             }
         }
         assert!(Instant::now() < deadline, "the child never drew anything");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Blocks until the replayed `width` x `height` screen satisfies `check`.
+///
+/// The app loads files, diffs and syntax off the UI thread, so a quiet
+/// terminal does not mean a frame is final. Waiting for the state itself does.
+pub fn wait_for_screen(
+    output: &Arc<Mutex<Output>>,
+    (width, height): (usize, usize),
+    what: &str,
+    check: impl Fn(&Screen) -> bool,
+) -> Screen {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let screen = {
+            let held = output.lock().expect("nothing else holds the lock");
+            Screen::parse_sized(&String::from_utf8_lossy(&held.bytes), width, height)
+        };
+        if check(&screen) {
+            return screen;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the screen never showed {what}:\n{}",
+            screen.text()
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
 }
