@@ -1,16 +1,17 @@
-//! Loads the selected file and chooses its view.
+//! Loads the selected file or directory and chooses its view.
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use file_types::{DiffType, DiffVersion, File, Rev};
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, component, rsx,
-    use_context, use_effect, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, Text, TextProps,
+    component, rsx, use_context, use_effect, use_ref, use_state,
 };
 use pipeline::diff::DiffContent;
 
 use super::context::{Context, Ui};
+use super::diff_cards::{DiffCards, DiffCardsProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
 use crate::view::terminal_lines::TerminalLine;
@@ -40,7 +41,11 @@ impl ViewStateHistory {
 
 fn use_diff_content(scope: &mut Scope, ctx: &Context) -> Option<Rc<DiffContent>> {
     let (content, set_content) = use_state(scope, || None::<Rc<DiffContent>>);
-    let selected_file = ctx.file.as_ref().map(Rc::clone);
+    let selected_file = if ctx.directory.is_none() {
+        ctx.file.as_ref().map(Rc::clone)
+    } else {
+        None
+    };
     let file_for_request = selected_file.as_ref().map(Rc::clone);
     let diff_service = ctx.diff_service.as_ref().map(Rc::clone);
     let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
@@ -130,6 +135,7 @@ fn layout_listener(
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let content = use_diff_content(scope, &ctx);
+    let directory_contents = use_directory_diffs(scope, &ctx);
     let (view_layout, set_view_layout) = use_state(scope, || match ctx.config.ui.layout {
         config::ViewLayout::SideBySide => DiffType::SideBySide,
         config::ViewLayout::Inline => DiffType::Inline,
@@ -145,14 +151,32 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         content.as_deref(),
     );
 
-    let is_diff = matches!(content.as_deref(), Some(DiffContent::Diff(_)));
+    let is_diff =
+        ctx.directory.is_some() || matches!(content.as_deref(), Some(DiffContent::Diff(_)));
     let toggle = layout_listener(scope, is_diff, set_view_layout, set_wrap);
 
-    rsx! {
-        Column {
-            listeners: toggle,
-            layout: Layout { grow: 1, ..Default::default() },
-            ..,
+    let view = if let Some(directory) = ctx.directory.as_ref() {
+        let theme = *ctx.theme;
+        match directory_contents {
+            Some(contents) => rsx! {
+                DiffCards {
+                    key: Rc::as_ptr(directory) as usize,
+                    contents: contents,
+                    view_layout: view_layout,
+                    wrap: wrap,
+                }
+            },
+            None => rsx! {
+                Text {
+                    layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
+                    text: "Loading directory diffs…".into(),
+                    style: theme.normal,
+                    ..
+                }
+            },
+        }
+    } else {
+        rsx! {
             DiffViewerContainer {
                 content: content,
                 view_layout: view_layout,
@@ -162,7 +186,84 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
                 auto_focus: true,
             }
         }
+    };
+
+    rsx! {
+        Column {
+            listeners: toggle,
+            layout: Layout { grow: 1, ..Default::default() },
+            ..,
+            { view }
+        }
     }
+}
+
+fn use_directory_diffs(scope: &mut Scope, ctx: &Context) -> Option<Rc<Vec<Rc<DiffContent>>>> {
+    let directory = ctx.directory.as_ref().map(Rc::clone);
+    let directory_id = directory
+        .as_ref()
+        .map(|directory| Rc::as_ptr(directory) as usize);
+    let service = ctx.diff_service.as_ref().map(Rc::clone);
+    let (contents, set_contents) = use_state(scope, || None::<(usize, Rc<Vec<Rc<DiffContent>>>)>);
+    use_effect(scope, directory_id, move || {
+        set_contents(&|_| None);
+        let Some(directory) = directory else {
+            return;
+        };
+        let directory_id = Rc::as_ptr(&directory) as usize;
+        let set_contents = move |contents: Rc<Vec<Rc<DiffContent>>>| {
+            set_contents(&move |_| Some((directory_id, Rc::clone(&contents))));
+        };
+        let files = Rc::new(
+            directory
+                .files
+                .iter()
+                .filter(|file| file.is_one_sided().is_none())
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
+        let Some(service) = service else {
+            set_contents(Rc::new(Vec::new()));
+            return;
+        };
+        load_directory_diffs(service, files, set_contents);
+    });
+
+    contents
+        .filter(|(loaded_directory_id, _)| Some(*loaded_directory_id) == directory_id)
+        .map(|(_, contents)| contents)
+}
+
+fn load_directory_diffs(
+    service: Rc<crate::services::diff::DiffService>,
+    files: Rc<Vec<File>>,
+    set_contents: impl Fn(Rc<Vec<Rc<DiffContent>>>) + 'static,
+) {
+    let Some(mut expected_file) = files.first().cloned() else {
+        set_contents(Rc::new(Vec::new()));
+        return;
+    };
+    let mut index = 0;
+    let mut loaded = Vec::new();
+    service.get(&expected_file).subscribe(move |response| {
+        if response.file != expected_file {
+            return;
+        }
+        if let Ok(content) = response.content
+            && content.file() == &expected_file
+            && matches!(&content, DiffContent::Diff(_))
+        {
+            loaded.push(Rc::new(content));
+        }
+        index += 1;
+        if let Some(file) = files.get(index) {
+            expected_file = file.clone();
+            service.refresh(&expected_file);
+        } else {
+            let contents = Rc::new(std::mem::take(&mut loaded));
+            set_contents(contents);
+        }
+    });
 }
 
 fn refresh_affects_file(refresh: watcher::Refresh, file: &File) -> bool {

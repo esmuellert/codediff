@@ -21,7 +21,7 @@ pub(crate) use crate::view::terminal_lines::WrappedViewLine;
 pub use crate::view::terminal_lines::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
-pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
+pub use context::{Context, DirectorySelection, Ui, UiProps, UiProvider, UiProviderProps};
 pub use diff_card::{DiffCard, DiffCardProps};
 pub use diff_cards::{DiffCards, DiffCardsProps};
 pub use explorer::{Explorer, ExplorerProps, letter};

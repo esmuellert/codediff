@@ -11,6 +11,7 @@ use pipeline::diff::DiffContent;
 pub enum StoryComponent {
     Welcome,
     Explorer,
+    ExplorerCards,
     SideBySide,
     Inline,
     SingleFile,
@@ -41,6 +42,10 @@ impl StoryDefinition {
 pub enum StoryFixture {
     Welcome,
     Explorer(Vec<File>),
+    ExplorerCards {
+        files: Vec<File>,
+        diffs: Vec<DiffContent>,
+    },
     SideBySide(Rc<DiffContent>),
     Inline(Rc<DiffContent>),
     SingleFile(Rc<DiffContent>),
@@ -53,6 +58,7 @@ impl StoryFixture {
         match self {
             Self::Welcome => StoryComponent::Welcome,
             Self::Explorer(_) => StoryComponent::Explorer,
+            Self::ExplorerCards { .. } => StoryComponent::ExplorerCards,
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,
@@ -69,7 +75,15 @@ impl StoryFixture {
                 | Self::SingleFile(_)
                 | Self::Card(_)
                 | Self::Cards(_)
+                | Self::ExplorerCards { .. }
         )
+    }
+
+    pub fn initial_diff_response_count(&self) -> usize {
+        match self {
+            Self::ExplorerCards { diffs, .. } => diffs.len(),
+            _ => 0,
+        }
     }
 
     pub fn initial_syntax_response_count(&self) -> usize {
@@ -91,6 +105,16 @@ impl StoryFixture {
                 .iter()
                 .map(|content| {
                     let DiffContent::Diff(diff) = content.as_ref() else {
+                        unreachable!()
+                    };
+                    usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())
+                        + usize::from(!diff.alignment.lines(DiffVersion::Modified).is_empty())
+                })
+                .sum(),
+            Self::ExplorerCards { diffs, .. } => diffs
+                .iter()
+                .map(|content| {
+                    let DiffContent::Diff(diff) = content else {
                         unreachable!()
                     };
                     usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())

@@ -51,6 +51,24 @@ impl DiffWorker {
             .expect("the diff thread starts");
         Self { requests }
     }
+
+    /// Mock worker that replays a response for each matching file request.
+    pub fn mock_by_file(contents: Vec<DiffContent>, emitter: Emitter<Response>) -> Self {
+        let job = move |file: File| {
+            let content = contents
+                .iter()
+                .find(|content| content.file() == &file)
+                .cloned()
+                .ok_or_else(|| format!("no mock diff for {}", file.path()));
+            emitter.send(Response { file, content })
+        };
+        let (requests, worker_loop) = Slot::new(job);
+        thread::Builder::new()
+            .name("diff-canned".to_owned())
+            .spawn(worker_loop)
+            .expect("the diff thread starts");
+        Self { requests }
+    }
 }
 
 impl Worker for DiffWorker {

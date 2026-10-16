@@ -258,7 +258,8 @@ pub(crate) fn SideBySide(
                     horizontal: true,
                     vertical: false,
                     wheel_step: 0,
-                    write_metrics: viewport.write_horizontal_metrics,
+                    write_metrics: viewport.write_horizontal_metrics
+                        && original_horizontal_scroll_extent >= modified_horizontal_scroll_extent,
                     content_width: Some(
                         original_horizontal_scroll_extent
                             .saturating_add(u32::from(original_width)),
@@ -287,7 +288,8 @@ pub(crate) fn SideBySide(
                     horizontal: true,
                     vertical: false,
                     wheel_step: 0,
-                    write_metrics: viewport.write_horizontal_metrics,
+                    write_metrics: viewport.write_horizontal_metrics
+                        && modified_horizontal_scroll_extent > original_horizontal_scroll_extent,
                     content_width: Some(
                         modified_horizontal_scroll_extent
                             .saturating_add(u32::from(modified_width)),

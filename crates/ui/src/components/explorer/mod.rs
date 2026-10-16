@@ -6,7 +6,7 @@ mod entry;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use file_types::File;
+use file_types::{File, RepoPath, Revs};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, Scroll, ScrollOffset,
     ScrollProps, component, rsx, use_context, use_effect, use_exit, use_measure, use_ref,
@@ -15,7 +15,7 @@ use loom::{
 
 use self::build::{Node, directory_key, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
-use super::context::Ui;
+use super::context::{DirectorySelection, Ui};
 use crate::keybindings::Action;
 use crate::services::version_control::VersionControlService;
 
@@ -26,6 +26,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let set_file = ctx.set_file;
+    let set_directory = ctx.set_directory;
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let repo = Rc::clone(&ctx.repo);
     let files_service = ctx.files_service.as_ref().map(Rc::clone);
@@ -46,6 +47,12 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                     let files_for_selection = Rc::clone(&matching_files);
                     set_file(&move |selected| {
                         matching_selected_file(selected, &files_for_selection)
+                    });
+                }
+                if let Some(set_directory) = set_directory {
+                    let files_for_selection = Rc::clone(&matching_files);
+                    set_directory(&move |selected| {
+                        matching_selected_directory(selected.as_ref(), &files_for_selection)
                     });
                 }
                 set_files(&move |_| Rc::clone(&matching_files));
@@ -104,6 +111,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let selected_node = nodes.get(selected_line as usize).cloned();
     let nodes_click = Rc::clone(&nodes);
     let nodes_keys = Rc::clone(&nodes);
+    let files_for_keys = Rc::clone(&files);
+    let files_for_mouse = Rc::clone(&files);
     let keybindings = Rc::clone(&ctx.keybindings);
     let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
@@ -114,14 +123,15 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         .on_key(move |k| match k {
             k if keybindings.matches(Action::MoveDown, k) => {
                 let nodes = Rc::clone(&nodes_keys);
+                let files = Rc::clone(&files_for_keys);
                 let scroll = scroll_for_keys.clone();
                 set_selected_line(&move |selected_line| {
                     let next = selected_line
                         .saturating_add(1)
                         .min(catalog_line_count.saturating_sub(1));
                     scroll.keep_y_visible(next, SCROLLOFF);
-                    if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
-                        open_file(file, set_file);
+                    if let Some(node) = nodes.get(next as usize) {
+                        select_node(node, &files, set_file, set_directory);
                     }
                     next
                 });
@@ -129,12 +139,13 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             k if keybindings.matches(Action::MoveUp, k) => {
                 let nodes = Rc::clone(&nodes_keys);
+                let files = Rc::clone(&files_for_keys);
                 let scroll = scroll_for_keys.clone();
                 set_selected_line(&move |selected_line| {
                     let next = selected_line.saturating_sub(1);
                     scroll.keep_y_visible(next, SCROLLOFF);
-                    if let Some(Node::File { file, .. }) = nodes.get(next as usize) {
-                        open_file(file, set_file);
+                    if let Some(node) = nodes.get(next as usize) {
+                        select_node(node, &files, set_file, set_directory);
                     }
                     next
                 });
@@ -142,7 +153,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
             k if keybindings.matches(Action::Open, k) => {
                 if let Some(ref node) = selected_node {
-                    activate_node(node, set_folded, set_file);
+                    activate_node(node, set_folded, set_file, set_directory);
                 }
                 Bubble::Stop
             }
@@ -172,10 +183,10 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             let already_selected = line == selected_line;
             set_selected_line(&move |_| line);
             if let Some(node) = nodes_click.get(line as usize) {
-                let should_activate = matches!(node, Node::File { .. })
-                    || already_selected && matches!(node, Node::Directory { .. });
+                select_node(node, &files_for_mouse, set_file, set_directory);
+                let should_activate = already_selected && matches!(node, Node::Directory { .. });
                 if should_activate {
-                    activate_node(node, set_folded, set_file);
+                    activate_node(node, set_folded, set_file, set_directory);
                 }
             }
             Bubble::Stop
@@ -256,6 +267,7 @@ fn activate_node(
     node: &Node,
     set_folded: loom::SetState<HashSet<String>>,
     set_file: Option<loom::SetState<Option<Rc<File>>>>,
+    set_directory: Option<loom::SetState<Option<Rc<DirectorySelection>>>>,
 ) {
     match node {
         Node::Heading { .. } => {}
@@ -270,7 +282,46 @@ fn activate_node(
                 set
             });
         }
-        Node::File { file, .. } => open_file(file, set_file),
+        Node::File { file, .. } => {
+            if let Some(set_directory) = set_directory {
+                set_directory(&|_| None);
+            }
+            open_file(file, set_file);
+        }
+    }
+}
+
+fn select_node(
+    node: &Node,
+    files: &[File],
+    set_file: Option<loom::SetState<Option<Rc<File>>>>,
+    set_directory: Option<loom::SetState<Option<Rc<DirectorySelection>>>>,
+) {
+    match node {
+        Node::Heading { .. } => {
+            if let Some(set_directory) = set_directory {
+                set_directory(&|_| None);
+            }
+        }
+        Node::Directory { path, revs, .. } => {
+            if let Some(set_file) = set_file {
+                set_file(&|_| None);
+            }
+            if let Some(set_directory) = set_directory {
+                let directory = Rc::new(DirectorySelection {
+                    path: path.clone(),
+                    revs: revs.clone(),
+                    files: Rc::new(files_under_directory(path, revs, files)),
+                });
+                set_directory(&move |_| Some(Rc::clone(&directory)));
+            }
+        }
+        Node::File { file, .. } => {
+            if let Some(set_directory) = set_directory {
+                set_directory(&|_| None);
+            }
+            open_file(file, set_file);
+        }
     }
 }
 
@@ -294,6 +345,31 @@ fn matching_selected_file(selected: Option<Rc<File>>, files: &[File]) -> Option<
 
 fn same_file_entry(left: &File, right: &File) -> bool {
     left.path() == right.path() && left.revs().heading() == right.revs().heading()
+}
+
+fn files_under_directory(path: &RepoPath, revs: &Revs, files: &[File]) -> Vec<File> {
+    let prefix = format!("{}/", path.as_str());
+    files
+        .iter()
+        .filter(|file| file.revs() == revs.clone() && file.path().as_str().starts_with(&prefix))
+        .cloned()
+        .collect()
+}
+
+fn matching_selected_directory(
+    selected: Option<&Rc<DirectorySelection>>,
+    files: &[File],
+) -> Option<Rc<DirectorySelection>> {
+    let selected = selected?;
+    let matching_files = files_under_directory(&selected.path, &selected.revs, files);
+    if matching_files.is_empty() {
+        return None;
+    }
+    Some(Rc::new(DirectorySelection {
+        path: selected.path.clone(),
+        revs: selected.revs.clone(),
+        files: Rc::new(matching_files),
+    }))
 }
 
 pub fn find_by_identity(saved: Option<&str>, nodes: &[Node]) -> Option<usize> {

@@ -7,6 +7,7 @@ use super::super::fixtures::explorer::ExplorerFixture;
 const LIST_INITIAL_KEYS: &[KeyCombination] = &[key!(i)];
 const FOLDED_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(enter)];
 const SELECTED_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(j), key!(j)];
+const DIRECTORY_INITIAL_KEYS: &[KeyCombination] = &[key!(j)];
 
 pub const STORIES: &[StoryDefinition] = &[
     story("explorer/empty", "No changed files", &[], empty),
@@ -34,6 +35,15 @@ pub const STORIES: &[StoryDefinition] = &[
         SELECTED_INITIAL_KEYS,
         standard_files,
     ),
+    StoryDefinition {
+        id: "explorer/cards",
+        description: "Select a directory to review its changed files as cards",
+        component: StoryComponent::ExplorerCards,
+        compact: false,
+        snapshot_size: (100, 24),
+        initial_keys: DIRECTORY_INITIAL_KEYS,
+        make_fixture: directory_cards,
+    },
     story(
         "explorer/long-list",
         "Enough files to exercise viewport scrolling",
@@ -86,6 +96,48 @@ fn standard_files() -> Result<StoryFixture> {
         })
         .build();
     Ok(StoryFixture::Explorer(files))
+}
+
+fn directory_cards() -> Result<StoryFixture> {
+    let files = ExplorerFixture::new()
+        .changes(|group| {
+            group
+                .modified("src/app.rs", 2, 1)
+                .modified("src/button.rs", 1, 1)
+                .modified("src/panel.rs", 3, 0);
+        })
+        .build();
+    let mut diffs = Vec::with_capacity(files.len());
+    for file in &files {
+        let (original, modified): (&[&str], &[&str]) = match file.path().as_str() {
+            "src/app.rs" => (
+                &["fn app() {", "    let old_name = 1;", "}"],
+                &["fn app() {", "    let new_name = 2;", "}"],
+            ),
+            "src/button.rs" => (
+                &["pub fn button() {", "    old_button();", "}"],
+                &["pub fn button() {", "    new_button();", "}"],
+            ),
+            "src/panel.rs" => (
+                &["struct Panel {", "    old_field: bool,", "}"],
+                &[
+                    "struct Panel {",
+                    "    new_field: bool,",
+                    "    ready: bool,",
+                    "}",
+                ],
+            ),
+            _ => unreachable!("the directory-card fixture has a known file set"),
+        };
+        let changed =
+            pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())?;
+        let alignment = pipeline::diff::align(changed, original, modified)?;
+        diffs.push(pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
+            file: file.clone(),
+            alignment,
+        }));
+    }
+    Ok(StoryFixture::ExplorerCards { files, diffs })
 }
 
 fn long_list() -> Result<StoryFixture> {

@@ -9,29 +9,36 @@ use loom::{
     Bubble, Canvas, CanvasProps, Column, ColumnProps, Edges, Layout, Listeners, Node, Scope, Stack,
     StackProps, component, rsx, use_context, use_state,
 };
-use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 use super::context::Ui;
 
-fn draw_one_border(paint: &mut loom::Paint<'_>, rect: Rect, style: Style) {
+fn draw_one_border(paint: &mut loom::Paint<'_>, style: Style) {
+    let rect = paint.content_area();
     if rect.width < 2 || rect.height < 2 {
         return;
     }
-    let (left, right) = (rect.x, rect.right() - 1);
-    let (top, bottom) = (rect.y, rect.bottom() - 1);
+    let (left, top) = paint.origin();
+    let right = left.saturating_add(i64::from(rect.width) - 1);
+    let bottom = top.saturating_add(i64::from(rect.height) - 1);
     for x in left..=right {
-        paint.set(x, top, "─", style);
-        paint.set(x, bottom, "─", style);
+        set_border_cell(paint, x, top, "─", style);
+        set_border_cell(paint, x, bottom, "─", style);
     }
     for y in top..=bottom {
-        paint.set(left, y, "│", style);
-        paint.set(right, y, "│", style);
+        set_border_cell(paint, left, y, "│", style);
+        set_border_cell(paint, right, y, "│", style);
     }
-    paint.set(left, top, "╭", style);
-    paint.set(right, top, "╮", style);
-    paint.set(left, bottom, "╰", style);
-    paint.set(right, bottom, "╯", style);
+    set_border_cell(paint, left, top, "╭", style);
+    set_border_cell(paint, right, top, "╮", style);
+    set_border_cell(paint, left, bottom, "╰", style);
+    set_border_cell(paint, right, bottom, "╯", style);
+}
+
+fn set_border_cell(paint: &mut loom::Paint<'_>, x: i64, y: i64, symbol: &str, style: Style) {
+    if let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) {
+        paint.set(x, y, symbol, style);
+    }
 }
 
 #[component]
@@ -76,8 +83,7 @@ pub fn Border(scope: &mut Scope, layout: Layout, children: loom::Children) -> No
             Canvas {
                 layout: Layout { grow: 1, ..Default::default() },
                 paint: Rc::new(move |paint: &mut loom::Paint<'_>| {
-                    let area = paint.area();
-                    draw_one_border(paint, area, border_style);
+                    draw_one_border(paint, border_style);
                 }),
                 ..
             }

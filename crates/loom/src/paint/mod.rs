@@ -43,7 +43,8 @@ impl<'a> Paint<'a> {
     pub fn cells(&mut self) -> &mut Cells {
         self.cells
     }
-    /// This node's rectangle.
+    /// This node's screen rectangle, clipped to representable coordinates.
+    /// Use `content_area()` and `origin()` to draw geometry across scroll clips.
     pub fn area(&self) -> Rect {
         self.area
     }
@@ -55,7 +56,7 @@ impl<'a> Paint<'a> {
     pub fn content_area(&self) -> Rect {
         self.content
     }
-    /// The screen position of the node's unscrolled content origin.
+    /// The node's screen origin after every scroll transform.
     pub fn origin(&self) -> (i64, i64) {
         self.origin
     }

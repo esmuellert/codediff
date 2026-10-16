@@ -1,5 +1,6 @@
 mod build;
 mod common;
+mod directory_cards;
 mod entry;
 mod highlight;
 mod navigation;

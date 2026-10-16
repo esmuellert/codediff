@@ -13,6 +13,7 @@ use loom::testing::Harness;
 use loom::{Flow, Tree, deliver_input};
 use ui::Theme;
 use ui::components::Context as UiContext;
+use ui::services::diff::DiffService;
 use ui::services::files::FilesService;
 use ui::services::syntax::SyntaxService;
 
@@ -26,6 +27,7 @@ enum StoryEvent {
     #[cfg(unix)]
     Signal(i32),
     FilesReady(pipeline::files::Response),
+    DiffReady(Box<pipeline::diff::Response>),
     SyntaxReady(syntax::SyntaxResponse),
 }
 
@@ -34,7 +36,9 @@ struct StoryHost {
     events_tx: Sender<StoryEvent>,
     events_rx: Receiver<StoryEvent>,
     files_service: Option<Rc<FilesService>>,
+    diff_service: Option<Rc<DiffService>>,
     syntax_service: Option<Rc<SyntaxService>>,
+    initial_diff_response_count: usize,
     initial_syntax_response_count: usize,
 }
 
@@ -42,15 +46,17 @@ impl StoryHost {
     fn new(definition: &'static StoryDefinition) -> Result<(Self, StoryPreviewProps)> {
         let fixture = definition.create_fixture()?;
         let syntax = fixture.needs_syntax();
+        let initial_diff_response_count = fixture.initial_diff_response_count();
         let initial_syntax_response_count = fixture.initial_syntax_response_count();
-        let (files, content, contents) = match fixture {
-            StoryFixture::Welcome => (None, None, None),
-            StoryFixture::Explorer(files) => (Some(files), None, None),
+        let (files, content, contents, diffs) = match fixture {
+            StoryFixture::Welcome => (None, None, None, None),
+            StoryFixture::Explorer(files) => (Some(files), None, None, None),
+            StoryFixture::ExplorerCards { files, diffs } => (Some(files), None, None, Some(diffs)),
             StoryFixture::SideBySide(content)
             | StoryFixture::Inline(content)
             | StoryFixture::SingleFile(content)
-            | StoryFixture::Card(content) => (None, Some(content), None),
-            StoryFixture::Cards(contents) => (None, None, Some(contents)),
+            | StoryFixture::Card(content) => (None, Some(content), None, None),
+            StoryFixture::Cards(contents) => (None, None, Some(contents), None),
         };
 
         let (events_tx, events_rx) = mpsc::channel();
@@ -61,6 +67,15 @@ impl StoryHost {
             );
             Rc::new(FilesService::new(Rc::new(RefCell::new(worker)), Vec::new()))
         });
+        let diff_service = diffs.map(|diffs| {
+            let worker = pipeline::diff::DiffWorker::mock_by_file(
+                diffs,
+                channel::Emitter::new(events_tx.clone(), |response| {
+                    StoryEvent::DiffReady(Box::new(response))
+                }),
+            );
+            Rc::new(DiffService::new(Rc::new(RefCell::new(worker))))
+        });
         let syntax_service = syntax.then(|| {
             let worker = syntax::Syntax::start(channel::Emitter::new(
                 events_tx.clone(),
@@ -70,7 +85,7 @@ impl StoryHost {
         });
         let props = StoryPreviewProps {
             definition,
-            base_context: story_context(&files_service, &syntax_service),
+            base_context: story_context(&files_service, &diff_service, &syntax_service),
             content,
             contents,
             navigate: None,
@@ -81,7 +96,9 @@ impl StoryHost {
                 events_tx,
                 events_rx,
                 files_service,
+                diff_service,
                 syntax_service,
+                initial_diff_response_count,
                 initial_syntax_response_count,
             },
             props,
@@ -93,6 +110,14 @@ impl StoryHost {
             Ok(StoryEvent::FilesReady(response)) => Ok(response),
             Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
             Err(error) => Err(error).context("waiting for the story's file list"),
+        }
+    }
+
+    fn wait_for_diff(&self) -> Result<pipeline::diff::Response> {
+        match self.events_rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(StoryEvent::DiffReady(response)) => Ok(*response),
+            Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
+            Err(error) => Err(error).context("waiting for the story's file diff"),
         }
     }
 
@@ -114,6 +139,12 @@ impl StoryHost {
             harness.press(key);
             settle_harness(harness);
         }
+        if let Some(service) = &self.diff_service {
+            for _ in 0..self.initial_diff_response_count {
+                service.deliver(self.wait_for_diff()?);
+                settle_harness(harness);
+            }
+        }
         if let Some(service) = &self.syntax_service {
             for _ in 0..self.initial_syntax_response_count {
                 service.deliver(self.wait_for_syntax()?);
@@ -132,6 +163,12 @@ impl StoryHost {
         for &key in self.definition.initial_keys {
             tree.press(key);
             settle_story_tree(tree);
+        }
+        if let Some(service) = &self.diff_service {
+            for _ in 0..self.initial_diff_response_count {
+                service.deliver(self.wait_for_diff()?);
+                settle_story_tree(tree);
+            }
         }
         if let Some(service) = &self.syntax_service {
             for _ in 0..self.initial_syntax_response_count {
@@ -170,6 +207,7 @@ pub fn run(definition: &'static StoryDefinition) -> Result<()> {
     ui::spawn_signals(host.events_tx.clone(), StoryEvent::Signal);
 
     let files_service = host.files_service;
+    let diff_service = host.diff_service;
     let syntax_service = host.syntax_service;
     loom::run(
         &mut tree,
@@ -189,6 +227,11 @@ pub fn run(definition: &'static StoryDefinition) -> Result<()> {
                         service.deliver(response);
                     }
                 }
+                StoryEvent::DiffReady(response) => {
+                    if let Some(service) = &diff_service {
+                        service.deliver(*response);
+                    }
+                }
                 StoryEvent::SyntaxReady(response) => {
                     if let Some(service) = &syntax_service {
                         service.deliver(response);
@@ -203,12 +246,14 @@ pub fn run(definition: &'static StoryDefinition) -> Result<()> {
 
 pub(super) fn story_context(
     files_service: &Option<Rc<FilesService>>,
+    diff_service: &Option<Rc<DiffService>>,
     syntax_service: &Option<Rc<SyntaxService>>,
 ) -> UiContext {
     UiContext {
         theme: Rc::new(Theme::DARK),
         repo: Rc::from(Path::new("/codediff-story")),
         files_service: files_service.as_ref().map(Rc::clone),
+        diff_service: diff_service.as_ref().map(Rc::clone),
         syntax_service: syntax_service.as_ref().map(Rc::clone),
         ..UiContext::default()
     }
@@ -261,6 +306,7 @@ mod tests {
                     | StoryComponent::SingleFile
                     | StoryComponent::Card
                     | StoryComponent::Cards
+                    | StoryComponent::ExplorerCards
             ) && story.id != "single-file/empty"
         }) {
             let mut harness = story_harness(story, 100, 24).unwrap();
@@ -291,7 +337,8 @@ mod tests {
                 StoryComponent::Inline
                 | StoryComponent::SingleFile
                 | StoryComponent::Card
-                | StoryComponent::Cards => {
+                | StoryComponent::Cards
+                | StoryComponent::ExplorerCards => {
                     assert!(coloured(0, 100), "{} had no syntax-coloured text", story.id);
                 }
                 StoryComponent::Welcome | StoryComponent::Explorer => unreachable!(),

@@ -3,16 +3,17 @@
 use std::rc::Rc;
 
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, component, rsx, use_exit, use_ref,
-    use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
+    use_exit, use_ref, use_state,
 };
 use pipeline::diff::DiffContent;
+use ui::components::border::{Border, BorderProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
 use ui::components::diff_viewer::{DiffViewer, ViewState};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
-use ui::components::{Context, Ui, UiProps};
+use ui::components::{Context, DirectorySelection, Ui, UiProps};
 
 use super::definition::{StoryComponent, StoryDefinition};
 use super::gallery_header::{GalleryHeader, GalleryHeaderProps, Shortcut};
@@ -35,9 +36,13 @@ pub(super) fn StoryPreview(
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
+    let (selected_directory, set_selected_directory) =
+        use_state(scope, || None::<Rc<DirectorySelection>>);
     let mut context = base_context.clone();
     context.file = selected_file.as_ref().map(Rc::clone);
     context.set_file = Some(set_selected_file);
+    context.directory = selected_directory.as_ref().map(Rc::clone);
+    context.set_directory = Some(set_selected_directory);
 
     let exit = use_exit(scope);
     let navigate_key = navigate.as_ref().map(Rc::clone);
@@ -97,6 +102,20 @@ pub(super) fn StoryPreview(
     let body = match definition.component {
         StoryComponent::Welcome => rsx! { DiffViewer {} },
         StoryComponent::Explorer => rsx! { Explorer {} },
+        StoryComponent::ExplorerCards => rsx! {
+            Row {
+                layout: Layout { grow: 1, ..Default::default() },
+                ..,
+                Border {
+                    layout: Layout { basis: loom::Basis::Length(context.config.ui.explorer_width), shrink: 1, ..Default::default() },
+                    Explorer {}
+                }
+                Border {
+                    layout: Layout { grow: 1, ..Default::default() },
+                    DiffViewer {}
+                }
+            }
+        },
         StoryComponent::SideBySide => rsx! {
             DiffViewerContainer {
                 key: Rc::as_ptr(content.as_ref().expect("side-by-side story content")) as usize,

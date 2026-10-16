@@ -24,6 +24,11 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
     ),
     ("explorer/folded", &["src"], &["button.rs"]),
     ("explorer/selected", &["button.rs"], &[]),
+    (
+        "explorer/cards",
+        &["src/app.rs", "src/button.rs", "old_name", "new_name"],
+        &[],
+    ),
     ("explorer/long-list", &["story-01.rs", "story-20.rs"], &[]),
     (
         "explorer/mixed-status",
@@ -191,7 +196,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  35"));
+    assert_eq!(lines.next(), Some(" STORIES  36"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");

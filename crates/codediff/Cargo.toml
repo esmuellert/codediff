@@ -36,6 +36,7 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 fixtures.workspace = true
 portable-pty.workspace = true
+vt100.workspace = true
 
 [lints]
 workspace = true

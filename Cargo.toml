@@ -130,6 +130,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Test-only: allocates a real terminal so the alternate screen and raw mode can
 # be checked from outside the process that set them.
 portable-pty = { version = "0.9", default-features = false }
+# Test-only: replays PTY output into terminal cells for screen assertions.
+vt100 = "0.16"
 
 [profile.release]
 lto = "thin"

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use file_types::File;
+use file_types::{File, RepoPath, Revs};
 use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
 
 use crate::keybindings::KeyMap;
@@ -14,6 +14,20 @@ use crate::services::version_control::VersionControlService;
 use crate::services::watcher::WatcherService;
 use crate::theme::Theme;
 
+/// A selected directory and the changed files beneath it.
+#[derive(Clone)]
+pub struct DirectorySelection {
+    pub path: RepoPath,
+    pub revs: Revs,
+    pub files: Rc<Vec<File>>,
+}
+
+impl PartialEq for DirectorySelection {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.revs == other.revs && Rc::ptr_eq(&self.files, &other.files)
+    }
+}
+
 /// Everything a component reads.
 #[derive(Clone)]
 pub struct Context {
@@ -23,6 +37,8 @@ pub struct Context {
     pub repo: Rc<Path>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
+    pub directory: Option<Rc<DirectorySelection>>,
+    pub set_directory: Option<SetState<Option<Rc<DirectorySelection>>>>,
     pub files_service: Option<Rc<FilesService>>,
     pub diff_service: Option<Rc<DiffService>>,
     pub syntax_service: Option<Rc<SyntaxService>>,
@@ -40,6 +56,8 @@ impl Default for Context {
             repo: Rc::from(Path::new("")),
             file: None,
             set_file: None,
+            directory: None,
+            set_directory: None,
             files_service: None,
             diff_service: None,
             syntax_service: None,
@@ -58,6 +76,8 @@ impl Context {
             && Rc::ptr_eq(&self.repo, &other.repo)
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
+            && same_rc(&self.directory, &other.directory)
+            && self.set_directory == other.set_directory
             && same_rc(&self.files_service, &other.files_service)
             && same_rc(&self.diff_service, &other.diff_service)
             && same_rc(&self.syntax_service, &other.syntax_service)
@@ -100,6 +120,7 @@ pub fn UiProvider(
     let initial = Rc::clone(cwd);
     let (repo, set_repo) = use_state(scope, || initial);
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
+    let (directory, set_directory) = use_state(scope, || None::<Rc<DirectorySelection>>);
 
     let theme_name = config.ui.theme.clone();
     let theme = use_memo(scope, theme_name.clone(), move || {
@@ -115,6 +136,8 @@ pub fn UiProvider(
                 repo,
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
+                directory: directory.as_ref().map(Rc::clone),
+                set_directory: Some(set_directory),
                 files_service: Some(Rc::clone(files_service)),
                 diff_service: Some(Rc::clone(diff_service)),
                 syntax_service: Some(Rc::clone(syntax_service)),

@@ -171,6 +171,13 @@ fn cards_scroll_vertically_as_one_collection() {
     assert!(start.contains("first.rs"), "{start}");
     assert!(!start.contains("second.rs"), "{start}");
 
+    harness.wheel(25, 6, 1).force_draw();
+    let top = harness.screen_line(0);
+    assert!(top.starts_with('│'), "{top:?}");
+    assert!(top.ends_with('│'), "{top:?}");
+    assert!(!top.contains('╭') && !top.contains('╮'), "{top:?}");
+
+    harness.wheel(25, 6, -1).force_draw();
     for _ in 0..15 {
         harness.press(crokey::key!(j));
     }

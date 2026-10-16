@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::super::common::{all_output, send_and_wait};
-use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, written};
+use super::super::common::{all_output, output_since, send_and_wait, strip_csi};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
 
 #[test]
 fn story_catalog_filters_opens_switches_resets_and_returns() {
@@ -55,7 +55,7 @@ fn story_catalog_filters_opens_switches_resets_and_returns() {
     let _ = send_and_wait(&mut writer, &output, b"r");
     let catalog = send_and_wait(&mut writer, &output, b"\x1b");
     assert!(
-        catalog.contains("Welcome") && catalog.contains("explorer/empty"),
+        catalog.contains("side-by-side/edge-matrix"),
         "catalog did not return: {catalog:?}"
     );
 
@@ -65,6 +65,79 @@ fn story_catalog_filters_opens_switches_resets_and_returns() {
     assert!(
         explorer.contains("src/app.rs"),
         "Explorer setup keys were not applied: {explorer:?}"
+    );
+    let _ = send_and_wait(&mut writer, &output, b"\x1b");
+
+    let _ = send_and_wait(&mut writer, &output, b"/");
+    let _ = send_and_wait(&mut writer, &output, b"explorer/cards");
+    let _ = send_and_wait(&mut writer, &output, b"\r");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let cards = loop {
+        let current = all_output(&output);
+        if current.contains("src/panel.rs")
+            || current.contains("No two-sided diffs in this directory")
+        {
+            break current;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "directory story did not settle: {current:?}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    assert!(
+        !cards.contains("No two-sided diffs in this directory"),
+        "directory card story rendered the empty state: {cards:?}"
+    );
+    assert!(
+        cards.contains("src/panel.rs"),
+        "directory cards did not load: {cards:?}"
+    );
+
+    let before_file_click = output.lock().expect("output lock").bytes.len();
+    writer
+        .write_all(b"\x1b[<0;10;6M\x1b[<0;10;6m")
+        .expect("clicking src/app.rs in Explorer");
+    writer.flush().expect("flushing Explorer click");
+    drawn_after(&output, before_file_click);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let file_view = loop {
+        let current = strip_csi(&output_since(&output, before_file_click));
+        if current.contains("new_name") {
+            break current;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "file selection did not settle: {current:?}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    assert!(
+        file_view.contains("new_name"),
+        "selected file diff did not load: {file_view:?}"
+    );
+
+    let before_directory_click = output.lock().expect("output lock").bytes.len();
+    writer
+        .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m")
+        .expect("reselecting the src directory");
+    writer.flush().expect("flushing directory click");
+    drawn_after(&output, before_directory_click);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let cards_again = loop {
+        let current = strip_csi(&output_since(&output, before_directory_click));
+        if current.contains("src/panel.rs") {
+            break current;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "directory cards did not reload: {current:?}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    assert!(
+        cards_again.contains("src/panel.rs"),
+        "reselected directory did not show its cards: {cards_again:?}"
     );
     let _ = send_and_wait(&mut writer, &output, b"\x1b");
 
