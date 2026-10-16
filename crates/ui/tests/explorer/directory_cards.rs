@@ -80,7 +80,9 @@ fn ExplorerDiffHost(
     }
 }
 
-fn setup() -> (
+fn setup(
+    line_count: usize,
+) -> (
     Harness,
     Rc<FilesService>,
     Rc<DiffService>,
@@ -105,11 +107,17 @@ fn setup() -> (
         Vec::new(),
     ));
 
+    let text = |marker: &str| {
+        (0..line_count)
+            .map(|line| format!("{marker}_{line:02}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let (diff_tx, diff_responses) = mpsc::channel();
     let diff_worker = pipeline::diff::DiffWorker::mock_by_file(
         vec![
-            diff(first.clone(), "old_a_marker", "new_a_marker"),
-            diff(second.clone(), "old_b_marker", "new_b_marker"),
+            diff(first.clone(), &text("old_a_marker"), &text("new_a_marker")),
+            diff(second.clone(), &text("old_b_marker"), &text("new_b_marker")),
         ],
         channel::Emitter::new(diff_tx, |response| response),
     );
@@ -131,6 +139,75 @@ fn setup() -> (
     );
     harness.force_draw();
     (harness, files_service, diff_service, diff_responses)
+}
+
+#[test]
+fn folding_a_selected_directory_keeps_its_loaded_cards_and_scroll_position() {
+    let (mut harness, _files_service, service, responses) = setup(32);
+    let directory_row = harness
+        .screen()
+        .iter()
+        .position(|line| line.chars().take(32).collect::<String>().contains("src"))
+        .expect("src directory");
+    harness.click(2, directory_row as u16).force_draw();
+    for _ in 0..2 {
+        service.deliver(
+            responses
+                .recv_timeout(Duration::from_secs(1))
+                .expect("directory diff"),
+        );
+        harness.force_draw();
+    }
+    let initial = harness.screen();
+    harness.wheel(80, 6, 1).force_draw();
+    assert_ne!(
+        harness.screen(),
+        initial,
+        "the cards must be scrolled before folding"
+    );
+    let expected = harness.cells().clone();
+    let area = harness.area_of("DiffViewer").expect("diff viewer area");
+    for mouse in [true, false] {
+        for expanded in [false, true] {
+            if mouse {
+                harness.click(2, directory_row as u16).force_draw();
+            } else {
+                harness.press(loom::crokey::key!(enter)).force_draw();
+            }
+            let screen = harness.screen();
+            let explorer = screen
+                .iter()
+                .map(|line| line.chars().take(32).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(
+                explorer.contains("a.rs"),
+                expanded,
+                "directory did not toggle"
+            );
+            assert!(
+                !screen.join("\n").contains("Loading directory diffs…"),
+                "folding reloaded the cards"
+            );
+            let actual = harness.cells().clone();
+            for y in area.y..area.bottom() {
+                for x in area.x..area.right() {
+                    assert_eq!(
+                        actual.cell((x, y)),
+                        expected.cell((x, y)),
+                        "card cell changed at {x},{y} after folding"
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        matches!(
+            responses.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ),
+        "folding issued another diff request"
+    );
 }
 
 #[test]
@@ -268,7 +345,7 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
 
 #[test]
 fn selecting_a_directory_shows_its_two_sided_diffs_and_a_file_keeps_the_regular_viewer() {
-    let (mut harness, _files_service, diff_service, responses) = setup();
+    let (mut harness, _files_service, diff_service, responses) = setup(1);
 
     harness.press(loom::crokey::key!(j)).force_draw();
     for _ in 0..2 {

@@ -183,10 +183,10 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             let already_selected = line == selected_line;
             set_selected_line(&move |_| line);
             if let Some(node) = nodes_click.get(line as usize) {
-                select_node(node, &files_for_mouse, set_file, set_directory);
-                let should_activate = already_selected && matches!(node, Node::Directory { .. });
-                if should_activate {
+                if already_selected && matches!(node, Node::Directory { .. }) {
                     activate_node(node, set_folded, set_file, set_directory);
+                } else {
+                    select_node(node, &files_for_mouse, set_file, set_directory);
                 }
             }
             Bubble::Stop

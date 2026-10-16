@@ -160,6 +160,17 @@ impl Terminal {
             .collect()
     }
 
+    fn explorer_text(&self, rows: u16) -> String {
+        (1..rows - 1)
+            .map(|row| {
+                (0..PANE_LEFT)
+                    .map(|col| self.parser.screen().cell(row, col).unwrap().contents())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn quit(&mut self) {
         self.writer.write_all(b"q").unwrap();
         self.writer.flush().unwrap();
@@ -238,6 +249,33 @@ fn real_directory_cards_keep_every_row_when_scrolled_down_and_back_up() {
                     let expected: Vec<_> = reference[top..top + 22].iter().map(row_text).collect();
                     assert_eq!(resized, expected, "resized at {top}: {layout} wrap={wrap}");
                     terminal.resize(ROWS);
+                    let expected = &reference[top..top + viewport_height];
+                    let expected_text: Vec<_> = expected.iter().map(row_text).collect();
+                    for expanded in [false, true] {
+                        terminal.send(b"\x1b[<0;4;3M\x1b[<0;4;3m");
+                        assert_eq!(
+                            terminal.explorer_text(ROWS).contains("a.txt"),
+                            expanded,
+                            "directory did not toggle"
+                        );
+                        fs::write(
+                            artifacts.join(format!("toggle-{direction}-{expanded}.txt")),
+                            terminal.parser.screen().contents(),
+                        )
+                        .unwrap();
+                        let actual = terminal.pane(ROWS);
+                        let actual_text: Vec<_> = actual.iter().map(row_text).collect();
+                        assert_eq!(
+                            actual_text, expected_text,
+                            "folding reset the cards at {top}: {layout} wrap={wrap}"
+                        );
+                        for (actual, expected) in
+                            actual.iter().flatten().zip(expected.iter().flatten())
+                        {
+                            assert_eq!(actual.fgcolor(), expected.fgcolor());
+                            assert_eq!(actual.bgcolor(), expected.bgcolor());
+                        }
+                    }
                 }
                 let actual = terminal.pane(ROWS);
                 fs::write(
