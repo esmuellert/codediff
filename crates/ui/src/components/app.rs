@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::rc::Rc;
 
+use diff_service::DiffService;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
     use_exit,
@@ -13,9 +14,6 @@ use super::context::{UiProvider, UiProviderProps};
 use super::diff_viewer::DiffViewer;
 use super::explorer::Explorer;
 use crate::keybindings::{Action, KeyMap};
-use crate::services::diff::DiffService;
-use crate::services::files::FilesService;
-use crate::services::syntax::SyntaxService;
 use crate::services::version_control::VersionControlService;
 use crate::services::watcher::WatcherService;
 
@@ -25,9 +23,7 @@ pub fn App(
     cwd: Rc<Path>,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
-    files_service: Rc<FilesService>,
     diff_service: Rc<DiffService>,
-    syntax_service: Rc<SyntaxService>,
     version_control_service: Rc<VersionControlService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
@@ -52,9 +48,7 @@ pub fn App(
                 cwd: Rc::clone(cwd),
                 config: Rc::clone(config),
                 keybindings: Rc::clone(keybindings),
-                files_service: Rc::clone(files_service),
                 diff_service: Rc::clone(diff_service),
-                syntax_service: Rc::clone(syntax_service),
                 version_control_service: Rc::clone(version_control_service),
                 watcher_service: Rc::clone(watcher_service),
                 Row {

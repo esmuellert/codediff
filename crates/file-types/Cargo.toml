@@ -10,7 +10,7 @@ authors.workspace = true
 publish = false
 
 # None, deliberately. Every layer names this crate — `vcs` reads files, the
-# pipeline moves them, `ui` draws them — so it can depend on none of them.
+# `diff-service` moves them, `ui` draws them — so it can depend on none of them.
 [dependencies]
 
 [lints]

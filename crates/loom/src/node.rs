@@ -232,9 +232,13 @@ impl From<()> for Node {
 }
 
 impl NodeHandle {
-    /// The rectangle the last layout gave it.
+    /// The screen rectangle after scroll transforms.
     pub fn area(self) -> Rect {
         crate::current::with(|rt| rt.area_of(self)).unwrap_or(Rect::ZERO)
+    }
+    /// The layout rectangle before scroll transforms and screen clipping.
+    pub fn content_area(self) -> Rect {
+        crate::current::with(|rt| rt.content_area_of(self)).unwrap_or(Rect::ZERO)
     }
     /// Take focus. A no-op if the node is not `focusable`.
     pub fn focus(self) {

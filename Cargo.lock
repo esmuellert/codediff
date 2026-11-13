@@ -100,6 +100,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayvec"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -340,14 +346,13 @@ version = "0.27.3"
 dependencies = [
  "align",
  "anyhow",
- "channel",
  "clap",
  "config",
+ "diff-service",
  "file-types",
  "fixtures",
  "line-index",
  "loom",
- "pipeline",
  "portable-pty",
  "serde",
  "serde_json",
@@ -356,6 +361,7 @@ dependencies = [
  "ui",
  "vcs",
  "vscode-diff",
+ "vt100",
 ]
 
 [[package]]
@@ -597,6 +603,20 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "diff-service"
+version = "0.27.3"
+dependencies = [
+ "align",
+ "anyhow",
+ "file-types",
+ "fixtures",
+ "syntax",
+ "tracing",
+ "vcs",
+ "vscode-diff",
 ]
 
 [[package]]
@@ -1472,20 +1492,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
-name = "pipeline"
-version = "0.27.3"
-dependencies = [
- "align",
- "anyhow",
- "channel",
- "file-types",
- "fixtures",
- "tracing",
- "vcs",
- "vscode-diff",
-]
-
-[[package]]
 name = "pkg-config"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2111,12 +2117,8 @@ dependencies = [
 name = "syntax"
 version = "0.27.3"
 dependencies = [
- "align",
- "channel",
- "file-types",
  "line-index",
  "syntect",
- "tracing",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -2754,11 +2756,11 @@ dependencies = [
  "config",
  "crokey",
  "crossterm",
+ "diff-service",
  "diff-types",
  "file-types",
  "line-index",
  "loom",
- "pipeline",
  "ratatui",
  "signal-hook 0.4.5",
  "syntax",
@@ -2856,6 +2858,27 @@ name = "vscode-diff-sys"
 version = "0.27.3"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "vt100"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "054ff75fb8fa83e609e685106df4faeffdf3a735d3c74ebce97ec557d5d36fd9"
+dependencies = [
+ "itoa",
+ "unicode-width",
+ "vte",
+]
+
+[[package]]
+name = "vte"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5924018406ce0063cd67f8e008104968b74b563ee1b85dde3ed1f7cb87d3dbd"
+dependencies = [
+ "arrayvec",
+ "memchr",
 ]
 
 [[package]]

@@ -10,6 +10,7 @@ use crate::diff::contents::{self, Contents};
 use crate::diff::{Settings, align, compute};
 
 /// What the pipeline produces for one file.
+#[derive(Clone)]
 pub enum DiffContent {
     SingleFile(SingleFile),
     Diff(Diff),
@@ -23,14 +24,14 @@ impl PartialEq for DiffContent {
 }
 
 /// A file with only one version (added, untracked, or deleted).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SingleFile {
     pub file: File,
     pub lines: Arc<Vec<String>>,
 }
 
 /// Two versions of a file, paired line by line.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Diff {
     pub file: File,
     pub alignment: Alignment,

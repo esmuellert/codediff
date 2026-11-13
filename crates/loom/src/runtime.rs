@@ -211,6 +211,13 @@ impl Runtime {
             .map_or(Rect::ZERO, |p| p.area)
     }
 
+    pub fn content_area_of(&self, node: NodeHandle) -> Rect {
+        self.placed
+            .iter()
+            .find(|p| p.scope == node.scope && p.nth == node.nth)
+            .map_or(Rect::ZERO, |p| p.content)
+    }
+
     pub fn focused_node(&self) -> Option<NodeHandle> {
         self.focused
     }

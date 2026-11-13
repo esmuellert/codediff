@@ -2,6 +2,8 @@
 mod contract;
 #[path = "scroll/diff_viewer.rs"]
 mod diff_viewer;
+#[path = "support/fake_pipeline.rs"]
+mod fake_pipeline;
 #[path = "scroll/inline.rs"]
 mod inline;
 #[path = "scroll/navigation.rs"]

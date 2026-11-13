@@ -4,6 +4,8 @@ mod app;
 pub mod border;
 pub mod code_text;
 mod context;
+pub mod diff_card;
+pub mod diff_cards;
 pub mod diff_viewer;
 pub mod diff_viewer_container;
 pub mod explorer;
@@ -15,9 +17,10 @@ pub mod side_by_side;
 pub mod single_file;
 mod welcome;
 
-pub(crate) use crate::view::terminal_lines::WrappedViewLine;
 pub use crate::view::terminal_lines::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
-pub use context::{Context, Ui, UiProps, UiProvider, UiProviderProps};
+pub use context::{Context, DirectorySelection, Ui, UiProps, UiProvider, UiProviderProps};
+pub use diff_card::{DiffCard, DiffCardProps};
+pub use diff_cards::{DiffCards, DiffCardsProps};
 pub use explorer::{Explorer, ExplorerProps, letter};

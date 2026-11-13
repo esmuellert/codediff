@@ -1,22 +1,26 @@
 //! Tests for the Inline component.
 
-use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
+use syntax::Span;
 use ui::Theme;
 use ui::components::diff_viewer::{ViewState, ViewStateHistory};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
-use ui::services::syntax::SyntaxService;
+
+use crate::fake_pipeline::coloured;
 
 #[component]
-fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+fn TestInline(
+    scope: &mut Scope,
+    content: Arc<diff_service::diff::DiffContent>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
+) -> Node {
     let view_states = use_ref(scope, ViewStateHistory::default);
-    let content_id = Rc::as_ptr(content) as usize;
+    let content_id = Arc::as_ptr(content) as usize;
     let key = content.file().path().as_str().to_owned();
     let active_view_state = use_ref(scope, ViewState::default);
     let active_key = use_ref(scope, || None::<String>);
@@ -32,7 +36,8 @@ fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
     rsx! {
         DiffViewerContainer {
             key: content_id,
-            content: Some(Rc::clone(content)),
+            content: Some(Arc::clone(content)),
+            colours: colours.clone(),
             view_layout: file_types::DiffType::Inline,
             view_state: active_view_state,
             wrap: true,
@@ -43,13 +48,14 @@ fn TestInline(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
 }
 
 #[component]
-fn TestInlineUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+fn TestInlineUnwrapped(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) -> Node {
     let view_state = use_ref(scope, ViewState::default);
-    let content_id = Rc::as_ptr(content) as usize;
+    let content_id = Arc::as_ptr(content) as usize;
     rsx! {
         DiffViewerContainer {
             key: content_id,
-            content: Some(Rc::clone(content)),
+            content: Some(Arc::clone(content)),
+            colours: Arc::default(),
             view_layout: file_types::DiffType::Inline,
             view_state: view_state,
             wrap: false,
@@ -59,42 +65,44 @@ fn TestInlineUnwrapped(scope: &mut Scope, content: Rc<pipeline::diff::DiffConten
     }
 }
 
-fn make_diff(path: &str, original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
-    let diff = pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())
-        .expect("a diff");
-    let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
+fn make_diff(path: &str, original: &[&str], modified: &[&str]) -> diff_service::diff::Diff {
+    let diff =
+        diff_service::diff::compute(original, modified, diff_service::diff::Settings::default())
+            .expect("a diff");
+    let alignment = diff_service::diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new(path, std::path::Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::Oid::new("abc")),
     );
-    pipeline::diff::Diff { file, alignment }
+    diff_service::diff::Diff { file, alignment }
 }
 
-fn harness_with_syntax_service(
+fn harness_with_colours(
     original: &[&str],
     modified: &[&str],
     width: u16,
     height: u16,
-    syntax_service: Option<Rc<SyntaxService>>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Harness {
-    let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "test.rs", original, modified,
     )));
-    Harness::new::<TestInline>(TestInlineProps { content }, width, height).provide::<Ui>(Context {
-        theme: Rc::new(Theme::DARK),
-        syntax_service,
-        ..Context::default()
-    })
+    Harness::new::<TestInline>(TestInlineProps { content, colours }, width, height).provide::<Ui>(
+        Context {
+            theme: Rc::new(Theme::DARK),
+            ..Context::default()
+        },
+    )
 }
 
 fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
-    let mut harness = harness_with_syntax_service(original, modified, width, height, None);
+    let mut harness = harness_with_colours(original, modified, width, height, Arc::default());
     settle(&mut harness);
     harness
 }
 
 fn harness_unwrapped(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
-    let content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "unwrapped.rs",
         original,
         modified,
@@ -168,25 +176,13 @@ fn empty_and_nonempty_character_ranges_reach_code_text() {
 }
 
 #[test]
-fn syntax_is_requested_for_both_versions() {
-    let (syntax_tx, syntax_responses) = mpsc::channel();
-    let syntax_worker =
-        syntax::Syntax::start(channel::Emitter::new(syntax_tx, |response| response));
-    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
-    let mut harness = harness_with_syntax_service(
+fn the_pipeline_colours_both_versions() {
+    let colours = coloured(diff_service::diff::DiffContent::Diff(make_diff(
+        "test.rs",
         &["fn before() {}"],
         &["fn after() {}"],
-        40,
-        3,
-        Some(Rc::clone(&syntax_service)),
-    );
-    harness.force_draw().force_draw();
-    for _ in 0..2 {
-        let response = syntax_responses
-            .recv_timeout(Duration::from_secs(1))
-            .expect("syntax response");
-        syntax_service.deliver(response);
-    }
+    )));
+    let mut harness = harness_with_colours(&["fn before() {}"], &["fn after() {}"], 40, 3, colours);
     harness.force_draw().force_draw();
 
     assert_ne!(harness.style_at(8, 0).fg, Theme::DARK.normal.fg);
@@ -268,19 +264,20 @@ fn each_file_restores_its_vertical_position() {
     let second: Vec<String> = (1..=12).map(|line| format!("second {line:02}")).collect();
     let first_lines: Vec<&str> = first.iter().map(String::as_str).collect();
     let second_lines: Vec<&str> = second.iter().map(String::as_str).collect();
-    let first_content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let first_content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "first.rs",
         &first_lines,
         &first_lines,
     )));
-    let second_content = Rc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let second_content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "second.rs",
         &second_lines,
         &second_lines,
     )));
     let mut harness = Harness::new::<TestInline>(
         TestInlineProps {
-            content: Rc::clone(&first_content),
+            colours: Arc::default(),
+            content: Arc::clone(&first_content),
         },
         30,
         4,
@@ -297,7 +294,8 @@ fn each_file_restores_its_vertical_position() {
     assert!(harness.screen_line(0).contains("first 05"));
 
     harness.set_props::<TestInline>(TestInlineProps {
-        content: Rc::clone(&second_content),
+        colours: Arc::default(),
+        content: Arc::clone(&second_content),
     });
     settle(&mut harness);
     assert!(harness.screen_line(0).contains("second 01"));
@@ -305,6 +303,7 @@ fn each_file_restores_its_vertical_position() {
     assert!(harness.screen_line(0).contains("second 02"));
 
     harness.set_props::<TestInline>(TestInlineProps {
+        colours: Arc::default(),
         content: first_content,
     });
     settle(&mut harness);

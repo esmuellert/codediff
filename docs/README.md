@@ -8,23 +8,26 @@ This file describes the implementation that is currently in the repository. It i
 codediff
   └─ ui::main
       ├─ config              load user preferences before terminal setup
-      ├─ files worker        Git status and line statistics
-      ├─ diff worker        Git content → VS Code diff → alignment
-      ├─ syntax worker      syntax spans for visible file lines
+      ├─ diff-service        three background threads:
+      │   ├─ files           Git status and line statistics
+      │   ├─ diff            Git content → VS Code diff → alignment
+      │   └─ syntax          syntax spans for each diffed file
       ├─ watcher             filesystem and Git-directory invalidations
       └─ loom tree           event routing, layout, components, painting
 ```
 
-The UI thread owns the terminal and the Loom tree. Workers perform blocking Git, diff, syntax, and filesystem work. Results return through the application's event channel; stale file and repository responses are ignored by the receiving services.
+The UI thread owns the terminal and the Loom tree. Background threads perform blocking Git, diff, syntax, and filesystem work. The pipeline threads write each result straight into the shared slot (`Arc<Mutex<…>>`) it was given and then ask the main loop to redraw. A result nobody holds any more is not written, so a file the user has left cannot appear.
 
 Opening a file follows this path:
 
-1. `FilesService` receives the list from `pipeline::files`.
+1. `Explorer` calls `DiffService::list_files` and shows the files once the slot is filled in.
 2. `Explorer` puts the selected `file_types::File` into shared context.
-3. `DiffService` asks `pipeline::diff` to read both sides.
-4. `pipeline` classifies content, computes the diff with `vscode-diff`, and builds an `align::Alignment`.
-5. `DiffViewer` renders either `SideBySide` or `SingleFile`.
-6. Syntax requests are made only for the visible lines and are installed as worker responses.
+3. `DiffViewer` calls `DiffService::open`, which returns two slots: the diff (or why it failed), and the syntax spans of each line.
+4. The diff thread reads both sides, computes the diff with `vscode-diff`, and builds an `align::Alignment`.
+5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there.
+6. The syntax thread then colours the whole file in pieces; each piece is drawn as it arrives.
+
+A selected directory opens its two-sided files one at a time, when the line below the last card comes into view.
 
 The watcher sends refresh categories, not a list of changed paths. Explorer rescans its file list; the selected diff is reloaded when its mutable side is affected.
 
@@ -36,7 +39,7 @@ The watcher sends refresh categories, not a list of changed paths. Explorer resc
 | `ui` | application components, services, navigation, themes, terminal integration |
 | `config` | versioned JSON user preferences, platform paths, and atomic persistence |
 | `loom` / `loom-macros` | terminal component tree, hooks, layout, paint, events, and RSX macros |
-| `pipeline` | background file-list and file-content pipelines |
+| `diff-service` | `DiffService`: lists files, then reads, diffs and colours them on background threads |
 | `vcs` | Git commands, status parsing, revision reads, line statistics, staging |
 | `watcher` | repository filesystem invalidations and the watcher helper binary |
 | `syntax` | language detection, Tree-sitter/TextMate engines, syntax spans and cache |
@@ -45,7 +48,7 @@ The watcher sends refresh categories, not a list of changed paths. Explorer resc
 | `file-types` | files, paths, revisions, content classification, and comparison modes |
 | `diff-types` | owned data structures returned by the C diff engine |
 | `vscode-diff` / `vscode-diff-sys` | safe Rust wrapper and raw FFI for the bundled C engine |
-| `channel` | typed worker request/response helpers |
+| `channel` | typed results sent to the main loop |
 | `fixtures` | deterministic Git repositories for tests and manual checks |
 
 The dependency direction is kept acyclic. Pure model crates do not invoke Git or the terminal; `xtask lint-arch` checks the repository-specific boundaries.

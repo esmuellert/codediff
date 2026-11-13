@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use super::definition::StoryDefinition;
-use super::stories::{explorer, inline, side_by_side, single_file, welcome};
+use super::stories::{card, cards, explorer, inline, side_by_side, single_file, welcome};
 
 pub struct StoryGroup {
     pub label: &'static str,
@@ -30,6 +30,14 @@ pub const GROUPS: &[StoryGroup] = &[
     StoryGroup {
         label: "Single file",
         stories: single_file::STORIES,
+    },
+    StoryGroup {
+        label: "Cards",
+        stories: card::STORIES,
+    },
+    StoryGroup {
+        label: "Cards collection",
+        stories: cards::STORIES,
     },
 ];
 

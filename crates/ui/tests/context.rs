@@ -5,45 +5,23 @@
 //! reader is marked dirty, and `needs_draw()` is true after every draw.
 //! The loop then hits its 4-extra-draw cap every single frame.
 
-use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::mpsc;
 
+use diff_service::DiffService;
 use loom::testing::Harness;
 use ui::components::{App, AppProps};
-use ui::services::diff::DiffService;
-use ui::services::files::FilesService;
-use ui::services::syntax::SyntaxService;
 use ui::services::version_control::VersionControlService;
 use ui::services::watcher::WatcherService;
 
 fn idle_app() -> Harness {
-    let (files_tx, _files_responses) = mpsc::channel();
-    let files_service = FilesService::new(
-        Rc::new(RefCell::new(pipeline::files::FilesWorker::start(
-            channel::Emitter::new(files_tx, |response| response),
-        ))),
-        Vec::new(),
-    );
-    let (diff_tx, _diff_responses) = mpsc::channel();
-    let diff_service = DiffService::new(Rc::new(RefCell::new(pipeline::diff::DiffWorker::start(
-        channel::Emitter::new(diff_tx, |response| response),
-        pipeline::diff::Settings::default(),
-    ))));
-    let (syntax_tx, _syntax_responses) = mpsc::channel();
-    let syntax_service = SyntaxService::new(Rc::new(RefCell::new(syntax::Syntax::start(
-        channel::Emitter::new(syntax_tx, |response| response),
-    ))));
-
+    let pipeline = DiffService::new(|| {}, |_| Ok(Vec::new()), |_| Err("no files".to_owned()));
     Harness::new::<App>(
         AppProps {
             cwd: Rc::from(Path::new("/tmp")),
             config: Rc::new(config::Config::default()),
             keybindings: Rc::new(ui::KeyMap::default()),
-            files_service: Rc::new(files_service),
-            diff_service: Rc::new(diff_service),
-            syntax_service: Rc::new(syntax_service),
+            diff_service: Rc::new(pipeline),
             version_control_service: Rc::new(VersionControlService::new()),
             watcher_service: Rc::new(WatcherService::new()),
         },

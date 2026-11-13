@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use file_types::{DiffType, DiffVersion};
@@ -18,13 +19,18 @@ use super::{
 };
 
 #[component]
-fn SideBySideHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
+fn SideBySideHost(
+    scope: &mut Scope,
+    content: Arc<diff_service::diff::DiffContent>,
+    wrap: bool,
+) -> Node {
     let view_state = use_ref(scope, ViewState::default);
-    let content_id = Rc::as_ptr(content) as usize;
+    let content_id = Arc::as_ptr(content) as usize;
     rsx! {
         DiffViewerContainer {
             key: content_id,
-            content: Some(Rc::clone(content)),
+            content: Some(Arc::clone(content)),
+            colours: Arc::default(),
             view_layout: DiffType::SideBySide,
             view_state: view_state,
             wrap: *wrap,
@@ -41,7 +47,7 @@ pub(super) fn run(
     wrap: bool,
 ) -> Result<()> {
     let content = load_diff_content(original_path, modified_path, ignore_trim_whitespace)?;
-    let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+    let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!()
     };
     let original = diff.alignment.lines(DiffVersion::Original);
@@ -62,7 +68,7 @@ pub(super) fn run(
     let theme = Theme::DARK;
     let mut harness = Harness::new::<SideBySideHost>(
         SideBySideHostProps {
-            content: Rc::clone(&content),
+            content: Arc::clone(&content),
             wrap,
         },
         width,

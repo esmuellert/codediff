@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use loom::{
-    Column, ColumnProps, Layout, Node, NodeHandle, Scope, Text, TextProps, component, rsx,
-    use_layout_effect, use_ref,
+    Basis, Column, ColumnProps, Layout, Node, NodeHandle, Scope, Scroll, ScrollOffset, ScrollProps,
+    Text, TextProps, component, rsx, use_layout_effect, use_ref, use_scroll,
 };
 use ui::Theme;
 use ui::components::border::{Border, BorderProps};
@@ -65,6 +65,42 @@ fn a_border_draws_rounded_corners() {
     assert!(top.contains('╮'), "top right corner: {:?}", top);
     assert!(bottom.contains('╰'), "bottom left corner: {:?}", bottom);
     assert!(bottom.contains('╯'), "bottom right corner: {:?}", bottom);
+}
+
+#[component]
+fn ScrolledBorder(scope: &mut Scope) -> Node {
+    let (view, handle) = use_scroll(scope, || ScrollOffset::ZERO);
+    rsx! {
+        Scroll {
+            view: view,
+            handle: Some(handle),
+            wheel_step: 3,
+            layout: Layout { grow: 1, ..Default::default() },
+            ..,
+            Border {
+                layout: Layout { basis: Basis::Length(7), shrink: 0, ..Default::default() },
+                Column {
+                    layout: Layout { grow: 1, ..Default::default() },
+                    ..,
+                    Text { text: "one".into(), .. }
+                    Text { text: "two".into(), .. }
+                    Text { text: "three".into(), .. }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_scrolled_border_does_not_draw_its_offscreen_top_edge() {
+    let mut h = Harness::new::<ScrolledBorder>(ScrolledBorderProps {}, 10, 4).provide::<Ui>(ctx());
+    h.force_draw().force_draw();
+    assert!(h.screen_line(0).starts_with('╭'));
+
+    h.wheel(1, 1, 1).force_draw();
+    let top = h.screen_line(0);
+    assert!(top.starts_with('│'), "{top:?}");
+    assert!(top.ends_with('│'), "{top:?}");
 }
 
 #[test]

@@ -17,7 +17,6 @@ path = "src/main.rs"
 # The composition root: the only place that names concrete implementations.
 [dependencies]
 anyhow.workspace = true
-channel.workspace = true
 clap.workspace = true
 config.workspace = true
 line-index.workspace = true
@@ -25,7 +24,7 @@ align.workspace = true
 loom.workspace = true
 syntax.workspace = true
 file-types.workspace = true
-pipeline.workspace = true
+diff-service.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ui.workspace = true
@@ -36,6 +35,7 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 fixtures.workspace = true
 portable-pty.workspace = true
+vt100.workspace = true
 
 [lints]
 workspace = true

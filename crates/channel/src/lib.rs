@@ -1,9 +1,4 @@
-//! The contract every background worker follows, and the channel layer that
-//! delivers results to the main loop without polling.
-
-mod slot;
-
-pub use slot::Slot;
+//! Delivers results from a background thread to the main loop without polling.
 
 use std::sync::mpsc::Sender;
 
@@ -31,19 +26,4 @@ impl<T: Send + 'static> Emitter<T> {
     pub fn send(&self, value: T) -> bool {
         (self.send)(value)
     }
-}
-
-/// A background worker that accepts requests and produces responses.
-pub trait Worker {
-    type Request;
-    type Response;
-
-    /// Sends a request. Replaces any waiting request with the newer one.
-    fn send(&mut self, request: Self::Request);
-
-    /// Whether anything is waiting or in flight.
-    fn is_busy(&self) -> bool;
-
-    /// Acknowledges a response arrived.
-    fn received(&mut self, response: &Self::Response);
 }

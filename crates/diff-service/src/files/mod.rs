@@ -1,12 +1,8 @@
 //! One request for a set of changed files.
 //!
 //! ```ignore
-//! let files = list::get_files(&list::Request::worktree(root))?;
+//! let files = files::get_files(&files::Request::worktree(root))?;
 //! ```
-
-mod worker;
-
-pub use worker::FilesWorker;
 
 use std::path::PathBuf;
 
@@ -43,13 +39,6 @@ impl Request {
         self.pathspec = pathspec;
         self
     }
-}
-
-/// What one request produced.
-pub struct Response {
-    /// Repository key used to match the response.
-    pub repo: PathBuf,
-    pub files: Vec<File>,
 }
 
 /// Every file the request finds, each with what it gained and lost.

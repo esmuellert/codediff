@@ -15,7 +15,6 @@ pub use ratatui;
 
 #[cfg(debug_assertions)]
 use std::cell::Cell;
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -27,9 +26,6 @@ use std::thread;
 use loom::{Flow, Tree, deliver_input};
 
 use components::{App, AppProps};
-use services::diff::DiffService;
-use services::files::FilesService;
-use services::syntax::SyntaxService;
 use services::version_control::VersionControlService;
 use services::watcher::WatcherService;
 
@@ -38,9 +34,8 @@ enum Event {
     #[cfg(unix)]
     Signal(i32),
     RepositoryChanged(watcher::Refresh),
-    FilesReady(pipeline::files::Response),
-    DiffReady(Box<pipeline::diff::Response>),
-    SyntaxReady(syntax::SyntaxResponse),
+    /// A background thread changed a file list or file diff.
+    Redraw,
 }
 
 fn repository_root(cwd: &Path) -> std::io::Result<PathBuf> {
@@ -52,23 +47,19 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
     let config = Rc::new(config);
     let keybindings =
         Rc::new(KeyMap::from_config(&config.keybindings).map_err(std::io::Error::other)?);
-    let diff_settings = pipeline::diff::Settings {
+    let diff_settings = diff_service::diff::Settings {
         ignore_trim_whitespace: config.diff.ignore_trim_whitespace,
     };
     let (events_tx, events_rx) = mpsc::channel::<Event>();
 
-    let files_worker = pipeline::files::FilesWorker::start(channel::Emitter::new(
-        events_tx.clone(),
-        Event::FilesReady,
-    ));
-    let diff_worker = pipeline::diff::DiffWorker::start(
-        channel::Emitter::new(events_tx.clone(), |response| {
-            Event::DiffReady(Box::new(response))
-        }),
+    let redraw = events_tx.clone();
+    let pipeline = Rc::new(diff_service::DiffService::start(
+        move || {
+            let _ = redraw.send(Event::Redraw);
+        },
         diff_settings,
-    );
-    let syntax_worker =
-        syntax::Syntax::start(channel::Emitter::new(events_tx.clone(), Event::SyntaxReady));
+        pathspec,
+    ));
     let watcher_root = repository_root(cwd)?;
     let _watcher_subscription = watcher::subscribe(
         &watcher_root,
@@ -76,12 +67,6 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
     )
     .map_err(std::io::Error::other)?;
 
-    let files_service = Rc::new(FilesService::new(
-        Rc::new(RefCell::new(files_worker)),
-        pathspec,
-    ));
-    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
-    let diff_service = Rc::new(DiffService::new(Rc::new(RefCell::new(diff_worker))));
     let version_control_service = Rc::new(VersionControlService::new());
     let watcher_service = Rc::new(WatcherService::new());
 
@@ -89,9 +74,7 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
         cwd: Rc::from(cwd),
         config,
         keybindings,
-        files_service: Rc::clone(&files_service),
-        diff_service: Rc::clone(&diff_service),
-        syntax_service: Rc::clone(&syntax_service),
+        diff_service: pipeline,
         version_control_service,
         watcher_service: Rc::clone(&watcher_service),
     });
@@ -128,16 +111,8 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
                 watcher_service.deliver(refresh);
                 Flow::Continue
             }
-            Event::FilesReady(response) => {
-                files_service.deliver(response);
-                Flow::Continue
-            }
-            Event::DiffReady(response) => {
-                diff_service.deliver(*response);
-                Flow::Continue
-            }
-            Event::SyntaxReady(response) => {
-                syntax_service.deliver(response);
+            Event::Redraw => {
+                tree.redraw_all();
                 Flow::Continue
             }
         },

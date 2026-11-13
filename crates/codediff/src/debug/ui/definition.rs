@@ -3,17 +3,20 @@
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use file_types::{DiffVersion, File};
+use diff_service::diff::DiffContent;
+use file_types::File;
 use loom::crokey::KeyCombination;
-use pipeline::diff::DiffContent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StoryComponent {
     Welcome,
     Explorer,
+    ExplorerCards,
     SideBySide,
     Inline,
     SingleFile,
+    Card,
+    Cards,
 }
 
 pub struct StoryDefinition {
@@ -39,9 +42,15 @@ impl StoryDefinition {
 pub enum StoryFixture {
     Welcome,
     Explorer(Vec<File>),
+    ExplorerCards {
+        files: Vec<File>,
+        diffs: Vec<DiffContent>,
+    },
     SideBySide(Rc<DiffContent>),
     Inline(Rc<DiffContent>),
     SingleFile(Rc<DiffContent>),
+    Card(Rc<DiffContent>),
+    Cards(Rc<Vec<Rc<DiffContent>>>),
 }
 
 impl StoryFixture {
@@ -49,35 +58,12 @@ impl StoryFixture {
         match self {
             Self::Welcome => StoryComponent::Welcome,
             Self::Explorer(_) => StoryComponent::Explorer,
+            Self::ExplorerCards { .. } => StoryComponent::ExplorerCards,
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,
-        }
-    }
-
-    pub const fn needs_syntax(&self) -> bool {
-        matches!(
-            self,
-            Self::SideBySide(_) | Self::Inline(_) | Self::SingleFile(_)
-        )
-    }
-
-    pub fn initial_syntax_response_count(&self) -> usize {
-        match self {
-            Self::SideBySide(content) | Self::Inline(content) => {
-                let DiffContent::Diff(diff) = content.as_ref() else {
-                    unreachable!()
-                };
-                usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())
-                    + usize::from(!diff.alignment.lines(DiffVersion::Modified).is_empty())
-            }
-            Self::SingleFile(content) => {
-                let DiffContent::SingleFile(single) = content.as_ref() else {
-                    unreachable!()
-                };
-                usize::from(!single.lines.is_empty())
-            }
-            Self::Welcome | Self::Explorer(_) => 0,
+            Self::Card(_) => StoryComponent::Card,
+            Self::Cards(_) => StoryComponent::Cards,
         }
     }
 }

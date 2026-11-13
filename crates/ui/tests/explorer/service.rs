@@ -1,21 +1,21 @@
 use std::path::Path;
 use std::rc::Rc;
-use std::time::Duration;
+use std::sync::mpsc;
 
+use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx};
 use ui::Theme;
 use ui::components::{Context, Explorer, Ui, UiProps};
-use ui::services::files::FilesService;
 use ui::services::watcher::WatcherService;
 
-use super::common::{file, mock_files_service};
+use super::common::{fake_pipeline, file, wait};
 
 #[component]
 fn Host(
     scope: &mut Scope,
     repo: Rc<Path>,
-    files_service: Rc<FilesService>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -24,7 +24,7 @@ fn Host(
             value: Context {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
-                files_service: Some(Rc::clone(files_service)),
+                diff_service: Some(Rc::clone(pipeline)),
                 watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
@@ -33,62 +33,49 @@ fn Host(
     }
 }
 
-fn receive(
-    harness: &mut Harness,
-    files_service: &FilesService,
-    responses: &std::sync::mpsc::Receiver<pipeline::files::Response>,
-) {
-    files_service.deliver(
-        responses
-            .recv_timeout(Duration::from_secs(1))
-            .expect("files response"),
-    );
-    harness.force_draw().force_draw();
-}
-
 #[test]
 fn explorer_requests_its_file_list() {
-    let (files_service, responses) = mock_files_service(vec![vec![file("one.rs")]]);
+    let (pipeline, redraws) = fake_pipeline(vec![vec![file("one.rs")]], Vec::new());
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             watcher_service,
         },
         40,
         5,
     );
     harness.force_draw();
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
 
     assert!(harness.screen().join("\n").contains("one.rs"));
 }
 
 #[test]
 fn changing_repository_requests_a_new_file_list() {
-    let (files_service, responses) =
-        mock_files_service(vec![vec![file("one.rs")], vec![file("two.rs")]]);
+    let (pipeline, redraws) =
+        fake_pipeline(vec![vec![file("one.rs")], vec![file("two.rs")]], Vec::new());
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
     );
     harness.force_draw();
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
 
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
-        files_service: Rc::clone(&files_service),
+        pipeline: Rc::clone(&pipeline),
         watcher_service,
     });
     harness.force_draw();
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
 
     let screen = harness.screen().join("\n");
     assert!(screen.contains("two.rs"), "got {screen:?}");
@@ -96,60 +83,100 @@ fn changing_repository_requests_a_new_file_list() {
 }
 
 #[test]
-fn a_late_response_from_the_previous_repository_is_ignored() {
-    let (files_service, responses) =
-        mock_files_service(vec![vec![file("one.rs")], vec![file("two.rs")]]);
+fn a_list_still_being_read_for_the_previous_repository_never_appears() {
+    let (release, released) = mpsc::channel::<()>();
+    let (redraw, redraws) = mpsc::channel();
+    let pipeline = Rc::new(DiffService::new(
+        move || {
+            let _ = redraw.send(());
+        },
+        move |request| {
+            if request.repo == Path::new("/one") {
+                released.recv().unwrap();
+                Ok(vec![file("one.rs")])
+            } else {
+                Ok(vec![file("two.rs")])
+            }
+        },
+        |_| unreachable!("nothing is opened"),
+    ));
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
     );
     harness.force_draw();
-    receive(&mut harness, &files_service, &responses);
-
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
-        files_service: Rc::clone(&files_service),
+        pipeline: Rc::clone(&pipeline),
         watcher_service,
     });
     harness.force_draw();
-    files_service.deliver(pipeline::files::Response {
-        repo: "/one".into(),
-        files: vec![file("stale.rs")],
-    });
-    harness.force_draw();
+    release.send(()).unwrap();
+    wait(&pipeline, &redraws, &mut harness);
 
     let screen = harness.screen().join("\n");
-    assert!(screen.contains("one.rs"), "got {screen:?}");
-    assert!(!screen.contains("stale.rs"), "got {screen:?}");
+    assert!(screen.contains("two.rs"), "got {screen:?}");
+    assert!(!screen.contains("one.rs"), "got {screen:?}");
+}
 
-    receive(&mut harness, &files_service, &responses);
-    assert!(harness.screen().join("\n").contains("two.rs"));
+#[test]
+fn a_list_that_cannot_be_read_says_why() {
+    let (redraw, redraws) = mpsc::channel();
+    let pipeline = Rc::new(DiffService::new(
+        move || {
+            let _ = redraw.send(());
+        },
+        |_| Err("not a git repository".to_owned()),
+        |_| unreachable!("nothing is opened"),
+    ));
+    let mut harness = Harness::new::<Host>(
+        HostProps {
+            repo: Rc::from(Path::new("/repo")),
+            pipeline: Rc::clone(&pipeline),
+            watcher_service: Rc::new(WatcherService::new()),
+        },
+        60,
+        5,
+    );
+    harness.force_draw();
+    wait(&pipeline, &redraws, &mut harness);
+
+    assert!(
+        harness
+            .screen_line(0)
+            .contains("Cannot list files: not a git repository"),
+        "{:?}",
+        harness.screen()
+    );
 }
 
 #[test]
 fn refresh_keeps_the_same_file_selected() {
-    let (files_service, responses) = mock_files_service(vec![
-        vec![file("a.rs"), file("b.rs"), file("c.rs")],
-        vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],
-    ]);
+    let (pipeline, redraws) = fake_pipeline(
+        vec![
+            vec![file("a.rs"), file("b.rs"), file("c.rs")],
+            vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],
+        ],
+        Vec::new(),
+    );
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         6,
     );
     harness.force_draw();
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
     harness.press(crokey::key!(j));
     harness.force_draw();
     harness.press(crokey::key!(j));
@@ -161,7 +188,7 @@ fn refresh_keeps_the_same_file_selected() {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
 
     assert!(harness.screen_line(3).contains("b.rs"));
     assert_eq!(harness.style_at(0, 3).bg, selected_background);
@@ -170,26 +197,28 @@ fn refresh_keeps_the_same_file_selected() {
 
 #[test]
 fn filesystem_changes_refresh_the_current_repository() {
-    let (files_service, responses) =
-        mock_files_service(vec![vec![file("before.rs")], vec![file("after.rs")]]);
+    let (pipeline, redraws) = fake_pipeline(
+        vec![vec![file("before.rs")], vec![file("after.rs")]],
+        Vec::new(),
+    );
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
     );
     harness.force_draw();
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
 
     watcher_service.deliver(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    receive(&mut harness, &files_service, &responses);
+    wait(&pipeline, &redraws, &mut harness);
 
     let screen = harness.screen().join("\n");
     assert!(screen.contains("after.rs"), "got {screen:?}");

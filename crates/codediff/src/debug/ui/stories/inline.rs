@@ -201,7 +201,7 @@ mod tests {
         let StoryFixture::Inline(content) = long_lines().unwrap() else {
             unreachable!()
         };
-        let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+        let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
             unreachable!()
         };
 

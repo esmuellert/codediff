@@ -230,7 +230,7 @@ fn enter_on_a_file_sets_the_focused_file() {
     #[component]
     fn WithFile(
         scope: &mut Scope,
-        files_service: Rc<ui::services::files::FilesService>,
+        pipeline: Rc<diff_service::DiffService>,
         file_set: Rc<Cell<bool>>,
     ) -> Node {
         let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
@@ -242,7 +242,7 @@ fn enter_on_a_file_sets_the_focused_file() {
                 value: Context {
                     theme: Rc::new(Theme::DARK),
                     repo: Rc::from(std::path::Path::new("/repo")),
-                    files_service: Some(Rc::clone(files_service)),
+                    diff_service: Some(Rc::clone(pipeline)),
                     set_file: Some(set_file),
                     file: file.as_ref().map(Rc::clone),
                     ..Default::default()
@@ -253,11 +253,11 @@ fn enter_on_a_file_sets_the_focused_file() {
     }
 
     let files = vec![file("src/app.rs"), file("src/lib.rs")];
-    let (files_service, files_responses) = mock_files_service(vec![files]);
+    let (pipeline, redraws) = fake_pipeline(vec![files], Vec::new());
     let file_set = Rc::new(Cell::new(false));
     let mut h = Harness::new::<WithFile>(
         WithFileProps {
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             file_set: Rc::clone(&file_set),
         },
         40,
@@ -265,11 +265,7 @@ fn enter_on_a_file_sets_the_focused_file() {
     );
 
     h.force_draw();
-    files_service.deliver(
-        files_responses
-            .recv_timeout(std::time::Duration::from_secs(1))
-            .expect("files response"),
-    );
+    wait(&pipeline, &redraws, &mut h);
     h.force_draw();
     h.press(crokey::key!(j));
     h.force_draw();
@@ -421,7 +417,7 @@ fn moving_to_a_file_opens_it() {
     #[component]
     fn Recorder(
         scope: &mut Scope,
-        files_service: Rc<ui::services::files::FilesService>,
+        pipeline: Rc<diff_service::DiffService>,
         opened: Rc<RefCell<Vec<String>>>,
     ) -> Node {
         let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
@@ -437,7 +433,7 @@ fn moving_to_a_file_opens_it() {
                 value: Context {
                     theme: Rc::new(Theme::DARK),
                     repo: Rc::from(std::path::Path::new("/repo")),
-                    files_service: Some(Rc::clone(files_service)),
+                    diff_service: Some(Rc::clone(pipeline)),
                     set_file: Some(set_file),
                     file: file.as_ref().map(Rc::clone),
                     ..Default::default()
@@ -448,22 +444,18 @@ fn moving_to_a_file_opens_it() {
     }
 
     let files = vec![file("a.rs"), file("b.rs")];
-    let (files_service, files_responses) = mock_files_service(vec![files]);
+    let (pipeline, redraws) = fake_pipeline(vec![files], Vec::new());
     let opened = Rc::new(RefCell::new(Vec::new()));
     let mut h = Harness::new::<Recorder>(
         RecorderProps {
-            files_service: Rc::clone(&files_service),
+            pipeline: Rc::clone(&pipeline),
             opened: Rc::clone(&opened),
         },
         40,
         10,
     );
     h.force_draw();
-    files_service.deliver(
-        files_responses
-            .recv_timeout(std::time::Duration::from_secs(1))
-            .expect("files response"),
-    );
+    wait(&pipeline, &redraws, &mut h);
     for _ in 0..4 {
         h.force_draw();
     }

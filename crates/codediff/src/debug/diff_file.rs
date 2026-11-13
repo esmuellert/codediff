@@ -1,13 +1,13 @@
 //! Prints one repository file with both versions.
 
 use anyhow::Result;
+use diff_service::diff::DiffContent;
 use file_types::File;
 use file_types::{DiffVersion, FileContent};
-use pipeline::diff::DiffContent;
 
 use crate::text::sanitize;
-use pipeline::diff::{Runner, Settings};
-use pipeline::files;
+use diff_service::diff::{Runner, Settings};
+use diff_service::files;
 
 /// Finds a changed file, or an existing file for self-comparison.
 fn find(path: &str) -> Result<file_types::File> {
@@ -15,7 +15,7 @@ fn find(path: &str) -> Result<file_types::File> {
     let git = vcs::Repository::open(&cwd)?;
     let root = git.repo_path().root.clone();
     // Search the full list so either side of a rename can match.
-    let request = pipeline::files::Request::worktree(root.clone());
+    let request = diff_service::files::Request::worktree(root.clone());
     let listed = files::get_files(&request)?.into_iter().find(|file| {
         file.path().as_str() == path || file.previous_path().is_some_and(|was| was.as_str() == path)
     });

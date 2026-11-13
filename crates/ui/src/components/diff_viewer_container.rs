@@ -1,12 +1,14 @@
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
+use diff_service::diff::DiffContent;
 use file_types::DiffType;
 use loom::{
     Column, ColumnProps, Layout, Node, Ref, Scope, Scroll, ScrollOffset, ScrollProps, ScrollView,
     component, rsx, use_context, use_layout_effect, use_measure, use_memo, use_scroll,
 };
-use pipeline::diff::DiffContent;
+use syntax::Span;
 
 use super::context::Ui;
 use super::diff_viewer::ViewState;
@@ -22,6 +24,7 @@ use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, find_terminal_l
 pub(crate) struct DiffVisibleRange {
     pub(crate) visible_terminal_lines: Range<usize>,
     pub(crate) horizontal_view: ScrollView,
+    pub(crate) write_horizontal_metrics: bool,
 }
 
 enum ViewLayout {
@@ -88,7 +91,8 @@ impl ViewLayout {
 #[component]
 pub fn DiffViewerContainer(
     scope: &mut Scope,
-    content: Option<Rc<DiffContent>>,
+    content: Option<Arc<DiffContent>>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     view_layout: DiffType,
     view_state: Ref<ViewState>,
     wrap: bool,
@@ -104,7 +108,9 @@ pub fn DiffViewerContainer(
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let (node_ref, size) = use_measure(scope);
-    let content_id = content.as_ref().map(|content| Rc::as_ptr(content) as usize);
+    let content_id = content
+        .as_ref()
+        .map(|content| Arc::as_ptr(content) as usize);
     let content_for_layout = content.clone();
     let layout_data = use_memo(
         scope,
@@ -160,6 +166,7 @@ pub fn DiffViewerContainer(
     let visible_range = DiffVisibleRange {
         visible_terminal_lines: first_terminal_line..last_terminal_line,
         horizontal_view: scroll_view.clone().axes(true, false),
+        write_horizontal_metrics: false,
     };
 
     if size.width > 0 && size.height > 0 {
@@ -175,6 +182,7 @@ pub fn DiffViewerContainer(
     let listeners = use_diff_viewer_navigation(scope, scroll_handle);
     let view_node = render_view(
         content,
+        Arc::clone(colours),
         view_layout,
         layout_data.as_ref(),
         visible_range,
@@ -209,7 +217,8 @@ pub fn DiffViewerContainer(
 }
 
 fn render_view(
-    content: Option<Rc<DiffContent>>,
+    content: Option<Arc<DiffContent>>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     view_layout: DiffType,
     layout_data: &ViewLayout,
     visible_range: DiffVisibleRange,
@@ -221,8 +230,9 @@ fn render_view(
     match (content.as_ref(), view_layout, layout_data) {
         (DiffContent::Diff(_), DiffType::Inline, ViewLayout::Inline(inline_layout)) => rsx! {
             Inline {
-                key: Rc::as_ptr(&content) as usize,
-                content: Rc::clone(&content),
+                key: Arc::as_ptr(&content) as usize,
+                content: Arc::clone(&content),
+                colours: colours,
                 wrapped_lines: Rc::clone(&inline_layout.wrapped_lines),
                 viewport: visible_range,
                 original_gutter_width: inline_layout.original_gutter_width,
@@ -238,8 +248,9 @@ fn render_view(
             ViewLayout::SideBySide(side_by_side_layout),
         ) => rsx! {
             SideBySide {
-                key: Rc::as_ptr(&content) as usize,
-                content: Rc::clone(&content),
+                key: Arc::as_ptr(&content) as usize,
+                content: Arc::clone(&content),
+                colours: colours,
                 wrapped_lines: Rc::clone(&side_by_side_layout.wrapped_lines),
                 viewport: visible_range,
                 original_gutter_width: side_by_side_layout.original_gutter_width,
@@ -256,8 +267,9 @@ fn render_view(
         (DiffContent::SingleFile(_), _, ViewLayout::SingleFile(single_file_layout)) => {
             rsx! {
                 SingleFile {
-                    key: Rc::as_ptr(&content) as usize,
-                    content: Rc::clone(&content),
+                    key: Arc::as_ptr(&content) as usize,
+                    content: Arc::clone(&content),
+                    colours: colours,
                     wrapped_lines: Rc::clone(&single_file_layout.wrapped_lines),
                     viewport: visible_range,
                     gutter_width: single_file_layout.gutter_width,

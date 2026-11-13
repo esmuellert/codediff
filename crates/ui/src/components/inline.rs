@@ -1,6 +1,7 @@
 //! One full-width column showing original and modified lines in sequence.
 
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use align::{Alignment, DiffVersion};
 use file_types::DiffType;
@@ -8,6 +9,7 @@ use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollProps, component,
     rsx, use_context,
 };
+use syntax::Span;
 
 use super::code_text::{
     self, CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells,
@@ -16,8 +18,6 @@ use super::context::Ui;
 use super::diff_viewer_container::DiffVisibleRange;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_syntax::use_syntax;
-use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
 use crate::view::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
@@ -73,7 +73,8 @@ pub(crate) fn layout_inline(
 #[component]
 pub(crate) fn Inline(
     scope: &mut Scope,
-    content: Rc<pipeline::diff::DiffContent>,
+    content: Arc<diff_service::diff::DiffContent>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     wrapped_lines: Rc<Vec<WrappedViewLine>>,
     viewport: DiffVisibleRange,
     original_gutter_width: u16,
@@ -88,8 +89,9 @@ pub(crate) fn Inline(
     let horizontal_scroll_extent = *horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
+    let colours = colours.lock().unwrap();
     let theme = &ctx.theme;
-    let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+    let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to Inline")
     };
     let alignment = &diff.alignment;
@@ -98,14 +100,6 @@ pub(crate) fn Inline(
         .visible_terminal_lines
         .end
         .saturating_sub(viewport.visible_terminal_lines.start);
-    let syntax = use_syntax(
-        scope,
-        ctx.syntax_service.as_ref().map(Rc::clone),
-        Rc::clone(content),
-        DiffType::Inline,
-        wrapped_lines,
-    );
-    let syntax = syntax.as_deref();
 
     let mut original_gutters = Vec::with_capacity(visible_terminal_line_count);
     let mut modified_gutters = Vec::with_capacity(visible_terminal_line_count);
@@ -185,15 +179,16 @@ pub(crate) fn Inline(
         let code_styles = code_text::styles_for_diff(theme, version, decorations.line_background);
         let gutter_style = gutter::style_for_diff(theme, version, decorations.gutter_background);
         let text = alignment.line(version, line_number).unwrap_or("");
-        let syntax_spans = syntax
-            .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-            .unwrap_or_default();
+        let syntax_spans = line_number
+            .checked_sub(1)
+            .and_then(|index| colours[version as usize].get(index as usize))
+            .map_or(&[][..], Vec::as_slice);
         let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
             code_text::prepare_code_text_inputs_from_decorations(
                 text,
                 terminal_line,
                 &decorations,
-                &syntax_spans,
+                syntax_spans,
             );
 
         original_gutters.push(rsx! {
@@ -270,7 +265,7 @@ pub(crate) fn Inline(
                     horizontal: true,
                     vertical: false,
                     wheel_step: 0,
-                    write_metrics: false,
+                    write_metrics: viewport.write_horizontal_metrics,
                     content_width: Some(horizontal_scroll_extent.saturating_add(u32::from(code_width))),
                     layout: Layout { grow: 1, shrink: 0, fill: Some(theme.normal), ..Default::default() },
                     ..,

@@ -161,7 +161,7 @@ mod tests {
         let StoryFixture::SingleFile(content) = fixture else {
             unreachable!()
         };
-        let pipeline::diff::DiffContent::SingleFile(single) = content.as_ref() else {
+        let diff_service::diff::DiffContent::SingleFile(single) = content.as_ref() else {
             unreachable!()
         };
         single.lines.len()
@@ -172,7 +172,7 @@ mod tests {
         let StoryFixture::SingleFile(content) = long_lines().unwrap() else {
             unreachable!()
         };
-        let pipeline::diff::DiffContent::SingleFile(single) = content.as_ref() else {
+        let diff_service::diff::DiffContent::SingleFile(single) = content.as_ref() else {
             unreachable!()
         };
         let cells = line_index::LineIndex::new(&single.lines[0], line_index::DEFAULT_TAB_WIDTH)
