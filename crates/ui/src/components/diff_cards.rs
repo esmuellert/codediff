@@ -9,12 +9,12 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use diff_service::diff::DiffContent;
 use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, Scroll, ScrollOffset,
     ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_measure, use_scroll,
 };
-use pipeline::diff::DiffContent;
 use syntax::Span;
 
 use super::context::Ui;

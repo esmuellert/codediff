@@ -8,14 +8,14 @@
 use std::path::Path;
 use std::rc::Rc;
 
+use diff_service::DiffService;
 use loom::testing::Harness;
-use pipeline::Pipeline;
 use ui::components::{App, AppProps};
 use ui::services::version_control::VersionControlService;
 use ui::services::watcher::WatcherService;
 
 fn idle_app() -> Harness {
-    let pipeline = Pipeline::new(|| {}, |_| Ok(Vec::new()), |_| Err("no files".to_owned()));
+    let pipeline = DiffService::new(|| {}, |_| Ok(Vec::new()), |_| Err("no files".to_owned()));
     Harness::new::<App>(
         AppProps {
             cwd: Rc::from(Path::new("/tmp")),

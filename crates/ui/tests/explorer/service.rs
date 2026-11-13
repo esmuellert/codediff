@@ -2,9 +2,9 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc;
 
+use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx};
-use pipeline::Pipeline;
 use ui::Theme;
 use ui::components::{Context, Explorer, Ui, UiProps};
 use ui::services::watcher::WatcherService;
@@ -15,7 +15,7 @@ use super::common::{fake_pipeline, file, wait};
 fn Host(
     scope: &mut Scope,
     repo: Rc<Path>,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -86,7 +86,7 @@ fn changing_repository_requests_a_new_file_list() {
 fn a_list_still_being_read_for_the_previous_repository_never_appears() {
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(Pipeline::new(
+    let pipeline = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },
@@ -128,7 +128,7 @@ fn a_list_still_being_read_for_the_previous_repository_never_appears() {
 #[test]
 fn a_list_that_cannot_be_read_says_why() {
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(Pipeline::new(
+    let pipeline = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },

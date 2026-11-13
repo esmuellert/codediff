@@ -3,11 +3,11 @@
 use std::path::Path;
 use std::rc::Rc;
 
+use diff_service::DiffService;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
     use_exit,
 };
-use pipeline::Pipeline;
 
 use super::border::{Border, BorderProps};
 use super::context::{UiProvider, UiProviderProps};
@@ -23,7 +23,7 @@ pub fn App(
     cwd: Rc<Path>,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
-    diff_service: Rc<Pipeline>,
+    diff_service: Rc<DiffService>,
     version_control_service: Rc<VersionControlService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {

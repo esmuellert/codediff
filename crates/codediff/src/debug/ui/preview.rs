@@ -6,11 +6,11 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use diff_service::diff::DiffContent;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
     use_exit, use_ref, use_state,
 };
-use pipeline::diff::DiffContent;
 use syntax::Span;
 use ui::components::border::{Border, BorderProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};

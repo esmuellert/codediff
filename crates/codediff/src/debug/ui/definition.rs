@@ -3,9 +3,9 @@
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
+use diff_service::diff::DiffContent;
 use file_types::File;
 use loom::crokey::KeyCombination;
-use pipeline::diff::DiffContent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StoryComponent {

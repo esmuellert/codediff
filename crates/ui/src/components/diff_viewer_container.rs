@@ -2,12 +2,12 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use diff_service::diff::DiffContent;
 use file_types::DiffType;
 use loom::{
     Column, ColumnProps, Layout, Node, Ref, Scope, Scroll, ScrollOffset, ScrollProps, ScrollView,
     component, rsx, use_context, use_layout_effect, use_measure, use_memo, use_scroll,
 };
-use pipeline::diff::DiffContent;
 use syntax::Span;
 
 use super::context::Ui;

@@ -47,13 +47,13 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
     let config = Rc::new(config);
     let keybindings =
         Rc::new(KeyMap::from_config(&config.keybindings).map_err(std::io::Error::other)?);
-    let diff_settings = pipeline::diff::Settings {
+    let diff_settings = diff_service::diff::Settings {
         ignore_trim_whitespace: config.diff.ignore_trim_whitespace,
     };
     let (events_tx, events_rx) = mpsc::channel::<Event>();
 
     let redraw = events_tx.clone();
-    let pipeline = Rc::new(pipeline::Pipeline::start(
+    let pipeline = Rc::new(diff_service::DiffService::start(
         move || {
             let _ = redraw.send(Event::Redraw);
         },

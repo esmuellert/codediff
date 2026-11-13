@@ -3,8 +3,8 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
+use diff_service::diff::{DiffContent, SingleFile};
 use file_types::File;
-use pipeline::diff::{DiffContent, SingleFile};
 
 use super::{repo_path, worktree_revs};
 

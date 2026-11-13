@@ -28,7 +28,7 @@ pub(crate) struct SingleFileLayout {
 }
 
 pub(crate) fn layout_single_file(
-    single: &pipeline::diff::SingleFile,
+    single: &diff_service::diff::SingleFile,
     width: u16,
     wrap: bool,
 ) -> SingleFileLayout {
@@ -54,7 +54,7 @@ pub(crate) fn layout_single_file(
 #[component]
 pub(crate) fn SingleFile(
     scope: &mut Scope,
-    content: Arc<pipeline::diff::DiffContent>,
+    content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     wrapped_lines: Rc<Vec<WrappedViewLine>>,
     viewport: DiffVisibleRange,
@@ -69,7 +69,7 @@ pub(crate) fn SingleFile(
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
-    let pipeline::diff::DiffContent::SingleFile(single) = content.as_ref() else {
+    let diff_service::diff::DiffContent::SingleFile(single) = content.as_ref() else {
         unreachable!("DiffViewer sends one-sided files to SingleFile")
     };
     let version = single.side();
@@ -186,7 +186,7 @@ pub(crate) fn SingleFile(
 }
 
 fn wrapped_lines(
-    single: &pipeline::diff::SingleFile,
+    single: &diff_service::diff::SingleFile,
     version: DiffVersion,
     code_width: u16,
     wrap: bool,

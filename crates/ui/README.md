@@ -17,11 +17,11 @@ App
                      └─ SingleFile
 ```
 
-`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the slots `pipeline::Pipeline::open` returned for the selected file (or for a selected directory's opened files), chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
+`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the slots `diff_service::DiffService::open` returned for the selected file (or for a selected directory's opened files), chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
 
 ## Services and background work
 
-- `diff_service` (a `pipeline::Pipeline`) lists files and opens files. Its threads fill the returned slots in and send `Redraw`; the main loop then redraws every component.
+- `diff_service` (a `diff_service::DiffService`) lists files and opens files. Its threads fill the returned slots in and send `Redraw`; the main loop then redraws every component.
 - `VersionControlService` stages and unstages paths through `vcs`.
 - `WatcherService` multicasts `watcher::Refresh` values.
 

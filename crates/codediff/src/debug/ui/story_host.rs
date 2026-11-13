@@ -6,12 +6,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
+use diff_service::DiffService;
 use loom::crokey::KeyCombination;
 use loom::ratatui::buffer::Buffer;
 use loom::ratatui::layout::Rect;
 use loom::testing::Harness;
 use loom::{Flow, Tree, deliver_input};
-use pipeline::Pipeline;
 use ui::Theme;
 use ui::components::Context as UiContext;
 
@@ -34,7 +34,7 @@ pub(super) fn story_props(
     fixture: StoryFixture,
     redraw: impl Fn() + Send + Sync + 'static,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
-) -> (Rc<Pipeline>, StoryPreviewProps) {
+) -> (Rc<DiffService>, StoryPreviewProps) {
     let (listed, contents, open) = match fixture {
         StoryFixture::Welcome => (None, Vec::new(), false),
         StoryFixture::Explorer(files) => (Some(files), Vec::new(), false),
@@ -57,7 +57,7 @@ pub(super) fn story_props(
     } else {
         Vec::new()
     };
-    let pipeline = Rc::new(Pipeline::new(
+    let pipeline = Rc::new(DiffService::new(
         redraw,
         move |_| Ok(listed.clone().unwrap_or_default()),
         move |file| {
@@ -87,7 +87,7 @@ struct StoryHost {
     definition: &'static StoryDefinition,
     events_tx: Sender<StoryEvent>,
     events_rx: Receiver<StoryEvent>,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
 }
 
 impl StoryHost {

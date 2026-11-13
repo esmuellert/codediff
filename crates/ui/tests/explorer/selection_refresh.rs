@@ -4,9 +4,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
+use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Layout, Node, Row, RowProps, Scope, component, rsx};
-use pipeline::Pipeline;
 use ui::Theme;
 use ui::components::diff_viewer::DiffViewer;
 use ui::components::{Context, Explorer, Ui, UiProps};
@@ -17,7 +17,7 @@ use super::common::{fake_pipeline, file, file_with_stats, wait};
 #[component]
 fn SelectionHost(
     scope: &mut Scope,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
     initial_file: Rc<file_types::File>,
     observed_file: Rc<RefCell<Option<file_types::File>>>,
@@ -44,7 +44,7 @@ fn SelectionHost(
 #[component]
 fn ReviewHost(
     scope: &mut Scope,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
     initial_file: Rc<file_types::File>,
 ) -> Node {
@@ -73,7 +73,7 @@ fn ReviewHost(
 
 struct SelectionHarness {
     harness: Harness,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
     redraws: Receiver<()>,
     observed_file: Rc<RefCell<Option<file_types::File>>>,
@@ -144,7 +144,7 @@ fn an_empty_refresh_clears_the_selected_file() {
 #[test]
 fn clearing_the_last_change_replaces_its_diff_with_welcome() {
     let selected = added_file("selected.rs");
-    let content = pipeline::diff::DiffContent::SingleFile(pipeline::diff::SingleFile {
+    let content = diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
         file: selected.clone(),
         lines: Arc::new(vec!["stale body".to_owned()]),
     });

@@ -5,8 +5,8 @@ use std::rc::Rc;
 use std::sync::mpsc::{self, Sender};
 
 use anyhow::Result;
+use diff_service::DiffService;
 use loom::{Flow, Tree, deliver_input};
-use pipeline::Pipeline;
 
 use super::catalog;
 use super::catalog_view::{CatalogRoot, CatalogRootProps};
@@ -25,7 +25,7 @@ enum GalleryEvent {
 
 struct ActiveStory {
     definition: &'static StoryDefinition,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     initial_keys_applied: bool,
 }
 

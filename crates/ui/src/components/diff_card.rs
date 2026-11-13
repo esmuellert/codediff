@@ -5,12 +5,12 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use align::Alignment;
+use diff_service::diff::DiffContent;
 use file_types::DiffType;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, Text,
     TextProps, component, rsx, use_context, use_measure, use_memo, use_scroll,
 };
-use pipeline::diff::DiffContent;
 use syntax::Span;
 
 use super::border::{Border, BorderProps};

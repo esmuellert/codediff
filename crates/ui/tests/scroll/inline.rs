@@ -16,7 +16,7 @@ use crate::fake_pipeline::coloured;
 #[component]
 fn TestInline(
     scope: &mut Scope,
-    content: Arc<pipeline::diff::DiffContent>,
+    content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Node {
     let view_states = use_ref(scope, ViewStateHistory::default);
@@ -48,7 +48,7 @@ fn TestInline(
 }
 
 #[component]
-fn TestInlineUnwrapped(scope: &mut Scope, content: Arc<pipeline::diff::DiffContent>) -> Node {
+fn TestInlineUnwrapped(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) -> Node {
     let view_state = use_ref(scope, ViewState::default);
     let content_id = Arc::as_ptr(content) as usize;
     rsx! {
@@ -65,15 +65,16 @@ fn TestInlineUnwrapped(scope: &mut Scope, content: Arc<pipeline::diff::DiffConte
     }
 }
 
-fn make_diff(path: &str, original: &[&str], modified: &[&str]) -> pipeline::diff::Diff {
-    let diff = pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())
-        .expect("a diff");
-    let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
+fn make_diff(path: &str, original: &[&str], modified: &[&str]) -> diff_service::diff::Diff {
+    let diff =
+        diff_service::diff::compute(original, modified, diff_service::diff::Settings::default())
+            .expect("a diff");
+    let alignment = diff_service::diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new(path, std::path::Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::Oid::new("abc")),
     );
-    pipeline::diff::Diff { file, alignment }
+    diff_service::diff::Diff { file, alignment }
 }
 
 fn harness_with_colours(
@@ -83,7 +84,7 @@ fn harness_with_colours(
     height: u16,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Harness {
-    let content = Arc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "test.rs", original, modified,
     )));
     Harness::new::<TestInline>(TestInlineProps { content, colours }, width, height).provide::<Ui>(
@@ -101,7 +102,7 @@ fn harness(original: &[&str], modified: &[&str], width: u16, height: u16) -> Har
 }
 
 fn harness_unwrapped(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
-    let content = Arc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "unwrapped.rs",
         original,
         modified,
@@ -176,7 +177,7 @@ fn empty_and_nonempty_character_ranges_reach_code_text() {
 
 #[test]
 fn the_pipeline_colours_both_versions() {
-    let colours = coloured(pipeline::diff::DiffContent::Diff(make_diff(
+    let colours = coloured(diff_service::diff::DiffContent::Diff(make_diff(
         "test.rs",
         &["fn before() {}"],
         &["fn after() {}"],
@@ -263,12 +264,12 @@ fn each_file_restores_its_vertical_position() {
     let second: Vec<String> = (1..=12).map(|line| format!("second {line:02}")).collect();
     let first_lines: Vec<&str> = first.iter().map(String::as_str).collect();
     let second_lines: Vec<&str> = second.iter().map(String::as_str).collect();
-    let first_content = Arc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let first_content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "first.rs",
         &first_lines,
         &first_lines,
     )));
-    let second_content = Arc::new(pipeline::diff::DiffContent::Diff(make_diff(
+    let second_content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
         "second.rs",
         &second_lines,
         &second_lines,

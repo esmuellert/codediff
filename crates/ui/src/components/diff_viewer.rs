@@ -8,12 +8,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use diff_service::diff::DiffContent;
 use file_types::{DiffType, DiffVersion, File, Rev};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, Text, TextProps,
     component, rsx, use_context, use_effect, use_memo, use_ref, use_state,
 };
-use pipeline::diff::DiffContent;
 use syntax::Span;
 
 use super::context::{Context, Ui};
@@ -94,7 +94,7 @@ struct DirectoryFiles {
 }
 
 impl DirectoryFiles {
-    fn open_next(&self, pipeline: &pipeline::Pipeline) {
+    fn open_next(&self, pipeline: &diff_service::DiffService) {
         let mut opened = self.opened.borrow_mut();
         // One file at a time, in order.
         if opened

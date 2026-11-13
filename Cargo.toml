@@ -19,7 +19,7 @@ members = [
     "crates/loom-macros",
     "crates/loom",
     "crates/ui",
-    "crates/pipeline",
+    "crates/diff-service",
     "crates/watcher",
     "crates/codediff",
     "xtask",
@@ -58,7 +58,7 @@ syntax = { path = "crates/syntax" }
 loom-macros = { path = "crates/loom-macros" }
 loom = { path = "crates/loom" }
 ui = { path = "crates/ui" }
-pipeline = { path = "crates/pipeline" }
+diff-service = { path = "crates/diff-service" }
 watcher = { path = "crates/watcher" }
 
 # The TextMate engine, and bat's extended grammar set. `onig` rather than

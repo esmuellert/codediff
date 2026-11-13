@@ -24,7 +24,7 @@ use crate::files::{self, Request};
 const CHUNK_LINES: u32 = 2_000;
 
 /// Lists changed files and diffs and colours them away from the interface.
-pub struct Pipeline {
+pub struct DiffService {
     lists: Sender<(Request, Weak<Mutex<Option<Result<Vec<File>, String>>>>)>,
     diffs: Sender<(
         File,
@@ -36,7 +36,7 @@ pub struct Pipeline {
     pending_jobs: Arc<AtomicUsize>,
 }
 
-impl Pipeline {
+impl DiffService {
     /// Starts the threads on a Git repository.
     pub fn start(
         redraw: impl Fn() + Send + Sync + 'static,

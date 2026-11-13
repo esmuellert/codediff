@@ -42,7 +42,7 @@ mod tests {
         let StoryFixture::Card(content) = comprehensive().unwrap() else {
             unreachable!()
         };
-        let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
+        let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
             unreachable!()
         };
 

@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
+use diff_service::files::{self as files, Request};
 use file_types::Stats;
-use pipeline::files::{self as files, Request};
 
 /// A fixture repository in a temporary directory, removed on drop.
 struct Fixture {

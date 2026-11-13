@@ -567,10 +567,13 @@ mod tests {
     fn wraps_an_alignment_into_wrapped_view_lines() {
         let original = ["abcdef"];
         let modified = ["abc"];
-        let diff =
-            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
-                .unwrap();
-        let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
+        let diff = diff_service::diff::compute(
+            &original,
+            &modified,
+            diff_service::diff::Settings::default(),
+        )
+        .unwrap();
+        let alignment = diff_service::diff::align(diff, &original, &modified).unwrap();
         let wrapped = terminal_view_lines(
             &alignment,
             DiffType::SideBySide,
@@ -589,10 +592,13 @@ mod tests {
     fn terminal_line_pairs_switch_between_wrapped_and_unwrapped_modes() {
         let original = ["abcdef"];
         let modified = ["abcdef"];
-        let diff =
-            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
-                .unwrap();
-        let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
+        let diff = diff_service::diff::compute(
+            &original,
+            &modified,
+            diff_service::diff::Settings::default(),
+        )
+        .unwrap();
+        let alignment = diff_service::diff::align(diff, &original, &modified).unwrap();
 
         assert_eq!(
             terminal_line_pairs(&alignment, DiffType::SideBySide, 3, 3, true).len(),
@@ -614,10 +620,13 @@ mod tests {
         modified[14] = "line 15 changed".to_owned();
         let original = original.iter().map(String::as_str).collect::<Vec<_>>();
         let modified = modified.iter().map(String::as_str).collect::<Vec<_>>();
-        let diff =
-            pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
-                .unwrap();
-        let alignment = pipeline::diff::align(diff, &original, &modified).unwrap();
+        let diff = diff_service::diff::compute(
+            &original,
+            &modified,
+            diff_service::diff::Settings::default(),
+        )
+        .unwrap();
+        let alignment = diff_service::diff::align(diff, &original, &modified).unwrap();
         let lines = terminal_view_lines(
             &alignment,
             DiffType::SideBySide,

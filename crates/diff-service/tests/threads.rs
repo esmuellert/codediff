@@ -5,9 +5,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use diff_service::DiffService;
+use diff_service::diff::{self, Diff, DiffContent, SingleFile};
 use file_types::{DiffVersion, File, Oid, RepoPath, Revs};
-use pipeline::Pipeline;
-use pipeline::diff::{self, Diff, DiffContent, SingleFile};
 
 fn file(path: &str) -> File {
     File::unchanged_path(
@@ -27,9 +27,9 @@ fn content(path: &str, after: &str) -> DiffContent {
 }
 
 /// A pipeline that reads files by name from `contents`.
-fn pipeline(contents: Vec<DiffContent>) -> (Pipeline, Receiver<()>) {
+fn pipeline(contents: Vec<DiffContent>) -> (DiffService, Receiver<()>) {
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Pipeline::new(
+    let pipeline = DiffService::new(
         move || {
             let _ = redraw.send(());
         },
@@ -45,7 +45,7 @@ fn pipeline(contents: Vec<DiffContent>) -> (Pipeline, Receiver<()>) {
     (pipeline, redraws)
 }
 
-fn wait_until_idle(pipeline: &Pipeline, redraws: &Receiver<()>) {
+fn wait_until_idle(pipeline: &DiffService, redraws: &Receiver<()>) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while pipeline.is_busy() {
         assert!(Instant::now() < deadline, "the pipeline never finished");
@@ -98,7 +98,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
     let reads = Arc::new(Mutex::new(Vec::new()));
     let read_paths = Arc::clone(&reads);
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Pipeline::new(
+    let pipeline = DiffService::new(
         move || {
             let _ = redraw.send(());
         },
@@ -135,7 +135,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
 fn a_listed_repository_reports_its_files_or_why_it_could_not() {
     let (redraw, redraws) = mpsc::channel();
     let mut answers = vec![Err("not a repository".to_owned()), Ok(vec![file("a.rs")])];
-    let pipeline = Pipeline::new(
+    let pipeline = DiffService::new(
         move || {
             let _ = redraw.send(());
         },

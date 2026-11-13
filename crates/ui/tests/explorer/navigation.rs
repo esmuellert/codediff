@@ -230,7 +230,7 @@ fn enter_on_a_file_sets_the_focused_file() {
     #[component]
     fn WithFile(
         scope: &mut Scope,
-        pipeline: Rc<pipeline::Pipeline>,
+        pipeline: Rc<diff_service::DiffService>,
         file_set: Rc<Cell<bool>>,
     ) -> Node {
         let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
@@ -417,7 +417,7 @@ fn moving_to_a_file_opens_it() {
     #[component]
     fn Recorder(
         scope: &mut Scope,
-        pipeline: Rc<pipeline::Pipeline>,
+        pipeline: Rc<diff_service::DiffService>,
         opened: Rc<RefCell<Vec<String>>>,
     ) -> Node {
         let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);

@@ -8,10 +8,10 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use diff_service::diff::{self, DiffContent};
 use file_types::{DiffType, File, Oid, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
-use pipeline::diff::{self, DiffContent};
 use syntax::Span;
 use ui::Theme;
 use ui::components::{Context, DiffCard, DiffCardProps, DiffCards, DiffCardsProps, Ui};

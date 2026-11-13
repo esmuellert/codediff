@@ -348,11 +348,11 @@ dependencies = [
  "anyhow",
  "clap",
  "config",
+ "diff-service",
  "file-types",
  "fixtures",
  "line-index",
  "loom",
- "pipeline",
  "portable-pty",
  "serde",
  "serde_json",
@@ -603,6 +603,20 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "diff-service"
+version = "0.27.3"
+dependencies = [
+ "align",
+ "anyhow",
+ "file-types",
+ "fixtures",
+ "syntax",
+ "tracing",
+ "vcs",
+ "vscode-diff",
 ]
 
 [[package]]
@@ -1476,20 +1490,6 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
-
-[[package]]
-name = "pipeline"
-version = "0.27.3"
-dependencies = [
- "align",
- "anyhow",
- "file-types",
- "fixtures",
- "syntax",
- "tracing",
- "vcs",
- "vscode-diff",
-]
 
 [[package]]
 name = "pkg-config"
@@ -2756,11 +2756,11 @@ dependencies = [
  "config",
  "crokey",
  "crossterm",
+ "diff-service",
  "diff-types",
  "file-types",
  "line-index",
  "loom",
- "pipeline",
  "ratatui",
  "signal-hook 0.4.5",
  "syntax",

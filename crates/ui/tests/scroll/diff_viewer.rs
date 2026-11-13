@@ -2,9 +2,9 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 
+use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Layout, Node, Row, RowProps, Scope, component, rsx};
-use pipeline::Pipeline;
 use ui::Theme;
 use ui::components::diff_viewer::{DiffViewer, DiffViewerProps};
 use ui::components::{Context, Explorer, Ui, UiProps};
@@ -19,7 +19,7 @@ fn file(path: &str) -> file_types::File {
     )
 }
 
-fn make_diff(file: file_types::File) -> pipeline::diff::DiffContent {
+fn make_diff(file: file_types::File) -> diff_service::diff::DiffContent {
     make_diff_with_lines(file, &["hello", "world"], &["hello", "world"])
 }
 
@@ -27,31 +27,32 @@ fn make_diff_with_lines(
     file: file_types::File,
     original: &[&str],
     modified: &[&str],
-) -> pipeline::diff::DiffContent {
-    let diff = pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())
-        .expect("a diff");
-    let alignment = pipeline::diff::align(diff, original, modified).expect("alignment");
-    pipeline::diff::DiffContent::Diff(pipeline::diff::Diff { file, alignment })
+) -> diff_service::diff::DiffContent {
+    let diff =
+        diff_service::diff::compute(original, modified, diff_service::diff::Settings::default())
+            .expect("a diff");
+    let alignment = diff_service::diff::align(diff, original, modified).expect("alignment");
+    diff_service::diff::DiffContent::Diff(diff_service::diff::Diff { file, alignment })
 }
 
-fn make_single(file: file_types::File) -> pipeline::diff::DiffContent {
+fn make_single(file: file_types::File) -> diff_service::diff::DiffContent {
     make_single_with_text(file, "untracked body")
 }
 
-fn make_single_with_text(file: file_types::File, text: &str) -> pipeline::diff::DiffContent {
-    pipeline::diff::DiffContent::SingleFile(pipeline::diff::SingleFile {
+fn make_single_with_text(file: file_types::File, text: &str) -> diff_service::diff::DiffContent {
+    diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
         file,
         lines: Arc::new(vec![text.to_owned()]),
     })
 }
 
-fn with_response(file: file_types::File, content: pipeline::diff::DiffContent) -> Harness {
+fn with_response(file: file_types::File, content: diff_service::diff::DiffContent) -> Harness {
     with_response_at(file, content, 60, 10)
 }
 
 fn with_response_at(
     file: file_types::File,
-    content: pipeline::diff::DiffContent,
+    content: diff_service::diff::DiffContent,
     width: u16,
     height: u16,
 ) -> Harness {
@@ -71,7 +72,7 @@ fn with_response_at(
 fn ViewerHost(
     scope: &mut Scope,
     file: Rc<file_types::File>,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -93,7 +94,7 @@ fn ViewerHost(
 fn ExplorerAndViewerHost(
     scope: &mut Scope,
     file: Rc<file_types::File>,
-    pipeline: Rc<Pipeline>,
+    pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -154,7 +155,7 @@ fn the_previous_file_is_hidden_while_the_next_one_loads() {
     let second = file("second.rs");
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(Pipeline::new(
+    let pipeline = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },

@@ -3,10 +3,10 @@ use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 
+use diff_service::DiffService;
 use file_types::{File, Oid, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Basis, Layout, Row, RowProps, Scope, component, rsx, use_state};
-use pipeline::Pipeline;
 use ui::Theme;
 use ui::components::border::{Border, BorderProps};
 use ui::components::diff_viewer::DiffViewer;
@@ -23,14 +23,17 @@ fn file(path: &str) -> File {
     .set_stats(Stats::new(1, 1))
 }
 
-fn diff(file: File, original: &str, modified: &str) -> pipeline::diff::DiffContent {
+fn diff(file: File, original: &str, modified: &str) -> diff_service::diff::DiffContent {
     let original: Vec<_> = original.lines().collect();
     let modified: Vec<_> = modified.lines().collect();
-    let changed =
-        pipeline::diff::compute(&original, &modified, pipeline::diff::Settings::default())
-            .expect("diff computes");
-    let alignment = pipeline::diff::align(changed, &original, &modified).expect("alignment");
-    pipeline::diff::DiffContent::Diff(pipeline::diff::Diff { file, alignment })
+    let changed = diff_service::diff::compute(
+        &original,
+        &modified,
+        diff_service::diff::Settings::default(),
+    )
+    .expect("diff computes");
+    let alignment = diff_service::diff::align(changed, &original, &modified).expect("alignment");
+    diff_service::diff::DiffContent::Diff(diff_service::diff::Diff { file, alignment })
 }
 
 #[component]
@@ -44,7 +47,7 @@ fn SelectedDiffHost(_scope: &mut Scope, context: Context) -> loom::Node {
 }
 
 #[component]
-fn ExplorerDiffHost(scope: &mut Scope, pipeline: Rc<Pipeline>) -> loom::Node {
+fn ExplorerDiffHost(scope: &mut Scope, pipeline: Rc<DiffService>) -> loom::Node {
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
     let (directory, set_directory) = use_state(scope, || None::<Rc<DirectorySelection>>);
     rsx! {
@@ -75,7 +78,7 @@ fn ExplorerDiffHost(scope: &mut Scope, pipeline: Rc<Pipeline>) -> loom::Node {
     }
 }
 
-fn setup(line_count: usize) -> (Harness, Rc<Pipeline>, Receiver<()>) {
+fn setup(line_count: usize) -> (Harness, Rc<DiffService>, Receiver<()>) {
     let first = file("src/a.rs");
     let second = file("src/b.rs");
     let added = File::added(
@@ -292,7 +295,7 @@ fn directory_viewer(
     count: usize,
     lines: usize,
     height: u16,
-) -> (Harness, Rc<Pipeline>, Receiver<()>, Reads) {
+) -> (Harness, Rc<DiffService>, Receiver<()>, Reads) {
     let files: Vec<File> = (0..count)
         .map(|index| file(&format!("dir/{index}.rs")))
         .collect();
@@ -309,7 +312,7 @@ fn directory_viewer(
     let reads = Arc::new(Mutex::new(Vec::new()));
     let read_paths = Arc::clone(&reads);
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(Pipeline::new(
+    let pipeline = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },
@@ -419,7 +422,7 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
     let read_paths = Arc::clone(&reads);
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(Pipeline::new(
+    let pipeline = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },

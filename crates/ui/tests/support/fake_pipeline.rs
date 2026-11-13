@@ -10,10 +10,10 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use diff_service::DiffService;
+use diff_service::diff::DiffContent;
 use file_types::File;
 use loom::testing::Harness;
-use pipeline::Pipeline;
-use pipeline::diff::DiffContent;
 use syntax::Span;
 
 /// Each listing answers with the next list, then with no files.
@@ -23,11 +23,11 @@ use syntax::Span;
 pub fn fake_pipeline(
     lists: Vec<Vec<File>>,
     diffs: Vec<DiffContent>,
-) -> (Rc<Pipeline>, Receiver<()>) {
+) -> (Rc<DiffService>, Receiver<()>) {
     let (redraw, redraws) = mpsc::channel();
     let mut lists = lists.into_iter();
     let mut diffs = diffs;
-    let pipeline = Pipeline::new(
+    let pipeline = DiffService::new(
         move || {
             let _ = redraw.send(());
         },
@@ -48,7 +48,7 @@ pub fn fake_pipeline(
 
 /// Draws until the threads have nothing left to do and the last drawing saw
 /// everything they wrote.
-pub fn wait(pipeline: &Pipeline, redraws: &Receiver<()>, harness: &mut Harness) {
+pub fn wait(pipeline: &DiffService, redraws: &Receiver<()>, harness: &mut Harness) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let idle = !pipeline.is_busy();

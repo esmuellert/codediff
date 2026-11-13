@@ -3,9 +3,9 @@
 use std::path::Path;
 use std::rc::Rc;
 
+use diff_service::DiffService;
 use file_types::{File, RepoPath, Revs};
 use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
-use pipeline::Pipeline;
 
 use crate::keybindings::KeyMap;
 use crate::services::version_control::VersionControlService;
@@ -37,7 +37,7 @@ pub struct Context {
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub directory: Option<Rc<DirectorySelection>>,
     pub set_directory: Option<SetState<Option<Rc<DirectorySelection>>>>,
-    pub diff_service: Option<Rc<Pipeline>>,
+    pub diff_service: Option<Rc<DiffService>>,
     pub version_control_service: Option<Rc<VersionControlService>>,
     pub watcher_service: Option<Rc<WatcherService>>,
     pub set_repo: Option<SetState<Rc<Path>>>,
@@ -102,7 +102,7 @@ pub fn UiProvider(
     cwd: Rc<Path>,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
-    diff_service: Rc<Pipeline>,
+    diff_service: Rc<DiffService>,
     version_control_service: Rc<VersionControlService>,
     watcher_service: Rc<WatcherService>,
     children: loom::Children,

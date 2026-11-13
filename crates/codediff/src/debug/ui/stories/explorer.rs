@@ -129,13 +129,18 @@ fn directory_cards() -> Result<StoryFixture> {
             ),
             _ => unreachable!("the directory-card fixture has a known file set"),
         };
-        let changed =
-            pipeline::diff::compute(original, modified, pipeline::diff::Settings::default())?;
-        let alignment = pipeline::diff::align(changed, original, modified)?;
-        diffs.push(pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
-            file: file.clone(),
-            alignment,
-        }));
+        let changed = diff_service::diff::compute(
+            original,
+            modified,
+            diff_service::diff::Settings::default(),
+        )?;
+        let alignment = diff_service::diff::align(changed, original, modified)?;
+        diffs.push(diff_service::diff::DiffContent::Diff(
+            diff_service::diff::Diff {
+                file: file.clone(),
+                alignment,
+            },
+        ));
     }
     Ok(StoryFixture::ExplorerCards { files, diffs })
 }

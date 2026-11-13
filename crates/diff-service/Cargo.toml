@@ -1,5 +1,5 @@
 [package]
-name = "pipeline"
+name = "diff-service"
 description = "From a request to something the interface can draw."
 version.workspace = true
 edition.workspace = true

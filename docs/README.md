@@ -8,7 +8,7 @@ This file describes the implementation that is currently in the repository. It i
 codediff
   └─ ui::main
       ├─ config              load user preferences before terminal setup
-      ├─ pipeline            three background threads:
+      ├─ diff-service        three background threads:
       │   ├─ files           Git status and line statistics
       │   ├─ diff            Git content → VS Code diff → alignment
       │   └─ syntax          syntax spans for each diffed file
@@ -20,9 +20,9 @@ The UI thread owns the terminal and the Loom tree. Background threads perform bl
 
 Opening a file follows this path:
 
-1. `Explorer` calls `Pipeline::list_files` and shows the files once the slot is filled in.
+1. `Explorer` calls `DiffService::list_files` and shows the files once the slot is filled in.
 2. `Explorer` puts the selected `file_types::File` into shared context.
-3. `DiffViewer` calls `Pipeline::open`, which returns two slots: the diff (or why it failed), and the syntax spans of each line.
+3. `DiffViewer` calls `DiffService::open`, which returns two slots: the diff (or why it failed), and the syntax spans of each line.
 4. The diff thread reads both sides, computes the diff with `vscode-diff`, and builds an `align::Alignment`.
 5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there.
 6. The syntax thread then colours the whole file in pieces; each piece is drawn as it arrives.
@@ -39,7 +39,7 @@ The watcher sends refresh categories, not a list of changed paths. Explorer resc
 | `ui` | application components, services, navigation, themes, terminal integration |
 | `config` | versioned JSON user preferences, platform paths, and atomic persistence |
 | `loom` / `loom-macros` | terminal component tree, hooks, layout, paint, events, and RSX macros |
-| `pipeline` | background file-list and file-content pipelines |
+| `diff-service` | `DiffService`: lists files, then reads, diffs and colours them on background threads |
 | `vcs` | Git commands, status parsing, revision reads, line statistics, staging |
 | `watcher` | repository filesystem invalidations and the watcher helper binary |
 | `syntax` | language detection, Tree-sitter/TextMate engines, syntax spans and cache |
