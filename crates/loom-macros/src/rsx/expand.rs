@@ -39,8 +39,12 @@ fn build(element: &Element) -> TokenStream {
         quote! { ::std::default::Default::default() }
     } else {
         let props_name = props_of(path);
-        let names = element.props.iter().map(|(name, _)| name);
-        let values = element.props.iter().map(|(_, value)| value);
+        // A prop written as its name alone stays that way, so the struct
+        // literal reads as the source did.
+        let fields = element.props.iter().map(|(name, value)| match value {
+            Some(value) => quote! { #name: #value },
+            None => quote! { #name },
+        });
         let children = if element.children.is_empty() {
             quote! {}
         } else {
@@ -54,7 +58,7 @@ fn build(element: &Element) -> TokenStream {
         } else {
             quote! {}
         };
-        quote! { #props_name { #(#names: #values,)* #children #rest } }
+        quote! { #props_name { #(#fields,)* #children #rest } }
     };
 
     let key = match &element.key {

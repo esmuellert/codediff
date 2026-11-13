@@ -16,7 +16,8 @@ pub(crate) enum Node {
 pub(crate) struct Element {
     pub path: Path,
     pub key: Option<Expr>,
-    pub props: Vec<(Ident, Expr)>,
+    /// Each prop's name and value; no value when written as the name alone.
+    pub props: Vec<(Ident, Option<Expr>)>,
     pub rest: bool,
     pub children: Vec<Node>,
 }
@@ -101,9 +102,21 @@ fn element(input: ParseStream) -> Result<Element> {
             if name == "key" {
                 key = Some(value);
             } else if name == "ref" {
-                props.push((Ident::new("node_ref", name.span()), value));
+                props.push((Ident::new("node_ref", name.span()), Some(value)));
             } else {
-                props.push((name, value));
+                props.push((name, Some(value)));
+            }
+        } else if is_shorthand_prop(&inner) {
+            // `name` alone means `name: name`, as in a Rust struct literal.
+            let name: Ident = inner.parse()?;
+            if name == "key" {
+                key = Some(Expr::Path(syn::ExprPath {
+                    attrs: Vec::new(),
+                    qself: None,
+                    path: name.into(),
+                }));
+            } else {
+                props.push((name, None));
             }
         } else {
             children.push(node(&inner)?);
@@ -128,6 +141,16 @@ fn is_prop(input: ParseStream) -> bool {
         return false;
     }
     ahead.peek(Token![:]) && !ahead.peek(Token![::])
+}
+
+/// A shorthand prop is a lone name before `,` or the closing brace. A child
+/// element always has braces after its path, so the two cannot be confused.
+fn is_shorthand_prop(input: ParseStream) -> bool {
+    let ahead = input.fork();
+    if ahead.parse::<Ident>().is_err() {
+        return false;
+    }
+    ahead.is_empty() || ahead.peek(Token![,])
 }
 
 fn if_chain(input: ParseStream) -> Result<If> {
