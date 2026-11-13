@@ -5,11 +5,9 @@ use std::rc::Rc;
 
 use file_types::{File, RepoPath, Revs};
 use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
+use pipeline::Pipeline;
 
 use crate::keybindings::KeyMap;
-use crate::services::diff::DiffService;
-use crate::services::files::FilesService;
-use crate::services::syntax::SyntaxService;
 use crate::services::version_control::VersionControlService;
 use crate::services::watcher::WatcherService;
 use crate::theme::Theme;
@@ -39,9 +37,7 @@ pub struct Context {
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub directory: Option<Rc<DirectorySelection>>,
     pub set_directory: Option<SetState<Option<Rc<DirectorySelection>>>>,
-    pub files_service: Option<Rc<FilesService>>,
-    pub diff_service: Option<Rc<DiffService>>,
-    pub syntax_service: Option<Rc<SyntaxService>>,
+    pub diff_service: Option<Rc<Pipeline>>,
     pub version_control_service: Option<Rc<VersionControlService>>,
     pub watcher_service: Option<Rc<WatcherService>>,
     pub set_repo: Option<SetState<Rc<Path>>>,
@@ -58,9 +54,7 @@ impl Default for Context {
             set_file: None,
             directory: None,
             set_directory: None,
-            files_service: None,
             diff_service: None,
-            syntax_service: None,
             version_control_service: None,
             watcher_service: None,
             set_repo: None,
@@ -78,9 +72,7 @@ impl Context {
             && self.set_file == other.set_file
             && same_rc(&self.directory, &other.directory)
             && self.set_directory == other.set_directory
-            && same_rc(&self.files_service, &other.files_service)
             && same_rc(&self.diff_service, &other.diff_service)
-            && same_rc(&self.syntax_service, &other.syntax_service)
             && same_rc(
                 &self.version_control_service,
                 &other.version_control_service,
@@ -110,9 +102,7 @@ pub fn UiProvider(
     cwd: Rc<Path>,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
-    files_service: Rc<FilesService>,
-    diff_service: Rc<DiffService>,
-    syntax_service: Rc<SyntaxService>,
+    diff_service: Rc<Pipeline>,
     version_control_service: Rc<VersionControlService>,
     watcher_service: Rc<WatcherService>,
     children: loom::Children,
@@ -138,9 +128,7 @@ pub fn UiProvider(
                 set_file: Some(set_file),
                 directory: directory.as_ref().map(Rc::clone),
                 set_directory: Some(set_directory),
-                files_service: Some(Rc::clone(files_service)),
                 diff_service: Some(Rc::clone(diff_service)),
-                syntax_service: Some(Rc::clone(syntax_service)),
                 version_control_service: Some(Rc::clone(version_control_service)),
                 watcher_service: Some(Rc::clone(watcher_service)),
                 set_repo: Some(set_repo),

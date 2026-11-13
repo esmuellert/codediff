@@ -66,7 +66,8 @@ impl TerminalLine {
             .collect()
     }
 
-    pub(crate) fn source_line(&self) -> Option<u32> {
+    #[cfg(test)]
+    fn source_line(&self) -> Option<u32> {
         match self {
             Self::SourceCode { source_line, .. } => Some(*source_line),
             Self::Filler => None,

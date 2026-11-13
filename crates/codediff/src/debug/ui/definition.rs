@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use file_types::{DiffVersion, File};
+use file_types::File;
 use loom::crokey::KeyCombination;
 use pipeline::diff::DiffContent;
 
@@ -64,64 +64,6 @@ impl StoryFixture {
             Self::SingleFile(_) => StoryComponent::SingleFile,
             Self::Card(_) => StoryComponent::Card,
             Self::Cards(_) => StoryComponent::Cards,
-        }
-    }
-
-    pub const fn needs_syntax(&self) -> bool {
-        matches!(
-            self,
-            Self::SideBySide(_)
-                | Self::Inline(_)
-                | Self::SingleFile(_)
-                | Self::Card(_)
-                | Self::Cards(_)
-                | Self::ExplorerCards { .. }
-        )
-    }
-
-    pub fn initial_diff_response_count(&self) -> usize {
-        match self {
-            Self::ExplorerCards { diffs, .. } => diffs.len(),
-            _ => 0,
-        }
-    }
-
-    pub fn initial_syntax_response_count(&self) -> usize {
-        match self {
-            Self::SideBySide(content) | Self::Inline(content) | Self::Card(content) => {
-                let DiffContent::Diff(diff) = content.as_ref() else {
-                    unreachable!()
-                };
-                usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())
-                    + usize::from(!diff.alignment.lines(DiffVersion::Modified).is_empty())
-            }
-            Self::SingleFile(content) => {
-                let DiffContent::SingleFile(single) = content.as_ref() else {
-                    unreachable!()
-                };
-                usize::from(!single.lines.is_empty())
-            }
-            Self::Cards(contents) => contents
-                .iter()
-                .map(|content| {
-                    let DiffContent::Diff(diff) = content.as_ref() else {
-                        unreachable!()
-                    };
-                    usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())
-                        + usize::from(!diff.alignment.lines(DiffVersion::Modified).is_empty())
-                })
-                .sum(),
-            Self::ExplorerCards { diffs, .. } => diffs
-                .iter()
-                .map(|content| {
-                    let DiffContent::Diff(diff) = content else {
-                        unreachable!()
-                    };
-                    usize::from(!diff.alignment.lines(DiffVersion::Original).is_empty())
-                        + usize::from(!diff.alignment.lines(DiffVersion::Modified).is_empty())
-                })
-                .sum(),
-            Self::Welcome | Self::Explorer(_) => 0,
         }
     }
 }

@@ -1,6 +1,7 @@
 //! One full-width file with no diff decorations.
 
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use align::{ViewLine, ViewLineContent, ViewLineType};
 use file_types::{DiffType, DiffVersion};
@@ -8,13 +9,12 @@ use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollProps, component,
     rsx, use_context,
 };
+use syntax::Span;
 
 use super::code_text::{CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells};
 use super::context::Ui;
 use super::diff_viewer_container::DiffVisibleRange;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_syntax::use_syntax;
-use crate::services::syntax::SyntaxService;
 use crate::view::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, wrap_view_line,
 };
@@ -54,7 +54,8 @@ pub(crate) fn layout_single_file(
 #[component]
 pub(crate) fn SingleFile(
     scope: &mut Scope,
-    content: Rc<pipeline::diff::DiffContent>,
+    content: Arc<pipeline::diff::DiffContent>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     wrapped_lines: Rc<Vec<WrappedViewLine>>,
     viewport: DiffVisibleRange,
     gutter_width: u16,
@@ -67,6 +68,7 @@ pub(crate) fn SingleFile(
     let horizontal_scroll_extent = *horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
+    let colours = colours.lock().unwrap();
     let pipeline::diff::DiffContent::SingleFile(single) = content.as_ref() else {
         unreachable!("DiffViewer sends one-sided files to SingleFile")
     };
@@ -76,14 +78,6 @@ pub(crate) fn SingleFile(
         .visible_terminal_lines
         .end
         .saturating_sub(viewport.visible_terminal_lines.start);
-    let syntax = use_syntax(
-        scope,
-        ctx.syntax_service.as_ref().map(Rc::clone),
-        Rc::clone(content),
-        DiffType::Single,
-        wrapped_lines,
-    );
-    let syntax = syntax.as_deref();
 
     let base = ctx.theme.normal;
     let number_style = base.patch(ctx.theme.line_number);
@@ -108,9 +102,10 @@ pub(crate) fn SingleFile(
         let Some(text) = single.lines.get(number.saturating_sub(1) as usize) else {
             continue;
         };
-        let syntax_spans = syntax
-            .map(|store| SyntaxService::line_spans(store, &single.file, version, number))
-            .unwrap_or_default();
+        let syntax_spans = number
+            .checked_sub(1)
+            .and_then(|index| colours[version as usize].get(index as usize))
+            .map_or(&[][..], Vec::as_slice);
         let (text, diff, fill_from, empty_markers, syntax_spans) =
             super::code_text::prepare_code_text_inputs(
                 text,
@@ -118,7 +113,7 @@ pub(crate) fn SingleFile(
                 &[],
                 None,
                 &[],
-                &syntax_spans,
+                syntax_spans,
             );
         gutter_lines.push(rsx! {
             Row {

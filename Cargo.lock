@@ -346,7 +346,6 @@ version = "0.27.3"
 dependencies = [
  "align",
  "anyhow",
- "channel",
  "clap",
  "config",
  "file-types",
@@ -1484,9 +1483,9 @@ version = "0.27.3"
 dependencies = [
  "align",
  "anyhow",
- "channel",
  "file-types",
  "fixtures",
+ "syntax",
  "tracing",
  "vcs",
  "vscode-diff",
@@ -2118,12 +2117,8 @@ dependencies = [
 name = "syntax"
 version = "0.27.3"
 dependencies = [
- "align",
- "channel",
- "file-types",
  "line-index",
  "syntect",
- "tracing",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",

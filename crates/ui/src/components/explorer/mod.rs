@@ -9,8 +9,8 @@ use std::rc::Rc;
 use file_types::{File, RepoPath, Revs};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, Scroll, ScrollOffset,
-    ScrollProps, component, rsx, use_context, use_effect, use_exit, use_measure, use_ref,
-    use_scroll, use_state,
+    ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_exit, use_measure,
+    use_memo, use_ref, use_scroll, use_state,
 };
 
 use self::build::{Node, directory_key, grouped_list, grouped_tree};
@@ -29,47 +29,58 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let set_directory = ctx.set_directory;
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let repo = Rc::clone(&ctx.repo);
-    let files_service = ctx.files_service.as_ref().map(Rc::clone);
+    let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
     let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
-    let repo_for_effect = Rc::clone(&repo);
-    use_effect(scope, repo, move || {
-        let Some(files_service) = files_service else {
-            return;
-        };
-        let requested_repo_for_response = Rc::clone(&repo_for_effect);
-        files_service.get(&repo_for_effect).subscribe(
-            move |response: pipeline::files::Response| {
-                if response.repo.as_path() != requested_repo_for_response.as_ref() {
-                    return;
-                }
-                let matching_files = Rc::new(response.files);
-                if let Some(set_file) = set_file {
-                    let files_for_selection = Rc::clone(&matching_files);
-                    set_file(&move |selected| {
-                        matching_selected_file(selected, &files_for_selection)
-                    });
-                }
-                if let Some(set_directory) = set_directory {
-                    let files_for_selection = Rc::clone(&matching_files);
-                    set_directory(&move |selected| {
-                        matching_selected_directory(selected.as_ref(), &files_for_selection)
-                    });
-                }
-                set_files(&move |_| Rc::clone(&matching_files));
-            },
-        );
+    // A change on disk lists the files again; the previous list is dropped.
+    let (refreshes, set_refreshes) = use_state(scope, || 0u32);
+    use_effect(scope, Rc::clone(&repo), move || {
         let Some(watcher_service) = watcher_service else {
             return;
         };
-        let files_service_to_refresh = Rc::clone(&files_service);
-        let repo_to_refresh = Rc::clone(&repo_for_effect);
         watcher_service
             .changes()
             .subscribe(move |refresh: watcher::Refresh| {
                 if !refresh.is_empty() {
-                    files_service_to_refresh.refresh(&repo_to_refresh);
+                    set_refreshes(&|refreshes| refreshes + 1);
                 }
             });
+    });
+    let repo_to_list = Rc::clone(&repo);
+    let listing = use_memo(scope, (Rc::clone(&repo), refreshes), move || {
+        pipeline.map(|pipeline| pipeline.list_files(&repo_to_list))
+    });
+    let (listed, list_error) = match listing
+        .as_ref()
+        .as_ref()
+        .map(|listing| listing.lock().unwrap())
+    {
+        Some(result) => match result.as_ref() {
+            Some(Ok(_)) => (true, None),
+            Some(Err(error)) => (false, Some(error.clone())),
+            None => (false, None),
+        },
+        None => (false, None),
+    };
+    use_effect(scope, (repo, refreshes, listed), move || {
+        let Some(Some(Ok(listed))) = listing
+            .as_ref()
+            .as_ref()
+            .map(|listing| listing.lock().unwrap().clone())
+        else {
+            return;
+        };
+        let matching_files = Rc::new(listed);
+        if let Some(set_file) = set_file {
+            let files_for_selection = Rc::clone(&matching_files);
+            set_file(&move |selected| matching_selected_file(selected, &files_for_selection));
+        }
+        if let Some(set_directory) = set_directory {
+            let files_for_selection = Rc::clone(&matching_files);
+            set_directory(&move |selected| {
+                matching_selected_directory(selected.as_ref(), &files_for_selection)
+            });
+        }
+        set_files(&move |_| Rc::clone(&matching_files));
     });
 
     let (selected_line, set_selected_line) = use_state(scope, || 0u32);
@@ -209,6 +220,17 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         })
         .collect();
 
+    let list_error = list_error.map_or(LoomNode::Empty, |error| {
+        rsx! {
+            Text {
+                text: format!("Cannot list files: {error}").into(),
+                style: theme.warning,
+                layout: Layout { basis: loom::Basis::Length(1), shrink: 0, ..Default::default() },
+                ..
+            }
+        }
+    });
+
     rsx! {
         Column {
             ref: Some(node_ref),
@@ -217,6 +239,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             listeners: listeners,
             layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
             ..,
+            { list_error }
             Scroll {
                 view: view,
                 handle: Some(scroll.clone()),

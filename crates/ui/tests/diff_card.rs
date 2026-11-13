@@ -1,10 +1,18 @@
+// The opened files are spelled out in full rather than hidden behind a name.
+#![allow(clippy::type_complexity)]
+
+#[path = "support/fake_pipeline.rs"]
+mod fake_pipeline;
+
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use file_types::{DiffType, File, Oid, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
 use pipeline::diff::{self, DiffContent};
+use syntax::Span;
 use ui::Theme;
 use ui::components::{Context, DiffCard, DiffCardProps, DiffCards, DiffCardsProps, Ui};
 
@@ -32,13 +40,14 @@ fn diff(original: &[&str], modified: &[&str]) -> DiffContent {
 #[component]
 fn CardHost(
     _scope: &mut Scope,
-    content: Rc<DiffContent>,
+    content: Arc<DiffContent>,
     view_layout: DiffType,
     wrap: bool,
 ) -> Node {
     rsx! {
         DiffCard {
-            content: Rc::clone(content),
+            content: Arc::clone(content),
+            colours: Arc::default(),
             view_layout: *view_layout,
             wrap: *wrap,
             height: None,
@@ -50,7 +59,7 @@ fn CardHost(
 fn harness(content: DiffContent, width: u16, height: u16) -> Harness {
     Harness::new::<CardHost>(
         CardHostProps {
-            content: Rc::new(content),
+            content: Arc::new(content),
             view_layout: DiffType::Inline,
             wrap: false,
         },
@@ -64,18 +73,29 @@ fn harness(content: DiffContent, width: u16, height: u16) -> Harness {
 }
 
 #[component]
-fn CardsHost(_scope: &mut Scope, contents: Rc<Vec<Rc<DiffContent>>>) -> Node {
+fn CardsHost(
+    _scope: &mut Scope,
+    files: Rc<
+        Vec<(
+            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
+        )>,
+    >,
+) -> Node {
     rsx! {
         DiffCards {
-            contents: Rc::clone(contents),
+            files: Rc::clone(files),
+            more_files: false,
+            open_next: Rc::new(|| {}) as Rc<dyn Fn()>,
             view_layout: DiffType::Inline,
             wrap: false,
         }
     }
 }
 
-fn cards_harness(contents: Rc<Vec<Rc<DiffContent>>>, width: u16, height: u16) -> Harness {
-    Harness::new::<CardsHost>(CardsHostProps { contents }, width, height).provide::<Ui>(Context {
+fn cards_harness(contents: Vec<DiffContent>, width: u16, height: u16) -> Harness {
+    let files = Rc::new(fake_pipeline::opened(contents));
+    Harness::new::<CardsHost>(CardsHostProps { files }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         ..Context::default()
     })
@@ -161,10 +181,10 @@ fn cards_scroll_vertically_as_one_collection() {
         "second new five",
         "second new six",
     ];
-    let contents = Rc::new(vec![
-        Rc::new(diff_at("src/first.rs", &first_original, &first_modified)),
-        Rc::new(diff_at("src/second.rs", &second_original, &second_modified)),
-    ]);
+    let contents = vec![
+        diff_at("src/first.rs", &first_original, &first_modified),
+        diff_at("src/second.rs", &second_original, &second_modified),
+    ];
     let mut harness = cards_harness(contents, 50, 8);
     harness.force_draw().force_draw();
     let start = harness.screen().join("\n");

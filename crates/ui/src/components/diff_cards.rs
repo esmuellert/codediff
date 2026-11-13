@@ -1,13 +1,21 @@
 //! A vertically scrollable collection of compact diff cards.
+//!
+//! Cards are appended in file order as their diffs arrive. The line after
+//! the last card asks for the next file when it comes into view.
+
+// The opened files are spelled out in full rather than hidden behind a name.
+#![allow(clippy::type_complexity)]
 
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use file_types::DiffType;
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, Scroll, ScrollOffset, ScrollProps,
-    component, rsx, use_context, use_measure, use_scroll,
+    Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, Scroll, ScrollOffset,
+    ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_measure, use_scroll,
 };
 use pipeline::diff::DiffContent;
+use syntax::Span;
 
 use super::context::Ui;
 use super::diff_card::{DiffCard, DiffCardProps, card_height};
@@ -16,7 +24,14 @@ use crate::keybindings::Action;
 #[component]
 pub fn DiffCards(
     scope: &mut Scope,
-    contents: Rc<Vec<Rc<DiffContent>>>,
+    files: Rc<
+        Vec<(
+            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
+        )>,
+    >,
+    more_files: bool,
+    open_next: Rc<dyn Fn()>,
     view_layout: DiffType,
     wrap: bool,
 ) -> Node {
@@ -26,20 +41,74 @@ pub fn DiffCards(
     let (node_ref, size) = use_measure(scope);
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
     let card_width = size.width.saturating_sub(2);
-    let heights: Vec<u16> = contents
-        .iter()
-        .map(|content| {
-            let alignment = content
-                .alignment()
-                .expect("a diff card collection requires two-sided diffs");
-            card_height(alignment, card_width, view_layout, wrap)
-        })
-        .collect();
-    let content_height = heights
+    let line = |key: usize, text: String| {
+        rsx! {
+            Text {
+                key: key,
+                text: text.into(),
+                layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
+                style: theme.normal,
+                ..
+            }
+        }
+    };
+
+    let mut cards = Vec::new();
+    let mut heights = Vec::new();
+    let mut reading = false;
+    for (index, (diff, colours)) in files.iter().enumerate() {
+        let diff = diff.lock().unwrap().clone();
+        match diff {
+            Some(Ok(content)) => {
+                let alignment = content
+                    .alignment()
+                    .expect("a diff card collection requires two-sided diffs");
+                let height = card_height(alignment, card_width, view_layout, wrap);
+                heights.push(height);
+                cards.push(rsx! {
+                    DiffCard {
+                        key: index,
+                        content: content,
+                        colours: Arc::clone(colours),
+                        view_layout: view_layout,
+                        wrap: wrap,
+                        height: Some(height),
+                        auto_focus: index == 0,
+                    }
+                });
+            }
+            Some(Err(error)) => {
+                heights.push(1);
+                cards.push(line(index, error));
+            }
+            None => {
+                // A later file waits until this one has been read.
+                reading = true;
+                break;
+            }
+        }
+    }
+    let shown = cards.len();
+    let mut content_height: u32 = heights
         .iter()
         .enumerate()
         .map(|(index, height)| u32::from(*height).saturating_add(u32::from(index > 0)))
         .sum();
+    let has_end_line = reading || *more_files;
+    let end_line_visible = if has_end_line {
+        let end_line = content_height + u32::from(shown > 0);
+        content_height = end_line + 1;
+        cards.push(line(usize::MAX, "Loading directory diffs…".to_owned()));
+        size.height > 0 && end_line < view.clamped_offset().y + u32::from(size.height)
+    } else {
+        false
+    };
+    let open_next = Rc::clone(open_next);
+    use_effect(scope, (end_line_visible, shown), move || {
+        if end_line_visible {
+            open_next();
+        }
+    });
 
     let keybindings = use_context::<Ui>(scope).keybindings;
     let scroll_for_keys = scroll.clone();
@@ -60,24 +129,6 @@ pub fn DiffCards(
             Bubble::Continue
         }
     });
-
-    let cards: Vec<Node> = contents
-        .iter()
-        .zip(heights)
-        .enumerate()
-        .map(|(index, (content, height))| {
-            rsx! {
-                DiffCard {
-                    key: Rc::as_ptr(content) as usize,
-                    content: Rc::clone(content),
-                    view_layout: view_layout,
-                    wrap: wrap,
-                    height: Some(height),
-                    auto_focus: index == 0,
-                }
-            }
-        })
-        .collect();
 
     rsx! {
         Column {

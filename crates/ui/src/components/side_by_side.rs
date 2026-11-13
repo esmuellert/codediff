@@ -1,6 +1,7 @@
 //! Two columns showing both versions of a file, paired line by line.
 
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use align::{Alignment, DiffVersion};
 use file_types::DiffType;
@@ -8,6 +9,7 @@ use loom::{
     Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope, Scroll,
     ScrollProps, component, rsx, use_context,
 };
+use syntax::Span;
 
 use super::code_text::{
     self, CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells,
@@ -17,8 +19,6 @@ use super::diff_viewer_container::DiffVisibleRange;
 use super::filler::Filler;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use crate::hooks::use_syntax::use_syntax;
-use crate::services::syntax::SyntaxService;
 use crate::view::compact::view_lines as compact_view_lines;
 use crate::view::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
@@ -89,7 +89,8 @@ pub(crate) fn layout_side_by_side(
 #[component]
 pub(crate) fn SideBySide(
     scope: &mut Scope,
-    content: Rc<pipeline::diff::DiffContent>,
+    content: Arc<pipeline::diff::DiffContent>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     wrapped_lines: Rc<Vec<WrappedViewLine>>,
     viewport: DiffVisibleRange,
     original_gutter_width: u16,
@@ -108,6 +109,7 @@ pub(crate) fn SideBySide(
     let modified_horizontal_scroll_extent = *modified_horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
+    let colours = colours.lock().unwrap();
     let theme = &ctx.theme;
     let pipeline::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to SideBySide")
@@ -117,14 +119,6 @@ pub(crate) fn SideBySide(
         .visible_terminal_lines
         .end
         .saturating_sub(viewport.visible_terminal_lines.start);
-    let syntax = use_syntax(
-        scope,
-        ctx.syntax_service.as_ref().map(Rc::clone),
-        Rc::clone(content),
-        DiffType::SideBySide,
-        wrapped_lines,
-    );
-    let syntax = syntax.as_deref();
     let divider_style = theme.normal.patch(theme.divider);
 
     let mut original_gutters = Vec::with_capacity(visible_terminal_line_count);
@@ -162,7 +156,7 @@ pub(crate) fn SideBySide(
                 original_gutter_width,
                 diff,
                 theme,
-                syntax,
+                &colours,
             )
         };
         let (modified_gutter, modified_code) = if folded {
@@ -186,7 +180,7 @@ pub(crate) fn SideBySide(
                 modified_gutter_width,
                 diff,
                 theme,
-                syntax,
+                &colours,
             )
         };
 
@@ -313,7 +307,7 @@ fn make_side(
     gutter_width: u16,
     diff: &pipeline::diff::Diff,
     theme: &crate::theme::Theme,
-    syntax: Option<&syntax::Store>,
+    colours: &[Vec<Vec<Span>>; 2],
 ) -> (Node, Node) {
     let alignment = &diff.alignment;
     match line {
@@ -329,15 +323,16 @@ fn make_side(
                 gutter::style_for_diff(theme, version, decorations.gutter_background);
             let gutter_number = line.gutter_number();
             let text = alignment.line(version, line_number).unwrap_or("");
-            let syntax_spans = syntax
-                .map(|store| SyntaxService::line_spans(store, &diff.file, version, line_number))
-                .unwrap_or_default();
+            let syntax_spans = line_number
+                .checked_sub(1)
+                .and_then(|index| colours[version as usize].get(index as usize))
+                .map_or(&[][..], Vec::as_slice);
             let (text, changed_ranges, fill_from, empty_markers, syntax_spans) =
                 code_text::prepare_code_text_inputs_from_decorations(
                     text,
                     line,
                     &decorations,
-                    &syntax_spans,
+                    syntax_spans,
                 );
             (
                 rsx! {

@@ -1,183 +1,142 @@
 //! Running one named story either on a test screen or a real terminal.
 
-use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Result, bail};
+use loom::crokey::KeyCombination;
 use loom::ratatui::buffer::Buffer;
 use loom::ratatui::layout::Rect;
 use loom::testing::Harness;
 use loom::{Flow, Tree, deliver_input};
+use pipeline::Pipeline;
 use ui::Theme;
 use ui::components::Context as UiContext;
-use ui::services::diff::DiffService;
-use ui::services::files::FilesService;
-use ui::services::syntax::SyntaxService;
 
 #[cfg(test)]
 use super::catalog;
 use super::definition::{StoryDefinition, StoryFixture};
-use super::preview::{StoryPreview, StoryPreviewProps};
+use super::preview::{PreviewAction, StoryPreview, StoryPreviewProps};
 
 enum StoryEvent {
     Terminal(ui::crossterm::event::Event),
     #[cfg(unix)]
     Signal(i32),
-    FilesReady(pipeline::files::Response),
-    DiffReady(Box<pipeline::diff::Response>),
-    SyntaxReady(syntax::SyntaxResponse),
+    Redraw,
+}
+
+/// A pipeline that reads the story's fixture instead of Git, and the props
+/// that show it. Code stories open their files at once.
+pub(super) fn story_props(
+    definition: &'static StoryDefinition,
+    fixture: StoryFixture,
+    redraw: impl Fn() + Send + Sync + 'static,
+    navigate: Option<Rc<dyn Fn(PreviewAction)>>,
+) -> (Rc<Pipeline>, StoryPreviewProps) {
+    let (listed, contents, open) = match fixture {
+        StoryFixture::Welcome => (None, Vec::new(), false),
+        StoryFixture::Explorer(files) => (Some(files), Vec::new(), false),
+        StoryFixture::ExplorerCards { files, diffs } => (Some(files), diffs, false),
+        StoryFixture::SideBySide(content)
+        | StoryFixture::Inline(content)
+        | StoryFixture::SingleFile(content)
+        | StoryFixture::Card(content) => (None, vec![(*content).clone()], true),
+        StoryFixture::Cards(contents) => (
+            None,
+            contents.iter().map(|content| (**content).clone()).collect(),
+            true,
+        ),
+    };
+    let opened: Vec<_> = if open {
+        contents
+            .iter()
+            .map(|content| content.file().clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let pipeline = Rc::new(Pipeline::new(
+        redraw,
+        move |_| Ok(listed.clone().unwrap_or_default()),
+        move |file| {
+            contents
+                .iter()
+                .find(|content| content.file() == file)
+                .cloned()
+                .ok_or_else(|| format!("the story has no diff for {}", file.path()))
+        },
+    ));
+    let files = opened.into_iter().map(|file| pipeline.open(file)).collect();
+    let props = StoryPreviewProps {
+        definition,
+        base_context: UiContext {
+            theme: Rc::new(Theme::DARK),
+            repo: Rc::from(Path::new("/codediff-story")),
+            diff_service: Some(Rc::clone(&pipeline)),
+            ..UiContext::default()
+        },
+        files: Rc::new(files),
+        navigate,
+    };
+    (pipeline, props)
 }
 
 struct StoryHost {
     definition: &'static StoryDefinition,
     events_tx: Sender<StoryEvent>,
     events_rx: Receiver<StoryEvent>,
-    files_service: Option<Rc<FilesService>>,
-    diff_service: Option<Rc<DiffService>>,
-    syntax_service: Option<Rc<SyntaxService>>,
-    initial_diff_response_count: usize,
-    initial_syntax_response_count: usize,
+    pipeline: Rc<Pipeline>,
 }
 
 impl StoryHost {
     fn new(definition: &'static StoryDefinition) -> Result<(Self, StoryPreviewProps)> {
         let fixture = definition.create_fixture()?;
-        let syntax = fixture.needs_syntax();
-        let initial_diff_response_count = fixture.initial_diff_response_count();
-        let initial_syntax_response_count = fixture.initial_syntax_response_count();
-        let (files, content, contents, diffs) = match fixture {
-            StoryFixture::Welcome => (None, None, None, None),
-            StoryFixture::Explorer(files) => (Some(files), None, None, None),
-            StoryFixture::ExplorerCards { files, diffs } => (Some(files), None, None, Some(diffs)),
-            StoryFixture::SideBySide(content)
-            | StoryFixture::Inline(content)
-            | StoryFixture::SingleFile(content)
-            | StoryFixture::Card(content) => (None, Some(content), None, None),
-            StoryFixture::Cards(contents) => (None, None, Some(contents), None),
-        };
-
         let (events_tx, events_rx) = mpsc::channel();
-        let files_service = files.map(|files| {
-            let worker = pipeline::files::FilesWorker::mock(
-                vec![files],
-                channel::Emitter::new(events_tx.clone(), StoryEvent::FilesReady),
-            );
-            Rc::new(FilesService::new(Rc::new(RefCell::new(worker)), Vec::new()))
-        });
-        let diff_service = diffs.map(|diffs| {
-            let worker = pipeline::diff::DiffWorker::mock_by_file(
-                diffs,
-                channel::Emitter::new(events_tx.clone(), |response| {
-                    StoryEvent::DiffReady(Box::new(response))
-                }),
-            );
-            Rc::new(DiffService::new(Rc::new(RefCell::new(worker))))
-        });
-        let syntax_service = syntax.then(|| {
-            let worker = syntax::Syntax::start(channel::Emitter::new(
-                events_tx.clone(),
-                StoryEvent::SyntaxReady,
-            ));
-            Rc::new(SyntaxService::new(Rc::new(RefCell::new(worker))))
-        });
-        let props = StoryPreviewProps {
+        let redraw = events_tx.clone();
+        let (pipeline, props) = story_props(
             definition,
-            base_context: story_context(&files_service, &diff_service, &syntax_service),
-            content,
-            contents,
-            navigate: None,
-        };
-        Ok((
-            Self {
-                definition,
-                events_tx,
-                events_rx,
-                files_service,
-                diff_service,
-                syntax_service,
-                initial_diff_response_count,
-                initial_syntax_response_count,
+            fixture,
+            move || {
+                let _ = redraw.send(StoryEvent::Redraw);
             },
-            props,
-        ))
+            None,
+        );
+        let host = Self {
+            definition,
+            events_tx,
+            events_rx,
+            pipeline,
+        };
+        Ok((host, props))
     }
 
-    fn wait_for_files(&self) -> Result<pipeline::files::Response> {
-        match self.events_rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(StoryEvent::FilesReady(response)) => Ok(response),
-            Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
-            Err(error) => Err(error).context("waiting for the story's file list"),
-        }
-    }
-
-    fn wait_for_diff(&self) -> Result<pipeline::diff::Response> {
-        match self.events_rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(StoryEvent::DiffReady(response)) => Ok(*response),
-            Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
-            Err(error) => Err(error).context("waiting for the story's file diff"),
-        }
-    }
-
-    fn wait_for_syntax(&self) -> Result<syntax::SyntaxResponse> {
-        match self.events_rx.recv_timeout(Duration::from_secs(2)) {
-            Ok(StoryEvent::SyntaxReady(response)) => Ok(response),
-            Ok(_) => bail!("{} received the wrong setup event", self.definition.id),
-            Err(error) => Err(error).context("waiting for the story's syntax colours"),
-        }
-    }
-
-    fn prepare_harness(&self, harness: &mut Harness) -> Result<()> {
-        settle_harness(harness);
-        if let Some(service) = &self.files_service {
-            service.deliver(self.wait_for_files()?);
-            settle_harness(harness);
-        }
+    /// Draws, presses the story's keys, and draws until nothing is loading.
+    fn prepare(&self, mut draw: impl FnMut(Option<KeyCombination>)) -> Result<()> {
+        self.settle(&mut draw)?;
         for &key in self.definition.initial_keys {
-            harness.press(key);
-            settle_harness(harness);
+            draw(Some(key));
         }
-        if let Some(service) = &self.diff_service {
-            for _ in 0..self.initial_diff_response_count {
-                service.deliver(self.wait_for_diff()?);
-                settle_harness(harness);
-            }
-        }
-        if let Some(service) = &self.syntax_service {
-            for _ in 0..self.initial_syntax_response_count {
-                service.deliver(self.wait_for_syntax()?);
-                settle_harness(harness);
-            }
-        }
-        Ok(())
+        self.settle(&mut draw)
     }
 
-    fn prepare_tree(&self, tree: &mut Tree) -> Result<()> {
-        settle_story_tree(tree);
-        if let Some(service) = &self.files_service {
-            service.deliver(self.wait_for_files()?);
-            settle_story_tree(tree);
-        }
-        for &key in self.definition.initial_keys {
-            tree.press(key);
-            settle_story_tree(tree);
-        }
-        if let Some(service) = &self.diff_service {
-            for _ in 0..self.initial_diff_response_count {
-                service.deliver(self.wait_for_diff()?);
-                settle_story_tree(tree);
+    fn settle(&self, draw: &mut impl FnMut(Option<KeyCombination>)) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let idle = !self.pipeline.is_busy();
+            while self.events_rx.try_recv().is_ok() {}
+            draw(None);
+            // A job asks for a redraw before it stops counting as busy, so
+            // work that finished during the drawing has left a request behind.
+            if idle && !self.pipeline.is_busy() && self.events_rx.try_recv().is_err() {
+                return Ok(());
             }
-        }
-        if let Some(service) = &self.syntax_service {
-            for _ in 0..self.initial_syntax_response_count {
-                service.deliver(self.wait_for_syntax()?);
-                settle_story_tree(tree);
+            if Instant::now() > deadline {
+                bail!("{} never finished loading", self.definition.id);
             }
+            let _ = self.events_rx.recv_timeout(Duration::from_millis(20));
         }
-        tree.redraw_all();
-        Ok(())
     }
 }
 
@@ -194,21 +153,30 @@ fn story_harness(definition: &'static StoryDefinition, width: u16, height: u16) 
     validate_dimensions(width, height)?;
     let (host, props) = StoryHost::new(definition)?;
     let mut harness = Harness::new::<StoryPreview>(props, width, height);
-    host.prepare_harness(&mut harness)?;
+    host.prepare(|key| {
+        if let Some(key) = key {
+            harness.press(key);
+        }
+        harness.redraw_all();
+        settle_harness(&mut harness);
+    })?;
     Ok(harness)
 }
 
 pub fn run(definition: &'static StoryDefinition) -> Result<()> {
     let (host, props) = StoryHost::new(definition)?;
     let mut tree = Tree::new::<StoryPreview>(props);
-    host.prepare_tree(&mut tree)?;
+    host.prepare(|key| {
+        if let Some(key) = key {
+            tree.press(key);
+        }
+        tree.redraw_all();
+        settle_story_tree(&mut tree);
+    })?;
 
     #[cfg(unix)]
     ui::spawn_signals(host.events_tx.clone(), StoryEvent::Signal);
 
-    let files_service = host.files_service;
-    let diff_service = host.diff_service;
-    let syntax_service = host.syntax_service;
     loom::run(
         &mut tree,
         host.events_rx,
@@ -222,41 +190,12 @@ pub fn run(definition: &'static StoryDefinition) -> Result<()> {
                     loom::restore();
                     std::process::exit(128 + signal);
                 }
-                StoryEvent::FilesReady(response) => {
-                    if let Some(service) = &files_service {
-                        service.deliver(response);
-                    }
-                }
-                StoryEvent::DiffReady(response) => {
-                    if let Some(service) = &diff_service {
-                        service.deliver(*response);
-                    }
-                }
-                StoryEvent::SyntaxReady(response) => {
-                    if let Some(service) = &syntax_service {
-                        service.deliver(response);
-                    }
-                }
+                StoryEvent::Redraw => tree.redraw_all(),
             }
             Flow::Continue
         },
     )?;
     Ok(())
-}
-
-pub(super) fn story_context(
-    files_service: &Option<Rc<FilesService>>,
-    diff_service: &Option<Rc<DiffService>>,
-    syntax_service: &Option<Rc<SyntaxService>>,
-) -> UiContext {
-    UiContext {
-        theme: Rc::new(Theme::DARK),
-        repo: Rc::from(Path::new("/codediff-story")),
-        files_service: files_service.as_ref().map(Rc::clone),
-        diff_service: diff_service.as_ref().map(Rc::clone),
-        syntax_service: syntax_service.as_ref().map(Rc::clone),
-        ..UiContext::default()
-    }
 }
 
 pub(super) fn settle_story_tree(tree: &mut Tree) {

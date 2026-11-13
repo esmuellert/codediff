@@ -1,17 +1,12 @@
 //! Four stages for one file: read both sides → diff → align → hand over.
-//!
-//! The public worker runs the blocking stages away from the UI thread.
-//!
 use align::Alignment;
 use anyhow::{Context, Result};
 use vscode_diff::LinesDiff;
 
 pub mod contents;
 pub mod runner;
-pub mod worker;
 
 pub use runner::{Diff, DiffContent, Runner, SingleFile};
-pub use worker::{DiffWorker, Response};
 
 /// User-visible options needed by the file diff pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

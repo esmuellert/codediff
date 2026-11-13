@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
@@ -9,7 +10,7 @@ use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerConta
 use ui::components::{Context, Ui};
 
 #[component]
-fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> Node {
+fn SideBySide(scope: &mut Scope, content: Arc<pipeline::diff::DiffContent>) -> Node {
     let view_states = use_ref(scope, ViewStateHistory::default);
     let state = use_ref(scope, ViewState::default);
     let key = content.file().path().as_str().to_owned();
@@ -25,7 +26,8 @@ fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
     }
     rsx! {
         DiffViewerContainer {
-            content: Some(Rc::clone(content)),
+            content: Some(Arc::clone(content)),
+            colours: Arc::default(),
             view_layout: file_types::DiffType::SideBySide,
             view_state: state,
             wrap: false,
@@ -35,7 +37,7 @@ fn SideBySide(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>) -> No
     }
 }
 
-fn content(original: &str, modified: &str) -> Rc<pipeline::diff::DiffContent> {
+fn content(original: &str, modified: &str) -> Arc<pipeline::diff::DiffContent> {
     let original_lines = [original];
     let modified_lines = [modified];
     let diff = pipeline::diff::compute(
@@ -50,7 +52,7 @@ fn content(original: &str, modified: &str) -> Rc<pipeline::diff::DiffContent> {
         file_types::RepoPath::new("scroll.rs", Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::Oid::new("abc")),
     );
-    Rc::new(pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
+    Arc::new(pipeline::diff::DiffContent::Diff(pipeline::diff::Diff {
         file,
         alignment,
     }))

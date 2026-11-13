@@ -147,9 +147,7 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 /// Files allowed to start threads.
 pub const THREAD_FILES: &[&str] = &[
     "crates/loom/src/run.rs",
-    "crates/pipeline/src/diff/worker.rs",
-    "crates/pipeline/src/files/worker.rs",
-    "crates/syntax/src/worker/mod.rs",
+    "crates/pipeline/src/threads.rs",
     "crates/ui/src/lib.rs",
     "crates/ui/src/services/version_control.rs",
     "crates/watcher/src/watch.rs",

@@ -1,12 +1,17 @@
 //! The small gallery shell around production components.
 
+// The opened files are spelled out in full rather than hidden behind a name.
+#![allow(clippy::type_complexity)]
+
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
     use_exit, use_ref, use_state,
 };
 use pipeline::diff::DiffContent;
+use syntax::Span;
 use ui::components::border::{Border, BorderProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
@@ -31,8 +36,12 @@ pub(super) fn StoryPreview(
     scope: &mut Scope,
     definition: &'static StoryDefinition,
     base_context: Context,
-    content: Option<Rc<DiffContent>>,
-    contents: Option<Rc<Vec<Rc<DiffContent>>>>,
+    files: Rc<
+        Vec<(
+            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
+        )>,
+    >,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
@@ -69,6 +78,14 @@ pub(super) fn StoryPreview(
         Bubble::Stop
     });
     let theme = *context.theme;
+    // Code stories show the files they opened, once they have been diffed.
+    let content = files
+        .first()
+        .and_then(|(diff, _)| diff.lock().unwrap().clone())
+        .and_then(Result::ok);
+    let colours = files
+        .first()
+        .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
     let view_state = use_ref(scope, ViewState::default);
     let shortcuts = if navigate.is_some() {
         vec![
@@ -118,8 +135,9 @@ pub(super) fn StoryPreview(
         },
         StoryComponent::SideBySide => rsx! {
             DiffViewerContainer {
-                key: Rc::as_ptr(content.as_ref().expect("side-by-side story content")) as usize,
-                content: Some(Rc::clone(content.as_ref().expect("side-by-side story content"))),
+                key: content.as_ref().map_or(0, |content| Arc::as_ptr(content) as usize),
+                content: content.clone(),
+                colours: Arc::clone(&colours),
                 view_layout: file_types::DiffType::SideBySide,
                 view_state: view_state,
                 wrap: true,
@@ -129,8 +147,9 @@ pub(super) fn StoryPreview(
         },
         StoryComponent::Inline => rsx! {
             DiffViewerContainer {
-                key: Rc::as_ptr(content.as_ref().expect("inline story content")) as usize,
-                content: Some(Rc::clone(content.as_ref().expect("inline story content"))),
+                key: content.as_ref().map_or(0, |content| Arc::as_ptr(content) as usize),
+                content: content.clone(),
+                colours: Arc::clone(&colours),
                 view_layout: file_types::DiffType::Inline,
                 view_state: view_state,
                 wrap: true,
@@ -140,7 +159,8 @@ pub(super) fn StoryPreview(
         },
         StoryComponent::SingleFile => rsx! {
             DiffViewerContainer {
-                content: Some(Rc::clone(content.as_ref().expect("single-file story content"))),
+                content: content.clone(),
+                colours: Arc::clone(&colours),
                 view_layout: file_types::DiffType::Single,
                 view_state: view_state,
                 wrap: true,
@@ -148,18 +168,24 @@ pub(super) fn StoryPreview(
                 auto_focus: false,
             }
         },
-        StoryComponent::Card => rsx! {
-            DiffCard {
-                content: Rc::clone(content.as_ref().expect("card story content")),
-                view_layout: file_types::DiffType::SideBySide,
-                wrap: false,
-                height: None,
-                auto_focus: true,
-            }
+        StoryComponent::Card => match content.clone() {
+            Some(content) => rsx! {
+                DiffCard {
+                    content: content,
+                    colours: Arc::clone(&colours),
+                    view_layout: file_types::DiffType::SideBySide,
+                    wrap: false,
+                    height: None,
+                    auto_focus: true,
+                }
+            },
+            None => Node::Empty,
         },
         StoryComponent::Cards => rsx! {
             DiffCards {
-                contents: Rc::clone(contents.as_ref().expect("cards story contents")),
+                files: Rc::clone(files),
+                more_files: false,
+                open_next: Rc::new(|| {}) as Rc<dyn Fn()>,
                 view_layout: file_types::DiffType::Inline,
                 wrap: false,
             }

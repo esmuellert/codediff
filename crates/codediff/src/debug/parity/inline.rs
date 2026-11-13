@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use file_types::{DiffType, DiffVersion};
@@ -18,13 +19,14 @@ use super::{
 };
 
 #[component]
-fn InlineHost(scope: &mut Scope, content: Rc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
+fn InlineHost(scope: &mut Scope, content: Arc<pipeline::diff::DiffContent>, wrap: bool) -> Node {
     let view_state = use_ref(scope, ViewState::default);
-    let content_id = Rc::as_ptr(content) as usize;
+    let content_id = Arc::as_ptr(content) as usize;
     rsx! {
         DiffViewerContainer {
             key: content_id,
-            content: Some(Rc::clone(content)),
+            content: Some(Arc::clone(content)),
+            colours: Arc::default(),
             view_layout: DiffType::Inline,
             view_state: view_state,
             wrap: *wrap,
@@ -60,7 +62,7 @@ pub(super) fn run(
     let theme = Theme::DARK;
     let mut harness = Harness::new::<InlineHost>(
         InlineHostProps {
-            content: Rc::clone(&content),
+            content: Arc::clone(&content),
             wrap,
         },
         width,

@@ -374,7 +374,10 @@ fn cards_story_scrolls_a_long_diff_to_its_end() {
     let initial =
         String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
             .into_owned();
-    assert!(!initial.contains("PAYLOAD_END;"));
+    // Read the screen, not the bytes: a redraw writes only changed cells.
+    let mut screen = vt100::Parser::new(24, 80, 0);
+    screen.process(initial.as_bytes());
+    assert!(!screen.screen().contents().contains("PAYLOAD_END;"));
     let initial_len = initial.len();
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
@@ -384,9 +387,11 @@ fn cards_story_scrolls_a_long_diff_to_its_end() {
     let scrolled =
         String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
             .into_owned();
+    screen.process(&scrolled.as_bytes()[initial_len..]);
     assert!(
-        scrolled.contains("PAYLOAD_END;"),
-        "the card never revealed the end of its long line: {scrolled:?}"
+        screen.screen().contents().contains("PAYLOAD_END;"),
+        "the card never revealed the end of its long line: {:?}",
+        screen.screen().contents()
     );
 
     writer.write_all(b"q").expect("quitting");

@@ -1,7 +1,7 @@
 //! `codediff debug parity` — rendered diff cells as JSONL records.
 
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use file_types::{DiffVersion, File, Oid, RepoPath, Revs};
@@ -87,7 +87,7 @@ fn load_diff_content(
     original_path: &str,
     modified_path: &str,
     ignore_trim_whitespace: bool,
-) -> Result<Rc<pipeline::diff::DiffContent>> {
+) -> Result<Arc<pipeline::diff::DiffContent>> {
     let original_text = read_text(original_path)?;
     let modified_text = read_text(modified_path)?;
     let original = vscode_diff::editor_lines(&original_text);
@@ -103,7 +103,7 @@ fn load_diff_content(
         RepoPath::new("render.txt", &root),
         Revs::worktree_against(Oid::new("render")),
     );
-    Ok(Rc::new(pipeline::diff::DiffContent::Diff(
+    Ok(Arc::new(pipeline::diff::DiffContent::Diff(
         pipeline::diff::Diff { file, alignment },
     )))
 }

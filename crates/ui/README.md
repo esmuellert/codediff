@@ -17,17 +17,15 @@ App
                      └─ SingleFile
 ```
 
-`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` owns the currently loaded `pipeline::diff::DiffContent`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
+`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the slots `pipeline::Pipeline::open` returned for the selected file (or for a selected directory's opened files), chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
 
-## Services and workers
+## Services and background work
 
-- `FilesService` requests `pipeline::files` and refreshes after watcher messages.
-- `DiffService` requests `pipeline::diff` for the selected `file_types::File`.
-- `SyntaxService` requests visible syntax spans and stores returned chunks.
+- `diff_service` (a `pipeline::Pipeline`) lists files and opens files. Its threads fill the returned slots in and send `Redraw`; the main loop then redraws every component.
 - `VersionControlService` stages and unstages paths through `vcs`.
 - `WatcherService` multicasts `watcher::Refresh` values.
 
-The UI thread never runs Git or computes a diff while painting. The services deliver worker responses through the application event loop and reject responses for an old repository, file, or content generation where needed.
+The UI thread never runs Git or computes a diff while painting. Selecting another file or directory drops the old slots, and the threads skip work for files nobody holds.
 
 ## Navigation
 

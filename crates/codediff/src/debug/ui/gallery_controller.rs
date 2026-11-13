@@ -6,15 +6,13 @@ use std::sync::mpsc::{self, Sender};
 
 use anyhow::Result;
 use loom::{Flow, Tree, deliver_input};
-use ui::services::diff::DiffService;
-use ui::services::files::FilesService;
-use ui::services::syntax::SyntaxService;
+use pipeline::Pipeline;
 
 use super::catalog;
 use super::catalog_view::{CatalogRoot, CatalogRootProps};
-use super::definition::{StoryDefinition, StoryFixture};
-use super::preview::{PreviewAction, StoryPreview, StoryPreviewProps};
-use super::story_host::{settle_story_tree, story_context};
+use super::definition::StoryDefinition;
+use super::preview::{PreviewAction, StoryPreview};
+use super::story_host::{settle_story_tree, story_props};
 
 enum GalleryEvent {
     Terminal(ui::crossterm::event::Event),
@@ -22,32 +20,17 @@ enum GalleryEvent {
     Signal(i32),
     OpenStory(usize),
     PreviewAction(PreviewAction),
-    FilesReady {
-        generation: u64,
-        response: pipeline::files::Response,
-    },
-    DiffReady {
-        generation: u64,
-        response: Box<pipeline::diff::Response>,
-    },
-    SyntaxReady {
-        generation: u64,
-        response: syntax::SyntaxResponse,
-    },
+    Redraw,
 }
 
 struct ActiveStory {
-    generation: u64,
     definition: &'static StoryDefinition,
-    files_service: Option<Rc<FilesService>>,
-    diff_service: Option<Rc<DiffService>>,
-    syntax_service: Option<Rc<SyntaxService>>,
+    pipeline: Rc<Pipeline>,
     initial_keys_applied: bool,
 }
 
 struct GalleryController {
     events_tx: Sender<GalleryEvent>,
-    generation: u64,
     selected_story_index: usize,
     active_story: Option<ActiveStory>,
 }
@@ -56,7 +39,6 @@ impl GalleryController {
     fn new(events_tx: Sender<GalleryEvent>) -> Self {
         Self {
             events_tx,
-            generation: 0,
             selected_story_index: 0,
             active_story: None,
         }
@@ -77,73 +59,24 @@ impl GalleryController {
         let definition = catalog::by_index(index)
             .ok_or_else(|| anyhow::anyhow!("story index {index} is outside the catalog"))?;
         let fixture = definition.create_fixture()?;
-        let syntax = fixture.needs_syntax();
-        let (files, content, contents, diffs) = match fixture {
-            StoryFixture::Welcome => (None, None, None, None),
-            StoryFixture::Explorer(files) => (Some(files), None, None, None),
-            StoryFixture::ExplorerCards { files, diffs } => (Some(files), None, None, Some(diffs)),
-            StoryFixture::SideBySide(content)
-            | StoryFixture::Inline(content)
-            | StoryFixture::SingleFile(content)
-            | StoryFixture::Card(content) => (None, Some(content), None, None),
-            StoryFixture::Cards(contents) => (None, None, Some(contents), None),
-        };
-
-        self.generation += 1;
-        let generation = self.generation;
-        let files_service = files.map(|files| {
-            let worker = pipeline::files::FilesWorker::mock(
-                vec![files],
-                channel::Emitter::new(self.events_tx.clone(), move |response| {
-                    GalleryEvent::FilesReady {
-                        generation,
-                        response,
-                    }
-                }),
-            );
-            Rc::new(FilesService::new(Rc::new(RefCell::new(worker)), Vec::new()))
-        });
-        let diff_service = diffs.map(|diffs| {
-            let worker = pipeline::diff::DiffWorker::mock_by_file(
-                diffs,
-                channel::Emitter::new(self.events_tx.clone(), move |response| {
-                    GalleryEvent::DiffReady {
-                        generation,
-                        response: Box::new(response),
-                    }
-                }),
-            );
-            Rc::new(DiffService::new(Rc::new(RefCell::new(worker))))
-        });
-        let syntax_service = syntax.then(|| {
-            let worker = syntax::Syntax::start(channel::Emitter::new(
-                self.events_tx.clone(),
-                move |response| GalleryEvent::SyntaxReady {
-                    generation,
-                    response,
-                },
-            ));
-            Rc::new(SyntaxService::new(Rc::new(RefCell::new(worker))))
-        });
+        let redraw = self.events_tx.clone();
         let navigation_tx = self.events_tx.clone();
-        let props = StoryPreviewProps {
+        let (pipeline, props) = story_props(
             definition,
-            base_context: story_context(&files_service, &diff_service, &syntax_service),
-            content,
-            contents,
-            navigate: Some(Rc::new(move |action| {
+            fixture,
+            move || {
+                let _ = redraw.send(GalleryEvent::Redraw);
+            },
+            Some(Rc::new(move |action| {
                 let _ = navigation_tx.send(GalleryEvent::PreviewAction(action));
             })),
-        };
+        );
         *tree = Tree::new::<StoryPreview>(props);
         settle_story_tree(tree);
         self.selected_story_index = index;
         self.active_story = Some(ActiveStory {
-            generation,
             definition,
-            files_service,
-            diff_service,
-            syntax_service,
+            pipeline,
             initial_keys_applied: definition.initial_keys.is_empty(),
         });
         Ok(())
@@ -170,70 +103,22 @@ impl GalleryController {
         }
     }
 
-    fn deliver_files_if_current(
-        &mut self,
-        generation: u64,
-        response: pipeline::files::Response,
-        tree: &mut Tree,
-    ) {
-        let Some(active_story) = self
-            .active_story
-            .as_mut()
-            .filter(|story| story.generation == generation)
-        else {
+    /// Draws what the background threads changed. A story's keys are pressed
+    /// once its files have loaded.
+    fn redraw(&mut self, tree: &mut Tree) {
+        tree.redraw_all();
+        let Some(story) = self.active_story.as_mut() else {
             return;
         };
-        let Some(service) = active_story.files_service.as_ref().map(Rc::clone) else {
+        if story.initial_keys_applied || story.pipeline.is_busy() {
             return;
-        };
-        let initial_keys = active_story.definition.initial_keys;
-        let apply_initial_keys = !active_story.initial_keys_applied;
-        active_story.initial_keys_applied = true;
-
-        service.deliver(response);
-        settle_story_tree(tree);
-        if apply_initial_keys {
-            for &key in initial_keys {
-                tree.press(key);
-                settle_story_tree(tree);
-            }
         }
-    }
-
-    fn deliver_diff_if_current(
-        &self,
-        generation: u64,
-        response: Box<pipeline::diff::Response>,
-        tree: &mut Tree,
-    ) {
-        let Some(service) = self
-            .active_story
-            .as_ref()
-            .filter(|story| story.generation == generation)
-            .and_then(|story| story.diff_service.as_ref())
-        else {
-            return;
-        };
-        service.deliver(*response);
+        story.initial_keys_applied = true;
         settle_story_tree(tree);
-    }
-
-    fn deliver_syntax_if_current(
-        &self,
-        generation: u64,
-        response: syntax::SyntaxResponse,
-        tree: &mut Tree,
-    ) {
-        let Some(service) = self
-            .active_story
-            .as_ref()
-            .filter(|story| story.generation == generation)
-            .and_then(|story| story.syntax_service.as_ref())
-        else {
-            return;
-        };
-        service.deliver(response);
-        settle_story_tree(tree);
+        for &key in story.definition.initial_keys {
+            tree.press(key);
+            settle_story_tree(tree);
+        }
     }
 }
 
@@ -267,25 +152,8 @@ pub fn run() -> Result<()> {
                 GalleryEvent::PreviewAction(action) => {
                     controller.apply_preview_action(action, tree)
                 }
-                GalleryEvent::FilesReady {
-                    generation,
-                    response,
-                } => {
-                    controller.deliver_files_if_current(generation, response, tree);
-                    Ok(())
-                }
-                GalleryEvent::DiffReady {
-                    generation,
-                    response,
-                } => {
-                    controller.deliver_diff_if_current(generation, response, tree);
-                    Ok(())
-                }
-                GalleryEvent::SyntaxReady {
-                    generation,
-                    response,
-                } => {
-                    controller.deliver_syntax_if_current(generation, response, tree);
+                GalleryEvent::Redraw => {
+                    controller.redraw(tree);
                     Ok(())
                 }
             };

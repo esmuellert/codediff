@@ -1,22 +1,22 @@
-use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::mpsc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
+use syntax::Span;
 use ui::Theme;
 use ui::components::diff_viewer::{ViewState, ViewStateHistory};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
-use ui::services::syntax::SyntaxService;
+
+use crate::fake_pipeline::coloured;
 
 #[component]
 fn SingleFile(
     scope: &mut Scope,
-    content: Rc<pipeline::diff::DiffContent>,
+    content: Arc<pipeline::diff::DiffContent>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     wrap: bool,
     compact: bool,
 ) -> Node {
@@ -37,7 +37,8 @@ fn SingleFile(
     }
     rsx! {
         DiffViewerContainer {
-            content: Some(Rc::clone(content)),
+            content: Some(Arc::clone(content)),
+            colours: colours.clone(),
             view_layout: file_types::DiffType::Single,
             view_state: active_state,
             wrap: *wrap,
@@ -61,15 +62,15 @@ fn named_file(path: &str, deleted: bool) -> file_types::File {
     }
 }
 
-fn harness_with_syntax_service(
+fn harness_with_colours(
     lines: Vec<String>,
     deleted: bool,
     width: u16,
     height: u16,
-    syntax_service: Option<Rc<SyntaxService>>,
+    colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Harness {
     let file = file(deleted);
-    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+    let content = Arc::new(pipeline::diff::DiffContent::SingleFile(
         pipeline::diff::SingleFile {
             file,
             lines: Arc::new(lines),
@@ -77,6 +78,7 @@ fn harness_with_syntax_service(
     ));
     Harness::new::<SingleFile>(
         SingleFileProps {
+            colours,
             content,
             wrap: true,
             compact: false,
@@ -86,18 +88,17 @@ fn harness_with_syntax_service(
     )
     .provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
-        syntax_service,
         ..Context::default()
     })
 }
 
 fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
-    harness_with_syntax_service(lines, deleted, width, height, None)
+    harness_with_colours(lines, deleted, width, height, Arc::default())
 }
 
 fn harness_unwrapped(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
     let file = file(deleted);
-    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+    let content = Arc::new(pipeline::diff::DiffContent::SingleFile(
         pipeline::diff::SingleFile {
             file,
             lines: Arc::new(lines),
@@ -105,6 +106,7 @@ fn harness_unwrapped(lines: Vec<String>, deleted: bool, width: u16, height: u16)
     ));
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
+            colours: Arc::default(),
             content,
             wrap: false,
             compact: false,
@@ -163,7 +165,7 @@ fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
 #[test]
 fn toggling_wrap_preserves_the_current_terminal_line() {
     let long = "SINGLE_TOGGLE ".to_owned() + &"0123456789".repeat(12);
-    let content = Rc::new(pipeline::diff::DiffContent::SingleFile(
+    let content = Arc::new(pipeline::diff::DiffContent::SingleFile(
         pipeline::diff::SingleFile {
             file: named_file("toggle.rs", false),
             lines: Arc::new(vec![long, "second".into(), "third".into()]),
@@ -171,7 +173,8 @@ fn toggling_wrap_preserves_the_current_terminal_line() {
     ));
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
-            content: Rc::clone(&content),
+            colours: Arc::default(),
+            content: Arc::clone(&content),
             wrap: true,
             compact: false,
         },
@@ -189,6 +192,7 @@ fn toggling_wrap_preserves_the_current_terminal_line() {
         .force_draw();
 
     harness.set_props::<SingleFile>(SingleFileProps {
+        colours: Arc::default(),
         content,
         wrap: false,
         compact: false,
@@ -245,23 +249,14 @@ fn added_and_deleted_files_have_no_diff_background() {
 }
 
 #[test]
-fn syntax_is_requested_for_the_present_side() {
-    let (syntax_tx, syntax_responses) = mpsc::channel();
-    let syntax_worker =
-        syntax::Syntax::start(channel::Emitter::new(syntax_tx, |response| response));
-    let syntax_service = Rc::new(SyntaxService::new(Rc::new(RefCell::new(syntax_worker))));
-    let mut harness = harness_with_syntax_service(
-        vec!["fn main() {}".into()],
-        false,
-        30,
-        2,
-        Some(Rc::clone(&syntax_service)),
-    );
-    harness.force_draw().force_draw();
-    let response = syntax_responses
-        .recv_timeout(Duration::from_secs(1))
-        .expect("syntax response");
-    syntax_service.deliver(response);
+fn the_pipeline_colours_the_present_side() {
+    let colours = coloured(pipeline::diff::DiffContent::SingleFile(
+        pipeline::diff::SingleFile {
+            file: file(false),
+            lines: Arc::new(vec!["fn main() {}".into()]),
+        },
+    ));
+    let mut harness = harness_with_colours(vec!["fn main() {}".into()], false, 30, 2, colours);
     harness.force_draw().force_draw();
 
     assert_ne!(harness.style_at(4, 0).fg, Theme::DARK.normal.fg);
@@ -307,13 +302,13 @@ fn a_long_file_scrolls() {
 fn each_file_restores_its_position() {
     let first_lines: Vec<String> = (1..=12).map(|line| format!("first {line:02}")).collect();
     let second_lines: Vec<String> = (1..=12).map(|line| format!("second {line:02}")).collect();
-    let first = Rc::new(pipeline::diff::DiffContent::SingleFile(
+    let first = Arc::new(pipeline::diff::DiffContent::SingleFile(
         pipeline::diff::SingleFile {
             file: named_file("first.rs", false),
             lines: Arc::new(first_lines),
         },
     ));
-    let second = Rc::new(pipeline::diff::DiffContent::SingleFile(
+    let second = Arc::new(pipeline::diff::DiffContent::SingleFile(
         pipeline::diff::SingleFile {
             file: named_file("second.rs", false),
             lines: Arc::new(second_lines),
@@ -321,6 +316,7 @@ fn each_file_restores_its_position() {
     ));
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
+            colours: Arc::default(),
             content: first.clone(),
             wrap: true,
             compact: false,
@@ -339,6 +335,7 @@ fn each_file_restores_its_position() {
     assert!(harness.screen_line(0).contains("first 04"));
 
     harness.set_props::<SingleFile>(SingleFileProps {
+        colours: Arc::default(),
         content: second.clone(),
         wrap: true,
         compact: false,
@@ -348,6 +345,7 @@ fn each_file_restores_its_position() {
     harness.press(crokey::key!(j)).force_draw();
 
     harness.set_props::<SingleFile>(SingleFileProps {
+        colours: Arc::default(),
         content: first,
         wrap: true,
         compact: false,

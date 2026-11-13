@@ -67,6 +67,12 @@ impl Harness {
         self
     }
 
+    /// Marks every component, as the application does after background work.
+    pub fn redraw_all(&mut self) -> &mut Self {
+        self.tree.redraw_all();
+        self
+    }
+
     /// Draws whether or not anything is marked.
     pub fn force_draw(&mut self) -> &mut Self {
         self.cells = Cells::empty(self.area);

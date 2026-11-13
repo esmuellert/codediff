@@ -17,7 +17,6 @@ pub mod side_by_side;
 pub mod single_file;
 mod welcome;
 
-pub(crate) use crate::view::terminal_lines::WrappedViewLine;
 pub use crate::view::terminal_lines::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
