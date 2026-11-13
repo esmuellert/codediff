@@ -67,14 +67,14 @@ struct Run {
 }
 
 fn run_app(fixture: &Fixture, config: Value, path: Option<&str>, keys: &[u8]) -> Run {
-    run_app_steps(fixture, config, path, &[(keys, Duration::ZERO)])
+    run_app_steps(fixture, config, path, &[(keys, &[])])
 }
 
 fn run_app_steps(
     fixture: &Fixture,
     config: Value,
     path: Option<&str>,
-    steps: &[(&[u8], Duration)],
+    steps: &[(&[u8], &[&str])],
 ) -> Run {
     let config = fixture.config(config);
     let pty = native_pty_system()
@@ -116,28 +116,45 @@ fn run_app_steps(
         }
     });
 
-    wait_for_draw(&output);
+    // Keys sent before the files are listed would act on an empty Explorer.
+    wait_for_screen(&output, "the file list", |screen| {
+        screen.contains("Changes")
+    });
     if steps.iter().any(|(keys, _)| !keys.is_empty())
         && child.try_wait().expect("checking codediff").is_none()
     {
         let mut writer = pty.master.take_writer().expect("writing to the pty");
         if path.is_some() {
+            // With the default keys this opens the file. A test that rebinds
+            // them opens it with its own keys instead.
+            let before = output.lock().expect("output lock").bytes.len();
             let _ = writer.write_all(b"j\r");
             let _ = writer.flush();
-            std::thread::sleep(Duration::from_millis(600));
+            wait_for_frame_after(&output, before, Duration::from_secs(5));
+            wait_for_screen(&output, "the opened file", |screen| {
+                !screen.contains("Loading file")
+            });
         }
-        for (keys, pause) in steps {
+        for (index, (keys, expected)) in steps.iter().enumerate() {
+            let before = output.lock().expect("output lock").bytes.len();
             if !keys.is_empty() {
                 let _ = writer.write_all(keys);
                 let _ = writer.flush();
             }
-            if *pause > Duration::ZERO {
-                std::thread::sleep(*pause);
+            // Before the next keys, wait for what these keys drew: a frame,
+            // any file they opened, and whatever the step expects to see.
+            // The last step quits, so it draws nothing.
+            if index + 1 < steps.len() {
+                wait_for_frame_after(&output, before, Duration::from_secs(5));
+                wait_for_screen(&output, "the step's result", |screen| {
+                    !screen.contains("Loading file")
+                        && expected.iter().all(|text| screen.contains(text))
+                });
             }
         }
     }
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     let (success, timed_out) = loop {
         if let Some(status) = child.try_wait().expect("waiting for codediff") {
             break (status.success(), false);
@@ -159,20 +176,38 @@ fn run_app_steps(
     }
 }
 
-fn wait_for_draw(output: &Arc<Mutex<Output>>) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+/// Waits until the screen, as a terminal shows it, satisfies `ready`.
+fn wait_for_screen(output: &Arc<Mutex<Output>>, what: &str, ready: impl Fn(&str) -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
+        let bytes = output.lock().expect("output lock").bytes.clone();
+        let mut screen = vt100::Parser::new(HEIGHT, COLS, 0);
+        screen.process(&bytes);
+        let contents = screen.screen().contents();
+        if ready(&contents) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "codediff never showed {what}:\n{contents}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// Waits until a complete frame follows the first `before` bytes. Keys that
+/// change nothing draw nothing, so it gives up after `patience`.
+fn wait_for_frame_after(output: &Arc<Mutex<Output>>, before: usize, patience: Duration) {
+    // Every frame ends its synchronized update with this.
+    const FRAME_END: &[u8] = b"\x1b[?2026l";
+    let deadline = Instant::now() + patience.max(Duration::from_secs(5));
+    while Instant::now() < deadline {
         {
             let held = output.lock().expect("output lock");
-            if !held.bytes.is_empty()
-                && held
-                    .last_write
-                    .is_some_and(|last| last.elapsed() >= Duration::from_millis(250))
-            {
+            if held.bytes.len() > before && held.bytes.ends_with(FRAME_END) {
                 return;
             }
         }
-        assert!(Instant::now() < deadline, "codediff never drew a frame");
         std::thread::sleep(Duration::from_millis(10));
     }
 }

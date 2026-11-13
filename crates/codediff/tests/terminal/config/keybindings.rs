@@ -5,11 +5,9 @@ use serde_json::json;
 
 use super::{Fixture, Run, run_app_steps, screen};
 
-fn steps<'a>(items: &[(&'a [u8], u64)]) -> Vec<(&'a [u8], Duration)> {
-    items
-        .iter()
-        .map(|(keys, pause)| (*keys, Duration::from_millis(*pause)))
-        .collect()
+/// Keys sent one group at a time; each group waits for what it drew.
+fn steps<'a>(items: &[&'a [u8]]) -> Vec<(&'a [u8], &'static [&'static str])> {
+    items.iter().map(|keys| (*keys, &[][..])).collect()
 }
 
 fn repeated(key: u8, count: usize) -> Vec<u8> {
@@ -33,7 +31,7 @@ fn move_down_keybinding_opens_the_selected_file() {
         &fixture,
         json!({"keybindings": {"move_down": ["n"]}}),
         Some("modified.txt"),
-        &steps(&[(b"n\r", 500), (b"q", 0)]),
+        &steps(&[b"n\r", b"q"]),
     );
 
     assert_success(&run);
@@ -53,7 +51,7 @@ fn move_up_keybinding_scrolls_back_to_the_first_line() {
         &fixture,
         json!({"keybindings": {"move_up": ["p"]}}),
         Some("modified.txt"),
-        &steps(&[(&down, 200), (&up, 200), (b"q", 0)]),
+        &steps(&[&down, &up, b"q"]),
     );
 
     assert_success(&run);
@@ -73,7 +71,7 @@ fn open_keybinding_expands_a_directory() {
             }
         }),
         Some("aaa"),
-        &steps(&[(b"no", 500), (b"q", 0)]),
+        &steps(&[b"no", b"q"]),
     );
 
     assert_success(&run);
@@ -96,14 +94,9 @@ fn toggle_layout_keybinding_switches_the_running_view() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"fv", 400), (b"q", 0)]),
+        &steps(&[b"fv", b"q"]),
     );
-    let default = run_app_steps(
-        &fixture,
-        json!({}),
-        Some("modified.txt"),
-        &steps(&[(b"q", 0)]),
-    );
+    let default = run_app_steps(&fixture, json!({}), Some("modified.txt"), &steps(&[b"q"]));
 
     assert_success(&toggled);
     assert_success(&default);
@@ -127,14 +120,9 @@ fn toggle_wrap_keybinding_changes_the_running_view() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"fz", 400), (b"q", 0)]),
+        &steps(&[b"fz", b"q"]),
     );
-    let default = run_app_steps(
-        &fixture,
-        json!({}),
-        Some("modified.txt"),
-        &steps(&[(b"q", 0)]),
-    );
+    let default = run_app_steps(&fixture, json!({}), Some("modified.txt"), &steps(&[b"q"]));
 
     assert_success(&toggled);
     assert_success(&default);
@@ -148,7 +136,7 @@ fn toggle_explorer_mode_keybinding_switches_to_list_mode() {
         &fixture,
         json!({"keybindings": {"toggle_explorer_mode": ["m"]}}),
         None,
-        &steps(&[(b"m", 400), (b"q", 0)]),
+        &steps(&[b"m", b"q"]),
     );
 
     assert_success(&run);
@@ -169,7 +157,8 @@ fn stage_keybinding_stages_after_focus_previous() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"u", 200), (b"s", 800), (b"q", 0)]),
+        // Staging shows once the watcher has listed the files again.
+        &[(b"u", &[][..]), (b"s", &["Staged Changes"]), (b"q", &[])],
     );
 
     assert_success(&run);
@@ -194,7 +183,7 @@ fn focus_next_keybinding_returns_to_the_diff_view() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"u", 200), (b"o", 200), (&down, 500), (b"q", 0)]),
+        &steps(&[b"u", b"o", &down, b"q"]),
     );
 
     assert_success(&run);
@@ -219,7 +208,7 @@ fn horizontal_move_keybindings_change_the_scroll_position() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"f", 200), (&right, 400), (b"q", 0)]),
+        &steps(&[b"f", &right, b"q"]),
     );
     let restored = run_app_steps(
         &fixture,
@@ -232,7 +221,7 @@ fn horizontal_move_keybindings_change_the_scroll_position() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"f", 100), (&right, 100), (&left, 400), (b"q", 0)]),
+        &steps(&[b"f", &right, &left, b"q"]),
     );
 
     assert_success(&scrolled);
@@ -257,7 +246,7 @@ fn horizontal_endpoint_keybindings_reach_start_and_end() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"f", 200), (b"e", 400), (b"q", 0)]),
+        &steps(&[b"f", b"e", b"q"]),
     );
     let at_start = run_app_steps(
         &fixture,
@@ -270,7 +259,7 @@ fn horizontal_endpoint_keybindings_reach_start_and_end() {
             }
         }),
         Some("modified.txt"),
-        &steps(&[(b"f", 100), (b"e", 100), (b"a", 400), (b"q", 0)]),
+        &steps(&[b"f", b"e", b"a", b"q"]),
     );
 
     assert_success(&at_end);
