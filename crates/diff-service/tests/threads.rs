@@ -95,6 +95,7 @@ fn a_file_that_cannot_be_read_reports_why_and_the_next_one_still_loads() {
 fn a_file_nobody_holds_any_more_is_not_read() {
     let (release, wait) = mpsc::channel::<()>();
     let wait = Mutex::new(wait);
+    let (started, reading) = mpsc::channel::<()>();
     let reads = Arc::new(Mutex::new(Vec::new()));
     let read_paths = Arc::clone(&reads);
     let (redraw, redraws) = mpsc::channel();
@@ -109,6 +110,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
                 .unwrap()
                 .push(file.path().as_str().to_owned());
             if read_paths.lock().unwrap().len() == 1 {
+                started.send(()).unwrap();
                 wait.lock().unwrap().recv().unwrap();
             }
             Ok(DiffContent::SingleFile(SingleFile {
@@ -120,6 +122,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
 
     // A is being read while B is queued; the user then moves back to A.
     let first_a = pipeline.open(file("a.txt"));
+    reading.recv_timeout(Duration::from_secs(10)).unwrap();
     let b = pipeline.open(file("b.txt"));
     drop(b);
     drop(first_a);
