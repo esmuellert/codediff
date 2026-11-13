@@ -2,7 +2,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::pty::{Output, drawn_after};
+use super::pty::Output;
 
 pub(super) fn wait_for_output(output: &Arc<Mutex<Output>>, needle: &str) -> String {
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -19,49 +19,57 @@ pub(super) fn wait_for_output(output: &Arc<Mutex<Output>>, needle: &str) -> Stri
     }
 }
 
-pub(super) fn send_and_wait(
-    writer: &mut dyn Write,
-    output: &Arc<Mutex<Output>>,
-    input: &[u8],
-) -> String {
-    let before = output
+/// What a `rows` × `cols` terminal shows after everything written so far.
+pub(super) fn screen_text(output: &Arc<Mutex<Output>>, rows: u16, cols: u16) -> String {
+    // Copy first: parsing under the lock would stall the reader thread.
+    let bytes = output
         .lock()
         .expect("nothing else holds the lock")
         .bytes
-        .len();
+        .clone();
+    let mut screen = vt100::Parser::new(rows, cols, 0);
+    screen.process(&bytes);
+    screen.screen().contents()
+}
+
+/// Waits until the screen shows every one of `expected`, and returns it.
+///
+/// The screen, not the bytes: a redraw writes only the cells that changed,
+/// and work that finishes in the background draws when it is ready.
+#[track_caller]
+pub(super) fn wait_for_screen(
+    output: &Arc<Mutex<Output>>,
+    (rows, cols): (u16, u16),
+    expected: &[&str],
+) -> String {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let screen = screen_text(output, rows, cols);
+        if expected.iter().all(|text| screen.contains(text)) {
+            return screen;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the screen never showed {expected:?}: {screen}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// Sends `input`, then waits until the screen shows every one of `expected`.
+#[track_caller]
+pub(super) fn send_and_expect(
+    writer: &mut dyn Write,
+    output: &Arc<Mutex<Output>>,
+    size: (u16, u16),
+    input: &[u8],
+    expected: &[&str],
+) -> String {
     writer.write_all(input).expect("sending input");
     writer.flush().expect("flushing input");
-    drawn_after(output, before);
-    let held = output.lock().expect("nothing else holds the lock");
-    String::from_utf8_lossy(&held.bytes[before..]).into_owned()
+    wait_for_screen(output, size, expected)
 }
 
 pub(super) fn all_output(output: &Arc<Mutex<Output>>) -> String {
     String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes).into_owned()
-}
-
-pub(super) fn output_since(output: &Arc<Mutex<Output>>, before: usize) -> String {
-    let held = output.lock().expect("nothing else holds the lock");
-    String::from_utf8_lossy(&held.bytes[before..]).into_owned()
-}
-
-pub(super) fn strip_csi(input: &str) -> String {
-    let mut text = String::new();
-    let mut saw_escape = false;
-    let mut in_csi = false;
-    for character in input.chars() {
-        if in_csi {
-            if ('@'..='~').contains(&character) {
-                in_csi = false;
-            }
-        } else if saw_escape {
-            saw_escape = false;
-            in_csi = character == '[';
-        } else if character == '\u{1b}' {
-            saw_escape = true;
-        } else if !character.is_control() {
-            text.push(character);
-        }
-    }
-    text
 }

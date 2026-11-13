@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use super::super::common::{all_output, output_since, send_and_wait, strip_csi};
-use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, drawn, drawn_after, written};
+use super::super::common::{send_and_expect, wait_for_screen};
+use super::super::pty::{ENTER_ALT, LEAVE_ALT, collect, written};
 
 #[test]
 fn story_catalog_filters_opens_switches_resets_and_returns() {
@@ -24,122 +24,79 @@ fn story_catalog_filters_opens_switches_resets_and_returns() {
 
     let reader = pty.master.try_clone_reader().expect("reading the pty");
     let (collector, output) = collect(reader);
-    drawn(&output);
-    assert!(all_output(&output).contains("STORIES"));
+    let size = (24, 100);
+    wait_for_screen(&output, size, &["STORIES"]);
 
     let mut writer = pty.master.take_writer().expect("writing to the pty");
-    let search = send_and_wait(&mut writer, &output, b"/");
-    assert!(search.contains("FILTER"), "filter did not open: {search:?}");
-    let filtered = send_and_wait(&mut writer, &output, b"edge-matrix");
-    assert!(
-        filtered.contains("edge-matrix"),
-        "filter text did not arrive: {filtered:?}"
+    send_and_expect(&mut writer, &output, size, b"/", &["FILTER"]);
+    // The typed filter, not a list line that already matched it.
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"edge-matrix",
+        &["FILTER  edge-matrix"],
+    );
+    send_and_expect(&mut writer, &output, size, b"\r", &["fn edge_matrix()"]);
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"]",
+        &["inline/unchanged", "same in one column"],
+    );
+    send_and_expect(&mut writer, &output, size, b"[", &["edge_matrix"]);
+    send_and_expect(&mut writer, &output, size, b"r", &["edge_matrix"]);
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"\x1b",
+        &["STORIES", "side-by-side/edge-matrix"],
     );
 
-    let opened = send_and_wait(&mut writer, &output, b"\r");
-    assert!(
-        opened.contains("fn edge_matrix()"),
-        "story did not open: {opened:?}"
+    send_and_expect(&mut writer, &output, size, b"/", &["FILTER"]);
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"explorer/list",
+        &["FILTER  explorer/list"],
     );
+    // The list story presses its own keys once the files are listed.
+    send_and_expect(&mut writer, &output, size, b"\r", &["src/app.rs"]);
+    send_and_expect(&mut writer, &output, size, b"\x1b", &["STORIES"]);
 
-    let next = send_and_wait(&mut writer, &output, b"]");
-    assert!(
-        next.contains("inline/unchanged") && next.contains("same in one column"),
-        "next story did not open: {next:?}"
+    send_and_expect(&mut writer, &output, size, b"/", &["FILTER"]);
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"explorer/cards",
+        &["FILTER  explorer/cards"],
     );
-    let previous = send_and_wait(&mut writer, &output, b"[");
-    assert!(
-        previous.contains("edge_matrix"),
-        "previous story did not open: {previous:?}"
-    );
-    let _ = send_and_wait(&mut writer, &output, b"r");
-    let catalog = send_and_wait(&mut writer, &output, b"\x1b");
-    assert!(
-        catalog.contains("side-by-side/edge-matrix"),
-        "catalog did not return: {catalog:?}"
-    );
-
-    let _ = send_and_wait(&mut writer, &output, b"/");
-    let _ = send_and_wait(&mut writer, &output, b"explorer/list");
-    let explorer = send_and_wait(&mut writer, &output, b"\r");
-    assert!(
-        explorer.contains("src/app.rs"),
-        "Explorer setup keys were not applied: {explorer:?}"
-    );
-    let _ = send_and_wait(&mut writer, &output, b"\x1b");
-
-    let _ = send_and_wait(&mut writer, &output, b"/");
-    let _ = send_and_wait(&mut writer, &output, b"explorer/cards");
-    let _ = send_and_wait(&mut writer, &output, b"\r");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let cards = loop {
-        let current = all_output(&output);
-        if current.contains("src/panel.rs")
-            || current.contains("No two-sided diffs in this directory")
-        {
-            break current;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "directory story did not settle: {current:?}"
-        );
-        std::thread::sleep(Duration::from_millis(25));
-    };
+    let cards = send_and_expect(&mut writer, &output, size, b"\r", &["src/panel.rs"]);
     assert!(
         !cards.contains("No two-sided diffs in this directory"),
-        "directory card story rendered the empty state: {cards:?}"
+        "directory card story rendered the empty state: {cards}"
     );
-    assert!(
-        cards.contains("src/panel.rs"),
-        "directory cards did not load: {cards:?}"
+    // Selecting a file replaces the cards with that file's diff.
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"\x1b[<0;10;6M\x1b[<0;10;6m",
+        &["new_name"],
     );
-
-    let before_file_click = output.lock().expect("output lock").bytes.len();
-    writer
-        .write_all(b"\x1b[<0;10;6M\x1b[<0;10;6m")
-        .expect("clicking src/app.rs in Explorer");
-    writer.flush().expect("flushing Explorer click");
-    drawn_after(&output, before_file_click);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let file_view = loop {
-        let current = strip_csi(&output_since(&output, before_file_click));
-        if current.contains("new_name") {
-            break current;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "file selection did not settle: {current:?}"
-        );
-        std::thread::sleep(Duration::from_millis(25));
-    };
-    assert!(
-        file_view.contains("new_name"),
-        "selected file diff did not load: {file_view:?}"
+    // Reselecting the directory brings its cards back.
+    send_and_expect(
+        &mut writer,
+        &output,
+        size,
+        b"\x1b[<0;10;5M\x1b[<0;10;5m",
+        &["src/panel.rs"],
     );
-
-    let before_directory_click = output.lock().expect("output lock").bytes.len();
-    writer
-        .write_all(b"\x1b[<0;10;5M\x1b[<0;10;5m")
-        .expect("reselecting the src directory");
-    writer.flush().expect("flushing directory click");
-    drawn_after(&output, before_directory_click);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let cards_again = loop {
-        let current = strip_csi(&output_since(&output, before_directory_click));
-        if current.contains("src/panel.rs") {
-            break current;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "directory cards did not reload: {current:?}"
-        );
-        std::thread::sleep(Duration::from_millis(25));
-    };
-    assert!(
-        cards_again.contains("src/panel.rs"),
-        "reselected directory did not show its cards: {cards_again:?}"
-    );
-    let _ = send_and_wait(&mut writer, &output, b"\x1b");
+    send_and_expect(&mut writer, &output, size, b"\x1b", &["STORIES"]);
 
     writer.write_all(b"q").expect("quitting");
     writer.flush().expect("flushing quit");
