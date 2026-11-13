@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
-use super::super::common::wait_for_output;
 use super::super::pty::{Output, collect, drawn, drawn_after};
 
 const COLS: u16 = 120;
@@ -108,14 +107,20 @@ impl Terminal {
             consumed: 0,
         };
         terminal.send(b"j");
-        wait_for_output(&terminal.output, "src/b.txt");
-        drawn(&terminal.output);
-        terminal.update();
-        let screen = terminal.parser.screen().contents();
-        assert!(
-            screen.contains("NEW_b_032"),
-            "full-height reference is incomplete:\n{screen}"
-        );
+        // Cards load one file at a time; the reference needs the last one.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            terminal.update();
+            let screen = terminal.parser.screen().contents();
+            if screen.contains("NEW_b_032") {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "full-height reference is incomplete:\n{screen}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
         terminal
     }
 
@@ -148,6 +153,21 @@ impl Terminal {
             .unwrap();
         drawn_after(&self.output, before);
         self.update();
+    }
+
+    /// Waits until the pane shows `expected`, so a redraw that is still on
+    /// its way is not mistaken for a wrong one. Gives up after a while and
+    /// leaves the comparison to the caller.
+    fn wait_for_pane(&mut self, rows: u16, expected: &[String]) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            self.update();
+            let actual: Vec<_> = self.pane(rows).iter().map(row_text).collect();
+            if actual == expected || Instant::now() >= deadline {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 
     fn pane(&self, rows: u16) -> Vec<Row> {
@@ -244,15 +264,17 @@ fn real_directory_cards_keep_every_row_when_scrolled_down_and_back_up() {
         for direction in [1, -1] {
             loop {
                 if top == 15 {
-                    terminal.resize(24);
-                    let resized: Vec<_> = terminal.pane(24).iter().map(row_text).collect();
                     let expected: Vec<_> = reference[top..top + 22].iter().map(row_text).collect();
+                    terminal.resize(24);
+                    terminal.wait_for_pane(24, &expected);
+                    let resized: Vec<_> = terminal.pane(24).iter().map(row_text).collect();
                     assert_eq!(resized, expected, "resized at {top}: {layout} wrap={wrap}");
                     terminal.resize(ROWS);
                     let expected = &reference[top..top + viewport_height];
                     let expected_text: Vec<_> = expected.iter().map(row_text).collect();
                     for expanded in [false, true] {
                         terminal.send(b"\x1b[<0;4;3M\x1b[<0;4;3m");
+                        terminal.wait_for_pane(ROWS, &expected_text);
                         assert_eq!(
                             terminal.explorer_text(ROWS).contains("a.txt"),
                             expanded,
@@ -277,15 +299,16 @@ fn real_directory_cards_keep_every_row_when_scrolled_down_and_back_up() {
                         }
                     }
                 }
+                let expected = &reference[top..top + viewport_height];
+                let expected_text: Vec<_> = expected.iter().map(row_text).collect();
+                terminal.wait_for_pane(ROWS, &expected_text);
                 let actual = terminal.pane(ROWS);
                 fs::write(
                     artifacts.join(format!("{direction}-{top:03}.txt")),
                     terminal.parser.screen().contents(),
                 )
                 .unwrap();
-                let expected = &reference[top..top + viewport_height];
                 let actual_text: Vec<_> = actual.iter().map(row_text).collect();
-                let expected_text: Vec<_> = expected.iter().map(row_text).collect();
                 if actual_text != expected_text {
                     fs::write(
                         artifacts.join("failure.ansi"),
@@ -319,6 +342,7 @@ fn real_directory_cards_keep_every_row_when_scrolled_down_and_back_up() {
                     } else {
                         b"\x1b[<64;100;10M"
                     });
+                    terminal.wait_for_pane(ROWS, &expected_text);
                     let clamped: Vec<_> = terminal.pane(ROWS).iter().map(row_text).collect();
                     assert_eq!(clamped, expected_text, "scrolled past the content boundary");
                     break;
