@@ -10,7 +10,7 @@ fn Scrolled(scope: &mut Scope) -> Node {
     rsx! {
         Scroll {
             handle: Some(handle),
-            view: view,
+            view,
             layout: Layout { grow: 1, ..Default::default() },
             ..,
             Column {

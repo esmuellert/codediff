@@ -57,7 +57,7 @@ fn TestInlineUnwrapped(scope: &mut Scope, content: Arc<diff_service::diff::DiffC
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
             view_layout: file_types::DiffType::Inline,
-            view_state: view_state,
+            view_state,
             wrap: false,
             compact: false,
             auto_focus: false,

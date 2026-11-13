@@ -78,7 +78,7 @@ pub fn Border(scope: &mut Scope, layout: Layout, children: loom::Children) -> No
     rsx! {
         Stack {
             layout: outer,
-            listeners: listeners,
+            listeners,
             ..,
             Canvas {
                 layout: Layout { grow: 1, ..Default::default() },

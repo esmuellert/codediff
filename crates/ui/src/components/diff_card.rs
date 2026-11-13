@@ -248,7 +248,7 @@ pub fn DiffCard(
             layout: border_layout,
             Column {
                 ref: Some(node_ref),
-                listeners: listeners,
+                listeners,
                 focusable: true,
                 auto_focus: *auto_focus,
                 layout: Layout { grow: 1, ..Default::default() },

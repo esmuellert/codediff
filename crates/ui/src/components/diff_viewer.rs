@@ -227,14 +227,14 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             DiffCards {
                 key: Rc::as_ptr(directory) as usize,
                 files: Rc::new(opened),
-                more_files: more_files,
+                more_files,
                 open_next: Rc::new(move || {
                     if let Some(directory_files) = directory_files.as_ref() {
                         directory_files.open_next(&pipeline);
                     }
                 }) as Rc<dyn Fn()>,
-                view_layout: view_layout,
-                wrap: wrap,
+                view_layout,
+                wrap,
             }
         }
     } else if let Some(result) = result.filter(|_| content.is_none()) {
@@ -245,11 +245,11 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     } else {
         rsx! {
             DiffViewerContainer {
-                content: content,
+                content,
                 colours: opened_file.map_or_else(Arc::default, |(_, colours)| Arc::clone(colours)),
-                view_layout: view_layout,
+                view_layout,
                 view_state: active_view_state,
-                wrap: wrap,
+                wrap,
                 compact: false,
                 auto_focus: true,
             }

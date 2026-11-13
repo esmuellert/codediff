@@ -115,7 +115,7 @@ fn Parent(scope: &mut Scope, tag: u32) -> Node {
     let text: Rc<str> = format!("tag={tag}").into();
     rsx! {
         Column {
-            Text { text: text, .. }
+            Text { text, .. }
             Counter {}
         }
     }
@@ -360,7 +360,7 @@ fn Keyed(scope: &mut Scope, order: Vec<u32>) -> Node {
 fn Tagged(scope: &mut Scope, tag: u32) -> Node {
     let (start, _) = use_state(scope, || *tag);
     let text: Rc<str> = format!("{tag}:{start}").into();
-    rsx! { Text { text: text, .. } }
+    rsx! { Text { text, .. } }
 }
 
 #[test]
@@ -387,7 +387,7 @@ fn KeyedEntries(scope: &mut Scope, entries: Vec<(u32, u32)>) -> Node {
     rsx! {
         Column {
             for (key, tag) in entries.clone() {
-                Tagged { key: key, tag: tag }
+                Tagged { key, tag }
             }
         }
     }
@@ -480,7 +480,7 @@ fn Deep(scope: &mut Scope) -> Node {
     // The first frame's effect writes state; the second must show it.
     use_effect(scope, (), move || set(&|_| 42));
     let text: Rc<str> = format!("n={n}").into();
-    rsx! { Text { text: text, .. } }
+    rsx! { Text { text, .. } }
 }
 
 #[test]

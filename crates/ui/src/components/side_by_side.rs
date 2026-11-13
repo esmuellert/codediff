@@ -143,7 +143,7 @@ pub(crate) fn SideBySide(
                         key: 0u32,
                         number: None,
                         style: blank,
-                        blank: blank,
+                        blank,
                         width: original_gutter_width,
                     }
                 },
@@ -167,7 +167,7 @@ pub(crate) fn SideBySide(
                         key: 0u32,
                         number: None,
                         style: blank,
-                        blank: blank,
+                        blank,
                         width: modified_gutter_width,
                     }
                 },
@@ -347,11 +347,11 @@ fn make_side(
                 rsx! {
                     CodeText {
                         key: 0u32,
-                        text: text,
+                        text,
                         first_cell: 0,
                         diff: changed_ranges,
-                        fill_from: fill_from,
-                        empty_markers: empty_markers,
+                        fill_from,
+                        empty_markers,
                         syntax: syntax_spans,
                         unchanged_style: code_styles.unchanged,
                         changed_style: code_styles.changed,
@@ -368,7 +368,7 @@ fn make_side(
                         key: 0u32,
                         number: None,
                         style: blank,
-                        blank: blank,
+                        blank,
                         width: gutter_width,
                     }
                 },

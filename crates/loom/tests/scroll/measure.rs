@@ -27,7 +27,7 @@ fn MeasuringScroll(scope: &mut Scope, measured: Rc<Cell<Size>>) -> Node {
     let (view, handle) = use_scroll(scope, || ScrollOffset::ZERO);
     rsx! {
         Scroll {
-            view: view,
+            view,
             handle: Some(handle),
             wheel_step: 3,
             layout: Layout { grow: 1, ..Default::default() },

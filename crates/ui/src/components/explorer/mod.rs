@@ -236,12 +236,12 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             ref: Some(node_ref),
             focusable: true,
             auto_focus: true,
-            listeners: listeners,
+            listeners,
             layout: Layout { grow: 1, min_width: 8, fill: Some(base), ..Default::default() },
             ..,
             { list_error }
             Scroll {
-                view: view,
+                view,
                 handle: Some(scroll.clone()),
                 horizontal: false,
                 vertical: true,
