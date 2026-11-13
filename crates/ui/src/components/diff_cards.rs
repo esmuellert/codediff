@@ -44,7 +44,7 @@ pub fn DiffCards(
     let line = |key: usize, text: String| {
         rsx! {
             Text {
-                key: key,
+                key,
                 text: text.into(),
                 layout: Layout { basis: Basis::Length(1), shrink: 0, ..Default::default() },
                 style: theme.normal,
@@ -68,10 +68,10 @@ pub fn DiffCards(
                 cards.push(rsx! {
                     DiffCard {
                         key: index,
-                        content: content,
+                        content,
                         colours: Arc::clone(colours),
-                        view_layout: view_layout,
-                        wrap: wrap,
+                        view_layout,
+                        wrap,
                         height: Some(height),
                         auto_focus: index == 0,
                     }
@@ -135,7 +135,7 @@ pub fn DiffCards(
             ref: Some(node_ref),
             focusable: true,
             auto_focus: false,
-            listeners: listeners,
+            listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
             Scroll {

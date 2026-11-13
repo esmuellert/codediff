@@ -60,7 +60,7 @@ fn TestSideBySideUnwrapped(
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
             view_layout: file_types::DiffType::SideBySide,
-            view_state: view_state,
+            view_state,
             wrap: false,
             compact: false,
             auto_focus: false,

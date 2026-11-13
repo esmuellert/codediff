@@ -32,7 +32,7 @@ fn InlineHost(
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
             view_layout: DiffType::Inline,
-            view_state: view_state,
+            view_state,
             wrap: *wrap,
             compact: false,
             auto_focus: false,

@@ -32,7 +32,7 @@ fn SideBySideHost(
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
             view_layout: DiffType::SideBySide,
-            view_state: view_state,
+            view_state,
             wrap: *wrap,
             compact: false,
             auto_focus: false,

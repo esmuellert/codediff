@@ -31,12 +31,12 @@ fn Probe(
         Column {
             focusable: true,
             auto_focus: *auto_focus,
-            listeners: listeners,
+            listeners,
             layout: Layout { grow: 1, ..Default::default() },
             ..,
             Text { text: state, .. }
             Scroll {
-                view: view,
+                view,
                 handle: Some(scroll),
                 wheel_step: 3,
                 layout: Layout { grow: 1, ..Default::default() },

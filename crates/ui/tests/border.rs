@@ -72,7 +72,7 @@ fn ScrolledBorder(scope: &mut Scope) -> Node {
     let (view, handle) = use_scroll(scope, || ScrollOffset::ZERO);
     rsx! {
         Scroll {
-            view: view,
+            view,
             handle: Some(handle),
             wheel_step: 3,
             layout: Layout { grow: 1, ..Default::default() },

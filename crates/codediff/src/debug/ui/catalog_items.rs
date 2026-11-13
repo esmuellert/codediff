@@ -71,7 +71,7 @@ pub(super) fn heading_item(line: u32, label: &str, theme: Theme) -> Node {
             ..,
             Text {
                 text: Rc::from(format!("  {label}")),
-                style: style,
+                style,
                 layout: Layout { grow: 1, ..Default::default() },
                 ..
             }

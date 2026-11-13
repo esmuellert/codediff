@@ -139,7 +139,7 @@ pub(super) fn StoryPreview(
                 content: content.clone(),
                 colours: Arc::clone(&colours),
                 view_layout: file_types::DiffType::SideBySide,
-                view_state: view_state,
+                view_state,
                 wrap: true,
                 compact: definition.compact,
                 auto_focus: false,
@@ -151,7 +151,7 @@ pub(super) fn StoryPreview(
                 content: content.clone(),
                 colours: Arc::clone(&colours),
                 view_layout: file_types::DiffType::Inline,
-                view_state: view_state,
+                view_state,
                 wrap: true,
                 compact: definition.compact,
                 auto_focus: false,
@@ -162,7 +162,7 @@ pub(super) fn StoryPreview(
                 content: content.clone(),
                 colours: Arc::clone(&colours),
                 view_layout: file_types::DiffType::Single,
-                view_state: view_state,
+                view_state,
                 wrap: true,
                 compact: false,
                 auto_focus: false,
@@ -171,7 +171,7 @@ pub(super) fn StoryPreview(
         StoryComponent::Card => match content.clone() {
             Some(content) => rsx! {
                 DiffCard {
-                    content: content,
+                    content,
                     colours: Arc::clone(&colours),
                     view_layout: file_types::DiffType::SideBySide,
                     wrap: false,
@@ -196,7 +196,7 @@ pub(super) fn StoryPreview(
         Ui {
             value: context,
             Column {
-                listeners: listeners,
+                listeners,
                 layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
                 ..,
                 GalleryHeader {

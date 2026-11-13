@@ -82,9 +82,9 @@ fn text_segment(key: u32, text: String, style: Style) -> Node {
     let width = line_index::LineIndex::new(&text, 1).width().0 as u16;
     rsx! {
         Text {
-            key: key,
+            key,
             text: Rc::from(text),
-            style: style,
+            style,
             layout: Layout {
                 basis: Basis::Length(width),
                 shrink: 0,

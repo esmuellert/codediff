@@ -195,7 +195,7 @@ pub fn DiffViewerContainer(
     rsx! {
         Column {
             ref: Some(node_ref),
-            listeners: listeners,
+            listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
             Scroll {
@@ -232,14 +232,14 @@ fn render_view(
             Inline {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
-                colours: colours,
+                colours,
                 wrapped_lines: Rc::clone(&inline_layout.wrapped_lines),
                 viewport: visible_range,
                 original_gutter_width: inline_layout.original_gutter_width,
                 modified_gutter_width: inline_layout.modified_gutter_width,
                 code_width: inline_layout.code_width,
                 horizontal_scroll_extent: inline_layout.horizontal_scroll_extent,
-                auto_focus: auto_focus,
+                auto_focus,
             }
         },
         (
@@ -250,7 +250,7 @@ fn render_view(
             SideBySide {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
-                colours: colours,
+                colours,
                 wrapped_lines: Rc::clone(&side_by_side_layout.wrapped_lines),
                 viewport: visible_range,
                 original_gutter_width: side_by_side_layout.original_gutter_width,
@@ -261,7 +261,7 @@ fn render_view(
                     side_by_side_layout.original_horizontal_scroll_extent,
                 modified_horizontal_scroll_extent:
                     side_by_side_layout.modified_horizontal_scroll_extent,
-                auto_focus: auto_focus,
+                auto_focus,
             }
         },
         (DiffContent::SingleFile(_), _, ViewLayout::SingleFile(single_file_layout)) => {
@@ -269,13 +269,13 @@ fn render_view(
                 SingleFile {
                     key: Arc::as_ptr(&content) as usize,
                     content: Arc::clone(&content),
-                    colours: colours,
+                    colours,
                     wrapped_lines: Rc::clone(&single_file_layout.wrapped_lines),
                     viewport: visible_range,
                     gutter_width: single_file_layout.gutter_width,
                     code_width: single_file_layout.code_width,
                     horizontal_scroll_extent: single_file_layout.horizontal_scroll_extent,
-                    auto_focus: auto_focus,
+                    auto_focus,
                 }
             }
         }

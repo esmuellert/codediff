@@ -269,7 +269,7 @@ fn CatalogView(
         Column {
             focusable: true,
             auto_focus: true,
-            listeners: listeners,
+            listeners,
             layout: Layout { grow: 1, fill: Some(theme.normal), ..Default::default() },
             ..,
             GalleryHeader {
@@ -280,7 +280,7 @@ fn CatalogView(
             }
             Scroll {
                 key: 1u32,
-                view: view,
+                view,
                 handle: Some(scroll),
                 horizontal: false,
                 vertical: true,
