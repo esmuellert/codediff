@@ -2117,7 +2117,6 @@ dependencies = [
 name = "syntax"
 version = "0.27.3"
 dependencies = [
- "line-index",
  "syntect",
  "tree-sitter",
  "tree-sitter-bash",
