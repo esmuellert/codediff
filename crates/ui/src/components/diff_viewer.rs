@@ -16,7 +16,7 @@ use loom::{
 };
 use syntax::Span;
 
-use super::context::{Context, Ui};
+use super::context::{Context, Ui, directory_key};
 use super::diff_cards::{DiffCards, DiffCardsProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
@@ -45,9 +45,11 @@ impl ViewStateHistory {
     }
 }
 
-/// The selected file's diff. Selecting another file, or a change on disk,
-/// opens it again; the previous result is dropped.
-fn use_opened_file(
+/// Opens the selected file and keeps it up to date.
+///
+/// Returns the file's diff and its colours. Background threads fill them in;
+/// the diff is `None` until the file has been read.
+fn use_selected_file(
     scope: &mut Scope,
     ctx: &Context,
 ) -> Rc<
@@ -56,29 +58,56 @@ fn use_opened_file(
         Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     )>,
 > {
-    let selected = ctx
-        .file
-        .as_ref()
-        .filter(|_| ctx.directory.is_none())
-        .map(Rc::clone);
-    let (refreshes, set_refreshes) = use_state(scope, || 0u32);
-    let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
-    let file_to_refresh = selected.as_ref().map(Rc::clone);
-    use_effect(scope, selected.clone(), move || {
-        let (Some(file), Some(watcher_service)) = (file_to_refresh, watcher_service) else {
-            return;
-        };
-        watcher_service.changes().subscribe(move |refresh| {
-            if refresh_affects_file(refresh, &file) {
-                set_refreshes(&|refreshes| refreshes + 1);
-            }
-        });
+    // A selected directory is shown as cards instead.
+    let selected = if ctx.directory.is_some() {
+        None
+    } else {
+        ctx.file.clone()
+    };
+
+    // The selected file as it was last listed. A refresh reads this one.
+    let selected_file = use_ref(scope, || None::<Rc<File>>);
+    selected_file.current().clone_from(&selected);
+
+    // A file is opened once. A new listing of the same file only brings new
+    // line counts, so files are compared by path and revisions.
+    let path_and_revs = selected
+        .as_deref()
+        .map(|file| (file.path().clone(), file.revs()));
+    let diff_and_colours = use_memo(scope, path_and_revs.clone(), {
+        let diff_service = ctx.diff_service.clone();
+        move || match (diff_service, selected) {
+            (Some(diff_service), Some(file)) => Some(diff_service.open((*file).clone())),
+            _ => None,
+        }
     });
-    let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
-    let file_to_open = selected.as_ref().map(Rc::clone);
-    use_memo(scope, (selected, refreshes), move || {
-        Some(pipeline?.open((*file_to_open?).clone()))
-    })
+
+    // When the file changes on disk, read it again into the same diff and
+    // colours. They keep showing the file until the new result is ready.
+    use_effect(scope, path_and_revs, {
+        let diff_service = ctx.diff_service.clone();
+        let watcher_service = ctx.watcher_service.clone();
+        let diff_and_colours = Rc::clone(&diff_and_colours);
+        move || {
+            let Some((diff, colours)) = diff_and_colours.as_ref().clone() else {
+                return;
+            };
+            let (Some(diff_service), Some(watcher_service)) = (diff_service, watcher_service)
+            else {
+                return;
+            };
+            watcher_service.changes().subscribe(move |refresh| {
+                let Some(file) = selected_file.current().clone() else {
+                    return;
+                };
+                if refresh_affects_file(refresh, &file) {
+                    diff_service.refresh((*file).clone(), &diff, &colours);
+                }
+            });
+        }
+    });
+
+    diff_and_colours
 }
 
 /// The files of the selected directory that have been opened, in order.
@@ -94,7 +123,7 @@ struct DirectoryFiles {
 }
 
 impl DirectoryFiles {
-    fn open_next(&self, pipeline: &diff_service::DiffService) {
+    fn open_next(&self, diff_service: &diff_service::DiffService) {
         let mut opened = self.opened.borrow_mut();
         // One file at a time, in order.
         if opened
@@ -104,15 +133,14 @@ impl DirectoryFiles {
             return;
         }
         if let Some(file) = self.two_sided.get(opened.len()) {
-            opened.push(pipeline.open(file.clone()));
+            opened.push(diff_service.open(file.clone()));
         }
     }
 }
 
 fn use_directory_files(scope: &mut Scope, ctx: &Context) -> Rc<Option<DirectoryFiles>> {
-    let directory = ctx.directory.as_ref().map(Rc::clone);
-    let selected = directory.clone();
-    use_memo(scope, selected, move || {
+    let directory = ctx.directory.clone();
+    use_memo(scope, directory.clone(), move || {
         let directory = directory?;
         Some(DirectoryFiles {
             two_sided: directory
@@ -176,13 +204,20 @@ fn layout_listener(
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
-    let opened_file = use_opened_file(scope, &ctx);
-    let opened_file = opened_file.as_ref().as_ref();
-    let result = opened_file.map(|(diff, _)| diff.lock().unwrap().clone());
-    let content = match &result {
+    let diff_and_colours = use_selected_file(scope, &ctx);
+    // No file, a file not read yet, its diff, or why it could not be read.
+    let diff = diff_and_colours
+        .as_ref()
+        .as_ref()
+        .map(|(diff, _)| diff.lock().unwrap().clone());
+    let content = match &diff {
         Some(Some(Ok(content))) => Some(Arc::clone(content)),
         _ => None,
     };
+    let colours = diff_and_colours
+        .as_ref()
+        .as_ref()
+        .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
     let directory_files = use_directory_files(scope, &ctx);
     let (view_layout, set_view_layout) = use_state(scope, || match ctx.config.ui.layout {
         config::ViewLayout::SideBySide => DiffType::SideBySide,
@@ -214,31 +249,37 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             }
         }
     };
-    let view = if let (Some(directory), Some(files), Some(pipeline)) = (
+    let view = if let (Some(directory), Some(files), Some(diff_service)) = (
         ctx.directory.as_ref(),
         directory_files.as_ref().as_ref(),
         ctx.diff_service.as_ref(),
     ) {
         let opened = files.opened.borrow().clone();
         let more_files = opened.len() < files.two_sided.len();
-        let directory_files = Rc::clone(&directory_files);
-        let pipeline = Rc::clone(pipeline);
+        let open_next = {
+            let directory_files = Rc::clone(&directory_files);
+            let diff_service = Rc::clone(diff_service);
+            Rc::new(move || {
+                if let Some(files) = directory_files.as_ref() {
+                    files.open_next(&diff_service);
+                }
+            }) as Rc<dyn Fn()>
+        };
         rsx! {
             DiffCards {
-                key: Rc::as_ptr(directory) as usize,
+                // The same directory listed again keeps its cards.
+                key: directory_key(&directory.path, &directory.revs),
                 files: Rc::new(opened),
                 more_files,
-                open_next: Rc::new(move || {
-                    if let Some(directory_files) = directory_files.as_ref() {
-                        directory_files.open_next(&pipeline);
-                    }
-                }) as Rc<dyn Fn()>,
+                open_next,
                 view_layout,
                 wrap,
             }
         }
-    } else if let Some(result) = result.filter(|_| content.is_none()) {
-        match result {
+    } else if content.is_none()
+        && let Some(diff) = diff
+    {
+        match diff {
             Some(Err(error)) => message(error),
             _ => message("Loading file…".to_owned()),
         }
@@ -246,7 +287,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         rsx! {
             DiffViewerContainer {
                 content,
-                colours: opened_file.map_or_else(Arc::default, |(_, colours)| Arc::clone(colours)),
+                colours,
                 view_layout,
                 view_state: active_view_state,
                 wrap,
