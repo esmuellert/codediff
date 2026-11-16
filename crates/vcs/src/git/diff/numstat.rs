@@ -18,8 +18,13 @@ pub type Counts = HashMap<String, Stats>;
 const FORMAT: &str = "--numstat";
 
 /// The line counts for the working tree against the index.
+///
+/// Uses `diff-files`: `git diff` rewrites the index when files have only
+/// been touched, even with `--no-optional-locks`. That write wakes the
+/// watcher and starts another refresh. `diff-files` only reads the index, and
+/// still compares contents, so a touched file is not counted as changed.
 pub fn unstaged(repo: &Repo) -> Result<Counts> {
-    counts(repo, &super::command(FORMAT, &[], &[]))
+    counts(repo, &super::command_for("diff-files", FORMAT, &[], &[]))
 }
 
 /// The line counts for the index against the commit.

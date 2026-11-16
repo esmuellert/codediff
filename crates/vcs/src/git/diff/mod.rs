@@ -14,7 +14,18 @@ pub(crate) fn command<'a>(
     args: &[&'a str],
     pathspec: &'a [String],
 ) -> Vec<&'a str> {
-    let mut out = vec!["diff", format, "-z", RENAMES];
+    command_for("diff", format, args, pathspec)
+}
+
+/// Builds the argument list for `subcommand`, `diff` or one of its plumbing
+/// forms such as `diff-files`.
+pub(crate) fn command_for<'a>(
+    subcommand: &'a str,
+    format: &'a str,
+    args: &[&'a str],
+    pathspec: &'a [String],
+) -> Vec<&'a str> {
+    let mut out = vec![subcommand, format, "-z", RENAMES];
     out.extend_from_slice(args);
     if !pathspec.is_empty() {
         out.push("--");
