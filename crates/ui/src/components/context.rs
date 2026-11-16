@@ -20,9 +20,10 @@ pub struct DirectorySelection {
     pub files: Rc<Vec<File>>,
 }
 
+/// The same directory with the same files, however often it was listed.
 impl PartialEq for DirectorySelection {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path && self.revs == other.revs && Rc::ptr_eq(&self.files, &other.files)
+        self.path == other.path && self.revs == other.revs && self.files == other.files
     }
 }
 

@@ -19,6 +19,7 @@ use syntax::Span;
 use super::context::{Context, Ui};
 use super::diff_cards::{DiffCards, DiffCardsProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
+use super::explorer::build::directory_key;
 use crate::keybindings::Action;
 use crate::view::terminal_lines::TerminalLine;
 
@@ -45,8 +46,9 @@ impl ViewStateHistory {
     }
 }
 
-/// The selected file's diff. Selecting another file, or a change on disk,
-/// opens it again; the previous result is dropped.
+/// The selected file's diff. Selecting another file opens it; a change on
+/// disk reads it again into the same slots, which keep showing the file
+/// until the new result is ready.
 fn use_opened_file(
     scope: &mut Scope,
     ctx: &Context,
@@ -61,24 +63,42 @@ fn use_opened_file(
         .as_ref()
         .filter(|_| ctx.directory.is_none())
         .map(Rc::clone);
-    let (refreshes, set_refreshes) = use_state(scope, || 0u32);
+    // Which file: its paths and revisions. A new listing of the same file
+    // carries new line counts, and must not open it again.
+    let identity = selected.as_ref().map(|file| {
+        (
+            file.path_of_version(DiffVersion::Original).cloned(),
+            file.path_of_version(DiffVersion::Modified).cloned(),
+            file.revs(),
+        )
+    });
+    // The latest listing of the selected file, for refreshes to read.
+    let latest = use_ref(scope, || None::<Rc<File>>);
+    latest.current().clone_from(&selected);
+
+    let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
+    let pipeline_to_open = pipeline.clone();
+    let opened = use_memo(scope, identity.clone(), move || {
+        Some(pipeline_to_open?.open((*selected?).clone()))
+    });
     let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
-    let file_to_refresh = selected.as_ref().map(Rc::clone);
-    use_effect(scope, selected.clone(), move || {
-        let (Some(file), Some(watcher_service)) = (file_to_refresh, watcher_service) else {
+    let slots = Rc::clone(&opened);
+    use_effect(scope, identity, move || {
+        let (Some(pipeline), Some(watcher_service), Some((diff, colours))) =
+            (pipeline, watcher_service, slots.as_ref().clone())
+        else {
             return;
         };
         watcher_service.changes().subscribe(move |refresh| {
+            let Some(file) = latest.current().clone() else {
+                return;
+            };
             if refresh_affects_file(refresh, &file) {
-                set_refreshes(&|refreshes| refreshes + 1);
+                pipeline.refresh((*file).clone(), &diff, &colours);
             }
         });
     });
-    let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
-    let file_to_open = selected.as_ref().map(Rc::clone);
-    use_memo(scope, (selected, refreshes), move || {
-        Some(pipeline?.open((*file_to_open?).clone()))
-    })
+    opened
 }
 
 /// The files of the selected directory that have been opened, in order.
@@ -225,7 +245,8 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         let pipeline = Rc::clone(pipeline);
         rsx! {
             DiffCards {
-                key: Rc::as_ptr(directory) as usize,
+                // Which directory, not which listing of it.
+                key: directory_key(&directory.path, &directory.revs),
                 files: Rc::new(opened),
                 more_files,
                 open_next: Rc::new(move || {

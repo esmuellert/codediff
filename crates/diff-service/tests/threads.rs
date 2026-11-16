@@ -157,3 +157,65 @@ fn a_listed_repository_reports_its_files_or_why_it_could_not() {
         Some(Err("not a repository".to_owned()))
     );
 }
+
+/// A pipeline whose file reads return each of `versions` in turn.
+fn changing_file(versions: Vec<DiffContent>) -> (DiffService, Receiver<()>) {
+    let (redraw, redraws) = mpsc::channel();
+    let mut versions = versions.into_iter();
+    let pipeline = DiffService::new(
+        move || {
+            let _ = redraw.send(());
+        },
+        |_| Ok(Vec::new()),
+        move |_| Ok(versions.next().expect("one version per read")),
+    );
+    (pipeline, redraws)
+}
+
+#[test]
+fn refreshing_with_the_same_text_changes_nothing() {
+    let first = content("a.rs", "fn main() { let value = 2; }");
+    let (pipeline, redraws) = changing_file(vec![first.clone(), first]);
+    let (diff, colours) = pipeline.open(file("a.rs"));
+    wait_until_idle(&pipeline, &redraws);
+    let shown = diff.lock().unwrap().clone().unwrap().unwrap();
+    let coloured = colours.lock().unwrap().clone();
+
+    pipeline.refresh(file("a.rs"), &diff, &colours);
+    wait_until_idle(&pipeline, &redraws);
+
+    let after = diff.lock().unwrap().clone().unwrap().unwrap();
+    assert!(Arc::ptr_eq(&shown, &after), "the same text was replaced");
+    assert_eq!(*colours.lock().unwrap(), coloured);
+}
+
+#[test]
+fn refreshing_with_new_text_replaces_the_diff_and_its_colours() {
+    let before: Vec<String> = (0..3000)
+        .map(|line| format!("let old{line} = 1;"))
+        .collect();
+    let after = ["fn main() { let value = 3; }"];
+    let long = {
+        let before: Vec<&str> = before.iter().map(String::as_str).collect();
+        let changed = diff::compute(&before, &before, diff::Settings::default()).unwrap();
+        DiffContent::Diff(Diff {
+            file: file("a.rs"),
+            alignment: diff::align(changed, &before, &before).unwrap(),
+        })
+    };
+    let (pipeline, redraws) = changing_file(vec![long, content("a.rs", after[0])]);
+    let (diff, colours) = pipeline.open(file("a.rs"));
+    // Refresh while the long text may still be colouring.
+    pipeline.refresh(file("a.rs"), &diff, &colours);
+    wait_until_idle(&pipeline, &redraws);
+
+    let shown = diff.lock().unwrap().clone().unwrap().unwrap();
+    assert_eq!(
+        shown.alignment().unwrap().line(DiffVersion::Modified, 1),
+        Some(after[0])
+    );
+    // Only the new text's single line is coloured on each side.
+    let colours = colours.lock().unwrap();
+    assert_eq!(colours[DiffVersion::Original as usize].len(), 1);
+    assert_eq!(colours[DiffVersion::Modified as usize].len(), 1);
+}

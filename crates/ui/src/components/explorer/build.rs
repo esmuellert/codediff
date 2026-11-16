@@ -188,7 +188,7 @@ fn build_nodes(
     }
 }
 
-pub(super) fn directory_key(path: &RepoPath, revs: &Revs) -> String {
+pub(crate) fn directory_key(path: &RepoPath, revs: &Revs) -> String {
     format!("{}/{}", revs.heading(), path.as_str())
 }
 
