@@ -16,10 +16,9 @@ use loom::{
 };
 use syntax::Span;
 
-use super::context::{Context, Ui};
+use super::context::{Context, Ui, directory_key};
 use super::diff_cards::{DiffCards, DiffCardsProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
-use super::explorer::build::directory_key;
 use crate::keybindings::Action;
 use crate::view::terminal_lines::TerminalLine;
 

@@ -13,9 +13,9 @@ use loom::{
     use_memo, use_ref, use_scroll, use_state,
 };
 
-use self::build::{Node, directory_key, grouped_list, grouped_tree};
+use self::build::{Node, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
-use super::context::{DirectorySelection, Ui};
+use super::context::{DirectorySelection, Ui, directory_key};
 use crate::keybindings::Action;
 use crate::services::version_control::VersionControlService;
 

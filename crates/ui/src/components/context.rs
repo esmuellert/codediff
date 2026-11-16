@@ -27,6 +27,10 @@ impl PartialEq for DirectorySelection {
     }
 }
 
+pub(crate) fn directory_key(path: &RepoPath, revs: &Revs) -> String {
+    format!("{}/{}", revs.heading(), path.as_str())
+}
+
 /// Everything a component reads.
 #[derive(Clone)]
 pub struct Context {
