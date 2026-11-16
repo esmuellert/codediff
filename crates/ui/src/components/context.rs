@@ -20,10 +20,16 @@ pub struct DirectorySelection {
     pub files: Rc<Vec<File>>,
 }
 
+/// Equal when the path, revisions and files are equal. Every listing builds a
+/// new selection, and one that lists the same files is the same selection.
 impl PartialEq for DirectorySelection {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path && self.revs == other.revs && Rc::ptr_eq(&self.files, &other.files)
+        self.path == other.path && self.revs == other.revs && self.files == other.files
     }
+}
+
+pub(crate) fn directory_key(path: &RepoPath, revs: &Revs) -> String {
+    format!("{}/{}", revs.heading(), path.as_str())
 }
 
 /// Everything a component reads.

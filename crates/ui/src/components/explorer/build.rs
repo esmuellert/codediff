@@ -4,6 +4,8 @@ use std::collections::HashSet;
 
 use file_types::{File, RepoPath, Revs};
 
+use crate::components::context::directory_key;
+
 /// What one line of the explorer is. Built by `tree()`, read by Explorer.
 #[derive(Clone)]
 pub enum Node {
@@ -186,10 +188,6 @@ fn build_nodes(
             }
         }
     }
-}
-
-pub(super) fn directory_key(path: &RepoPath, revs: &Revs) -> String {
-    format!("{}/{}", revs.heading(), path.as_str())
 }
 
 fn join_path(prefix: &str, name: &str) -> String {

@@ -18,20 +18,24 @@ pub type Counts = HashMap<String, Stats>;
 const FORMAT: &str = "--numstat";
 
 /// The line counts for the working tree against the index.
+///
+/// `git diff` would rewrite the index when a file was only touched, even
+/// with `--no-optional-locks`. The watcher sees that write and refreshes
+/// again. `git diff-files` only reads the index, and still compares contents.
 pub fn unstaged(repo: &Repo) -> Result<Counts> {
-    counts(repo, &super::command(FORMAT, &[], &[]))
+    counts(repo, &super::command("diff-files", FORMAT, &[], &[]))
 }
 
 /// The line counts for the index against the commit.
 pub fn staged(repo: &Repo) -> Result<Counts> {
-    counts(repo, &super::command(FORMAT, &["--cached"], &[]))
+    counts(repo, &super::command("diff", FORMAT, &["--cached"], &[]))
 }
 
 /// The line counts for any comparison `git diff` can name.
 ///
 /// Counts lines for an arbitrary Git comparison.
 pub fn diff(repo: &Repo, args: &[&str], pathspec: &[String]) -> Result<Counts> {
-    counts(repo, &super::command(FORMAT, args, pathspec))
+    counts(repo, &super::command("diff", FORMAT, args, pathspec))
 }
 
 fn counts(repo: &Repo, args: &[&str]) -> Result<Counts> {

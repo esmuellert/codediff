@@ -157,3 +157,68 @@ fn a_listed_repository_reports_its_files_or_why_it_could_not() {
         Some(Err("not a repository".to_owned()))
     );
 }
+
+#[test]
+fn refreshing_a_file_whose_text_is_the_same_keeps_its_diff_and_colours() {
+    let text = content("a.rs", "fn main() { let value = 2; }");
+    let (redraw, redraws) = mpsc::channel();
+    let diff_service = DiffService::new(
+        move || {
+            let _ = redraw.send(());
+        },
+        |_| Ok(Vec::new()),
+        move |_| Ok(text.clone()),
+    );
+    let (diff, colours) = diff_service.open(file("a.rs"));
+    wait_until_idle(&diff_service, &redraws);
+    let diff_before = diff.lock().unwrap().clone().unwrap().unwrap();
+    let colours_before = colours.lock().unwrap().clone();
+
+    diff_service.refresh(file("a.rs"), &diff, &colours);
+    wait_until_idle(&diff_service, &redraws);
+
+    let diff_after = diff.lock().unwrap().clone().unwrap().unwrap();
+    assert!(
+        Arc::ptr_eq(&diff_before, &diff_after),
+        "the diff was replaced"
+    );
+    assert_eq!(*colours.lock().unwrap(), colours_before);
+}
+
+#[test]
+fn refreshing_a_file_whose_text_changed_replaces_its_diff_and_colours() {
+    // Colouring 3000 lines takes long enough for the refresh to start first.
+    let lines: Vec<String> = (0..3000)
+        .map(|line| format!("let old{line} = 1;"))
+        .collect();
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let unchanged = diff::compute(&lines, &lines, diff::Settings::default()).unwrap();
+    let long_text = DiffContent::Diff(Diff {
+        file: file("a.rs"),
+        alignment: diff::align(unchanged, &lines, &lines).unwrap(),
+    });
+    let short_text = content("a.rs", "fn main() { let value = 3; }");
+    let mut reads = vec![short_text, long_text];
+    let (redraw, redraws) = mpsc::channel();
+    let diff_service = DiffService::new(
+        move || {
+            let _ = redraw.send(());
+        },
+        |_| Ok(Vec::new()),
+        move |_| Ok(reads.pop().unwrap()),
+    );
+
+    let (diff, colours) = diff_service.open(file("a.rs"));
+    diff_service.refresh(file("a.rs"), &diff, &colours);
+    wait_until_idle(&diff_service, &redraws);
+
+    let content = diff.lock().unwrap().clone().unwrap().unwrap();
+    assert_eq!(
+        content.alignment().unwrap().line(DiffVersion::Modified, 1),
+        Some("fn main() { let value = 3; }")
+    );
+    // Each side of the new text has one line, and only it is coloured.
+    let colours = colours.lock().unwrap();
+    assert_eq!(colours[DiffVersion::Original as usize].len(), 1);
+    assert_eq!(colours[DiffVersion::Modified as usize].len(), 1);
+}

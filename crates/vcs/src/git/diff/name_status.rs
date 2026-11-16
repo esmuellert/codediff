@@ -22,7 +22,7 @@ const FORMAT: &str = "--name-status";
 
 /// Runs `git diff` with `args` and `pathspec`.
 pub fn run(repo: &Repo, args: &[&str], pathspec: &[String]) -> Result<Vec<Change>> {
-    let command = super::command(FORMAT, args, pathspec);
+    let command = super::command("diff", FORMAT, args, pathspec);
     Ok(parse(&crate::git::run::run(&repo.root, &command)?))
 }
 

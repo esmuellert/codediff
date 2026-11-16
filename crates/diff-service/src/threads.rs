@@ -125,11 +125,25 @@ impl DiffService {
     ) {
         let diff = Arc::new(Mutex::new(None));
         let colours = Arc::new(Mutex::new([Vec::new(), Vec::new()]));
+        self.refresh(file, &diff, &colours);
+        (diff, colours)
+    }
+
+    /// Reads, diffs and colours `file` again, into the diff and colours that
+    /// `open` returned for it.
+    ///
+    /// They keep what they hold until the new result is ready, so the file
+    /// never looks missing. If the text is the same as before, they keep it.
+    pub fn refresh(
+        &self,
+        file: File,
+        diff: &Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+        colours: &Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
+    ) {
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.diffs
-            .send((file, Arc::downgrade(&diff), Arc::downgrade(&colours)))
+            .send((file, Arc::downgrade(diff), Arc::downgrade(colours)))
             .expect("the diff thread is running");
-        (diff, colours)
     }
 
     /// Whether any thread still has work queued or running.
@@ -162,35 +176,88 @@ fn diff_files(
         Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
         Weak<Mutex<[Vec<Vec<Span>>; 2]>>,
     )>,
-    to_colour: &Sender<(Arc<DiffContent>, Weak<Mutex<[Vec<Vec<Span>>; 2]>>)>,
+    to_colour: &Sender<(
+        Arc<DiffContent>,
+        Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+        Weak<Mutex<[Vec<Vec<Span>>; 2]>>,
+    )>,
     redraw: &Arc<dyn Fn() + Send + Sync>,
     pending_jobs: &AtomicUsize,
 ) {
     for (file, diff, colours) in requests {
+        // Nobody holds the file any more, so nobody would see the result.
         if diff.strong_count() > 0 {
             let result = read(&file).map(Arc::new);
-            if let Some(diff) = diff.upgrade() {
-                if let Ok(content) = &result {
-                    pending_jobs.fetch_add(1, Ordering::SeqCst);
-                    to_colour
-                        .send((Arc::clone(content), colours))
-                        .expect("the syntax thread is running");
-                }
-                *diff.lock().unwrap() = Some(result);
+            if let (Some(diff), Some(colours)) = (diff.upgrade(), colours.upgrade()) {
+                replace_diff(result, &diff, &colours, to_colour, pending_jobs);
             }
         }
         finish(redraw, pending_jobs);
     }
 }
 
+/// Puts `result` in place of the file's diff and starts colouring it, unless
+/// the text is the same as the diff already holds.
+fn replace_diff(
+    result: Result<Arc<DiffContent>, String>,
+    diff: &Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+    colours: &Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
+    to_colour: &Sender<(
+        Arc<DiffContent>,
+        Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+        Weak<Mutex<[Vec<Vec<Span>>; 2]>>,
+    )>,
+    pending_jobs: &AtomicUsize,
+) {
+    // The diff is locked before the colours, here and in the syntax thread.
+    let mut current = diff.lock().unwrap();
+    if let (Some(Ok(old)), Ok(new)) = (current.as_ref(), &result)
+        && same_text(old, new)
+    {
+        return;
+    }
+    // The old colours belong to the old text.
+    *colours.lock().unwrap() = [Vec::new(), Vec::new()];
+    if let Ok(content) = &result {
+        pending_jobs.fetch_add(1, Ordering::SeqCst);
+        to_colour
+            .send((
+                Arc::clone(content),
+                Arc::downgrade(diff),
+                Arc::downgrade(colours),
+            ))
+            .expect("the syntax thread is running");
+    }
+    *current = Some(result);
+}
+
+/// Whether two diffs are of the same file with the same text on each side.
+/// The rest of a diff follows from its text.
+fn same_text(old: &DiffContent, new: &DiffContent) -> bool {
+    old.file() == new.file()
+        && match (old, new) {
+            (DiffContent::Diff(old), DiffContent::Diff(new)) => {
+                [DiffVersion::Original, DiffVersion::Modified]
+                    .into_iter()
+                    .all(|side| old.alignment.lines(side) == new.alignment.lines(side))
+            }
+            (DiffContent::SingleFile(old), DiffContent::SingleFile(new)) => old.lines == new.lines,
+            _ => false,
+        }
+}
+
 fn colour_files(
-    requests: Receiver<(Arc<DiffContent>, Weak<Mutex<[Vec<Vec<Span>>; 2]>>)>,
+    requests: Receiver<(
+        Arc<DiffContent>,
+        Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
+        Weak<Mutex<[Vec<Vec<Span>>; 2]>>,
+    )>,
     redraw: &Arc<dyn Fn() + Send + Sync>,
     pending_jobs: &AtomicUsize,
 ) {
     let engine = Engine::new();
     let palette = Palette::new();
-    for (content, colours) in requests {
+    for (content, diff, colours) in requests {
         for side in [DiffVersion::Original, DiffVersion::Modified] {
             let text = match content.as_ref() {
                 DiffContent::Diff(diff) => diff.alignment.text(side),
@@ -203,10 +270,17 @@ fn colour_files(
                 continue;
             };
             colour(&engine, &palette, path.as_str(), &text, |lines| {
-                let Some(colours) = colours.upgrade() else {
+                let (Some(diff), Some(colours)) = (diff.upgrade(), colours.upgrade()) else {
                     return false;
                 };
+                // Stop when a refresh has replaced the text being coloured.
+                let current = diff.lock().unwrap();
+                if !matches!(current.as_ref(), Some(Ok(current_content)) if Arc::ptr_eq(current_content, &content))
+                {
+                    return false;
+                }
                 colours.lock().unwrap()[side as usize].extend(lines);
+                drop(current);
                 redraw();
                 true
             });
