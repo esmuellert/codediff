@@ -31,25 +31,18 @@ pub struct DiffService {
         Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
         Weak<Mutex<[Vec<Vec<Span>>; 2]>>,
     )>,
-    pathspec: Vec<String>,
     /// Jobs queued or running on any thread.
     pending_jobs: Arc<AtomicUsize>,
 }
 
 impl DiffService {
     /// Starts the threads on a Git repository.
-    pub fn start(
-        redraw: impl Fn() + Send + Sync + 'static,
-        settings: Settings,
-        pathspec: Vec<String>,
-    ) -> Self {
-        let mut pipeline = Self::new(
+    pub fn start(redraw: impl Fn() + Send + Sync + 'static, settings: Settings) -> Self {
+        Self::new(
             redraw,
             |request| files::get_files(request).map_err(|why| format!("{why:#}")),
             move |file| compare(file, settings),
-        );
-        pipeline.pathspec = pathspec;
-        pipeline
+        )
     }
 
     /// Starts the threads with the given ways to list and read files.
@@ -95,7 +88,6 @@ impl DiffService {
         Self {
             lists,
             diffs,
-            pathspec: Vec::new(),
             pending_jobs,
         }
     }
@@ -104,7 +96,7 @@ impl DiffService {
     /// `None` until they are listed.
     pub fn list_files(&self, repo: &Path) -> Arc<Mutex<Option<Result<Vec<File>, String>>>> {
         let files = Arc::new(Mutex::new(None));
-        let request = Request::worktree(repo).with_pathspec(self.pathspec.clone());
+        let request = Request::worktree(repo);
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.lists
             .send((request, Arc::downgrade(&files)))

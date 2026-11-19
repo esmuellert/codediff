@@ -3,6 +3,7 @@
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -25,8 +26,28 @@ impl Fixture {
         let dir =
             std::env::temp_dir().join(format!("codediff-config-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        fixtures::repo(&dir).expect("building the fixture repository");
-        Self { dir }
+        std::fs::create_dir_all(&dir).expect("creating the fixture directory");
+        let fixture = Self { dir };
+        fixture.write(".gitignore", ".codediff-config.json\n");
+        fixture.write("modified.txt", "one\ntwo\nthree\n");
+        fixture.write("deep/only/one/chain/leaf.txt", "leaf\n");
+        for args in [
+            &["init", "-q", "-b", "main"][..],
+            &["config", "user.email", "fixture@codediff.test"],
+            &["config", "user.name", "codediff fixtures"],
+            &["config", "core.autocrlf", "false"],
+            &["add", "-A"],
+            &["commit", "-qm", "initial"],
+        ] {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(&fixture.dir)
+                .status()
+                .expect("running git");
+            assert!(status.success(), "git {args:?} failed");
+        }
+        fixture.write("modified.txt", "one\nTWO\nthree\n");
+        fixture
     }
 
     fn write(&self, path: &str, text: &str) {
@@ -66,14 +87,14 @@ struct Run {
     timed_out: bool,
 }
 
-fn run_app(fixture: &Fixture, config: Value, path: Option<&str>, keys: &[u8]) -> Run {
-    run_app_steps(fixture, config, path, &[(keys, &[])])
+fn run_app(fixture: &Fixture, config: Value, open_first_file: bool, keys: &[u8]) -> Run {
+    run_app_steps(fixture, config, open_first_file, &[(keys, &[])])
 }
 
 fn run_app_steps(
     fixture: &Fixture,
     config: Value,
-    path: Option<&str>,
+    open_first_file: bool,
     steps: &[(&[u8], &[&str])],
 ) -> Run {
     let config = fixture.config(config);
@@ -89,9 +110,6 @@ fn run_app_steps(
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codediff"));
     command.arg("--config");
     command.arg(&config);
-    if let Some(path) = path {
-        command.arg(path);
-    }
     command.cwd(&fixture.dir);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "");
@@ -124,7 +142,7 @@ fn run_app_steps(
         && child.try_wait().expect("checking codediff").is_none()
     {
         let mut writer = pty.master.take_writer().expect("writing to the pty");
-        if path.is_some() {
+        if open_first_file {
             // With the default keys this opens the file. A test that rebinds
             // them opens it with its own keys instead.
             let before = output.lock().expect("output lock").bytes.len();
@@ -220,13 +238,8 @@ fn screen(run: &Run) -> Screen {
 fn layout_from_config_changes_the_running_app() {
     let fixture = Fixture::new("layout");
     fixture.write("modified.txt", "one\nTWO\nthree\n");
-    let inline = run_app(
-        &fixture,
-        json!({"ui": {"layout": "inline"}}),
-        Some("modified.txt"),
-        b"q",
-    );
-    let side_by_side = run_app(&fixture, json!({}), Some("modified.txt"), b"q");
+    let inline = run_app(&fixture, json!({"ui": {"layout": "inline"}}), true, b"q");
+    let side_by_side = run_app(&fixture, json!({}), true, b"q");
 
     assert!(
         inline.success,
@@ -259,13 +272,8 @@ fn wrap_from_config_changes_where_the_following_line_is_drawn() {
     let long = "0123456789 ".repeat(12);
     fixture.write("modified.txt", &format!("one\nWRAP_FLAG {long}\nTAIL\n"));
 
-    let wrapped = run_app(&fixture, json!({}), Some("modified.txt"), b"q");
-    let unwrapped = run_app(
-        &fixture,
-        json!({"ui": {"wrap": false}}),
-        Some("modified.txt"),
-        b"q",
-    );
+    let wrapped = run_app(&fixture, json!({}), true, b"q");
+    let unwrapped = run_app(&fixture, json!({"ui": {"wrap": false}}), true, b"q");
     assert!(wrapped.success, "wrapped app failed: {}", wrapped.output);
     assert!(
         unwrapped.success,
@@ -287,7 +295,7 @@ fn theme_from_config_overrides_terminal_detection() {
     let run = run_app(
         &fixture,
         json!({"ui": {"theme": "catppuccin-latte"}}),
-        Some("modified.txt"),
+        true,
         b"q",
     );
 
@@ -301,8 +309,8 @@ fn theme_from_config_overrides_terminal_detection() {
 #[test]
 fn explorer_width_from_config_moves_the_pane_boundary() {
     let fixture = Fixture::new("explorer-width");
-    let narrow = run_app(&fixture, json!({"ui": {"explorer_width": 20}}), None, b"q");
-    let wide = run_app(&fixture, json!({"ui": {"explorer_width": 50}}), None, b"q");
+    let narrow = run_app(&fixture, json!({"ui": {"explorer_width": 20}}), false, b"q");
+    let wide = run_app(&fixture, json!({"ui": {"explorer_width": 50}}), false, b"q");
     assert!(narrow.success, "narrow explorer failed: {}", narrow.output);
     assert!(wide.success, "wide explorer failed: {}", wide.output);
 
@@ -317,10 +325,11 @@ fn explorer_width_from_config_moves_the_pane_boundary() {
 #[test]
 fn explorer_mode_from_config_changes_the_file_lines() {
     let fixture = Fixture::new("explorer-mode");
+    fixture.write("deep/only/one/chain/leaf.txt", "at the end of a chain\n");
     let run = run_app(
         &fixture,
         json!({"ui": {"explorer_mode": "list"}}),
-        None,
+        false,
         b"q",
     );
 
@@ -341,11 +350,11 @@ fn whitespace_policy_from_config_changes_diff_highlighting() {
     let fixture = Fixture::new("whitespace");
     fixture.write("modified.txt", "one\n two \nthree\n");
 
-    let strict = run_app(&fixture, json!({}), Some("modified.txt"), b"q");
+    let strict = run_app(&fixture, json!({}), true, b"q");
     let ignored = run_app(
         &fixture,
         json!({"diff": {"ignore_trim_whitespace": true}}),
-        Some("modified.txt"),
+        true,
         b"q",
     );
     assert!(strict.success, "strict diff failed: {}", strict.output);
@@ -374,7 +383,7 @@ fn quit_keybinding_from_config_exits_on_the_configured_key() {
     let run = run_app(
         &fixture,
         json!({"keybindings": {"quit": ["x"]}}),
-        Some("modified.txt"),
+        true,
         b"x",
     );
 
