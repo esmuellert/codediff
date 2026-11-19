@@ -43,7 +43,7 @@ fn repository_root(cwd: &Path) -> std::io::Result<PathBuf> {
     Ok(repository.repo_path().root.clone())
 }
 
-pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::io::Result<i32> {
+pub fn main(cwd: &Path, config: config::Config) -> std::io::Result<i32> {
     let config = Rc::new(config);
     let keybindings =
         Rc::new(KeyMap::from_config(&config.keybindings).map_err(std::io::Error::other)?);
@@ -58,7 +58,6 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
             let _ = redraw.send(Event::Redraw);
         },
         diff_settings,
-        pathspec,
     ));
     let watcher_root = repository_root(cwd)?;
     let _watcher_subscription = watcher::subscribe(
