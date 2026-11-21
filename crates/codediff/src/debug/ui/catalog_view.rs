@@ -80,12 +80,11 @@ fn CatalogView(
     let (selected_line, set_selected_line) = use_state(scope, || initial_line as u32);
     let catalog_line_count = catalog_items.len() as u32;
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
-    let restore_scroll = scroll.clone();
     let selected_target = selected_line;
     use_layout_effect(
         scope,
         (catalog_line_count, selected_line, query.clone()),
-        move || restore_scroll.keep_y_visible(selected_target, 2),
+        move || scroll.keep_y_visible(selected_target, 2),
     );
     let selected_story_index =
         catalog_items
@@ -97,7 +96,6 @@ fn CatalogView(
 
     let items_for_keys = Rc::clone(&catalog_items);
     let open_selected_story = Rc::clone(open_story);
-    let scroll_for_keys = scroll.clone();
     let has_query = !query.is_empty();
     let listeners = Listeners::new().on_key(move |pressed| {
         if searching {
@@ -118,7 +116,7 @@ fn CatalogView(
                     query
                 });
                 set_selected_line(&|_| 1);
-                scroll_for_keys.keep_y_visible(1, 0);
+                scroll.keep_y_visible(1, 0);
                 return Bubble::Stop;
             }
             if let Some(character) = plain_character(pressed) {
@@ -127,7 +125,7 @@ fn CatalogView(
                     query
                 });
                 set_selected_line(&|_| 1);
-                scroll_for_keys.keep_y_visible(1, 0);
+                scroll.keep_y_visible(1, 0);
                 return Bubble::Stop;
             }
             return Bubble::Continue;
@@ -139,14 +137,13 @@ fn CatalogView(
         } else if pressed == key!(esc) && has_query {
             set_query(&|_| String::new());
             set_selected_line(&|_| 1);
-            scroll_for_keys.keep_y_visible(1, 0);
+            scroll.keep_y_visible(1, 0);
             Bubble::Stop
         } else if pressed == key!('/') {
             set_searching(&|_| true);
             Bubble::Stop
         } else if pressed == key!(j) || pressed == key!(down) {
             let items = Rc::clone(&items_for_keys);
-            let scroll = scroll_for_keys.clone();
             set_selected_line(&move |line| {
                 let next = next_story_line(&items, line as usize).unwrap_or(line as usize) as u32;
                 scroll.keep_y_visible(next, 2);
@@ -155,7 +152,6 @@ fn CatalogView(
             Bubble::Stop
         } else if pressed == key!(k) || pressed == key!(up) {
             let items = Rc::clone(&items_for_keys);
-            let scroll = scroll_for_keys.clone();
             set_selected_line(&move |line| {
                 let next =
                     previous_story_line(&items, line as usize).unwrap_or(line as usize) as u32;

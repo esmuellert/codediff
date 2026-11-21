@@ -2,23 +2,13 @@
 
 Rules for making changes in this repository.
 
-## Editing
-
-**Use the built-in edit and view tools. Do not use Python, `sed` or shell redirection for edits unless there is no other way.**
-The edit tool fails when the text is not there. A script does not — it changes nothing and reports success.
-
-**Read the file and confirm the text is there before you edit it.**
-An edit that silently does nothing is worse than one that fails, because everything after it is built on a false result.
-
 ## Writing
 
 **Match the comment style around you. Keep inline comments short.**
 A comment three times longer than its neighbours draws the eye to the wrong place.
 
-## Explaining
-
-**Explain in plain words. Reach for a term of art only when it is both shorter and exact.**
-The reader is an expert who checks every claim, so an unexplained word hides nothing — it only costs them the moment spent decoding it.
+**Name things after what they hold (`files`, `diff`, `line`, `commit`), use `Option` and `Result` directly instead of wrapper enums, and reserve `use_*` for real hooks taking `&mut Scope`.**
+Domain nouns and standard types say what is there without making the reader learn new framework words.
 
 ## Running
 

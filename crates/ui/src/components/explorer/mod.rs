@@ -41,7 +41,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             .changes()
             .subscribe(move |refresh: watcher::Refresh| {
                 if !refresh.is_empty() {
-                    set_refreshes(&|refreshes| refreshes + 1);
+                    set_refreshes.update(|refreshes| *refreshes += 1);
                 }
             });
     });
@@ -80,7 +80,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 matching_selected_directory(selected.as_ref(), &files_for_selection)
             });
         }
-        set_files(&move |_| Rc::clone(&matching_files));
+        set_files.set(matching_files);
     });
 
     let (selected_line, set_selected_line) = use_state(scope, || 0u32);
@@ -96,14 +96,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     } else {
         grouped_list(&files)
     };
-    let nodes = Rc::new(nodes);
     let catalog_line_count = nodes.len() as u32;
     let (node_ref, size) = use_measure(scope);
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
-    let visible_start = view
-        .clamped_offset()
-        .y
-        .min(catalog_line_count.saturating_sub(1));
+    let top_line = view.clamped_offset().y;
+    let visible_start = top_line.min(catalog_line_count.saturating_sub(1));
     let visible_count = u32::from(size.height).saturating_add(4);
 
     // When the file list changes, keep the selection on the same item.
@@ -112,96 +109,12 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let files_changed = !Rc::ptr_eq(&files, &*prev_files.current());
     if files_changed {
         if let Some(pos) = find_by_identity(saved_anchor.current().as_deref(), &nodes) {
-            set_selected_line(&move |_| pos as u32);
+            set_selected_line.set(pos as u32);
         }
         *prev_files.current() = Rc::clone(&files);
     } else {
         *saved_anchor.current() = nodes.get(selected_line as usize).map(identity);
     }
-
-    let selected_node = nodes.get(selected_line as usize).cloned();
-    let nodes_click = Rc::clone(&nodes);
-    let nodes_keys = Rc::clone(&nodes);
-    let files_for_keys = Rc::clone(&files);
-    let files_for_mouse = Rc::clone(&files);
-    let keybindings = Rc::clone(&ctx.keybindings);
-    let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
-    let exit = use_exit(scope);
-    let scroll_for_keys = scroll.clone();
-    let view_for_mouse = view.clone();
-
-    let listeners = Listeners::new()
-        .on_key(move |k| match k {
-            k if keybindings.matches(Action::MoveDown, k) => {
-                let nodes = Rc::clone(&nodes_keys);
-                let files = Rc::clone(&files_for_keys);
-                let scroll = scroll_for_keys.clone();
-                set_selected_line(&move |selected_line| {
-                    let next = selected_line
-                        .saturating_add(1)
-                        .min(catalog_line_count.saturating_sub(1));
-                    scroll.keep_y_visible(next, SCROLLOFF);
-                    if let Some(node) = nodes.get(next as usize) {
-                        select_node(node, &files, set_file, set_directory);
-                    }
-                    next
-                });
-                Bubble::Stop
-            }
-            k if keybindings.matches(Action::MoveUp, k) => {
-                let nodes = Rc::clone(&nodes_keys);
-                let files = Rc::clone(&files_for_keys);
-                let scroll = scroll_for_keys.clone();
-                set_selected_line(&move |selected_line| {
-                    let next = selected_line.saturating_sub(1);
-                    scroll.keep_y_visible(next, SCROLLOFF);
-                    if let Some(node) = nodes.get(next as usize) {
-                        select_node(node, &files, set_file, set_directory);
-                    }
-                    next
-                });
-                Bubble::Stop
-            }
-            k if keybindings.matches(Action::Open, k) => {
-                if let Some(ref node) = selected_node {
-                    activate_node(node, set_folded, set_file, set_directory);
-                }
-                Bubble::Stop
-            }
-            k if keybindings.matches(Action::Quit, k) => {
-                exit();
-                Bubble::Stop
-            }
-            k if keybindings.matches(Action::ToggleExplorerMode, k) => {
-                set_tree_mode(&|mode| !mode);
-                Bubble::Stop
-            }
-            k if keybindings.matches(Action::Stage, k) => {
-                if let Some(ref node) = selected_node {
-                    toggle_stage(node, version_control_service.as_deref());
-                }
-                Bubble::Stop
-            }
-            k if keybindings.matches(Action::FocusNext, k) => {
-                loom::focus_next();
-                Bubble::Stop
-            }
-            _ => Bubble::Continue,
-        })
-        .on_mouse_down(move |mouse| {
-            let line = (view_for_mouse.clamped_offset().y + u32::from(mouse.local.y))
-                .min(catalog_line_count.saturating_sub(1));
-            let already_selected = line == selected_line;
-            set_selected_line(&move |_| line);
-            if let Some(node) = nodes_click.get(line as usize) {
-                if already_selected && matches!(node, Node::Directory { .. }) {
-                    activate_node(node, set_folded, set_file, set_directory);
-                } else {
-                    select_node(node, &files_for_mouse, set_file, set_directory);
-                }
-            }
-            Bubble::Stop
-        });
 
     let entries: Vec<LoomNode> = nodes
         .iter()
@@ -219,6 +132,82 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             }
         })
         .collect();
+
+    let nodes_ref = use_ref(scope, Vec::new);
+    *nodes_ref.current() = nodes;
+    let files_ref = use_ref(scope, || Rc::clone(&files));
+    *files_ref.current() = files;
+    let (nodes, files) = (nodes_ref, files_ref);
+    let keybindings = Rc::clone(&ctx.keybindings);
+    let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
+    let exit = use_exit(scope);
+
+    let listeners = Listeners::new()
+        .on_key(move |k| match k {
+            k if keybindings.matches(Action::MoveDown, k) => {
+                set_selected_line.update(|selected_line| {
+                    let next = selected_line
+                        .saturating_add(1)
+                        .min(catalog_line_count.saturating_sub(1));
+                    scroll.keep_y_visible(next, SCROLLOFF);
+                    if let Some(node) = nodes.current().get(next as usize) {
+                        select_node(node, &files.current(), set_file, set_directory);
+                    }
+                    *selected_line = next;
+                });
+                Bubble::Stop
+            }
+            k if keybindings.matches(Action::MoveUp, k) => {
+                set_selected_line.update(|selected_line| {
+                    let next = selected_line.saturating_sub(1);
+                    scroll.keep_y_visible(next, SCROLLOFF);
+                    if let Some(node) = nodes.current().get(next as usize) {
+                        select_node(node, &files.current(), set_file, set_directory);
+                    }
+                    *selected_line = next;
+                });
+                Bubble::Stop
+            }
+            k if keybindings.matches(Action::Open, k) => {
+                if let Some(node) = nodes.current().get(selected_line as usize) {
+                    activate_node(node, set_folded, set_file, set_directory);
+                }
+                Bubble::Stop
+            }
+            k if keybindings.matches(Action::Quit, k) => {
+                exit();
+                Bubble::Stop
+            }
+            k if keybindings.matches(Action::ToggleExplorerMode, k) => {
+                set_tree_mode.update(|mode| *mode = !*mode);
+                Bubble::Stop
+            }
+            k if keybindings.matches(Action::Stage, k) => {
+                if let Some(node) = nodes.current().get(selected_line as usize) {
+                    toggle_stage(node, version_control_service.as_deref());
+                }
+                Bubble::Stop
+            }
+            k if keybindings.matches(Action::FocusNext, k) => {
+                loom::focus_next();
+                Bubble::Stop
+            }
+            _ => Bubble::Continue,
+        })
+        .on_mouse_down(move |mouse| {
+            let line =
+                (top_line + u32::from(mouse.local.y)).min(catalog_line_count.saturating_sub(1));
+            let already_selected = line == selected_line;
+            set_selected_line.set(line);
+            if let Some(node) = nodes.current().get(line as usize) {
+                if already_selected && matches!(node, Node::Directory { .. }) {
+                    activate_node(node, set_folded, set_file, set_directory);
+                } else {
+                    select_node(node, &files.current(), set_file, set_directory);
+                }
+            }
+            Bubble::Stop
+        });
 
     let list_error = list_error.map_or(LoomNode::Empty, |error| {
         rsx! {
@@ -242,7 +231,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             { list_error }
             Scroll {
                 view,
-                handle: Some(scroll.clone()),
+                handle: Some(scroll),
                 horizontal: false,
                 vertical: true,
                 wheel_step: 3,
@@ -296,18 +285,15 @@ fn activate_node(
         Node::Heading { .. } => {}
         Node::Directory { path, revs, .. } => {
             let key = directory_key(path, revs);
-            set_folded(&move |mut set| {
-                if set.contains(&key) {
-                    set.remove(&key);
-                } else {
-                    set.insert(key.clone());
+            set_folded.update(|folded| {
+                if !folded.remove(&key) {
+                    folded.insert(key);
                 }
-                set
             });
         }
         Node::File { file, .. } => {
             if let Some(set_directory) = set_directory {
-                set_directory(&|_| None);
+                set_directory.set(None);
             }
             open_file(file, set_file);
         }
@@ -323,25 +309,24 @@ fn select_node(
     match node {
         Node::Heading { .. } => {
             if let Some(set_directory) = set_directory {
-                set_directory(&|_| None);
+                set_directory.set(None);
             }
         }
         Node::Directory { path, revs, .. } => {
             if let Some(set_file) = set_file {
-                set_file(&|_| None);
+                set_file.set(None);
             }
             if let Some(set_directory) = set_directory {
-                let directory = Rc::new(DirectorySelection {
+                set_directory.set(Some(Rc::new(DirectorySelection {
                     path: path.clone(),
                     revs: revs.clone(),
                     files: Rc::new(files_under_directory(path, revs, files)),
-                });
-                set_directory(&move |_| Some(Rc::clone(&directory)));
+                })));
             }
         }
         Node::File { file, .. } => {
             if let Some(set_directory) = set_directory {
-                set_directory(&|_| None);
+                set_directory.set(None);
             }
             open_file(file, set_file);
         }
@@ -350,9 +335,8 @@ fn select_node(
 
 /// Puts a file in the context, so the diff viewer shows it.
 fn open_file(file: &File, set_file: Option<loom::SetState<Option<Rc<File>>>>) {
-    if let Some(set) = set_file {
-        let file = Rc::new(file.clone());
-        set(&move |_| Some(Rc::clone(&file)));
+    if let Some(set_file) = set_file {
+        set_file.set(Some(Rc::new(file.clone())));
     }
 }
 

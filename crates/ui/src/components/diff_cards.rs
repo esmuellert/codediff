@@ -111,19 +111,18 @@ pub fn DiffCards(
     });
 
     let keybindings = use_context::<Ui>(scope).keybindings;
-    let scroll_for_keys = scroll.clone();
     let listeners = Listeners::new().on_key(move |key| {
         if keybindings.matches(Action::MoveDown, key) {
-            scroll_for_keys.scroll_y_by(1);
+            scroll.scroll_y_by(1);
             Bubble::Stop
         } else if keybindings.matches(Action::MoveUp, key) {
-            scroll_for_keys.scroll_y_by(-1);
+            scroll.scroll_y_by(-1);
             Bubble::Stop
         } else if keybindings.matches(Action::Start, key) {
-            scroll_for_keys.scroll_to_start();
+            scroll.scroll_to_start();
             Bubble::Stop
         } else if keybindings.matches(Action::End, key) {
-            scroll_for_keys.scroll_to_end();
+            scroll.scroll_to_end();
             Bubble::Stop
         } else {
             Bubble::Continue
