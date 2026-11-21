@@ -39,7 +39,7 @@ Added, deleted, and untracked files are shown with `SingleFile`; they are not co
 
 `components::cells` paints terminal cells from line-indexed text. Diff backgrounds are applied first; syntax supplies foregrounds and text modifiers. Tabs, wide graphemes, clipped clusters, control characters, and bidi controls are handled before the text reaches the terminal.
 
-Themes are compiled into the UI. `Theme::from_environment` chooses between Catppuccin and basic dark/light themes from terminal environment variables; a config file can select a built-in theme explicitly. The composition root loads that JSON config before starting the terminal.
+Themes are compiled into the UI. When `ui.theme` is `auto`, `Theme::from_terminal` queries the terminal for its background colour and 24-bit colour support before starting the input loop, falling back to `Theme::from_environment`; a config file can select a built-in theme explicitly.
 
 ## Gallery and tests
 

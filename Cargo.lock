@@ -2761,6 +2761,7 @@ dependencies = [
  "line-index",
  "loom",
  "ratatui",
+ "rustix",
  "signal-hook 0.4.6",
  "syntax",
  "tempfile",
