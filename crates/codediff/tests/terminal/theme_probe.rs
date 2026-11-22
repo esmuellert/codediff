@@ -202,4 +202,8 @@ fn doctor_reports_probed_background_and_theme_without_entering_alt_screen() {
         output.contains("catppuccin-latte (default)"),
         "doctor did not report catppuccin-latte:\n{output}"
     );
+    assert!(
+        output.contains("graph symbols"),
+        "doctor did not report graph symbols:\n{output}"
+    );
 }

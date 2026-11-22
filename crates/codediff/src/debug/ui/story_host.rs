@@ -50,23 +50,32 @@ pub(super) fn story_props(
                 ..UiContext::default()
             },
             files: Rc::new(Vec::new()),
+            commits: Rc::new(Vec::new()),
             navigate,
         };
         return (pipeline, props, Some(repo));
     }
 
-    let (listed, contents, open) = match fixture {
-        StoryFixture::Welcome => (None, Vec::new(), false),
-        StoryFixture::Explorer(files) => (Some(files), Vec::new(), false),
-        StoryFixture::ExplorerCards { files, diffs } => (Some(files), diffs, false),
+    let (listed, contents, commits, branch_drawing, open) = match fixture {
+        StoryFixture::Welcome => (None, Vec::new(), Vec::new(), false, false),
+        StoryFixture::Explorer(files) => (Some(files), Vec::new(), Vec::new(), false, false),
+        StoryFixture::ExplorerCards { files, diffs } => {
+            (Some(files), diffs, Vec::new(), false, false)
+        }
         StoryFixture::Repository { .. } => unreachable!("handled above"),
+        StoryFixture::CommitGraph {
+            commits,
+            branch_drawing,
+        } => (None, Vec::new(), commits, branch_drawing, false),
         StoryFixture::SideBySide(content)
         | StoryFixture::Inline(content)
         | StoryFixture::SingleFile(content)
-        | StoryFixture::Card(content) => (None, vec![(*content).clone()], true),
+        | StoryFixture::Card(content) => (None, vec![(*content).clone()], Vec::new(), false, true),
         StoryFixture::Cards(contents) => (
             None,
             contents.iter().map(|content| (**content).clone()).collect(),
+            Vec::new(),
+            false,
             true,
         ),
     };
@@ -94,11 +103,13 @@ pub(super) fn story_props(
         definition,
         base_context: UiContext {
             theme: Rc::new(Theme::DARK),
+            branch_drawing,
             repo: Rc::from(Path::new("/codediff-story")),
             diff_service: Some(Rc::clone(&pipeline)),
             ..UiContext::default()
         },
         files: Rc::new(files),
+        commits: Rc::new(commits),
         navigate,
     };
     (pipeline, props, None)
@@ -257,6 +268,16 @@ mod tests {
     }
 
     #[test]
+    fn commit_graph_selected_story_preselects_a_merge_commit() {
+        let story = catalog::by_id("commit-graph/selected").unwrap();
+        let mut harness = story_harness(story, 110, 24).unwrap();
+        let selected = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
+
+        assert_eq!(harness.style_at(0, 8).bg, selected);
+        assert!(harness.screen_line(8).contains("d9b9808"));
+    }
+
+    #[test]
     fn every_nonempty_code_story_waits_for_syntax_colours() {
         use super::super::definition::StoryComponent;
 
@@ -303,7 +324,9 @@ mod tests {
                 | StoryComponent::ExplorerCards => {
                     assert!(coloured(0, 100), "{} had no syntax-coloured text", story.id);
                 }
-                StoryComponent::Welcome | StoryComponent::Explorer => unreachable!(),
+                StoryComponent::Welcome
+                | StoryComponent::Explorer
+                | StoryComponent::CommitGraph => unreachable!(),
             }
         }
     }

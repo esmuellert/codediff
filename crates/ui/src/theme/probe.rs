@@ -1,31 +1,75 @@
-//! Bounded terminal query for background colour and 24-bit colour support.
+//! Bounded terminal query for background colour, 24-bit colour, and graph symbols.
 //!
-//! Sends OSC 11 (background), XTGETTCAP (`RGB` and `Tc`), and DA1 (`\x1b[c`)
-//! as a single batch. Terminals reply in order, so the DA1 response marks the
-//! end of the batch without waiting for the timeout.
+//! Sends OSC 11 (background), XTGETTCAP (`RGB` and `Tc`), XTVERSION (`\x1b[>0q`),
+//! and DA1 (`\x1b[c`) as a single batch. Terminals reply in order, so the DA1
+//! response marks the end of the batch without waiting for the timeout.
+
+use std::sync::OnceLock;
 
 use crate::theme::Rgb;
 
-/// OSC 11 background query, XTGETTCAP (`RGB` = `524742`, `Tc` = `5463`), and DA1.
-pub const QUERY: &[u8] = b"\x1b]11;?\x07\x1bP+q524742;5463\x1b\\\x1b[c";
+static PROBED: OnceLock<TerminalProbe> = OnceLock::new();
+
+/// OSC 11 background query, XTGETTCAP (`RGB` = `524742`, `Tc` = `5463`), XTVERSION, and DA1.
+pub const QUERY: &[u8] = b"\x1b]11;?\x07\x1bP+q524742;5463\x1b\\\x1b[>0q\x1b[c";
 
 /// What the terminal reported when queried directly.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalProbe {
     pub background: Option<Rgb>,
     pub truecolor: Option<bool>,
+    /// `Some(true)` or `Some(false)` when `XTVERSION` identified the terminal;
+    /// `None` when the terminal sent no `XTVERSION` reply.
+    pub branch_drawing: Option<bool>,
 }
 
-/// Queries the attached terminal, waiting at most 40 ms for a reply.
+impl TerminalProbe {
+    /// Resolves whether the terminal natively draws `U+F5D0..U+F60D` branch glyphs,
+    /// combining a direct `XTVERSION` reply with environment fallbacks.
+    pub fn supports_branch_drawing(self, environment: impl Fn(&str) -> Option<String>) -> bool {
+        if let Some(supported) = self.branch_drawing {
+            return supported;
+        }
+        if let Some(term) = environment("TERM")
+            && (term.eq_ignore_ascii_case("xterm-kitty")
+                || term.eq_ignore_ascii_case("xterm-ghostty")
+                || term.eq_ignore_ascii_case("ghostty"))
+        {
+            return true;
+        }
+        if let Some(program) = environment("TERM_PROGRAM")
+            && (program.eq_ignore_ascii_case("ghostty")
+                || program.eq_ignore_ascii_case("vscode")
+                || program.eq_ignore_ascii_case("kitty"))
+        {
+            return true;
+        }
+        false
+    }
+}
+
+/// Queries the attached terminal once, waiting at most 40 ms for a reply, and caches the result.
 pub fn probe() -> TerminalProbe {
-    #[cfg(unix)]
-    {
-        unix::probe()
-    }
-    #[cfg(not(unix))]
-    {
-        TerminalProbe::default()
-    }
+    *PROBED.get_or_init(|| {
+        #[cfg(unix)]
+        {
+            unix::probe()
+        }
+        #[cfg(not(unix))]
+        {
+            TerminalProbe::default()
+        }
+    })
+}
+
+/// Returns the cached startup [`TerminalProbe`] without touching the TTY.
+pub fn cached_probe() -> TerminalProbe {
+    PROBED.get().copied().unwrap_or_default()
+}
+
+/// Resolves whether branch-drawing symbols are supported from the cached probe and environment.
+pub fn cached_branch_drawing() -> bool {
+    cached_probe().supports_branch_drawing(|key| std::env::var(key).ok())
 }
 
 #[cfg(any(unix, test))]
@@ -33,11 +77,12 @@ mod parser {
     use super::TerminalProbe;
     use crate::theme::Rgb;
 
-    /// Parses accumulated terminal replies for OSC 11 and XTGETTCAP.
+    /// Parses accumulated terminal replies for OSC 11, XTGETTCAP, and XTVERSION.
     pub(super) fn parse_response(bytes: &[u8]) -> TerminalProbe {
         TerminalProbe {
             background: parse_osc11(bytes),
             truecolor: parse_xtgettcap(bytes),
+            branch_drawing: parse_xtversion(bytes),
         }
     }
 
@@ -109,6 +154,80 @@ mod parser {
             at += 1;
         }
         if saw_negative { Some(false) } else { None }
+    }
+
+    /// Parses `XTVERSION` DCS replies (`\x1bP>|<ident>\x1b\\`) and checks whether
+    /// the identified terminal version natively draws `U+F5D0..U+F60D`.
+    fn parse_xtversion(bytes: &[u8]) -> Option<bool> {
+        const PREFIX: &[u8] = b"\x1bP>|";
+        let mut at = 0;
+        while at + PREFIX.len() < bytes.len() {
+            if bytes[at..].starts_with(PREFIX) {
+                let start = at + PREFIX.len();
+                let (payload, _) = st_terminated(&bytes[start..])?;
+                let ident = std::str::from_utf8(payload).ok()?.trim();
+                return Some(xtversion_draws_branch_symbols(ident));
+            }
+            at += 1;
+        }
+        None
+    }
+
+    fn xtversion_draws_branch_symbols(ident: &str) -> bool {
+        let (name, version) = split_terminal_ident(ident);
+        let lower = name.to_ascii_lowercase();
+        let numbers = version_numbers(version);
+        match lower.as_str() {
+            "xterm.js" => version_at_least(&numbers, &[5, 5, 0]),
+            "kitty" => version_at_least(&numbers, &[0, 36, 2]),
+            "ghostty" => version_at_least(&numbers, &[1, 0, 0]),
+            "contour" => version_at_least(&numbers, &[0, 5, 0]),
+            "wezterm" => {
+                let date = version
+                    .bytes()
+                    .take_while(|byte| byte.is_ascii_digit())
+                    .take(8)
+                    .fold(0u32, |acc, byte| acc * 10 + u32::from(byte - b'0'));
+                date >= 2024_0900
+            }
+            _ => false,
+        }
+    }
+
+    fn split_terminal_ident(ident: &str) -> (&str, &str) {
+        if let Some((name, rest)) = ident.split_once('(') {
+            let version = rest.strip_suffix(')').unwrap_or(rest);
+            return (name.trim(), version.trim());
+        }
+        if let Some((name, version)) = ident.split_once(' ') {
+            return (name.trim(), version.trim());
+        }
+        (ident.trim(), "")
+    }
+
+    fn version_numbers(version: &str) -> Vec<u32> {
+        let mut numbers = Vec::new();
+        for part in version.split('.') {
+            let digits: String = part.chars().take_while(char::is_ascii_digit).collect();
+            let Ok(number) = digits.parse::<u32>() else {
+                break;
+            };
+            numbers.push(number);
+        }
+        numbers
+    }
+
+    fn version_at_least(actual: &[u32], minimum: &[u32]) -> bool {
+        if actual.is_empty() {
+            return false;
+        }
+        for (index, &min) in minimum.iter().enumerate() {
+            let got = actual.get(index).copied().unwrap_or(0);
+            if got != min {
+                return got > min;
+            }
+        }
+        true
     }
 
     /// Finds a BEL (`\x07`) or ST (`\x1b\\`) terminator.
@@ -283,6 +402,19 @@ mod tests {
     use super::parser::{has_da1, parse_response};
     use super::*;
 
+    fn environment(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |key| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.to_owned())
+        }
+    }
+
     #[test]
     fn parses_four_digit_osc11_with_bel_and_st() {
         let latte = b"\x1b]11;rgb:eff1/f5f5/ffff\x07\x1b[?62;22c";
@@ -332,8 +464,71 @@ mod tests {
     }
 
     #[test]
+    fn parses_xtversion_for_branch_drawing_support() {
+        assert_eq!(
+            parse_response(b"\x1bP>|xterm.js(6.1.0-beta.303)\x1b\\\x1b[?1;2c").branch_drawing,
+            Some(true)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|xterm.js(5.5.0)\x1b\\").branch_drawing,
+            Some(true)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|xterm.js(5.4.1)\x1b\\").branch_drawing,
+            Some(false)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|kitty(0.38.0)\x1b\\").branch_drawing,
+            Some(true)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|kitty(0.35.0)\x1b\\").branch_drawing,
+            Some(false)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|ghostty 1.1.0\x1b\\").branch_drawing,
+            Some(true)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|ghostty(0.9.0)\x1b\\").branch_drawing,
+            Some(false)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|contour 0.5.1\x1b\\").branch_drawing,
+            Some(true)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|WezTerm 20250203-110809\x1b\\").branch_drawing,
+            Some(true)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|WezTerm 20240203-110809\x1b\\").branch_drawing,
+            Some(false)
+        );
+        assert_eq!(
+            parse_response(b"\x1bP>|Alacritty(0.15.0)\x1b\\").branch_drawing,
+            Some(false)
+        );
+        assert_eq!(parse_response(b"\x1b[?62c").branch_drawing, None);
+    }
+
+    #[test]
+    fn supports_branch_drawing_falls_back_to_environment_only_when_unprobed() {
+        let unprobed = TerminalProbe::default();
+        assert!(!unprobed.supports_branch_drawing(environment(&[])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM", "xterm-kitty")])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM", "xterm-ghostty")])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM_PROGRAM", "vscode")])));
+        assert!(!unprobed.supports_branch_drawing(environment(&[("TERM_PROGRAM", "Alacritty")])));
+
+        let old_kitty = parse_response(b"\x1bP>|kitty(0.35.0)\x1b\\");
+        assert!(!old_kitty.supports_branch_drawing(environment(&[("TERM", "xterm-kitty")])));
+    }
+
+    #[test]
     fn chunked_bytes_wait_until_da1_completes() {
-        let full = b"\x1b]11;rgb:ffff/ffff/ffff\x07\x1bP1+r5463\x1b\\\x1b[?64;1;2;6;22c";
+        let full =
+            b"\x1b]11;rgb:ffff/ffff/ffff\x07\x1bP1+r5463\x1b\\\x1bP>|xterm.js(6.1.0)\x1b\\\x1b[?64;1;2;6;22c";
         let mut buffer = Vec::new();
         for &byte in &full[..full.len() - 1] {
             buffer.push(byte);
@@ -346,6 +541,7 @@ mod tests {
             TerminalProbe {
                 background: Some(Rgb(255, 255, 255)),
                 truecolor: Some(true),
+                branch_drawing: Some(true),
             }
         );
     }

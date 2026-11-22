@@ -16,7 +16,7 @@ pub use change::Change;
 pub use code::Code;
 pub use colour::{Rgb, blend};
 pub use icon::Icon;
-pub use probe::{TerminalProbe, probe};
+pub use probe::{TerminalProbe, cached_branch_drawing, cached_probe, probe};
 pub use tree::Tree;
 
 /// Every style the interface draws with.
@@ -334,6 +334,7 @@ mod tests {
         let dark = TerminalProbe {
             background: Some(Rgb(0x1e, 0x1e, 0x2e)),
             truecolor: None,
+            branch_drawing: None,
         };
         assert_eq!(
             Theme::resolve(dark, environment(&env)).name,
@@ -343,6 +344,7 @@ mod tests {
         let light = TerminalProbe {
             background: Some(Rgb(0xef, 0xf1, 0xf5)),
             truecolor: None,
+            branch_drawing: None,
         };
         assert_eq!(
             Theme::resolve(light, environment(&env)).name,
@@ -359,12 +361,14 @@ mod tests {
         let light = TerminalProbe {
             background: Some(Rgb(0xff, 0xff, 0xff)),
             truecolor: Some(false),
+            branch_drawing: None,
         };
         assert_eq!(Theme::resolve(light, environment(&env)).name, "basic-light");
 
         let dark = TerminalProbe {
             background: Some(Rgb(0x10, 0x10, 0x10)),
             truecolor: None,
+            branch_drawing: None,
         };
         assert_eq!(Theme::resolve(dark, environment(&env)).name, "basic-dark");
     }
@@ -395,6 +399,7 @@ mod tests {
         let probed = TerminalProbe {
             background: Some(Rgb(0xff, 0xff, 0xff)),
             truecolor: Some(true),
+            branch_drawing: None,
         };
         assert_eq!(
             Theme::resolve(probed, environment(&[("NO_COLOR", "1")])).name,

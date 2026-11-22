@@ -8,8 +8,9 @@ dependencies, vendored Neovim internals and documentation assets — none of whi
 present here.
 
 Everything below is compiled by `crates/vscode-diff-sys/build.rs` from
-`libvscode-diff/`, except the icon table, which is Rust source in
-`crates/ui/src/theme/icon/table.rs`.
+`libvscode-diff/`, except the icon table in `crates/ui/src/theme/icon/table.rs` and
+the commit graph layout in `crates/ui/src/components/commit_graph/build.rs`, which
+are Rust source.
 
 ---
 
@@ -82,6 +83,45 @@ in the colour its `NvimTreeFolderIcon` highlight group uses.
 MIT License
 
 Copyright (c) 2023 nvim-tree
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+### lazygit
+
+**License**: MIT License
+**Copyright**: Copyright (c) 2018 Jesse Duffield
+**Source**: https://github.com/jesseduffield/lazygit
+
+`crates/ui/src/components/commit_graph/build.rs` translates LazyGit's multi-lane
+commit graph layout, cell renderer, and Unicode Private Use Area branch-drawing
+symbol table — `pkg/gui/presentation/graph/graph.go`,
+`pkg/gui/presentation/graph/cell.go`, and
+`pkg/gui/presentation/graph/branch_drawing.go` at commit
+`54cc6af1d77b5a6cec3dc9ad0b203afdb4ad3451` — into Rust.
+
+```
+MIT License
+
+Copyright (c) 2018 Jesse Duffield
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

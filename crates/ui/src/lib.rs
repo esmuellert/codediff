@@ -9,6 +9,7 @@ mod view;
 
 pub use keybindings::{Action, KeyMap};
 pub use theme::{Flavour, Rgb, TerminalProbe, Theme, blend, catppuccin, probe};
+pub use vcs::Commit;
 
 pub use crossterm;
 pub use ratatui;
@@ -44,8 +45,11 @@ fn repository_root(cwd: &Path) -> std::io::Result<PathBuf> {
 }
 
 pub fn main(cwd: &Path, mut config: config::Config) -> std::io::Result<i32> {
+    let probed = probe();
     if config.ui.theme == "auto" || Theme::named(&config.ui.theme).is_none() {
-        config.ui.theme = Theme::from_terminal().name.to_owned();
+        config.ui.theme = Theme::resolve(probed, |key| std::env::var(key).ok())
+            .name
+            .to_owned();
     }
     let config = Rc::new(config);
     let keybindings =

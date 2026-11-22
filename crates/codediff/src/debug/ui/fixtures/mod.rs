@@ -1,5 +1,6 @@
 //! Typed builders for data injected into production components.
 
+pub mod commit_graph;
 pub mod diff;
 pub mod explorer;
 pub mod single_file;

@@ -12,7 +12,9 @@ use loom::{
     use_exit, use_ref, use_state,
 };
 use syntax::Span;
+use ui::Commit;
 use ui::components::border::{Border, BorderProps};
+use ui::components::commit_graph::{CommitGraph, CommitGraphProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
 use ui::components::diff_viewer::{DiffViewer, ViewState};
@@ -42,6 +44,7 @@ pub(super) fn StoryPreview(
             Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
         )>,
     >,
+    commits: Rc<Vec<Commit>>,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
@@ -131,6 +134,13 @@ pub(super) fn StoryPreview(
                     layout: Layout { grow: 1, ..Default::default() },
                     DiffViewer {}
                 }
+            }
+        },
+        StoryComponent::CommitGraph => rsx! {
+            CommitGraph {
+                commits: Rc::clone(commits),
+                on_select: None,
+                on_open: None,
             }
         },
         StoryComponent::SideBySide => rsx! {
