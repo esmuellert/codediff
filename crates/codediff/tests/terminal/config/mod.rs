@@ -2,6 +2,7 @@
 #![cfg(unix)]
 
 use std::io::{Read, Write};
+use std::num::NonZero;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -199,7 +200,11 @@ fn wait_for_screen(output: &Arc<Mutex<Output>>, what: &str, ready: impl Fn(&str)
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let bytes = output.lock().expect("output lock").bytes.clone();
-        let mut screen = vt100::Parser::new(HEIGHT, COLS, 0);
+        let mut screen = vt100::Parser::new(
+            NonZero::new(HEIGHT).expect("non-zero height"),
+            NonZero::new(COLS).expect("non-zero cols"),
+            0,
+        );
         screen.process(&bytes);
         let contents = screen.screen().contents();
         if ready(&contents) {
