@@ -2,6 +2,8 @@
 
 #[cfg(unix)]
 use std::io::Write;
+#[cfg(unix)]
+use std::num::NonZero;
 use std::process::Command;
 #[cfg(unix)]
 use std::time::{Duration, Instant};
@@ -375,7 +377,11 @@ fn cards_story_scrolls_a_long_diff_to_its_end() {
         String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
             .into_owned();
     // Read the screen, not the bytes: a redraw writes only changed cells.
-    let mut screen = vt100::Parser::new(24, 80, 0);
+    let mut screen = vt100::Parser::new(
+        NonZero::new(24).expect("non-zero rows"),
+        NonZero::new(80).expect("non-zero cols"),
+        0,
+    );
     screen.process(initial.as_bytes());
     assert!(!screen.screen().contents().contains("PAYLOAD_END;"));
     let initial_len = initial.len();

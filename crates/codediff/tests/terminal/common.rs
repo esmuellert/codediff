@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::num::NonZero;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,7 +28,11 @@ pub(super) fn screen_text(output: &Arc<Mutex<Output>>, rows: u16, cols: u16) -> 
         .expect("nothing else holds the lock")
         .bytes
         .clone();
-    let mut screen = vt100::Parser::new(rows, cols, 0);
+    let mut screen = vt100::Parser::new(
+        NonZero::new(rows).expect("non-zero rows"),
+        NonZero::new(cols).expect("non-zero cols"),
+        0,
+    );
     screen.process(&bytes);
     screen.screen().contents()
 }

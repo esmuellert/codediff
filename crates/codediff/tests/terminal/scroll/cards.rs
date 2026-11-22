@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -103,7 +104,11 @@ impl Terminal {
             writer,
             collector: Some(collector),
             output,
-            parser: vt100::Parser::new(FULL_ROWS, COLS, 0),
+            parser: vt100::Parser::new(
+                NonZero::new(FULL_ROWS).expect("non-zero rows"),
+                NonZero::new(COLS).expect("non-zero cols"),
+                0,
+            ),
             consumed: 0,
         };
         terminal.send(b"j");
@@ -140,7 +145,10 @@ impl Terminal {
 
     fn resize(&mut self, rows: u16) {
         let before = self.output.lock().unwrap().bytes.len();
-        self.parser.screen_mut().set_size(rows, COLS);
+        self.parser.screen_mut().set_size(
+            NonZero::new(rows).expect("non-zero rows"),
+            NonZero::new(COLS).expect("non-zero cols"),
+        );
         self.master
             .as_ref()
             .unwrap()
