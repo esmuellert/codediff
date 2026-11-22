@@ -4,7 +4,6 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use align::Alignment;
 use diff_service::diff::DiffContent;
 use file_types::DiffType;
 use loom::{
@@ -19,25 +18,34 @@ use super::context::Ui;
 use super::diff_viewer_container::DiffVisibleRange;
 use super::inline::{Inline, InlineLayout, InlineProps, layout_inline};
 use super::side_by_side::{SideBySide, SideBySideLayout, SideBySideProps, layout_side_by_side};
+use super::single_file::{SingleFile, SingleFileLayout, SingleFileProps, layout_single_file};
 use crate::keybindings::Action;
 
 enum CardLayout {
     Inline(InlineLayout),
     SideBySide(SideBySideLayout),
+    SingleFile(SingleFileLayout),
 }
 
 pub(crate) fn card_height(
-    alignment: &Alignment,
+    content: &DiffContent,
     width: u16,
     view_layout: DiffType,
     wrap: bool,
 ) -> u16 {
-    let terminal_line_count = match view_layout {
-        DiffType::Inline => layout_inline(alignment, width, wrap, true).terminal_line_count,
-        DiffType::SideBySide => {
-            layout_side_by_side(alignment, width, wrap, true).terminal_line_count
+    let terminal_line_count = match content {
+        DiffContent::Diff(diff) => match view_layout {
+            DiffType::Inline => {
+                layout_inline(&diff.alignment, width, wrap, true).terminal_line_count
+            }
+            DiffType::SideBySide => {
+                layout_side_by_side(&diff.alignment, width, wrap, true).terminal_line_count
+            }
+            DiffType::Single => unreachable!("a diff has no single-file layout"),
+        },
+        DiffContent::SingleFile(single) => {
+            layout_single_file(single, width, wrap).terminal_line_count
         }
-        DiffType::Single => unreachable!("a diff card cannot render a single file"),
     };
     terminal_line_count
         .saturating_add(3)
@@ -95,11 +103,8 @@ pub fn DiffCard(
     let card_layout = use_memo(
         scope,
         (content_id, view_layout, wrap, size.width),
-        move || {
-            let DiffContent::Diff(diff) = content_for_layout.as_ref() else {
-                unreachable!("a diff card requires two-sided diff content")
-            };
-            match view_layout {
+        move || match content_for_layout.as_ref() {
+            DiffContent::Diff(diff) => match view_layout {
                 DiffType::Inline => {
                     let mut layout = layout_inline(&diff.alignment, size.width, wrap, true);
                     if !wrap {
@@ -132,7 +137,10 @@ pub fn DiffCard(
                     }
                     CardLayout::SideBySide(layout)
                 }
-                DiffType::Single => unreachable!("a diff card cannot render a single file"),
+                DiffType::Single => unreachable!("a diff has no single-file layout"),
+            },
+            DiffContent::SingleFile(single) => {
+                CardLayout::SingleFile(layout_single_file(single, size.width, wrap))
             }
         },
     );
@@ -142,6 +150,7 @@ pub fn DiffCard(
     let terminal_line_count = match card_layout.as_ref() {
         CardLayout::Inline(layout) => layout.terminal_line_count,
         CardLayout::SideBySide(layout) => layout.terminal_line_count,
+        CardLayout::SingleFile(layout) => layout.terminal_line_count,
     } as usize;
     let visible_terminal_line_count = usize::from(size.height.saturating_sub(1));
     let visible_range = DiffVisibleRange {
@@ -152,14 +161,14 @@ pub fn DiffCard(
         horizontal_view: scroll_view.axes(true, false),
         write_horizontal_metrics: true,
     };
-    let view_node = match (view_layout, card_layout.as_ref()) {
-        (DiffType::Inline, CardLayout::Inline(layout)) => rsx! {
+    let view_node = match card_layout.as_ref() {
+        CardLayout::Inline(layout) => rsx! {
             Inline {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
                 wrapped_lines: Rc::clone(&layout.wrapped_lines),
-                viewport: visible_range.clone(),
+                viewport: visible_range,
                 original_gutter_width: layout.original_gutter_width,
                 modified_gutter_width: layout.modified_gutter_width,
                 code_width: layout.code_width,
@@ -167,7 +176,7 @@ pub fn DiffCard(
                 auto_focus: false,
             }
         },
-        (DiffType::SideBySide, CardLayout::SideBySide(layout)) => rsx! {
+        CardLayout::SideBySide(layout) => rsx! {
             SideBySide {
                 key: content_id,
                 content: Arc::clone(content),
@@ -183,7 +192,19 @@ pub fn DiffCard(
                 auto_focus: false,
             }
         },
-        _ => unreachable!("card layout does not match its view layout"),
+        CardLayout::SingleFile(layout) => rsx! {
+            SingleFile {
+                key: content_id,
+                content: Arc::clone(content),
+                colours: Arc::clone(colours),
+                wrapped_lines: Rc::clone(&layout.wrapped_lines),
+                viewport: visible_range,
+                gutter_width: layout.gutter_width,
+                code_width: layout.code_width,
+                horizontal_scroll_extent: layout.horizontal_scroll_extent,
+                auto_focus: false,
+            }
+        },
     };
 
     let file = content.file();
@@ -195,6 +216,7 @@ pub fn DiffCard(
     let border_layout = match height {
         Some(height) => Layout {
             basis: Basis::Length(height.saturating_sub(4)),
+            max_height: Some(*height),
             grow: 0,
             shrink: 0,
             ..Default::default()
@@ -224,22 +246,27 @@ pub fn DiffCard(
         },
     ];
     if let Some(stats) = stats {
-        header.push(rsx! {
-            Text {
-                layout: Layout { shrink: 0, ..Default::default() },
-                text: format!(" +{} ", stats.added).into(),
-                style: theme.status.fg(theme.change.gained),
-                ..
-            }
-        });
-        header.push(rsx! {
-            Text {
-                layout: Layout { shrink: 0, ..Default::default() },
-                text: format!("-{} ", stats.removed).into(),
-                style: theme.status.fg(theme.change.lost),
-                ..
-            }
-        });
+        if stats.added > 0 {
+            header.push(rsx! {
+                Text {
+                    layout: Layout { shrink: 0, ..Default::default() },
+                    text: format!(" +{} ", stats.added).into(),
+                    style: theme.status.fg(theme.change.gained),
+                    ..
+                }
+            });
+        }
+        if stats.removed > 0 {
+            let prefix = if stats.added > 0 { "" } else { " " };
+            header.push(rsx! {
+                Text {
+                    layout: Layout { shrink: 0, ..Default::default() },
+                    text: format!("{prefix}-{} ", stats.removed).into(),
+                    style: theme.status.fg(theme.change.lost),
+                    ..
+                }
+            });
+        }
     }
 
     rsx! {

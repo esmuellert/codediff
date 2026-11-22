@@ -27,7 +27,7 @@ Opening a file follows this path:
 5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there.
 6. The syntax thread then colours the whole file in pieces; each piece is drawn as it arrives.
 
-A selected directory opens its two-sided files one at a time, when the line below the last card comes into view.
+A selected directory opens its files one at a time, when the line below the last card comes into view.
 
 The watcher sends refresh categories, not a list of changed paths. Explorer rescans its file list; the selected diff is reloaded when its mutable side is affected.
 

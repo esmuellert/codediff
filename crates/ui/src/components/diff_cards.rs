@@ -60,10 +60,7 @@ pub fn DiffCards(
         let diff = diff.lock().unwrap().clone();
         match diff {
             Some(Ok(content)) => {
-                let alignment = content
-                    .alignment()
-                    .expect("a diff card collection requires two-sided diffs");
-                let height = card_height(alignment, card_width, view_layout, wrap);
+                let height = card_height(&content, card_width, view_layout, wrap);
                 heights.push(height);
                 cards.push(rsx! {
                     DiffCard {

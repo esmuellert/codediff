@@ -71,6 +71,30 @@ fn files() -> Rc<
                     alignment,
                 })
             })
+            .chain([
+                DiffContent::SingleFile(diff::SingleFile {
+                    file: File::added(
+                        RepoPath::new("src/empty.rs", Path::new("/repo")),
+                        Revs::worktree_against(Oid::new("base")),
+                    ),
+                    lines: Arc::new(Vec::new()),
+                }),
+                DiffContent::SingleFile(diff::SingleFile {
+                    file: File::added(
+                        RepoPath::new("src/added.rs", Path::new("/repo")),
+                        Revs::worktree_against(Oid::new("base")),
+                    ),
+                    lines: Arc::new(
+                        (1..=12)
+                            .map(|line| {
+                                format!(
+                                    "ADDED_{line:03} single_file_identifier_with_a_wrapped_tail"
+                                )
+                            })
+                            .collect(),
+                    ),
+                }),
+            ])
             .collect(),
     ))
 }
