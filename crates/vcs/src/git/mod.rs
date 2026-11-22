@@ -5,6 +5,7 @@
 
 pub mod cat_file;
 pub mod diff;
+pub mod log;
 pub mod merge_base;
 pub mod rev_parse;
 pub mod run;
