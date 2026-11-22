@@ -219,6 +219,16 @@ impl Screen {
         (0..self.height).any(|y| self.line(y).contains(text))
     }
 
+    pub(crate) fn contains_in_columns(&self, end_x: usize, text: &str) -> bool {
+        let end_x = end_x.min(self.width);
+        (0..self.height).any(|y| {
+            let prefix: String = (0..end_x)
+                .map(|x| self.cells[y * self.width + x].symbol)
+                .collect();
+            prefix.contains(text)
+        })
+    }
+
     pub(crate) fn line_of(&self, text: &str) -> Option<usize> {
         (0..self.height).find(|&y| self.line(y).contains(text))
     }

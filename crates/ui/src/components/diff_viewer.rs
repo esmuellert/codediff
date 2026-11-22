@@ -114,7 +114,7 @@ fn use_selected_file(
 /// The files of the selected directory that have been opened, in order.
 /// The cards ask for the next one when their end comes into view.
 struct DirectoryFiles {
-    two_sided: Vec<File>,
+    files: Vec<File>,
     opened: RefCell<
         Vec<(
             Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
@@ -133,7 +133,7 @@ impl DirectoryFiles {
         {
             return;
         }
-        if let Some(file) = self.two_sided.get(opened.len()) {
+        if let Some(file) = self.files.get(opened.len()) {
             opened.push(diff_service.open(file.clone()));
         }
     }
@@ -144,12 +144,7 @@ fn use_directory_files(scope: &mut Scope, ctx: &Context) -> Rc<Option<DirectoryF
     use_memo(scope, directory.clone(), move || {
         let directory = directory?;
         Some(DirectoryFiles {
-            two_sided: directory
-                .files
-                .iter()
-                .filter(|file| file.is_one_sided().is_none())
-                .cloned()
-                .collect(),
+            files: directory.files.as_ref().clone(),
             opened: RefCell::new(Vec::new()),
         })
     })
@@ -274,7 +269,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         ctx.diff_service.as_ref(),
     ) {
         let opened = files.opened.borrow().clone();
-        let more_files = opened.len() < files.two_sided.len();
+        let more_files = opened.len() < files.files.len();
         let open_next = {
             let directory_files = Rc::clone(&directory_files);
             let diff_service = Rc::clone(diff_service);

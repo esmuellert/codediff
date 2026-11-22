@@ -70,7 +70,7 @@ pub(crate) fn SingleFile(
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
     let diff_service::diff::DiffContent::SingleFile(single) = content.as_ref() else {
-        unreachable!("DiffViewer sends one-sided files to SingleFile")
+        unreachable!("SingleFile requires one-sided file content")
     };
     let version = single.side();
     let wrapped_lines = wrapped_lines.as_ref();
@@ -170,7 +170,7 @@ pub(crate) fn SingleFile(
                     horizontal: true,
                     vertical: false,
                     wheel_step: 0,
-                    write_metrics: false,
+                    write_metrics: viewport.write_horizontal_metrics,
                     content_width: Some(horizontal_scroll_extent.saturating_add(u32::from(code_width))),
                     layout: Layout { grow: 1, shrink: 0, fill: Some(base), ..Default::default() },
                     ..,

@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 
 use diff_service::DiffService;
-use file_types::{File, Oid, RepoPath, Revs, Stats};
+use file_types::{ChangeType, File, Oid, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Basis, Layout, Row, RowProps, Scope, component, rsx, use_state};
 use ui::Theme;
@@ -34,6 +34,13 @@ fn diff(file: File, original: &str, modified: &str) -> diff_service::diff::DiffC
     .expect("diff computes");
     let alignment = diff_service::diff::align(changed, &original, &modified).expect("alignment");
     diff_service::diff::DiffContent::Diff(diff_service::diff::Diff { file, alignment })
+}
+
+fn single_file(file: File, lines: &[&str]) -> diff_service::diff::DiffContent {
+    diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
+        file,
+        lines: Arc::new(lines.iter().map(|line| (*line).to_owned()).collect()),
+    })
 }
 
 #[component]
@@ -84,20 +91,26 @@ fn setup(line_count: usize) -> (Harness, Rc<DiffService>, Receiver<()>) {
     let added = File::added(
         RepoPath::new("src/new.rs", Path::new("/repo")),
         Revs::worktree_against(Oid::new("base")),
-    );
+    )
+    .set_stats(Stats::new(line_count as u32, 0));
     let outside = file("z-readme.rs");
-    let files = vec![first.clone(), second.clone(), added, outside];
+    let files = vec![first.clone(), second.clone(), added.clone(), outside];
     let text = |marker: &str| {
         (0..line_count)
             .map(|line| format!("{marker}_{line:02}"))
             .collect::<Vec<_>>()
             .join("\n")
     };
+    let added_lines: Vec<String> = (0..line_count)
+        .map(|line| format!("added_new_marker_{line:02}"))
+        .collect();
+    let added_refs: Vec<&str> = added_lines.iter().map(String::as_str).collect();
     let (pipeline, redraws) = fake_pipeline(
         vec![files],
         vec![
             diff(first, &text("old_a_marker"), &text("new_a_marker")),
             diff(second, &text("old_b_marker"), &text("new_b_marker")),
+            single_file(added, &added_refs),
         ],
     );
     let mut harness = Harness::new::<ExplorerDiffHost>(
@@ -247,7 +260,7 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
 }
 
 #[test]
-fn selecting_a_directory_shows_its_two_sided_diffs_and_a_file_keeps_the_regular_viewer() {
+fn selecting_a_directory_shows_all_changed_files_and_a_file_keeps_the_regular_viewer() {
     let (mut harness, pipeline, redraws) = setup(1);
 
     harness.press(loom::crokey::key!(j)).force_draw();
@@ -260,11 +273,9 @@ fn selecting_a_directory_shows_its_two_sided_diffs_and_a_file_keeps_the_regular_
         .join("\n");
     assert!(cards.contains("src/a.rs"), "{cards}");
     assert!(cards.contains("src/b.rs"), "{cards}");
+    assert!(cards.contains("src/new.rs"), "{cards}");
     assert!(cards.contains("new_a_marker"), "{cards}");
-    assert!(
-        !cards.contains("src/new.rs"),
-        "one-sided files are not cards: {cards}"
-    );
+    assert!(cards.contains("added_new_marker_00"), "{cards}");
     assert!(
         !cards.contains("z-readme.rs"),
         "files outside the directory are omitted: {cards}"
@@ -465,4 +476,199 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
 
     // The second card pushed the end line out of view, so nothing else is read.
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs", "dir/1.rs"]);
+}
+
+#[test]
+fn directory_cards_render_added_deleted_untracked_empty_and_modified_files_and_scroll_horizontally()
+{
+    let revs = Revs::worktree_against(Oid::new("base"));
+    let long_added_line = format!(
+        "pub const ADDED_LONG: &str = \"{}TAIL_MARKER\";",
+        "abcd_".repeat(16)
+    );
+    let added = File::added(
+        RepoPath::new("src/added.rs", Path::new("/repo")),
+        revs.clone(),
+    )
+    .set_stats(Stats::new(2, 0));
+    let empty_added = File::added(
+        RepoPath::new("src/empty.rs", Path::new("/repo")),
+        revs.clone(),
+    );
+    let deleted = File::deleted(
+        RepoPath::new("src/deleted.rs", Path::new("/repo")),
+        revs.clone(),
+    )
+    .set_stats(Stats::new(0, 2));
+    let untracked = File::added(
+        RepoPath::new("src/untracked.rs", Path::new("/repo")),
+        revs.clone(),
+    )
+    .set_change_type(ChangeType::Untracked);
+    let modified = file("src/modified.rs");
+
+    let files = vec![
+        added.clone(),
+        empty_added.clone(),
+        deleted.clone(),
+        untracked.clone(),
+        modified.clone(),
+    ];
+    let (pipeline, redraws) = fake_pipeline(
+        vec![files.clone()],
+        vec![
+            single_file(
+                added,
+                &[long_added_line.as_str(), "fn added_second_line() {}"],
+            ),
+            single_file(empty_added, &[]),
+            single_file(
+                deleted,
+                &["fn deleted_first_line() {}", "fn deleted_second_line() {}"],
+            ),
+            single_file(untracked, &["fn untracked_full_line() {}"]),
+            diff(modified, "fn old_mod() {}", "fn new_mod() {}"),
+        ],
+    );
+    let mut config = config::Config::default();
+    config.ui.wrap = false;
+    let context = Context {
+        config: Rc::new(config),
+        theme: Rc::new(Theme::DARK),
+        directory: Some(Rc::new(DirectorySelection {
+            path: RepoPath::new("src", Path::new("/repo")),
+            revs,
+            files: Rc::new(files),
+        })),
+        diff_service: Some(Rc::clone(&pipeline)),
+        ..Context::default()
+    };
+    let mut harness = Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 72, 32);
+    wait(&pipeline, &redraws, &mut harness);
+
+    let screen = harness.screen().join("\n");
+    assert!(
+        screen.contains(" A src/added.rs") && screen.contains("+2 "),
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("-0"),
+        "added card should not show -0: {screen}"
+    );
+    assert!(screen.contains("fn added_second_line() {}"), "{screen}");
+    assert!(screen.contains(" A src/empty.rs"), "{screen}");
+    assert!(
+        screen.contains(" D src/deleted.rs") && screen.contains("-2 "),
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("+0"),
+        "deleted card should not show +0: {screen}"
+    );
+    assert!(screen.contains("fn deleted_first_line() {}"), "{screen}");
+    assert!(screen.contains("fn deleted_second_line() {}"), "{screen}");
+    assert!(screen.contains(" A src/untracked.rs"), "{screen}");
+    assert!(screen.contains("fn untracked_full_line() {}"), "{screen}");
+    assert!(screen.contains(" M src/modified.rs"), "{screen}");
+    assert!(screen.contains("fn new_mod() {}"), "{screen}");
+
+    // Empty file card renders cleanly as a 3-row box (top border, header, bottom border).
+    let lines = harness.screen();
+    let empty_header = lines
+        .iter()
+        .position(|line| line.contains("src/empty.rs"))
+        .expect("empty card header");
+    assert!(lines[empty_header - 1].contains('╭'), "{screen}");
+    assert!(lines[empty_header + 1].contains('╰'), "{screen}");
+
+    // Horizontal scrolling (`l` / `h`) works inside the focused SingleFile card when `wrap = false`.
+    assert!(!screen.contains("TAIL_MARKER"), "{screen}");
+    for _ in 0..60 {
+        harness.press(loom::crokey::key!(l));
+    }
+    harness.force_draw();
+    let scrolled_right = harness.screen().join("\n");
+    assert!(
+        scrolled_right.contains("TAIL_MARKER"),
+        "SingleFile card did not scroll right: {scrolled_right}"
+    );
+    // Gutter line number stays pinned while code scrolls horizontally.
+    let code_row = harness
+        .screen()
+        .into_iter()
+        .find(|line| line.contains("TAIL_MARKER"))
+        .expect("scrolled code row");
+    assert!(
+        code_row.contains("  1 "),
+        "gutter scrolled away: {code_row}"
+    );
+
+    for _ in 0..60 {
+        harness.press(loom::crokey::key!(h));
+    }
+    harness.force_draw();
+    let scrolled_left = harness.screen().join("\n");
+    assert!(
+        scrolled_left.contains("pub const ADDED_LONG"),
+        "SingleFile card did not scroll back left: {scrolled_left}"
+    );
+
+    // Toggling layout (`t`) switches two-sided cards to Inline while keeping SingleFile cards intact.
+    harness.press(loom::crokey::key!(t)).force_draw();
+    let inline_screen = harness.screen().join("\n");
+    assert!(
+        inline_screen.contains("fn untracked_full_line() {}"),
+        "{inline_screen}"
+    );
+    assert!(
+        inline_screen.contains("fn deleted_first_line() {}"),
+        "{inline_screen}"
+    );
+    assert!(inline_screen.contains("fn new_mod() {}"), "{inline_screen}");
+}
+
+#[test]
+fn directory_with_only_added_and_untracked_files_renders_their_cards() {
+    let revs = Revs::worktree_against(Oid::new("base"));
+    let added = File::added(
+        RepoPath::new("new_dir/first.rs", Path::new("/repo")),
+        revs.clone(),
+    )
+    .set_stats(Stats::new(2, 0));
+    let untracked = File::added(
+        RepoPath::new("new_dir/second.rs", Path::new("/repo")),
+        revs.clone(),
+    )
+    .set_change_type(ChangeType::Untracked);
+    let files = vec![added.clone(), untracked.clone()];
+    let (pipeline, redraws) = fake_pipeline(
+        vec![files],
+        vec![
+            single_file(added, &["pub fn first_added() -> usize {", "    1", "}"]),
+            single_file(untracked, &["pub fn second_untracked() {}"]),
+        ],
+    );
+    let mut harness = Harness::new::<ExplorerDiffHost>(
+        ExplorerDiffHostProps {
+            pipeline: Rc::clone(&pipeline),
+        },
+        100,
+        20,
+    );
+    wait(&pipeline, &redraws, &mut harness);
+
+    // Select `new_dir` in Explorer.
+    harness.press(loom::crokey::key!(j)).force_draw();
+    wait(&pipeline, &redraws, &mut harness);
+
+    let pane = harness
+        .screen()
+        .iter()
+        .map(|line| line.chars().skip(35).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(pane.contains("new_dir/first.rs"), "{pane}");
+    assert!(pane.contains("pub fn first_added() -> usize {"), "{pane}");
+    assert!(pane.contains("new_dir/second.rs"), "{pane}");
+    assert!(pane.contains("pub fn second_untracked() {}"), "{pane}");
 }

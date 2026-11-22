@@ -93,11 +93,11 @@ fn open_keybinding_expands_a_directory() {
     assert_success(&collapsed);
     assert_success(&reopened);
     assert!(
-        !screen(&collapsed).contains("inside.txt"),
+        !screen(&collapsed).contains_in_columns(36, "inside.txt"),
         "directory did not collapse"
     );
     assert!(
-        screen(&reopened).contains("inside.txt"),
+        screen(&reopened).contains_in_columns(36, "inside.txt"),
         "directory did not reopen"
     );
 }
