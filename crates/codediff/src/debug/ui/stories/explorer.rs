@@ -1,13 +1,14 @@
 use anyhow::Result;
 use loom::crokey::{KeyCombination, key};
 
-use super::super::definition::{StoryComponent, StoryDefinition, StoryFixture};
+use super::super::definition::{LiveRepo, StoryComponent, StoryDefinition, StoryFixture};
 use super::super::fixtures::explorer::ExplorerFixture;
 
 const LIST_INITIAL_KEYS: &[KeyCombination] = &[key!(i)];
 const FOLDED_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(enter)];
 const SELECTED_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(j), key!(j)];
 const DIRECTORY_INITIAL_KEYS: &[KeyCombination] = &[key!(j)];
+const COMMIT_RANGE_INITIAL_KEYS: &[KeyCombination] = &[key!(j), key!(j), key!(j)];
 
 pub const STORIES: &[StoryDefinition] = &[
     story("explorer/empty", "No changed files", &[], empty),
@@ -62,6 +63,15 @@ pub const STORIES: &[StoryDefinition] = &[
         &[],
         awkward_paths,
     ),
+    StoryDefinition {
+        id: "explorer/commit-range",
+        description: "Commit-to-commit review across a real Git repository",
+        component: StoryComponent::ExplorerCards,
+        compact: false,
+        snapshot_size: (120, 28),
+        initial_keys: COMMIT_RANGE_INITIAL_KEYS,
+        make_fixture: commit_range,
+    },
 ];
 
 const fn story(
@@ -193,6 +203,148 @@ fn awkward_paths() -> Result<StoryFixture> {
         })
         .build();
     Ok(StoryFixture::Explorer(files))
+}
+
+fn commit_range() -> Result<StoryFixture> {
+    use std::process::Command;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use anyhow::Context;
+    use vcs::DiffType;
+
+    static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "codediff-story-commit-range-{}-{id}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).context("creating commit-range story directory")?;
+    let repo = LiveRepo::new(dir);
+
+    let git = |args: &[&str], date: &str| -> Result<String> {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .env("GIT_AUTHOR_NAME", "codediff fixtures")
+            .env("GIT_AUTHOR_EMAIL", "fixture@codediff.test")
+            .env("GIT_AUTHOR_DATE", date)
+            .env("GIT_COMMITTER_NAME", "codediff fixtures")
+            .env("GIT_COMMITTER_EMAIL", "fixture@codediff.test")
+            .env("GIT_COMMITTER_DATE", date)
+            .output()
+            .with_context(|| format!("running git {}", args.join(" ")))?;
+        if !out.status.success() {
+            anyhow::bail!(
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    };
+
+    let write = |rel: &str, body: &str| -> Result<()> {
+        let path = repo.path().join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, body)?;
+        Ok(())
+    };
+
+    git(&["init", "-q", "-b", "main"], "2026-01-01T00:00:00Z")?;
+    git(
+        &["config", "core.autocrlf", "false"],
+        "2026-01-01T00:00:00Z",
+    )?;
+    git(&["config", "diff.renames", "true"], "2026-01-01T00:00:00Z")?;
+
+    let rename_before = r#"pub fn format_range(first: &str, second: &str) -> String {
+    // Shared lines so Git scores this move above the rename threshold.
+    let label = format!("{first}..{second}");
+    let separator = "..";
+    let has_separator = label.contains(separator);
+    debug_assert!(has_separator);
+    let count = label.len();
+    format!("{label} ({count})")
+}
+"#;
+    let rename_after = r#"pub fn format_range(first: &str, second: &str) -> String {
+    // Shared lines so Git scores this move above the rename threshold.
+    let label = format!("{first}..{second}");
+    let separator = "..";
+    let has_separator = label.contains(separator);
+    debug_assert!(has_separator);
+    let count = label.chars().count();
+    format!("{label} ({count})")
+}
+"#;
+
+    write(
+        "src/engine.rs",
+        r#"pub fn review_commits(limit: usize) -> usize {
+    let before_count = 1;
+    let window = limit + before_count;
+    window
+}
+"#,
+    )?;
+    write("src/legacy.rs", rename_before)?;
+    write(
+        "README.md",
+        "# Commit Review
+
+Initial notes.
+",
+    )?;
+    git(&["add", "-A"], "2026-01-01T00:00:00Z")?;
+    git(
+        &["commit", "-qm", "initial revision"],
+        "2026-01-01T00:00:00Z",
+    )?;
+    let first = git(&["rev-parse", "HEAD"], "2026-01-01T00:00:00Z")?;
+
+    write(
+        "src/engine.rs",
+        r#"pub fn review_commits(limit: usize) -> usize {
+    let after_count = 2;
+    let window = limit.saturating_add(after_count);
+    window
+}
+"#,
+    )?;
+    write(
+        "src/added.rs",
+        r#"pub fn summarize_range(files: usize) -> String {
+    format!("{files} changed files")
+}
+"#,
+    )?;
+    git(
+        &["mv", "src/legacy.rs", "src/range.rs"],
+        "2026-01-02T00:00:00Z",
+    )?;
+    write("src/range.rs", rename_after)?;
+    git(&["rm", "-q", "README.md"], "2026-01-02T00:00:00Z")?;
+    git(&["add", "-A"], "2026-01-02T00:00:00Z")?;
+    git(
+        &["commit", "-qm", "second revision"],
+        "2026-01-02T00:00:00Z",
+    )?;
+    let second = git(&["rev-parse", "HEAD"], "2026-01-02T00:00:00Z")?;
+
+    // Uncommitted working-tree edits stay absent from the commit-to-commit view.
+    write(
+        "dirty.rs",
+        "pub fn uncommitted() {}
+",
+    )?;
+
+    Ok(StoryFixture::Repository {
+        repo,
+        diff_type: DiffType::Between(first, second),
+    })
 }
 
 #[cfg(test)]

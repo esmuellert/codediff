@@ -42,6 +42,18 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &["中文.rs", "with spaces.rs", "same-name.rs"],
         &[],
     ),
+    (
+        "explorer/commit-range",
+        &[
+            "engine.rs",
+            "added.rs",
+            "range.rs",
+            "legacy.rs",
+            "before_count",
+            "after_count",
+        ],
+        &["dirty.rs", "Staged Changes"],
+    ),
     ("side-by-side/unchanged", &["same on both sides", "│"], &[]),
     ("side-by-side/replacement", &["blue", "green", "│"], &[]),
     (
@@ -198,7 +210,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  36"));
+    assert_eq!(lines.next(), Some(" STORIES  37"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");
