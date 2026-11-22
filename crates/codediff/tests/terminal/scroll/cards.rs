@@ -179,7 +179,7 @@ impl Terminal {
     }
 
     fn pane(&self, rows: u16) -> Vec<Row> {
-        (1..rows - 1)
+        (2..rows - 1)
             .map(|row| {
                 (PANE_LEFT..COLS - 1)
                     .map(|col| self.parser.screen().cell(row, col).unwrap().clone())
@@ -266,13 +266,13 @@ fn real_directory_cards_keep_every_row_when_scrolled_down_and_back_up() {
         )
         .unwrap();
         terminal.resize(ROWS);
-        let viewport_height = usize::from(ROWS - 2);
+        let viewport_height = usize::from(ROWS - 3);
         let max_top = content_height - viewport_height;
         let mut top = 0;
         for direction in [1, -1] {
             loop {
                 if top == 15 {
-                    let expected: Vec<_> = reference[top..top + 22].iter().map(row_text).collect();
+                    let expected: Vec<_> = reference[top..top + 21].iter().map(row_text).collect();
                     terminal.resize(24);
                     terminal.wait_for_pane(24, &expected);
                     let resized: Vec<_> = terminal.pane(24).iter().map(row_text).collect();

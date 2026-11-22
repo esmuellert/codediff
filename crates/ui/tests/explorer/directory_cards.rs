@@ -346,7 +346,7 @@ fn directory_viewer(
 
 #[test]
 fn a_file_is_read_only_when_the_end_of_the_cards_comes_into_view() {
-    let (mut harness, pipeline, redraws, reads) = directory_viewer(3, 20, 10);
+    let (mut harness, pipeline, redraws, reads) = directory_viewer(3, 20, 11);
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs"]);
 
     // Scroll near the end of the first card; the end line is still below.
@@ -451,7 +451,7 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
         diff_service: Some(Rc::clone(&pipeline)),
         ..Context::default()
     };
-    let mut harness = Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 80, 10);
+    let mut harness = Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 80, 11);
     wait(&pipeline, &redraws, &mut harness);
     for _ in 0..5 {
         harness.wheel(40, 5, 1).force_draw();
