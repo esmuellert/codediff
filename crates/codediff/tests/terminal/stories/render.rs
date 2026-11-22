@@ -153,6 +153,47 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &["alpha.rs", "beta.rs", "MODIFIED_PAYLOAD_START"],
         &[],
     ),
+    (
+        "commit-graph/branches",
+        &[
+            "HEAD -> main",
+            "origin/main",
+            "tag: v0.29.0",
+            "fb0d76c",
+            "\u{f604}\u{f5d0}\u{f5d7}",
+        ],
+        &["No commits", "◎─╮"],
+    ),
+    (
+        "commit-graph/box-fallback",
+        &[
+            "HEAD -> main",
+            "origin/main",
+            "tag: v0.29.0",
+            "fb0d76c",
+            "◎─╮",
+        ],
+        &["No commits", "\u{f604}"],
+    ),
+    (
+        "commit-graph/selected",
+        &[
+            "d9b9808",
+            "map u to undo result edits (#555)",
+            "\u{f604}\u{f5d0}\u{f5df}",
+        ],
+        &["No commits"],
+    ),
+    (
+        "commit-graph/long-list",
+        &["fb0d76c", "HEAD -> main"],
+        &["No commits"],
+    ),
+    (
+        "commit-graph/empty",
+        &["No commits"],
+        &["○", "◎", "\u{f5f6}"],
+    ),
 ];
 
 fn snapshot(story: &str) -> String {
@@ -210,7 +251,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  37"));
+    assert_eq!(lines.next(), Some(" STORIES  42"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");

@@ -352,7 +352,7 @@ mod tests {
             harness
                 .screen()
                 .iter()
-                .any(|line| line.contains("single-file/long-syntax-file"))
+                .any(|line| line.contains("commit-graph/empty"))
         );
     }
 }

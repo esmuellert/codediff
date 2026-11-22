@@ -2,6 +2,7 @@
 
 pub mod card;
 pub mod cards;
+pub mod commit_graph;
 pub mod explorer;
 pub mod inline;
 pub mod side_by_side;

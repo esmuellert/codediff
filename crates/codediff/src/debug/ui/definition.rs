@@ -7,13 +7,14 @@ use anyhow::{Result, bail};
 use diff_service::diff::DiffContent;
 use file_types::File;
 use loom::crokey::KeyCombination;
-use vcs::DiffType;
+use vcs::{Commit, DiffType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StoryComponent {
     Welcome,
     Explorer,
     ExplorerCards,
+    CommitGraph,
     SideBySide,
     Inline,
     SingleFile,
@@ -73,6 +74,10 @@ pub enum StoryFixture {
         repo: LiveRepo,
         diff_type: DiffType,
     },
+    CommitGraph {
+        commits: Vec<Commit>,
+        branch_drawing: bool,
+    },
     SideBySide(Rc<DiffContent>),
     Inline(Rc<DiffContent>),
     SingleFile(Rc<DiffContent>),
@@ -86,6 +91,7 @@ impl StoryFixture {
             Self::Welcome => StoryComponent::Welcome,
             Self::Explorer(_) => StoryComponent::Explorer,
             Self::ExplorerCards { .. } | Self::Repository { .. } => StoryComponent::ExplorerCards,
+            Self::CommitGraph { .. } => StoryComponent::CommitGraph,
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,

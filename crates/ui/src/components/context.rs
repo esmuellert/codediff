@@ -11,7 +11,7 @@ use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
 use crate::keybindings::KeyMap;
 use crate::services::version_control::VersionControlService;
 use crate::services::watcher::WatcherService;
-use crate::theme::Theme;
+use crate::theme::{Theme, cached_branch_drawing};
 
 /// A selected directory and the changed files beneath it.
 #[derive(Clone)]
@@ -39,6 +39,7 @@ pub struct Context {
     pub config: Rc<config::Config>,
     pub keybindings: Rc<KeyMap>,
     pub theme: Rc<Theme>,
+    pub branch_drawing: bool,
     pub repo: Rc<Path>,
     pub diff_type: DiffType,
     pub set_diff_type: Option<SetState<DiffType>>,
@@ -58,6 +59,7 @@ impl Default for Context {
             config: Rc::new(config::Config::default()),
             keybindings: Rc::new(KeyMap::default()),
             theme: Rc::new(Theme::DARK),
+            branch_drawing: false,
             repo: Rc::from(Path::new("")),
             diff_type: DiffType::Worktree,
             set_diff_type: None,
@@ -78,6 +80,7 @@ impl Context {
         Rc::ptr_eq(&self.config, &other.config)
             && Rc::ptr_eq(&self.keybindings, &other.keybindings)
             && Rc::ptr_eq(&self.theme, &other.theme)
+            && self.branch_drawing == other.branch_drawing
             && Rc::ptr_eq(&self.repo, &other.repo)
             && self.diff_type == other.diff_type
             && self.set_diff_type == other.set_diff_type
@@ -130,6 +133,7 @@ pub fn UiProvider(
     let theme = use_memo(scope, theme_name.clone(), move || {
         configured_theme(&theme_name)
     });
+    let branch_drawing = *use_memo(scope, (), cached_branch_drawing);
 
     rsx! {
         Ui {
@@ -137,6 +141,7 @@ pub fn UiProvider(
                 config: Rc::clone(config),
                 keybindings: Rc::clone(keybindings),
                 theme,
+                branch_drawing,
                 repo,
                 diff_type,
                 set_diff_type: Some(set_diff_type),

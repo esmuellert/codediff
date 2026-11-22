@@ -3,6 +3,7 @@
 mod app;
 pub mod border;
 pub mod code_text;
+pub mod commit_graph;
 mod context;
 pub mod diff_card;
 pub mod diff_cards;
@@ -21,6 +22,7 @@ mod welcome;
 pub use crate::view::terminal_lines::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
+pub use commit_graph::{CommitGraph, CommitGraphProps};
 pub use context::{Context, DirectorySelection, Ui, UiProps, UiProvider, UiProviderProps};
 pub use diff_card::{DiffCard, DiffCardProps};
 pub use diff_cards::{DiffCards, DiffCardsProps};
