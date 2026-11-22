@@ -143,7 +143,7 @@ fn a_file_that_cannot_be_read_says_why() {
     wait(&pipeline, &redraws, &mut harness);
 
     assert!(
-        harness.screen_line(0).contains("cannot read selected.rs"),
+        harness.screen_line(1).contains("cannot read selected.rs"),
         "{:?}",
         harness.screen()
     );
@@ -295,7 +295,7 @@ fn w_toggles_wrapping_for_the_active_diff() {
 fn t_does_not_change_a_single_file() {
     let file = file("untracked.rs");
     let mut harness = with_response(file.clone(), make_single(file));
-    harness.click(20, 0).force_draw();
+    harness.click(20, 1).force_draw();
     let before = harness.screen();
 
     assert_eq!(harness.focused_name(), Some("SingleFile"));
@@ -325,9 +325,9 @@ fn a_diff_view_state_survives_a_layout_switch() {
 
     harness.press(crokey::key!(t)).force_draw();
     assert!(
-        !harness.screen_line(0).contains("line 01"),
+        !harness.screen_line(1).contains("line 01"),
         "layout switch reset the terminal position: {:?}",
-        harness.screen_line(0)
+        harness.screen_line(1)
     );
     assert!(!harness.screen().iter().any(|line| line.contains('│')));
 
@@ -345,7 +345,7 @@ fn the_first_screen_view_line_is_preserved_without_an_offset() {
         file.clone(),
         make_diff_with_lines(file, &original, &modified),
         60,
-        2,
+        3,
     );
 
     harness
@@ -354,11 +354,11 @@ fn the_first_screen_view_line_is_preserved_without_an_offset() {
         .press(crokey::key!(j))
         .force_draw();
     let side_by_side = harness.screen();
-    assert!(side_by_side[0].contains("old 03"), "got {side_by_side:?}");
+    assert!(side_by_side[1].contains("old 03"), "got {side_by_side:?}");
 
     harness.press(crokey::key!(t)).force_draw();
 
-    assert!(harness.screen_line(0).contains("old 03"));
+    assert!(harness.screen_line(1).contains("old 03"));
     assert!(!harness.screen().iter().any(|line| line.contains('│')));
 }
 
@@ -394,7 +394,7 @@ fn a_diff_view_state_survives_switching_files() {
     for _ in 0..3 {
         harness.press(crokey::key!(j)).force_draw();
     }
-    assert!(harness.screen_line(0).contains("first 04"));
+    assert!(harness.screen_line(1).contains("first 04"));
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(second),
@@ -404,7 +404,7 @@ fn a_diff_view_state_survives_switching_files() {
     harness.force_draw();
     wait(&pipeline, &redraws, &mut harness);
     harness.force_draw().force_draw();
-    assert!(harness.screen_line(0).contains("second 01"));
+    assert!(harness.screen_line(1).contains("second 01"));
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(file("first.rs")),
@@ -414,7 +414,7 @@ fn a_diff_view_state_survives_switching_files() {
     harness.force_draw();
     wait(&pipeline, &redraws, &mut harness);
     harness.force_draw().force_draw();
-    assert!(harness.screen_line(0).contains("first 04"));
+    assert!(harness.screen_line(1).contains("first 04"));
 }
 
 #[test]

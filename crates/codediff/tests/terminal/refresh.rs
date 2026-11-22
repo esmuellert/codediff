@@ -132,7 +132,8 @@ impl Codediff {
         wait_until("src/a.rs to open", || {
             let screen = self.screen();
             screen.contains("a CHANGED 1")
-                && !screen.contains("src/a.rs")
+                && !screen.contains("M src/a.rs")
+                && !screen.contains("src/b.rs")
                 && !screen.contains("Loading file")
         });
     }
@@ -231,7 +232,7 @@ fn a_change_that_leaves_the_text_the_same_keeps_the_directory_cards_in_place() {
         codediff
             .screen()
             .lines()
-            .nth(1)
+            .nth(2)
             .is_some_and(|line| line.contains(" 14 a line 14 "))
     });
     let screen_before = codediff.screen();

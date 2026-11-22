@@ -11,13 +11,14 @@ use std::sync::{Arc, Mutex};
 use diff_service::diff::DiffContent;
 use file_types::{DiffType, DiffVersion, File, Rev};
 use loom::{
-    Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, Text, TextProps,
-    component, rsx, use_context, use_effect, use_memo, use_ref, use_state,
+    Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, Stack, StackProps,
+    Text, TextProps, component, rsx, use_context, use_effect, use_memo, use_ref, use_state,
 };
 use syntax::Span;
 
 use super::context::{Context, Ui, directory_key};
 use super::diff_cards::{DiffCards, DiffCardsProps};
+use super::diff_header::{DiffHeader, DiffHeaderProps, DiffViewMenu, DiffViewMenuProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
 use crate::view::terminal_lines::TerminalLine;
@@ -184,12 +185,17 @@ fn sync_active_view_state(
 fn layout_listener(
     scope: &mut Scope,
     is_diff: bool,
+    menu_open: bool,
+    set_menu_open: SetState<bool>,
     set_view_layout: SetState<DiffType>,
     set_wrap: SetState<bool>,
 ) -> Listeners {
     let keybindings = use_context::<Ui>(scope).keybindings;
     Listeners::new().on_key(move |key| {
-        if is_diff && keybindings.matches(Action::ToggleLayout, key) {
+        if menu_open && key == loom::crokey::key!(esc) {
+            set_menu_open.set(false);
+            Bubble::Stop
+        } else if is_diff && keybindings.matches(Action::ToggleLayout, key) {
             set_view_layout(&|view_layout| view_layout.other());
             Bubble::Stop
         } else if keybindings.matches(Action::ToggleWrap, key) {
@@ -224,6 +230,11 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         config::ViewLayout::Inline => DiffType::Inline,
     });
     let (wrap, set_wrap) = use_state(scope, || ctx.config.ui.wrap);
+    let (menu_open, set_menu_open) = use_state(scope, || false);
+    let has_selection = ctx.directory.is_some() || ctx.file.is_some();
+    if !has_selection && menu_open {
+        set_menu_open.set(false);
+    }
     let view_states = use_ref(scope, ViewStateHistory::default);
     let active_view_state = use_ref(scope, ViewState::default);
     let active_file_key = use_ref(scope, || None::<String>);
@@ -234,9 +245,22 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         content.as_deref(),
     );
 
-    let is_diff =
-        ctx.directory.is_some() || matches!(content.as_deref(), Some(DiffContent::Diff(_)));
-    let toggle = layout_listener(scope, is_diff, set_view_layout, set_wrap);
+    let is_error = matches!(diff, Some(Some(Err(_))));
+    let is_diff = ctx.directory.is_some()
+        || (!is_error
+            && ctx
+                .file
+                .as_deref()
+                .is_some_and(|file| file.is_one_sided().is_none()));
+    let menu_visible = has_selection && menu_open;
+    let toggle = layout_listener(
+        scope,
+        is_diff,
+        menu_visible,
+        set_menu_open,
+        set_view_layout,
+        set_wrap,
+    );
 
     let theme = *ctx.theme;
     let message = |text: String| {
@@ -297,12 +321,37 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         }
     };
 
+    let menu = if menu_visible {
+        rsx! {
+            DiffViewMenu {
+                is_diff,
+                view_layout,
+                set_view_layout,
+                wrap,
+                set_wrap,
+                set_menu_open,
+            }
+        }
+    } else {
+        Node::Empty
+    };
+
     rsx! {
-        Column {
+        Stack {
             listeners: toggle,
             layout: Layout { grow: 1, ..Default::default() },
             ..,
-            { view }
+            Column {
+                key: 0u32,
+                layout: Layout { grow: 1, ..Default::default() },
+                ..,
+                DiffHeader {
+                    menu_open: menu_visible,
+                    set_menu_open,
+                }
+                { view }
+            }
+            { menu }
         }
     }
 }
