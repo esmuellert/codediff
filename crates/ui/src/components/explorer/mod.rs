@@ -6,7 +6,8 @@ mod entry;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use file_types::{File, RepoPath, Revs};
+use diff_service::files::DiffType;
+use file_types::{File, RepoPath, Rev, Revs};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, Scroll, ScrollOffset,
     ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_exit, use_measure,
@@ -29,26 +30,35 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let set_directory = ctx.set_directory;
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let repo = Rc::clone(&ctx.repo);
+    let diff_type = ctx.diff_type.clone();
     let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
     let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
     // A change on disk lists the files again; the previous list is dropped.
     let (refreshes, set_refreshes) = use_state(scope, || 0u32);
-    use_effect(scope, Rc::clone(&repo), move || {
-        let Some(watcher_service) = watcher_service else {
-            return;
-        };
-        watcher_service
-            .changes()
-            .subscribe(move |refresh: watcher::Refresh| {
-                if !refresh.is_empty() {
-                    set_refreshes.update(|refreshes| *refreshes += 1);
-                }
-            });
-    });
+    let diff_type_for_watcher = diff_type.clone();
+    use_effect(
+        scope,
+        (Rc::clone(&repo), diff_type_for_watcher.clone()),
+        move || {
+            let Some(watcher_service) = watcher_service else {
+                return;
+            };
+            watcher_service
+                .changes()
+                .subscribe(move |refresh: watcher::Refresh| {
+                    if refresh_affects_listing(refresh, &diff_type_for_watcher) {
+                        set_refreshes.update(|refreshes| *refreshes += 1);
+                    }
+                });
+        },
+    );
     let repo_to_list = Rc::clone(&repo);
-    let listing = use_memo(scope, (Rc::clone(&repo), refreshes), move || {
-        pipeline.map(|pipeline| pipeline.list_files(&repo_to_list))
-    });
+    let diff_type_to_list = diff_type.clone();
+    let listing = use_memo(
+        scope,
+        (Rc::clone(&repo), diff_type.clone(), refreshes),
+        move || pipeline.map(|pipeline| pipeline.list_files(&repo_to_list, diff_type_to_list)),
+    );
     let (listed, list_error) = match listing
         .as_ref()
         .as_ref()
@@ -61,7 +71,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         },
         None => (false, None),
     };
-    use_effect(scope, (repo, refreshes, listed), move || {
+    use_effect(scope, (repo, diff_type, refreshes, listed), move || {
         let Some(Some(Ok(listed))) = listing
             .as_ref()
             .as_ref()
@@ -260,18 +270,26 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
     }
 }
 
+fn refresh_affects_listing(refresh: watcher::Refresh, diff_type: &DiffType) -> bool {
+    match diff_type {
+        DiffType::Worktree => !refresh.is_empty(),
+        DiffType::Against(_) => refresh.worktree || refresh.head || refresh.refs,
+        DiffType::Staged(_) => refresh.index || refresh.head || refresh.refs,
+        DiffType::Between(_, _) | DiffType::MergeBase(_, _) => refresh.head || refresh.refs,
+    }
+}
+
 fn toggle_stage(node: &Node, version_control_service: Option<&VersionControlService>) {
     let Some(version_control_service) = version_control_service else {
         return;
     };
-    match node {
-        Node::Heading { .. } => {}
-        Node::Directory { path, revs, .. } => {
-            version_control_service.toggle_stage(path, revs);
-        }
-        Node::File { file, .. } => {
-            version_control_service.toggle_stage(file.path(), &file.revs());
-        }
+    let (path, revs) = match node {
+        Node::Heading { .. } => return,
+        Node::Directory { path, revs, .. } => (path, revs.clone()),
+        Node::File { file, .. } => (file.path(), file.revs()),
+    };
+    if matches!(revs.after, Rev::Index | Rev::Worktree) {
+        version_control_service.toggle_stage(path, &revs);
     }
 }
 

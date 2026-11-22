@@ -17,7 +17,7 @@ use ui::components::Context as UiContext;
 
 #[cfg(test)]
 use super::catalog;
-use super::definition::{StoryDefinition, StoryFixture};
+use super::definition::{LiveRepo, StoryDefinition, StoryFixture};
 use super::preview::{PreviewAction, StoryPreview, StoryPreviewProps};
 
 enum StoryEvent {
@@ -34,11 +34,32 @@ pub(super) fn story_props(
     fixture: StoryFixture,
     redraw: impl Fn() + Send + Sync + 'static,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
-) -> (Rc<DiffService>, StoryPreviewProps) {
+) -> (Rc<DiffService>, StoryPreviewProps, Option<LiveRepo>) {
+    if let StoryFixture::Repository { repo, diff_type } = fixture {
+        let pipeline = Rc::new(DiffService::start(
+            redraw,
+            diff_service::diff::Settings::default(),
+        ));
+        let props = StoryPreviewProps {
+            definition,
+            base_context: UiContext {
+                theme: Rc::new(Theme::DARK),
+                repo: Rc::from(repo.path()),
+                diff_type,
+                diff_service: Some(Rc::clone(&pipeline)),
+                ..UiContext::default()
+            },
+            files: Rc::new(Vec::new()),
+            navigate,
+        };
+        return (pipeline, props, Some(repo));
+    }
+
     let (listed, contents, open) = match fixture {
         StoryFixture::Welcome => (None, Vec::new(), false),
         StoryFixture::Explorer(files) => (Some(files), Vec::new(), false),
         StoryFixture::ExplorerCards { files, diffs } => (Some(files), diffs, false),
+        StoryFixture::Repository { .. } => unreachable!("handled above"),
         StoryFixture::SideBySide(content)
         | StoryFixture::Inline(content)
         | StoryFixture::SingleFile(content)
@@ -80,7 +101,7 @@ pub(super) fn story_props(
         files: Rc::new(files),
         navigate,
     };
-    (pipeline, props)
+    (pipeline, props, None)
 }
 
 struct StoryHost {
@@ -88,6 +109,7 @@ struct StoryHost {
     events_tx: Sender<StoryEvent>,
     events_rx: Receiver<StoryEvent>,
     pipeline: Rc<DiffService>,
+    _repo: Option<LiveRepo>,
 }
 
 impl StoryHost {
@@ -95,7 +117,7 @@ impl StoryHost {
         let fixture = definition.create_fixture()?;
         let (events_tx, events_rx) = mpsc::channel();
         let redraw = events_tx.clone();
-        let (pipeline, props) = story_props(
+        let (pipeline, props, repo) = story_props(
             definition,
             fixture,
             move || {
@@ -108,6 +130,7 @@ impl StoryHost {
             events_tx,
             events_rx,
             pipeline,
+            _repo: repo,
         };
         Ok((host, props))
     }

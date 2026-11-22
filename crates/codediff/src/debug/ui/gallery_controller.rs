@@ -10,7 +10,7 @@ use loom::{Flow, Tree, deliver_input};
 
 use super::catalog;
 use super::catalog_view::{CatalogRoot, CatalogRootProps};
-use super::definition::StoryDefinition;
+use super::definition::{LiveRepo, StoryDefinition};
 use super::preview::{PreviewAction, StoryPreview};
 use super::story_host::{settle_story_tree, story_props};
 
@@ -26,6 +26,7 @@ enum GalleryEvent {
 struct ActiveStory {
     definition: &'static StoryDefinition,
     pipeline: Rc<DiffService>,
+    _repo: Option<LiveRepo>,
     initial_keys_applied: bool,
 }
 
@@ -61,7 +62,7 @@ impl GalleryController {
         let fixture = definition.create_fixture()?;
         let redraw = self.events_tx.clone();
         let navigation_tx = self.events_tx.clone();
-        let (pipeline, props) = story_props(
+        let (pipeline, props, repo) = story_props(
             definition,
             fixture,
             move || {
@@ -77,6 +78,7 @@ impl GalleryController {
         self.active_story = Some(ActiveStory {
             definition,
             pipeline,
+            _repo: repo,
             initial_keys_applied: definition.initial_keys.is_empty(),
         });
         Ok(())

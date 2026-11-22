@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use file_types::File;
-use vcs::{DiffType, Repository};
+pub use vcs::DiffType;
+use vcs::Repository;
 
 /// One request for a set of files.
 #[derive(Clone)]

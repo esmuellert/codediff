@@ -1,11 +1,13 @@
 //! The contract between a story, its fixture, and either host.
 
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
 use diff_service::diff::DiffContent;
 use file_types::File;
 use loom::crokey::KeyCombination;
+use vcs::DiffType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StoryComponent {
@@ -39,12 +41,37 @@ impl StoryDefinition {
     }
 }
 
+/// A temporary Git repository removed when the story closes.
+pub struct LiveRepo {
+    dir: PathBuf,
+}
+
+impl LiveRepo {
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.dir
+    }
+}
+
+impl Drop for LiveRepo {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 pub enum StoryFixture {
     Welcome,
     Explorer(Vec<File>),
     ExplorerCards {
         files: Vec<File>,
         diffs: Vec<DiffContent>,
+    },
+    Repository {
+        repo: LiveRepo,
+        diff_type: DiffType,
     },
     SideBySide(Rc<DiffContent>),
     Inline(Rc<DiffContent>),
@@ -58,7 +85,7 @@ impl StoryFixture {
         match self {
             Self::Welcome => StoryComponent::Welcome,
             Self::Explorer(_) => StoryComponent::Explorer,
-            Self::ExplorerCards { .. } => StoryComponent::ExplorerCards,
+            Self::ExplorerCards { .. } | Self::Repository { .. } => StoryComponent::ExplorerCards,
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,

@@ -92,11 +92,15 @@ impl DiffService {
         }
     }
 
-    /// Starts listing the uncommitted changes under `repo`. The slot holds
-    /// `None` until they are listed.
-    pub fn list_files(&self, repo: &Path) -> Arc<Mutex<Option<Result<Vec<File>, String>>>> {
+    /// Starts listing the changed files for `diff_type` under `repo`. The slot
+    /// holds `None` until they are listed.
+    pub fn list_files(
+        &self,
+        repo: &Path,
+        diff_type: vcs::DiffType,
+    ) -> Arc<Mutex<Option<Result<Vec<File>, String>>>> {
         let files = Arc::new(Mutex::new(None));
-        let request = Request::worktree(repo);
+        let request = Request::new(repo, diff_type);
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.lists
             .send((request, Arc::downgrade(&files)))

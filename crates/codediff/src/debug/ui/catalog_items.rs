@@ -153,7 +153,7 @@ mod tests {
         assert!(matches!(
             filtered[1],
             CatalogItem::Story {
-                index: 17,
+                index: 18,
                 definition
             } if definition.id == "side-by-side/edge-matrix"
         ));
