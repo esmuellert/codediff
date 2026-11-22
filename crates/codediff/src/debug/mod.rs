@@ -7,6 +7,7 @@ mod diff;
 mod diff_file;
 mod line;
 mod list;
+mod log;
 mod parity;
 mod show;
 mod status;
@@ -43,6 +44,7 @@ pub fn run(command: Debug) -> Result<()> {
             pathspec,
         } => list::run(list::diff_type(&rev, staged), pathspec),
         Debug::Status { dir, verbose } => status::run(&dir, verbose),
+        Debug::Log { order, limit, dir } => log::run(&dir, order, limit),
         Debug::Ui {
             story,
             list,

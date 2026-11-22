@@ -26,7 +26,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.28.0"
+version = "0.29.0"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
@@ -119,6 +119,8 @@ crokey = { version = "1.5", default-features = false }
 # Only for suspending: raw mode disables the terminal's own Ctrl-Z handling, so
 # the signal has to be raised by hand. Safe API; no `unsafe` in our crates.
 signal-hook = { version = "0.4", features = ["iterator"] }
+# Safe termios and poll bindings for querying terminal capabilities on Unix.
+rustix = { version = "1", features = ["event", "stdio", "termios"] }
 # Filesystem watcher: detects worktree and .git changes so the explorer stays
 # current without polling. The debouncer collapses rapid events into one.
 notify = "=9.0.0-rc.8"

@@ -6,7 +6,6 @@
 mod attribution;
 mod dev;
 mod lint_arch;
-mod lint_size;
 mod oracle_output;
 #[cfg(test)]
 mod release_policy;
@@ -24,7 +23,6 @@ fn main() -> Result<()> {
     match task {
         Some("verify-oracle") => verify_oracle::run(),
         Some("verify-vscode") => verify_vscode::run(&args[1..]),
-        Some("lint-size") => lint_size::run(),
         Some("lint-arch") => lint_arch::run(),
         Some("dev") => dev::run(&args[1..]),
         Some("terminal-scroll") => terminal_scroll::run(&args[1..]),
@@ -55,7 +53,6 @@ C engine
                                        compare VS Code Web highlighting on Git history
 
 Architecture enforcement
-  lint-size                            fail if a file exceeds the line cap
   lint-arch                            fail on forbidden crate edges and unsafe policy
 
 Fixtures

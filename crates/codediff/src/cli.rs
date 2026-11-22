@@ -10,10 +10,6 @@ use clap::{Parser, Subcommand, ValueEnum};
     disable_help_subcommand = true
 )]
 pub struct Cli {
-    /// Narrow to one file.
-    #[arg(hide = true)]
-    pub path: Option<String>,
-
     /// Load user preferences from this file.
     #[arg(long, value_name = "PATH")]
     pub config: Option<std::path::PathBuf>,
@@ -44,6 +40,13 @@ pub enum Command {
 pub enum DiffLayout {
     SideBySide,
     Inline,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum LogOrder {
+    Topo,
+    Date,
+    Author,
 }
 
 #[derive(Subcommand)]
@@ -134,5 +137,18 @@ pub enum Debug {
         /// Also print the same entries as the reviewer sees them
         #[arg(short, long)]
         verbose: bool,
+    },
+
+    /// Print commit history
+    Log {
+        /// Commit walk order
+        #[arg(long, value_enum, default_value = "topo")]
+        order: LogOrder,
+        /// Maximum number of commits to list
+        #[arg(long, short = 'n', default_value_t = 20)]
+        limit: usize,
+        /// Repository path, defaulting to the current directory
+        #[arg(default_value = ".")]
+        dir: String,
     },
 }

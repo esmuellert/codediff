@@ -46,11 +46,7 @@ fn main() -> Result<ExitCode> {
                 eprintln!("codediff: {warning}");
             }
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            let code = ui::main(
-                &cwd,
-                cli.path.into_iter().collect(),
-                preferences.get().clone(),
-            )?;
+            let code = ui::main(&cwd, preferences.get().clone())?;
             Ok(ExitCode::from(code as u8))
         }
     }

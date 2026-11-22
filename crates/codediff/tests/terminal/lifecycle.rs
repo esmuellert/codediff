@@ -28,7 +28,7 @@ impl Drop for Fixture {
 #[test]
 fn quitting_gives_the_terminal_back() {
     let fixture = Fixture::new("quit");
-    let (output, ok) = on_a_terminal(&["untracked.txt"], Some(&fixture.dir), b"q");
+    let (output, ok) = on_a_terminal(&[], Some(&fixture.dir), b"q");
 
     assert!(ok, "codediff exited unsuccessfully:\n{output}");
     assert!(
@@ -68,7 +68,7 @@ fn a_panic_still_gives_the_terminal_back() {
 #[test]
 fn the_cursor_is_hidden_while_reviewing_and_shown_afterwards() {
     let fixture = Fixture::new("cursor");
-    let (output, ok) = on_a_terminal(&["untracked.txt"], Some(&fixture.dir), b"q");
+    let (output, ok) = on_a_terminal(&[], Some(&fixture.dir), b"q");
     assert!(ok);
     assert!(output.contains("\u{1b}[?25l"), "cursor never hidden");
     assert!(output.contains("\u{1b}[?25h"), "cursor never shown again");
@@ -90,7 +90,7 @@ fn a_signal_still_gives_the_terminal_back() {
     // Use a timeout so a broken handler cannot hang the test.
     for signal in [15, 1] {
         let fixture = Fixture::new(&format!("signal{signal}"));
-        let (output, status) = killed_by(&["modified.txt"], &fixture.dir, signal);
+        let (output, status) = killed_by(&[], &fixture.dir, signal);
 
         assert!(status.is_some(), "signal {signal} did not stop it");
         assert!(

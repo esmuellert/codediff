@@ -30,7 +30,7 @@ fn move_down_keybinding_opens_the_selected_file() {
     let run = run_app_steps(
         &fixture,
         json!({"keybindings": {"move_down": ["n"]}}),
-        Some("modified.txt"),
+        false,
         &steps(&[b"n\r", b"q"]),
     );
 
@@ -50,7 +50,7 @@ fn move_up_keybinding_scrolls_back_to_the_first_line() {
     let run = run_app_steps(
         &fixture,
         json!({"keybindings": {"move_up": ["p"]}}),
-        Some("modified.txt"),
+        true,
         &steps(&[&down, &up, b"q"]),
     );
 
@@ -62,7 +62,7 @@ fn move_up_keybinding_scrolls_back_to_the_first_line() {
 fn open_keybinding_expands_a_directory() {
     let fixture = Fixture::new("key-open");
     fixture.write("aaa/inside.txt", "inside directory\n");
-    let run = run_app_steps(
+    let collapsed = run_app_steps(
         &fixture,
         json!({
             "keybindings": {
@@ -70,14 +70,35 @@ fn open_keybinding_expands_a_directory() {
                 "open": ["o"]
             }
         }),
-        Some("aaa"),
-        &steps(&[b"no", b"q"]),
+        false,
+        &[(b"n", &[][..]), (b"o", &[]), (b"q", &[])],
+    );
+    let reopened = run_app_steps(
+        &fixture,
+        json!({
+            "keybindings": {
+                "move_down": ["n"],
+                "open": ["o"]
+            }
+        }),
+        false,
+        &[
+            (b"n", &[][..]),
+            (b"o", &[]),
+            (b"o", &["inside.txt"]),
+            (b"q", &[]),
+        ],
     );
 
-    assert_success(&run);
+    assert_success(&collapsed);
+    assert_success(&reopened);
     assert!(
-        screen(&run).contains("inside.txt"),
-        "directory did not open"
+        !screen(&collapsed).contains("inside.txt"),
+        "directory did not collapse"
+    );
+    assert!(
+        screen(&reopened).contains("inside.txt"),
+        "directory did not reopen"
     );
 }
 
@@ -93,10 +114,10 @@ fn toggle_layout_keybinding_switches_the_running_view() {
                 "focus_next": ["f"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"fv", b"q"]),
     );
-    let default = run_app_steps(&fixture, json!({}), Some("modified.txt"), &steps(&[b"q"]));
+    let default = run_app_steps(&fixture, json!({}), true, &steps(&[b"q"]));
 
     assert_success(&toggled);
     assert_success(&default);
@@ -119,10 +140,10 @@ fn toggle_wrap_keybinding_changes_the_running_view() {
                 "focus_next": ["f"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"fz", b"q"]),
     );
-    let default = run_app_steps(&fixture, json!({}), Some("modified.txt"), &steps(&[b"q"]));
+    let default = run_app_steps(&fixture, json!({}), true, &steps(&[b"q"]));
 
     assert_success(&toggled);
     assert_success(&default);
@@ -132,10 +153,11 @@ fn toggle_wrap_keybinding_changes_the_running_view() {
 #[test]
 fn toggle_explorer_mode_keybinding_switches_to_list_mode() {
     let fixture = Fixture::new("key-explorer-mode");
+    fixture.write("deep/only/one/chain/leaf.txt", "at the end of a chain\n");
     let run = run_app_steps(
         &fixture,
         json!({"keybindings": {"toggle_explorer_mode": ["m"]}}),
-        None,
+        false,
         &steps(&[b"m", b"q"]),
     );
 
@@ -156,7 +178,7 @@ fn stage_keybinding_stages_after_focus_previous() {
                 "focus_previous": ["u"]
             }
         }),
-        Some("modified.txt"),
+        true,
         // Staging shows once the watcher has listed the files again.
         &[(b"u", &[][..]), (b"s", &["Staged Changes"]), (b"q", &[])],
     );
@@ -182,7 +204,7 @@ fn focus_next_keybinding_returns_to_the_diff_view() {
                 "move_down": ["n"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"u", b"o", &down, b"q"]),
     );
 
@@ -207,7 +229,7 @@ fn horizontal_move_keybindings_change_the_scroll_position() {
                 "move_left": ["l"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"f", &right, b"q"]),
     );
     let restored = run_app_steps(
@@ -220,7 +242,7 @@ fn horizontal_move_keybindings_change_the_scroll_position() {
                 "move_left": ["l"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"f", &right, &left, b"q"]),
     );
 
@@ -245,7 +267,7 @@ fn horizontal_endpoint_keybindings_reach_start_and_end() {
                 "start": ["a"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"f", b"e", b"q"]),
     );
     let at_start = run_app_steps(
@@ -258,7 +280,7 @@ fn horizontal_endpoint_keybindings_reach_start_and_end() {
                 "start": ["a"]
             }
         }),
-        Some("modified.txt"),
+        true,
         &steps(&[b"f", b"e", b"a", b"q"]),
     );
 

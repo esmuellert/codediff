@@ -152,3 +152,20 @@ fn a_group_says_which_two_versions_it_compares() {
     assert!(out.contains("staged -> working tree"), "{out}");
     assert!(out.contains(" -> staged"), "{out}");
 }
+
+#[test]
+fn debug_log_prints_commits_and_supports_order_flag() {
+    let repo = built("debug-log");
+    for order in ["topo", "date", "author"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_codediff"))
+            .args(["debug", "log", "--order", order, "--limit", "5"])
+            .current_dir(&repo.dir)
+            .output()
+            .expect("running codediff debug log");
+        assert!(out.status.success(), "{order}");
+        let text = String::from_utf8(out.stdout).expect("utf-8");
+        assert!(text.contains("* "), "{text}");
+        assert!(text.contains("second"), "{text}");
+        assert!(text.contains("first"), "{text}");
+    }
+}

@@ -8,7 +8,7 @@ pub mod theme;
 mod view;
 
 pub use keybindings::{Action, KeyMap};
-pub use theme::{Flavour, Rgb, Theme, blend, catppuccin};
+pub use theme::{Flavour, Rgb, TerminalProbe, Theme, blend, catppuccin, probe};
 
 pub use crossterm;
 pub use ratatui;
@@ -43,7 +43,10 @@ fn repository_root(cwd: &Path) -> std::io::Result<PathBuf> {
     Ok(repository.repo_path().root.clone())
 }
 
-pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::io::Result<i32> {
+pub fn main(cwd: &Path, mut config: config::Config) -> std::io::Result<i32> {
+    if config.ui.theme == "auto" || Theme::named(&config.ui.theme).is_none() {
+        config.ui.theme = Theme::from_terminal().name.to_owned();
+    }
     let config = Rc::new(config);
     let keybindings =
         Rc::new(KeyMap::from_config(&config.keybindings).map_err(std::io::Error::other)?);
@@ -58,7 +61,6 @@ pub fn main(cwd: &Path, pathspec: Vec<String>, config: config::Config) -> std::i
             let _ = redraw.send(Event::Redraw);
         },
         diff_settings,
-        pathspec,
     ));
     let watcher_root = repository_root(cwd)?;
     let _watcher_subscription = watcher::subscribe(
