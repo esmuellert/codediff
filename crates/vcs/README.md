@@ -1,13 +1,14 @@
 # vcs
 
-The Git backend. It answers four questions for the rest of the application:
+The Git backend. It answers five questions for the rest of the application:
 
 - which files belong to a requested comparison;
 - which revisions are on each side;
 - how many lines changed, when Git can count them;
-- what bytes or text each side contains.
+- what bytes or text each side contains;
+- what commits and branch, remote, or tag labels exist in history.
 
-`Repository` is the public entry point. The `git` modules run one Git command and parse Git's output; the repository layer translates that output into `file-types` values. The backend uses porcelain-v2 NUL-separated status records, forced rename detection, `git cat-file` for stored blobs, and the worktree for mutable files.
+`Repository` is the public entry point. The `git` modules run one Git command and parse Git's output; the repository layer translates that output into `file-types` and `Commit` values. The backend uses porcelain-v2 NUL-separated status records, forced rename detection, NUL-delimited `git log` records, `git cat-file` for stored blobs, and the worktree for mutable files.
 
 The ordinary worktree request yields separate files for unstaged and staged changes. It preserves both status codes for paths with changes in both the index and worktree. Reads apply checkout filters when a stored side is compared with the worktree.
 

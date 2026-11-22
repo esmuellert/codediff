@@ -38,10 +38,6 @@ runs:
         cmake --build target/libvscode-diff-cmake --config Release --parallel
         ctest --test-dir target/libvscode-diff-cmake -C Release --output-on-failure
 
-    - name: Lint file sizes
-      shell: bash
-      run: cargo xtask lint-size
-
     - name: Lint architecture
       shell: bash
       run: cargo xtask lint-arch

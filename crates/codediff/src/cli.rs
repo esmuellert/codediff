@@ -42,6 +42,13 @@ pub enum DiffLayout {
     Inline,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum LogOrder {
+    Topo,
+    Date,
+    Author,
+}
+
 #[derive(Subcommand)]
 pub enum Debug {
     /// Print the raw diff of two files, as the engine reports it
@@ -130,5 +137,18 @@ pub enum Debug {
         /// Also print the same entries as the reviewer sees them
         #[arg(short, long)]
         verbose: bool,
+    },
+
+    /// Print commit history
+    Log {
+        /// Commit walk order
+        #[arg(long, value_enum, default_value = "topo")]
+        order: LogOrder,
+        /// Maximum number of commits to list
+        #[arg(long, short = 'n', default_value_t = 20)]
+        limit: usize,
+        /// Repository path, defaulting to the current directory
+        #[arg(default_value = ".")]
+        dir: String,
     },
 }

@@ -1,9 +1,12 @@
-//! Public repository operations: open, list changes, count lines, and read content.
+//! Public repository operations: open, list changes, list commits, count lines,
+//! and read content.
 
+mod commits;
 mod diff_type;
 pub(crate) mod list;
 mod read;
 
+pub use commits::{Commit, CommitOrder};
 pub use diff_type::DiffType;
 
 use std::path::Path;
