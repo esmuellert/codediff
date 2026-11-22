@@ -28,133 +28,139 @@ pub fn probe() -> TerminalProbe {
     }
 }
 
-/// Parses accumulated terminal replies for OSC 11 and XTGETTCAP.
-pub(crate) fn parse_response(bytes: &[u8]) -> TerminalProbe {
-    TerminalProbe {
-        background: parse_osc11(bytes),
-        truecolor: parse_xtgettcap(bytes),
-    }
-}
+#[cfg(any(unix, test))]
+mod parser {
+    use super::TerminalProbe;
+    use crate::theme::Rgb;
 
-/// Whether `bytes` contains a complete Primary Device Attributes (`\x1b[?...c`) reply.
-pub(crate) fn has_da1(bytes: &[u8]) -> bool {
-    let mut at = 0;
-    while at + 3 < bytes.len() {
-        if bytes[at] == 0x1b && bytes[at + 1] == b'[' && bytes[at + 2] == b'?' {
-            let mut cursor = at + 3;
-            while cursor < bytes.len() {
-                let byte = bytes[cursor];
-                if byte == b'c' {
-                    return true;
-                }
-                if !(byte.is_ascii_digit() || byte == b';') {
-                    break;
-                }
-                cursor += 1;
-            }
+    /// Parses accumulated terminal replies for OSC 11 and XTGETTCAP.
+    pub(super) fn parse_response(bytes: &[u8]) -> TerminalProbe {
+        TerminalProbe {
+            background: parse_osc11(bytes),
+            truecolor: parse_xtgettcap(bytes),
         }
-        at += 1;
     }
-    false
-}
 
-/// Extracts an `Rgb` colour from `\x1b]11;rgb:RRRR/GGGG/BBBB(\x07|\x1b\\)`.
-fn parse_osc11(bytes: &[u8]) -> Option<Rgb> {
-    const PREFIX: &[u8] = b"\x1b]11;";
-    let mut at = 0;
-    while at + PREFIX.len() < bytes.len() {
-        if bytes[at..].starts_with(PREFIX) {
-            let start = at + PREFIX.len();
-            if let Some((payload, next)) = terminated(&bytes[start..]) {
-                if let Some(colour) = parse_rgb_spec(payload) {
-                    return Some(colour);
+    /// Whether `bytes` contains a complete Primary Device Attributes (`\x1b[?...c`) reply.
+    pub(super) fn has_da1(bytes: &[u8]) -> bool {
+        let mut at = 0;
+        while at + 3 < bytes.len() {
+            if bytes[at] == 0x1b && bytes[at + 1] == b'[' && bytes[at + 2] == b'?' {
+                let mut cursor = at + 3;
+                while cursor < bytes.len() {
+                    let byte = bytes[cursor];
+                    if byte == b'c' {
+                        return true;
+                    }
+                    if !(byte.is_ascii_digit() || byte == b';') {
+                        break;
+                    }
+                    cursor += 1;
+                }
+            }
+            at += 1;
+        }
+        false
+    }
+
+    /// Extracts an `Rgb` colour from `\x1b]11;rgb:RRRR/GGGG/BBBB(\x07|\x1b\\)`.
+    fn parse_osc11(bytes: &[u8]) -> Option<Rgb> {
+        const PREFIX: &[u8] = b"\x1b]11;";
+        let mut at = 0;
+        while at + PREFIX.len() < bytes.len() {
+            if bytes[at..].starts_with(PREFIX) {
+                let start = at + PREFIX.len();
+                if let Some((payload, next)) = terminated(&bytes[start..]) {
+                    if let Some(colour) = parse_rgb_spec(payload) {
+                        return Some(colour);
+                    }
+                    at = start + next;
+                    continue;
+                }
+                return None;
+            }
+            at += 1;
+        }
+        None
+    }
+
+    /// Parses `XTGETTCAP` replies (`\x1bP1+r...\x1b\\` supported, `\x1bP0+r...\x1b\\` absent).
+    fn parse_xtgettcap(bytes: &[u8]) -> Option<bool> {
+        let mut saw_negative = false;
+        let mut at = 0;
+        while at + 5 < bytes.len() {
+            if bytes[at] == 0x1b
+                && bytes[at + 1] == b'P'
+                && bytes[at + 3] == b'+'
+                && bytes[at + 4] == b'r'
+            {
+                let status = bytes[at + 2];
+                let start = at + 5;
+                let (_, next) = st_terminated(&bytes[start..])?;
+                if status == b'1' {
+                    return Some(true);
+                }
+                if status == b'0' {
+                    saw_negative = true;
                 }
                 at = start + next;
                 continue;
             }
+            at += 1;
+        }
+        if saw_negative { Some(false) } else { None }
+    }
+
+    /// Finds a BEL (`\x07`) or ST (`\x1b\\`) terminator.
+    fn terminated(bytes: &[u8]) -> Option<(&[u8], usize)> {
+        let mut at = 0;
+        while at < bytes.len() {
+            if bytes[at] == 0x07 {
+                return Some((&bytes[..at], at + 1));
+            }
+            if bytes[at] == 0x1b && bytes.get(at + 1) == Some(&b'\\') {
+                return Some((&bytes[..at], at + 2));
+            }
+            at += 1;
+        }
+        None
+    }
+
+    /// Finds an ST (`\x1b\\`) terminator for DCS strings.
+    fn st_terminated(bytes: &[u8]) -> Option<(&[u8], usize)> {
+        let mut at = 0;
+        while at + 1 < bytes.len() {
+            if bytes[at] == 0x1b && bytes[at + 1] == b'\\' {
+                return Some((&bytes[..at], at + 2));
+            }
+            at += 1;
+        }
+        None
+    }
+
+    /// Parses `rgb:R/G/B` with 1..=4 hex digits per channel (XParseColor).
+    fn parse_rgb_spec(payload: &[u8]) -> Option<Rgb> {
+        let text = std::str::from_utf8(payload).ok()?;
+        let channels = text.strip_prefix("rgb:")?;
+        let mut parts = channels.split('/');
+        let r = parse_channel(parts.next()?)?;
+        let g = parse_channel(parts.next()?)?;
+        let b = parse_channel(parts.next()?)?;
+        if parts.next().is_some() {
             return None;
         }
-        at += 1;
+        Some(Rgb(r, g, b))
     }
-    None
-}
 
-/// Parses `XTGETTCAP` replies (`\x1bP1+r...\x1b\\` supported, `\x1bP0+r...\x1b\\` absent).
-fn parse_xtgettcap(bytes: &[u8]) -> Option<bool> {
-    let mut saw_negative = false;
-    let mut at = 0;
-    while at + 5 < bytes.len() {
-        if bytes[at] == 0x1b
-            && bytes[at + 1] == b'P'
-            && bytes[at + 3] == b'+'
-            && bytes[at + 4] == b'r'
-        {
-            let status = bytes[at + 2];
-            let start = at + 5;
-            let (_, next) = st_terminated(&bytes[start..])?;
-            if status == b'1' {
-                return Some(true);
-            }
-            if status == b'0' {
-                saw_negative = true;
-            }
-            at = start + next;
-            continue;
+    fn parse_channel(hex: &str) -> Option<u8> {
+        let digits = hex.len();
+        if !(1..=4).contains(&digits) {
+            return None;
         }
-        at += 1;
+        let value = u32::from_str_radix(hex, 16).ok()?;
+        let max = (1u32 << (digits * 4)) - 1;
+        Some(((value * 255 + max / 2) / max) as u8)
     }
-    if saw_negative { Some(false) } else { None }
-}
-
-/// Finds a BEL (`\x07`) or ST (`\x1b\\`) terminator.
-fn terminated(bytes: &[u8]) -> Option<(&[u8], usize)> {
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == 0x07 {
-            return Some((&bytes[..at], at + 1));
-        }
-        if bytes[at] == 0x1b && bytes.get(at + 1) == Some(&b'\\') {
-            return Some((&bytes[..at], at + 2));
-        }
-        at += 1;
-    }
-    None
-}
-
-/// Finds an ST (`\x1b\\`) terminator for DCS strings.
-fn st_terminated(bytes: &[u8]) -> Option<(&[u8], usize)> {
-    let mut at = 0;
-    while at + 1 < bytes.len() {
-        if bytes[at] == 0x1b && bytes[at + 1] == b'\\' {
-            return Some((&bytes[..at], at + 2));
-        }
-        at += 1;
-    }
-    None
-}
-
-/// Parses `rgb:R/G/B` with 1..=4 hex digits per channel (XParseColor).
-fn parse_rgb_spec(payload: &[u8]) -> Option<Rgb> {
-    let text = std::str::from_utf8(payload).ok()?;
-    let channels = text.strip_prefix("rgb:")?;
-    let mut parts = channels.split('/');
-    let r = parse_channel(parts.next()?)?;
-    let g = parse_channel(parts.next()?)?;
-    let b = parse_channel(parts.next()?)?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some(Rgb(r, g, b))
-}
-
-fn parse_channel(hex: &str) -> Option<u8> {
-    let digits = hex.len();
-    if !(1..=4).contains(&digits) {
-        return None;
-    }
-    let value = u32::from_str_radix(hex, 16).ok()?;
-    let max = (1u32 << (digits * 4)) - 1;
-    Some(((value * 255 + max / 2) / max) as u8)
 }
 
 #[cfg(unix)]
@@ -166,7 +172,8 @@ mod unix {
     use rustix::io::Errno;
     use rustix::termios::{OptionalActions, SpecialCodeIndex, Termios, tcgetattr, tcsetattr};
 
-    use super::{QUERY, TerminalProbe, has_da1, parse_response};
+    use super::parser::{has_da1, parse_response};
+    use super::{QUERY, TerminalProbe};
 
     const TIMEOUT: Duration = Duration::from_millis(40);
 
@@ -273,6 +280,7 @@ mod unix {
 
 #[cfg(test)]
 mod tests {
+    use super::parser::{has_da1, parse_response};
     use super::*;
 
     #[test]
