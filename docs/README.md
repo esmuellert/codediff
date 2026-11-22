@@ -71,7 +71,6 @@ Useful commands from the repository root:
 ```sh
 cargo fmt --all --check
 cargo test --workspace --no-fail-fast
-cargo xtask lint-size
 cargo xtask lint-arch
 cargo xtask verify-oracle
 cargo run -p xtask -- fixture-repo /tmp/codediff-fixture
