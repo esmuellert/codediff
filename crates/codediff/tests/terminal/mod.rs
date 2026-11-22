@@ -9,5 +9,6 @@ mod refresh;
 mod scroll;
 #[path = "stories/mod.rs"]
 mod stories;
+mod theme_probe;
 
 mod pty;
