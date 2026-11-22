@@ -46,7 +46,6 @@ pub(crate) fn card_height(
 
 fn horizontal_listeners(scope: &mut Scope, scroll: loom::ScrollHandle) -> Listeners {
     let keybindings = use_context::<Ui>(scope).keybindings;
-    let wheel_scroll = scroll.clone();
     Listeners::new()
         .on_key(move |key| match key {
             key if keybindings.matches(Action::MoveLeft, key) => {
@@ -71,7 +70,7 @@ fn horizontal_listeners(scope: &mut Scope, scroll: loom::ScrollHandle) -> Listen
             if wheel.horizontal == 0 {
                 Bubble::Continue
             } else {
-                wheel_scroll.scroll_x_by(wheel.horizontal.saturating_mul(3));
+                scroll.scroll_x_by(wheel.horizontal.saturating_mul(3));
                 Bubble::Stop
             }
         })

@@ -9,7 +9,6 @@ use crate::keybindings::Action;
 /// bindings and one shared scroll position.
 pub fn use_diff_viewer_navigation(scope: &mut Scope, scroll: ScrollHandle) -> Listeners {
     let keybindings = use_context::<Ui>(scope).keybindings;
-    let wheel_scroll = scroll.clone();
     Listeners::new()
         .on_key(move |key| match key {
             key if keybindings.matches(Action::MoveDown, key) => {
@@ -43,7 +42,7 @@ pub fn use_diff_viewer_navigation(scope: &mut Scope, scroll: ScrollHandle) -> Li
             _ => Bubble::Continue,
         })
         .on_wheel(move |wheel| {
-            wheel_scroll.scroll_by(
+            scroll.scroll_by(
                 wheel.horizontal.saturating_mul(3),
                 wheel.vertical.saturating_mul(3),
             );

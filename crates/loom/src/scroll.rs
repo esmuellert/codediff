@@ -90,70 +90,70 @@ impl Default for ScrollView {
 }
 
 /// A stable handle for moving one scroll view.
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScrollHandle {
     set_offset: SetState<ScrollOffset>,
-    state: Rc<Cell<ScrollMetrics>>,
+    state: Ref<Rc<Cell<ScrollMetrics>>>,
 }
 
 impl ScrollHandle {
     /// Requests an absolute content position. Layout clamps it when the
     /// content or viewport is smaller than the request.
-    pub fn scroll_to(&self, offset: ScrollOffset) {
-        (self.set_offset)(&move |_| offset);
+    pub fn scroll_to(self, offset: ScrollOffset) {
+        self.set_offset.set(offset);
     }
 
-    pub fn scroll_to_start(&self) {
+    pub fn scroll_to_start(self) {
         self.scroll_to(ScrollOffset::ZERO);
     }
 
-    pub fn scroll_to_end(&self) {
-        let metrics = self.state.get();
+    pub fn scroll_to_end(self) {
+        let metrics = self.metrics();
         self.scroll_to(ScrollOffset {
             x: metrics.max_x(),
             y: metrics.max_y(),
         });
     }
 
-    pub fn scroll_x_to_start(&self) {
-        let metrics = self.state.get();
-        (self.set_offset)(&move |offset| ScrollOffset {
-            x: 0,
-            y: offset.y.min(metrics.max_y()),
+    pub fn scroll_x_to_start(self) {
+        let metrics = self.metrics();
+        self.set_offset.update(|offset| {
+            offset.x = 0;
+            offset.y = offset.y.min(metrics.max_y());
         });
     }
 
-    pub fn scroll_x_to_end(&self) {
-        let metrics = self.state.get();
-        (self.set_offset)(&move |offset| ScrollOffset {
-            x: metrics.max_x(),
-            y: offset.y.min(metrics.max_y()),
+    pub fn scroll_x_to_end(self) {
+        let metrics = self.metrics();
+        self.set_offset.update(|offset| {
+            offset.x = metrics.max_x();
+            offset.y = offset.y.min(metrics.max_y());
         });
     }
 
     /// Moves by signed cell deltas in content coordinates.
-    pub fn scroll_by(&self, dx: i32, dy: i32) {
-        let metrics = self.state.get();
-        (self.set_offset)(&move |offset| {
-            let offset = offset.clamp(metrics);
-            ScrollOffset {
-                x: move_by(offset.x, dx, metrics.max_x()),
-                y: move_by(offset.y, dy, metrics.max_y()),
-            }
+    pub fn scroll_by(self, dx: i32, dy: i32) {
+        let metrics = self.metrics();
+        self.set_offset.update(|offset| {
+            let clamped = offset.clamp(metrics);
+            *offset = ScrollOffset {
+                x: move_by(clamped.x, dx, metrics.max_x()),
+                y: move_by(clamped.y, dy, metrics.max_y()),
+            };
         });
     }
 
-    pub fn scroll_x_by(&self, cells: i32) {
+    pub fn scroll_x_by(self, cells: i32) {
         self.scroll_by(cells, 0);
     }
 
-    pub fn scroll_y_by(&self, lines: i32) {
+    pub fn scroll_y_by(self, lines: i32) {
         self.scroll_by(0, lines);
     }
 
     /// Moves the vertical viewport just enough to show `line` with a margin.
-    pub fn keep_y_visible(&self, line: u32, margin: u32) {
-        let metrics = self.state.get();
+    pub fn keep_y_visible(self, line: u32, margin: u32) {
+        let metrics = self.metrics();
         let height = metrics.viewport_height;
         if height == 0 || metrics.content_height == 0 {
             return;
@@ -161,7 +161,7 @@ impl ScrollHandle {
         let last_top = metrics.max_y();
         let line = line.min(metrics.content_height.saturating_sub(1));
         let margin = margin.min(height.saturating_sub(1) / 2);
-        (self.set_offset)(&move |offset| {
+        self.set_offset.update(|offset| {
             let mut top = offset.y.min(last_top);
             if line < top.saturating_add(margin) {
                 top = line.saturating_sub(margin);
@@ -172,15 +172,12 @@ impl ScrollHandle {
                     .saturating_add(1)
                     .saturating_sub(height);
             }
-            ScrollOffset {
-                x: offset.x,
-                y: top.min(last_top),
-            }
+            offset.y = top.min(last_top);
         });
     }
 
-    pub fn metrics(&self) -> ScrollMetrics {
-        self.state.get()
+    pub fn metrics(self) -> ScrollMetrics {
+        self.state.current().get()
     }
 }
 
@@ -194,18 +191,18 @@ pub fn use_scroll(
     let (requested, set_offset) = use_state(scope, initial);
     let metrics_ref: Ref<Rc<Cell<ScrollMetrics>>> =
         use_ref(scope, || Rc::new(Cell::new(ScrollMetrics::default())));
-    let state = {
-        let state = metrics_ref.current();
-        Rc::clone(&state)
-    };
+    let state = Rc::clone(&*metrics_ref.current());
     let metrics = state.get();
     let view = ScrollView {
         offset: requested.clamp(metrics),
         metrics,
         requested,
-        state: Rc::clone(&state),
+        state,
     };
-    let handle = ScrollHandle { set_offset, state };
+    let handle = ScrollHandle {
+        set_offset,
+        state: metrics_ref,
+    };
     (view, handle)
 }
 

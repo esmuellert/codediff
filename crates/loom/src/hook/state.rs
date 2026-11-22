@@ -45,6 +45,7 @@ impl<T: Clone + PartialEq + 'static> PendingState for StateSlot<T> {
 pub struct SetState<T: 'static> {
     scope: ScopeId,
     slot: u16,
+    name: &'static str,
     write: &'static StateWriter<T>,
 }
 
@@ -73,6 +74,31 @@ impl<T: 'static> SetState<T> {
     }
 }
 
+impl<T: Clone + PartialEq + 'static> SetState<T> {
+    /// Replaces the pending value directly.
+    pub fn set(self, value: T) {
+        let mut next = Some(value);
+        write_slot_once(self.scope, self.slot as usize, self.name, &mut move |_| {
+            next.take().expect("a state update runs once")
+        });
+    }
+
+    /// Mutates a clone of the pending value in place and writes it back.
+    pub fn update(self, f: impl FnOnce(&mut T)) {
+        let mut edit = Some(f);
+        write_slot_once(
+            self.scope,
+            self.slot as usize,
+            self.name,
+            &mut move |mut value| {
+                let edit = edit.take().expect("a state update runs once");
+                edit(&mut value);
+                value
+            },
+        );
+    }
+}
+
 /// Provides access to the state writer.
 impl<T: 'static> Deref for SetState<T> {
     type Target = StateWriter<T>;
@@ -87,6 +113,16 @@ fn write_slot<T: Clone + PartialEq + 'static>(
     slot: usize,
     name: &'static str,
     next: &StateUpdate<T>,
+) {
+    let mut run = |value| next(value);
+    write_slot_once(scope, slot, name, &mut run);
+}
+
+fn write_slot_once<T: Clone + PartialEq + 'static>(
+    scope: ScopeId,
+    slot: usize,
+    name: &'static str,
+    next: &mut dyn FnMut(T) -> T,
 ) {
     super::require_runtime();
 
@@ -118,9 +154,10 @@ fn write_slot<T: Clone + PartialEq + 'static>(
         let Some(cell) = state.as_any().downcast_mut::<StateSlot<T>>() else {
             return;
         };
-        let changed = next != cell.value;
-        cell.pending = Some(next);
-        if changed {
+        if next == cell.value {
+            cell.pending = None;
+        } else {
+            cell.pending = Some(next);
             rt.mark(scope);
         }
     });
@@ -174,6 +211,7 @@ pub fn use_state<T: Clone + PartialEq + 'static>(
         SetState {
             scope: id,
             slot: index as u16,
+            name,
             write,
         },
     )

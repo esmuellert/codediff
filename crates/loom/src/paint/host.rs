@@ -115,7 +115,7 @@ impl Element for Scroll {
     type Props = ScrollProps;
 
     fn build(mut props: Self::Props, key: Option<Key>) -> Node {
-        if let Some(handle) = props.handle.clone() {
+        if let Some(handle) = props.handle {
             let horizontal = props.horizontal;
             let vertical = props.vertical;
             let wheel_step = props.wheel_step;

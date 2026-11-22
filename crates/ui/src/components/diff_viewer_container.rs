@@ -145,12 +145,11 @@ pub fn DiffViewerContainer(
         x: current_state.first_cell,
         y: initial_top,
     });
-    let restore = scroll_handle.clone();
     use_layout_effect(
         scope,
         (content_id, view_layout, wrap, compact, size.width),
         move || {
-            restore.scroll_to(ScrollOffset {
+            scroll_handle.scroll_to(ScrollOffset {
                 x: current_state.first_cell,
                 y: initial_top,
             });
