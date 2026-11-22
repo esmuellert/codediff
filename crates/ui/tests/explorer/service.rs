@@ -252,6 +252,7 @@ fn filesystem_changes_refresh_the_current_repository() {
 
 #[test]
 fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_lists() {
+    let (started, listing_worktree) = mpsc::channel::<()>();
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -267,6 +268,7 @@ fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_
                 .push(request.diff_type.clone());
             match &request.diff_type {
                 vcs::DiffType::Worktree => {
+                    started.send(()).unwrap();
                     released.recv().unwrap();
                     Ok(vec![file("worktree.rs")])
                 }
@@ -291,6 +293,9 @@ fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_
         5,
     );
     harness.force_draw();
+    listing_worktree
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the files worker started listing Worktree");
 
     harness.set_props::<DiffTypeHost>(DiffTypeHostProps {
         repo: Rc::from(Path::new("/repo")),
