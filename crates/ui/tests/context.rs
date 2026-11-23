@@ -9,6 +9,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use diff_service::DiffService;
+use diff_service::files::DiffType;
 use loom::testing::Harness;
 use ui::components::{App, AppProps};
 use ui::services::version_control::VersionControlService;
@@ -19,6 +20,7 @@ fn idle_app() -> Harness {
     Harness::new::<App>(
         AppProps {
             cwd: Rc::from(Path::new("/tmp")),
+            diff_type: DiffType::Worktree,
             config: Rc::new(config::Config::default()),
             keybindings: Rc::new(ui::KeyMap::default()),
             diff_service: Rc::new(pipeline),

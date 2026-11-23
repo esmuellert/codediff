@@ -116,6 +116,7 @@ context!(
 pub fn UiProvider(
     scope: &mut Scope,
     cwd: Rc<Path>,
+    diff_type: DiffType,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
     diff_service: Rc<DiffService>,
@@ -124,8 +125,9 @@ pub fn UiProvider(
     children: loom::Children,
 ) -> Node {
     let initial = Rc::clone(cwd);
+    let initial_diff_type = diff_type.clone();
     let (repo, set_repo) = use_state(scope, || initial);
-    let (diff_type, set_diff_type) = use_state(scope, || DiffType::Worktree);
+    let (diff_type, set_diff_type) = use_state(scope, || initial_diff_type);
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
     let (directory, set_directory) = use_state(scope, || None::<Rc<DirectorySelection>>);
 

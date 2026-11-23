@@ -25,7 +25,7 @@ cd /path/to/a/git/repository
 /path/to/codediff/target/release/codediff
 ```
 
-The normal command opens the current repository. A single path argument narrows the file list to that path. The hidden debug commands are useful when inspecting one layer without opening the terminal UI:
+The normal command opens the current repository's uncommitted changes. An optional revision argument (`codediff [REV]`) compares against a revision (`codediff main`), between two revisions (`codediff HEAD~1..HEAD`), or from a branch merge base (`codediff main...HEAD`). The hidden debug commands are useful when inspecting one layer without opening the terminal UI:
 
 ```sh
 codediff doctor

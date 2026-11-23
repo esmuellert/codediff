@@ -39,12 +39,20 @@ enum Event {
     Redraw,
 }
 
-fn repository_root(cwd: &Path) -> std::io::Result<PathBuf> {
+fn open_repository(cwd: &Path, diff_type: &vcs::DiffType) -> std::io::Result<PathBuf> {
     let repository = vcs::Repository::open(cwd).map_err(std::io::Error::other)?;
+    repository
+        .check_diff_type(diff_type)
+        .map_err(std::io::Error::other)?;
     Ok(repository.repo_path().root.clone())
 }
 
-pub fn main(cwd: &Path, mut config: config::Config) -> std::io::Result<i32> {
+pub fn main(
+    cwd: &Path,
+    mut config: config::Config,
+    diff_type: vcs::DiffType,
+) -> std::io::Result<i32> {
+    let watcher_root = open_repository(cwd, &diff_type)?;
     let probed = probe();
     if config.ui.theme == "auto" || Theme::named(&config.ui.theme).is_none() {
         config.ui.theme = Theme::resolve(probed, |key| std::env::var(key).ok())
@@ -66,7 +74,6 @@ pub fn main(cwd: &Path, mut config: config::Config) -> std::io::Result<i32> {
         },
         diff_settings,
     ));
-    let watcher_root = repository_root(cwd)?;
     let _watcher_subscription = watcher::subscribe(
         &watcher_root,
         channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
@@ -78,6 +85,7 @@ pub fn main(cwd: &Path, mut config: config::Config) -> std::io::Result<i32> {
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
+        diff_type,
         config,
         keybindings,
         diff_service: pipeline,
@@ -182,8 +190,34 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
 
         assert_eq!(
-            repository_root(&nested).unwrap().canonicalize().unwrap(),
+            open_repository(&nested, &vcs::DiffType::Worktree)
+                .unwrap()
+                .canonicalize()
+                .unwrap(),
             repo.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn invalid_revision_is_rejected_when_opening_repository() {
+        let repo = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(repo.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+
+        let error = open_repository(
+            repo.path(),
+            &vcs::DiffType::Against("nonexistent-rev".to_owned()),
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("nonexistent-rev"),
+            "unexpected error: {error}"
         );
     }
 }

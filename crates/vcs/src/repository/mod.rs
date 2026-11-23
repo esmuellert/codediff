@@ -13,7 +13,7 @@ use std::path::Path;
 
 use file_types::Revs;
 
-use crate::git::{cat_file, rev_parse, stage};
+use crate::git::{self, cat_file, rev_parse, stage};
 use crate::repo::Repo;
 
 /// An open repository.
@@ -45,6 +45,11 @@ impl Repository {
     /// file watcher needs to notice a branch switch.
     pub fn repo_path(&self) -> &Repo {
         &self.repo
+    }
+
+    /// Checks that the revisions named by `diff_type` resolve in this repository.
+    pub fn check_diff_type(&self, diff_type: &DiffType) -> crate::Result<()> {
+        git::resolve_command(&self.repo, diff_type).map(|_| ())
     }
 
     /// Stages a file or directory: `git add -- <path>`.
