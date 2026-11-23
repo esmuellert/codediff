@@ -210,7 +210,7 @@ fn commit_range() -> Result<StoryFixture> {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use anyhow::Context;
-    use vcs::DiffType;
+    use vcs::RevisionRange;
 
     static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -343,7 +343,7 @@ Initial notes.
 
     Ok(StoryFixture::Repository {
         repo,
-        diff_type: DiffType::Between(first, second),
+        revision_range: RevisionRange::Between(first, second),
     })
 }
 

@@ -8,8 +8,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use file_types::File;
-pub use vcs::DiffType;
 use vcs::Repository;
+pub use vcs::RevisionRange;
 
 /// One request for a set of files.
 #[derive(Clone)]
@@ -19,20 +19,20 @@ pub struct Request {
     pub repo: PathBuf,
     /// Which paths to narrow to, empty being everything.
     pub pathspec: Vec<String>,
-    pub diff_type: DiffType,
+    pub revision_range: RevisionRange,
 }
 
 impl Request {
     /// The ordinary question: what have I changed and not committed.
     pub fn worktree(repo: impl Into<PathBuf>) -> Self {
-        Self::new(repo, DiffType::Worktree)
+        Self::new(repo, RevisionRange::Worktree)
     }
 
-    pub fn new(repo: impl Into<PathBuf>, diff_type: DiffType) -> Self {
+    pub fn new(repo: impl Into<PathBuf>, revision_range: RevisionRange) -> Self {
         Self {
             repo: repo.into(),
             pathspec: Vec::new(),
-            diff_type,
+            revision_range,
         }
     }
 
@@ -47,7 +47,7 @@ pub fn get_files(request: &Request) -> Result<Vec<File>> {
     tracing::info!("listing files");
     let mut repository = Repository::open(&request.repo).context("opening a repository")?;
     let files = repository
-        .get_changed_files(&request.diff_type, &request.pathspec)
+        .get_changed_files(&request.revision_range, &request.pathspec)
         .context("listing changed files and line counts")?;
     tracing::info!(count = files.len(), "listed files");
     Ok(files)

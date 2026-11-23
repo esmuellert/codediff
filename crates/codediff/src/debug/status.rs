@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use file_types::ChangeType;
-use vcs::{DiffType, Repository};
+use vcs::{Repository, RevisionRange};
 
 use crate::text::{pad, sanitize};
 
@@ -18,7 +18,7 @@ pub fn run(dir: &str, verbose: bool) -> Result<()> {
     );
 
     let changed = repository
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .context("reading what changed")?;
     println!();
     if changed.is_empty() {

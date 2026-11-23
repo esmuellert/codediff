@@ -2,7 +2,7 @@
 
 /// Which comparison a review is of.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DiffType {
+pub enum RevisionRange {
     /// Worktree changes: index → worktree and commit → index.
     Worktree,
     /// One revision against the file on disk.

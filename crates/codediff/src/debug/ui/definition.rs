@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use diff_service::diff::DiffContent;
 use file_types::File;
 use loom::crokey::KeyCombination;
-use vcs::{Commit, DiffType};
+use vcs::{Commit, RevisionRange};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StoryComponent {
@@ -72,7 +72,7 @@ pub enum StoryFixture {
     },
     Repository {
         repo: LiveRepo,
-        diff_type: DiffType,
+        revision_range: RevisionRange,
     },
     CommitGraph {
         commits: Vec<Commit>,

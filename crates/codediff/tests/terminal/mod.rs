@@ -5,6 +5,7 @@ mod config;
 mod explorer_click;
 mod lifecycle;
 mod refresh;
+mod revision;
 #[path = "scroll/mod.rs"]
 mod scroll;
 #[path = "stories/mod.rs"]

@@ -14,4 +14,4 @@ mod repository;
 
 pub use error::{Error, Result};
 pub use repo::Repo;
-pub use repository::{Commit, CommitOrder, DiffType, Repository};
+pub use repository::{Commit, CommitOrder, Repository, RevisionRange};

@@ -74,7 +74,7 @@ fn commit_to_commit_listing_and_open_produce_aligned_diffs_and_colours() {
     use diff_service::DiffService;
     use diff_service::diff::Settings;
     use file_types::{ChangeType, DiffVersion};
-    use vcs::DiffType;
+    use vcs::RevisionRange;
 
     static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -164,7 +164,7 @@ fn commit_to_commit_listing_and_open_produce_aligned_diffs_and_colours() {
         }
     };
 
-    let slot = service.list_files(&dir, DiffType::Between(first, second));
+    let slot = service.list_files(&dir, RevisionRange::Between(first, second));
     wait_idle();
     let files = slot
         .lock()

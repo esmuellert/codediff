@@ -1,13 +1,16 @@
 //! The command tree.
 
 use clap::{Parser, Subcommand, ValueEnum};
+use vcs::RevisionRange;
 
 #[derive(Parser)]
 #[command(
     name = "codediff",
     version,
     about = "A standalone terminal diff reviewer",
-    disable_help_subcommand = true
+    disable_help_subcommand = true,
+    args_conflicts_with_subcommands = true,
+    subcommand_precedence_over_arg = true
 )]
 pub struct Cli {
     /// Load user preferences from this file.
@@ -22,11 +25,43 @@ pub struct Cli {
     #[arg(long, hide = true)]
     pub self_panic: bool,
 
+    /// Revision or range to review (e.g. `main`, `a..b`, `main...HEAD`)
+    #[arg(value_name = "REV")]
+    pub revision: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
 
-#[derive(Subcommand)]
+impl Cli {
+    pub fn revision_range(&self) -> RevisionRange {
+        match self.revision.as_deref() {
+            None => RevisionRange::Worktree,
+            Some(spec) => parse_revision(spec),
+        }
+    }
+}
+
+/// Parses a single revision or range specifier into [`RevisionRange`].
+pub fn parse_revision(spec: &str) -> RevisionRange {
+    let default_head = |side: &str| {
+        if side.is_empty() {
+            "HEAD".to_owned()
+        } else {
+            side.to_owned()
+        }
+    };
+
+    if let Some((left, right)) = spec.split_once("...") {
+        RevisionRange::MergeBase(default_head(left), default_head(right))
+    } else if let Some((left, right)) = spec.split_once("..") {
+        RevisionRange::Between(default_head(left), default_head(right))
+    } else {
+        RevisionRange::Against(spec.to_owned())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Subcommand)]
 pub enum Command {
     /// Report how this binary was built, and what it found
     Doctor,
@@ -49,7 +84,7 @@ pub enum LogOrder {
     Author,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, PartialEq, Eq, Subcommand)]
 pub enum Debug {
     /// Print the raw diff of two files, as the engine reports it
     Diff { original: String, modified: String },
@@ -151,4 +186,108 @@ pub enum Debug {
         #[arg(default_value = ".")]
         dir: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(std::iter::once("codediff").chain(args.iter().copied()))
+            .expect("CLI arguments parse")
+    }
+
+    #[test]
+    fn no_arguments_reviews_the_worktree() {
+        let cli = parse(&[]);
+        assert_eq!(cli.command, None);
+        assert_eq!(cli.revision, None);
+        assert_eq!(cli.revision_range(), RevisionRange::Worktree);
+    }
+
+    #[test]
+    fn single_revision_compares_against_the_worktree() {
+        let cli = parse(&["main"]);
+        assert_eq!(cli.command, None);
+        assert_eq!(
+            cli.revision_range(),
+            RevisionRange::Against("main".to_owned())
+        );
+    }
+
+    #[test]
+    fn two_dots_parse_as_between_and_default_empty_sides_to_head() {
+        assert_eq!(
+            parse(&["HEAD~2..HEAD"]).revision_range(),
+            RevisionRange::Between("HEAD~2".to_owned(), "HEAD".to_owned())
+        );
+        assert_eq!(
+            parse(&["main.."]).revision_range(),
+            RevisionRange::Between("main".to_owned(), "HEAD".to_owned())
+        );
+        assert_eq!(
+            parse(&["..feat"]).revision_range(),
+            RevisionRange::Between("HEAD".to_owned(), "feat".to_owned())
+        );
+        assert_eq!(
+            parse(&[".."]).revision_range(),
+            RevisionRange::Between("HEAD".to_owned(), "HEAD".to_owned())
+        );
+    }
+
+    #[test]
+    fn three_dots_parse_as_merge_base_before_two_dots() {
+        assert_eq!(
+            parse(&["main...feat"]).revision_range(),
+            RevisionRange::MergeBase("main".to_owned(), "feat".to_owned())
+        );
+        assert_eq!(
+            parse(&["main..."]).revision_range(),
+            RevisionRange::MergeBase("main".to_owned(), "HEAD".to_owned())
+        );
+        assert_eq!(
+            parse(&["...feat"]).revision_range(),
+            RevisionRange::MergeBase("HEAD".to_owned(), "feat".to_owned())
+        );
+        assert_eq!(
+            parse(&["..."]).revision_range(),
+            RevisionRange::MergeBase("HEAD".to_owned(), "HEAD".to_owned())
+        );
+    }
+
+    #[test]
+    fn subcommands_take_precedence_over_positional_revision() {
+        let doctor = parse(&["doctor"]);
+        assert_eq!(doctor.command, Some(Command::Doctor));
+        assert_eq!(doctor.revision, None);
+
+        let status = parse(&["debug", "status"]);
+        assert_eq!(
+            status.command,
+            Some(Command::Debug(Debug::Status {
+                dir: ".".to_owned(),
+                verbose: false,
+            }))
+        );
+        assert_eq!(status.revision, None);
+    }
+
+    #[test]
+    fn double_dash_treats_subcommand_names_as_revisions() {
+        let doctor = parse(&["--", "doctor"]);
+        assert_eq!(doctor.command, None);
+        assert_eq!(doctor.revision.as_deref(), Some("doctor"));
+        assert_eq!(
+            doctor.revision_range(),
+            RevisionRange::Against("doctor".to_owned())
+        );
+
+        let debug = parse(&["--", "debug"]);
+        assert_eq!(debug.command, None);
+        assert_eq!(debug.revision.as_deref(), Some("debug"));
+        assert_eq!(
+            debug.revision_range(),
+            RevisionRange::Against("debug".to_owned())
+        );
+    }
 }

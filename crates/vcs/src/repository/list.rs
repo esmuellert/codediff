@@ -41,10 +41,10 @@ impl Repository {
     /// A path can occur twice when it is staged and edited again.
     pub fn get_changed_files(
         &mut self,
-        diff_type: &super::DiffType,
+        revision_range: &super::RevisionRange,
         pathspec: &[String],
     ) -> crate::Result<Vec<File>> {
-        let command = git::resolve_command(&self.repo, diff_type)?;
+        let command = git::resolve_command(&self.repo, revision_range)?;
         let git_line_stats = read_git_line_stats(&self.repo, &command, pathspec)?;
         let files = match &command {
             GitCommand::Worktree => {

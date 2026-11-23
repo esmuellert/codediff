@@ -4,6 +4,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use diff_service::DiffService;
+use diff_service::files::RevisionRange;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
     use_exit,
@@ -21,6 +22,7 @@ use crate::services::watcher::WatcherService;
 pub fn App(
     scope: &mut Scope,
     cwd: Rc<Path>,
+    revision_range: RevisionRange,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
     diff_service: Rc<DiffService>,
@@ -46,6 +48,7 @@ pub fn App(
             ..,
             UiProvider {
                 cwd: Rc::clone(cwd),
+                revision_range: revision_range.clone(),
                 config: Rc::clone(config),
                 keybindings: Rc::clone(keybindings),
                 diff_service: Rc::clone(diff_service),

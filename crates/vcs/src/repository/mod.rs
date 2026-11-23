@@ -2,18 +2,18 @@
 //! and read content.
 
 mod commits;
-mod diff_type;
 pub(crate) mod list;
 mod read;
+mod revision_range;
 
 pub use commits::{Commit, CommitOrder};
-pub use diff_type::DiffType;
+pub use revision_range::RevisionRange;
 
 use std::path::Path;
 
 use file_types::Revs;
 
-use crate::git::{cat_file, rev_parse, stage};
+use crate::git::{self, cat_file, rev_parse, stage};
 use crate::repo::Repo;
 
 /// An open repository.
@@ -45,6 +45,11 @@ impl Repository {
     /// file watcher needs to notice a branch switch.
     pub fn repo_path(&self) -> &Repo {
         &self.repo
+    }
+
+    /// Checks that the revisions named by `revision_range` resolve in this repository.
+    pub fn check_revision_range(&self, revision_range: &RevisionRange) -> crate::Result<()> {
+        git::resolve_command(&self.repo, revision_range).map(|_| ())
     }
 
     /// Stages a file or directory: `git add -- <path>`.

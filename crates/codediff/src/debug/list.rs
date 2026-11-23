@@ -1,29 +1,27 @@
 //! Prints the groups and files produced by a list request.
 
 use anyhow::Result;
-use vcs::DiffType;
+use vcs::RevisionRange;
+
+use crate::cli::parse_revision;
 
 /// Converts list flags and revisions into a VCS comparison type.
-pub fn diff_type(rev: &[String], staged: bool) -> DiffType {
-    use DiffType as Type;
+pub fn revision_range(rev: &[String], staged: bool) -> RevisionRange {
     match (staged, rev.first().cloned(), rev.get(1).cloned()) {
         // `--staged` with no revision means against the last commit, which is
         // what `git diff --cached` means with no revision.
-        (true, rev, _) => Type::Staged(rev.unwrap_or_else(|| "HEAD".to_owned())),
-        (false, None, _) => Type::Worktree,
-        (false, Some(a), Some(b)) => Type::Between(a, b),
-        (false, Some(a), None) => match a.split_once("...") {
-            Some((base, target)) => Type::MergeBase(base.to_owned(), target.to_owned()),
-            None => Type::Against(a),
-        },
+        (true, rev, _) => RevisionRange::Staged(rev.unwrap_or_else(|| "HEAD".to_owned())),
+        (false, None, _) => RevisionRange::Worktree,
+        (false, Some(a), Some(b)) => RevisionRange::Between(a, b),
+        (false, Some(a), None) => parse_revision(&a),
     }
 }
 
 /// Prints each revision group and its files.
-pub fn run(diff_type: DiffType, pathspec: Vec<String>) -> Result<()> {
+pub fn run(revision_range: RevisionRange, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = vcs::Repository::open(&cwd)?.repo_path().root.clone();
-    let request = diff_service::files::Request::new(root, diff_type).with_pathspec(pathspec);
+    let request = diff_service::files::Request::new(root, revision_range).with_pathspec(pathspec);
 
     let mut groups: Vec<(file_types::Revs, Vec<file_types::File>)> = Vec::new();
     for file in diff_service::files::get_files(&request)? {

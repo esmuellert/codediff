@@ -42,7 +42,7 @@ pub fn run(command: Debug) -> Result<()> {
             rev,
             staged,
             pathspec,
-        } => list::run(list::diff_type(&rev, staged), pathspec),
+        } => list::run(list::revision_range(&rev, staged), pathspec),
         Debug::Status { dir, verbose } => status::run(&dir, verbose),
         Debug::Log { order, limit, dir } => log::run(&dir, order, limit),
         Debug::Ui {

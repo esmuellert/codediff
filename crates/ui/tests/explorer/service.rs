@@ -34,10 +34,10 @@ fn Host(
 }
 
 #[component]
-fn DiffTypeHost(
+fn RevisionRangeHost(
     scope: &mut Scope,
     repo: Rc<Path>,
-    diff_type: vcs::DiffType,
+    revision_range: vcs::RevisionRange,
     pipeline: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
     version_control_service: Option<Rc<ui::services::version_control::VersionControlService>>,
@@ -48,7 +48,7 @@ fn DiffTypeHost(
             value: Context {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
-                diff_type: diff_type.clone(),
+                revision_range: revision_range.clone(),
                 diff_service: Some(Rc::clone(pipeline)),
                 watcher_service: Some(Rc::clone(watcher_service)),
                 version_control_service: version_control_service.as_ref().map(Rc::clone),
@@ -251,7 +251,7 @@ fn filesystem_changes_refresh_the_current_repository() {
 }
 
 #[test]
-fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_lists() {
+fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_flight_lists() {
     let (started, listing_worktree) = mpsc::channel::<()>();
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
@@ -265,26 +265,26 @@ fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_
             seen_in_worker
                 .lock()
                 .unwrap()
-                .push(request.diff_type.clone());
-            match &request.diff_type {
-                vcs::DiffType::Worktree => {
+                .push(request.revision_range.clone());
+            match &request.revision_range {
+                vcs::RevisionRange::Worktree => {
                     started.send(()).unwrap();
                     released.recv().unwrap();
                     Ok(vec![file("worktree.rs")])
                 }
-                vcs::DiffType::Between(first, second) if first == "a" && second == "b" => {
+                vcs::RevisionRange::Between(first, second) if first == "a" && second == "b" => {
                     Ok(vec![file("between.rs")])
                 }
-                other => panic!("unexpected diff_type {other:?}"),
+                other => panic!("unexpected revision_range {other:?}"),
             }
         },
         |_| unreachable!("nothing is opened"),
     ));
     let watcher_service = Rc::new(WatcherService::new());
-    let mut harness = Harness::new::<DiffTypeHost>(
-        DiffTypeHostProps {
+    let mut harness = Harness::new::<RevisionRangeHost>(
+        RevisionRangeHostProps {
             repo: Rc::from(Path::new("/repo")),
-            diff_type: vcs::DiffType::Worktree,
+            revision_range: vcs::RevisionRange::Worktree,
             pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::clone(&watcher_service),
             version_control_service: None,
@@ -297,9 +297,9 @@ fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_
         .recv_timeout(std::time::Duration::from_secs(10))
         .expect("the files worker started listing Worktree");
 
-    harness.set_props::<DiffTypeHost>(DiffTypeHostProps {
+    harness.set_props::<RevisionRangeHost>(RevisionRangeHostProps {
         repo: Rc::from(Path::new("/repo")),
-        diff_type: vcs::DiffType::Between("a".into(), "b".into()),
+        revision_range: vcs::RevisionRange::Between("a".into(), "b".into()),
         pipeline: Rc::clone(&pipeline),
         watcher_service: Rc::clone(&watcher_service),
         version_control_service: None,
@@ -314,8 +314,8 @@ fn changing_diff_type_requests_the_new_revision_range_and_drops_stale_in_flight_
     assert_eq!(
         *seen.lock().unwrap(),
         vec![
-            vcs::DiffType::Worktree,
-            vcs::DiffType::Between("a".into(), "b".into()),
+            vcs::RevisionRange::Worktree,
+            vcs::RevisionRange::Between("a".into(), "b".into()),
         ]
     );
 }
@@ -336,10 +336,10 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
         |_| unreachable!("nothing is opened"),
     ));
     let watcher_service = Rc::new(WatcherService::new());
-    let mut harness = Harness::new::<DiffTypeHost>(
-        DiffTypeHostProps {
+    let mut harness = Harness::new::<RevisionRangeHost>(
+        RevisionRangeHostProps {
             repo: Rc::from(Path::new("/repo")),
-            diff_type: vcs::DiffType::Between("a".into(), "b".into()),
+            revision_range: vcs::RevisionRange::Between("a".into(), "b".into()),
             pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::clone(&watcher_service),
             version_control_service: None,
@@ -427,10 +427,10 @@ fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
         ),
     );
     let (pipeline, redraws) = fake_pipeline(vec![vec![commit_file]], Vec::new());
-    let mut harness = Harness::new::<DiffTypeHost>(
-        DiffTypeHostProps {
+    let mut harness = Harness::new::<RevisionRangeHost>(
+        RevisionRangeHostProps {
             repo: Rc::from(repo_dir.path()),
-            diff_type: vcs::DiffType::Between(first, second),
+            revision_range: vcs::RevisionRange::Between(first, second),
             pipeline: Rc::clone(&pipeline),
             watcher_service: Rc::new(WatcherService::new()),
             version_control_service: Some(Rc::new(VersionControlService::new())),

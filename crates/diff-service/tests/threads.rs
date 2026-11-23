@@ -146,11 +146,11 @@ fn a_listed_repository_reports_its_files_or_why_it_could_not() {
         |_| unreachable!("nothing is opened"),
     );
 
-    let listed = pipeline.list_files(Path::new("/repo"), vcs::DiffType::Worktree);
+    let listed = pipeline.list_files(Path::new("/repo"), vcs::RevisionRange::Worktree);
     wait_until_idle(&pipeline, &redraws);
     assert_eq!(*listed.lock().unwrap(), Some(Ok(vec![file("a.rs")])));
 
-    let failed = pipeline.list_files(Path::new("/elsewhere"), vcs::DiffType::Worktree);
+    let failed = pipeline.list_files(Path::new("/elsewhere"), vcs::RevisionRange::Worktree);
     wait_until_idle(&pipeline, &redraws);
     assert_eq!(
         *failed.lock().unwrap(),

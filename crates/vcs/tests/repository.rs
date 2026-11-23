@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use file_types::{ChangeType, DiffVersion, File, FileContent, RepoPath, Stats};
-use vcs::{DiffType, Repository};
+use vcs::{Repository, RevisionRange};
 
 /// A fixture repository in a temporary directory, removed on drop.
 struct Fixture {
@@ -31,7 +31,7 @@ impl Fixture {
 
     fn flat(&self, mut repository: Repository) -> Vec<File> {
         repository
-            .get_changed_files(&DiffType::Worktree, &[])
+            .get_changed_files(&RevisionRange::Worktree, &[])
             .expect("status runs")
     }
 }
@@ -289,14 +289,14 @@ fn a_comparison_resolves_its_revisions_and_says_so_when_it_cannot() {
 
     let files = fixture
         .git()
-        .get_changed_files(&DiffType::Against("HEAD".to_owned()), &[])
+        .get_changed_files(&RevisionRange::Against("HEAD".to_owned()), &[])
         .expect("HEAD resolves");
     let before = files[0].revs().before.to_string();
     assert_eq!(before.len(), 40, "an id, not the name that was typed");
 
     let err = fixture
         .git()
-        .get_changed_files(&DiffType::Against("no-such-branch".to_owned()), &[])
+        .get_changed_files(&RevisionRange::Against("no-such-branch".to_owned()), &[])
         .expect_err("unknown revision");
     assert!(matches!(err, vcs::Error::UnknownRevision { .. }), "{err}");
 }
@@ -307,7 +307,7 @@ fn a_file_staged_and_then_edited_again_is_in_both_comparisons() {
     let fixture = Fixture::new("both");
     let files = fixture
         .git()
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("status runs");
 
     // Each entry carries its comparison revisions.
@@ -327,7 +327,7 @@ fn untracked_and_deleted_files_have_line_counts() {
     let fixture = Fixture::new("one-sided-counts");
     let files = fixture
         .git()
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("status runs");
 
     let untracked = file(&files, "untracked.txt");
@@ -351,7 +351,7 @@ fn each_comparison_counts_its_own_lines() {
     let fixture = Fixture::new("counts");
     let mut git = fixture.git();
     let files = git
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("status runs");
     let found: Vec<(&'static str, Option<Stats>)> = files
         .iter()

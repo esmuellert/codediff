@@ -34,7 +34,6 @@ pub fn find_repo(path: &Path) -> Result<Repo> {
     })
 }
 
-/// Resolves a revision to a full object id.
 /// Git's empty tree object, used as the base of an unborn repository.
 pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
@@ -53,16 +52,27 @@ fn unborn(repo: &Repo) -> bool {
     run::run_line(&repo.root, &["symbolic-ref", "--quiet", "HEAD"]).is_ok_and(|r| !r.is_empty())
 }
 
+/// Resolves a commit-ish revision to its peeled commit object id.
 pub fn resolve(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
-    // `--verify` rejects ambiguous and unknown names.
-    let text = run::run_line(&repo.root, &["rev-parse", "--verify", "--quiet", rev]).map_err(
-        |e| match e {
-            Error::Git { .. } => Error::UnknownRevision {
-                rev: rev.to_owned(),
-            },
-            other => other,
+    // `--end-of-options` stops leading `-` names from being parsed as flags,
+    // and `^{commit}` peels annotated tags while rejecting blobs and trees.
+    let spec = format!("{rev}^{{commit}}");
+    let text = run::run_line(
+        &repo.root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &spec,
+        ],
+    )
+    .map_err(|e| match e {
+        Error::Git { .. } => Error::UnknownRevision {
+            rev: rev.to_owned(),
         },
-    )?;
+        other => other,
+    })?;
     if text.is_empty() {
         return Err(Error::UnknownRevision {
             rev: rev.to_owned(),

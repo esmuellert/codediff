@@ -31,6 +31,8 @@ fn main() -> Result<ExitCode> {
         panic!("deliberate panic, to check the terminal is restored");
     }
 
+    let revision_range = cli.revision_range();
+
     match cli.command {
         Some(Command::Doctor) => {
             doctor::run();
@@ -46,7 +48,7 @@ fn main() -> Result<ExitCode> {
                 eprintln!("codediff: {warning}");
             }
             let cwd = std::env::current_dir().context("finding the current directory")?;
-            let code = ui::main(&cwd, preferences.get().clone())?;
+            let code = ui::main(&cwd, preferences.get().clone(), revision_range)?;
             Ok(ExitCode::from(code as u8))
         }
     }
