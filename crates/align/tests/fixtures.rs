@@ -3,7 +3,7 @@
 //! Filler lines contribute no file content.
 
 use align::{Alignment, DiffVersion, ViewLineType};
-use file_types::DiffType;
+use file_types::ViewerMode;
 use vscode_diff::{LinesDiff, Options};
 
 macro_rules! pairs {
@@ -58,7 +58,7 @@ fn each_column_reads_back_as_the_file_it_came_from() {
     for_each_pair(|name, alignment| {
         let mut left = Vec::new();
         let mut right = Vec::new();
-        for line in alignment.view_lines(DiffType::SideBySide) {
+        for line in alignment.view_lines(ViewerMode::SideBySide) {
             if let Some(n) = line.original.line() {
                 left.push(
                     alignment
@@ -92,7 +92,7 @@ fn each_column_reads_back_as_the_file_it_came_from() {
 fn every_line_appears_exactly_once_and_in_order() {
     for_each_pair(|name, alignment| {
         let (mut last_original, mut last_modified) = (0, 0);
-        for line in alignment.view_lines(DiffType::SideBySide) {
+        for line in alignment.view_lines(ViewerMode::SideBySide) {
             if let Some(n) = line.original.line() {
                 assert_eq!(
                     n,
@@ -126,7 +126,7 @@ fn every_line_appears_exactly_once_and_in_order() {
 #[test]
 fn no_line_is_blank_on_both_sides() {
     for_each_pair(|name, alignment| {
-        for (i, line) in alignment.view_lines(DiffType::SideBySide).enumerate() {
+        for (i, line) in alignment.view_lines(ViewerMode::SideBySide).enumerate() {
             assert!(
                 !(line.original.is_filler() && line.modified.is_filler()),
                 "{name}: line {i} shows nothing on either version"
@@ -139,8 +139,8 @@ fn no_line_is_blank_on_both_sides() {
 fn the_line_count_matches_the_lines_produced() {
     for_each_pair(|name, alignment| {
         assert_eq!(
-            alignment.view_line_count(DiffType::SideBySide) as usize,
-            alignment.view_lines(DiffType::SideBySide).count(),
+            alignment.view_line_count(ViewerMode::SideBySide) as usize,
+            alignment.view_lines(ViewerMode::SideBySide).count(),
             "{name}: view_line_count disagrees with the lines"
         );
     });
@@ -149,7 +149,7 @@ fn the_line_count_matches_the_lines_produced() {
 #[test]
 fn unchanged_lines_hold_identical_text() {
     for_each_pair(|name, alignment| {
-        for line in alignment.view_lines(DiffType::SideBySide) {
+        for line in alignment.view_lines(ViewerMode::SideBySide) {
             if line.kind != ViewLineType::Unchanged {
                 continue;
             }
@@ -166,7 +166,7 @@ fn unchanged_lines_hold_identical_text() {
 #[test]
 fn a_filler_never_sits_opposite_an_unchanged_line() {
     for_each_pair(|name, alignment| {
-        for line in alignment.view_lines(DiffType::SideBySide) {
+        for line in alignment.view_lines(ViewerMode::SideBySide) {
             let has_filler = line.original.is_filler() || line.modified.is_filler();
             assert_eq!(
                 has_filler,

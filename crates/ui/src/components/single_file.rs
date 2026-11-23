@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use align::{ViewLine, ViewLineContent, ViewLineType};
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollProps, component,
     rsx, use_context,
@@ -217,7 +217,7 @@ fn wrapped_lines(
                     modified,
                     code_width,
                     code_width,
-                    DiffType::SideBySide,
+                    ViewerMode::SideBySide,
                 )
             } else {
                 WrappedViewLine::from_view_line(view_line, original, modified)

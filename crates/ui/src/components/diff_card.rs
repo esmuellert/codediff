@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::DiffContent;
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, Text,
     TextProps, component, rsx, use_context, use_measure, use_memo, use_scroll,
@@ -23,18 +23,18 @@ use crate::keybindings::Action;
 pub(crate) fn card_height(
     content: &DiffContent,
     width: u16,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
 ) -> u16 {
     let terminal_line_count = match content {
-        DiffContent::Diff(diff) => match view_layout {
-            DiffType::Inline => {
+        DiffContent::Diff(diff) => match viewer_mode {
+            ViewerMode::Inline => {
                 inline_geometry(&diff.alignment, width, wrap, true).terminal_line_count
             }
-            DiffType::SideBySide => {
+            ViewerMode::SideBySide => {
                 side_by_side_geometry(&diff.alignment, width, wrap, true).terminal_line_count
             }
-            DiffType::Single => unreachable!("a diff has no single-file layout"),
+            ViewerMode::Single => unreachable!("a diff has no single-file layout"),
         },
         DiffContent::SingleFile(single) => {
             single_file_geometry(single, width, wrap).terminal_line_count
@@ -82,25 +82,25 @@ pub fn DiffCard(
     scope: &mut Scope,
     content: Arc<DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
     height: Option<u16>,
     auto_focus: bool,
 ) -> Node {
     let theme = *use_context::<Ui>(scope).theme;
-    let view_layout = *view_layout;
+    let viewer_mode = *viewer_mode;
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
     let content_id = Arc::as_ptr(content) as usize;
     let content_for_geometry = Arc::clone(content);
     let geometry = use_memo(
         scope,
-        (content_id, view_layout, wrap, size.width),
+        (content_id, viewer_mode, wrap, size.width),
         move || {
             diff_geometry(
                 Some(content_for_geometry.as_ref()),
                 size.width,
-                view_layout,
+                viewer_mode,
                 wrap,
                 true,
             )

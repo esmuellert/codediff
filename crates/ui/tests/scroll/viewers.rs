@@ -28,7 +28,7 @@ fn SideBySide(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) 
         DiffViewerContainer {
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
-            view_layout: file_types::DiffType::SideBySide,
+            viewer_mode: file_types::ViewerMode::SideBySide,
             view_state: state,
             wrap: false,
             compact: false,

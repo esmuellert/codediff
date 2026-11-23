@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use align::{Alignment, DiffVersion};
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope, Scroll,
     ScrollProps, component, rsx, use_context,
@@ -53,8 +53,8 @@ pub(crate) fn side_by_side_geometry(
     let modified_width = text_width / 2;
     let wrapped_lines = terminal_view_lines(
         alignment,
-        DiffType::SideBySide,
-        compact_view_lines(alignment, DiffType::SideBySide, compact),
+        ViewerMode::SideBySide,
+        compact_view_lines(alignment, ViewerMode::SideBySide, compact),
         original_width,
         modified_width,
         wrap,

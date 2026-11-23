@@ -2,7 +2,7 @@
 
 use ::align::{Alignment, DiffVersion, ViewLine, ViewLineContent, ViewLineType};
 use anyhow::{Context, Result};
-use file_types::DiffType;
+use file_types::ViewerMode;
 
 use crate::text::{expand_str, fit, pad, sanitize};
 
@@ -34,7 +34,7 @@ pub fn run(original_path: &str, modified_path: &str, verbose: bool) -> Result<()
 
 /// Prints aligned lines and optional details.
 pub fn print(alignment: &Alignment, verbose: bool) {
-    for line in alignment.view_lines(DiffType::SideBySide) {
+    for line in alignment.view_lines(ViewerMode::SideBySide) {
         println!("{}", rendered(alignment, &line));
     }
     if verbose {
@@ -58,7 +58,7 @@ fn header(
         "{} lines -> {} lines, {} view lines",
         original.len(),
         modified.len(),
-        alignment.view_line_count(DiffType::SideBySide)
+        alignment.view_line_count(ViewerMode::SideBySide)
     );
     println!(
         "{} change(s), {} move(s), {} hunk(s){}",
@@ -157,7 +157,7 @@ fn detail(alignment: &Alignment) {
     println!();
     println!("character changes");
     let mut any = false;
-    for line in alignment.view_lines(DiffType::SideBySide) {
+    for line in alignment.view_lines(ViewerMode::SideBySide) {
         if line.kind != ViewLineType::Modified {
             continue;
         }

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use align::{Alignment, DiffVersion};
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollProps, component,
     rsx, use_context,
@@ -47,8 +47,8 @@ pub(crate) fn inline_geometry(
         .saturating_sub(modified_gutter_width);
     let wrapped_lines = terminal_view_lines(
         alignment,
-        DiffType::Inline,
-        compact_view_lines(alignment, DiffType::Inline, compact),
+        ViewerMode::Inline,
+        compact_view_lines(alignment, ViewerMode::Inline, compact),
         code_width,
         code_width,
         wrap,

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
@@ -31,7 +31,7 @@ fn SideBySideHost(
             key: content_id,
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
-            view_layout: DiffType::SideBySide,
+            viewer_mode: ViewerMode::SideBySide,
             view_state,
             wrap: *wrap,
             compact: false,
@@ -58,7 +58,7 @@ pub(super) fn run(
     let (original_width, modified_width) = pane_widths(width, original_gutter, modified_gutter);
     let terminal_lines = terminal_line_pairs(
         &diff.alignment,
-        DiffType::SideBySide,
+        ViewerMode::SideBySide,
         original_width,
         modified_width,
         wrap,

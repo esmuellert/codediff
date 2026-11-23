@@ -65,7 +65,7 @@ fn current_version() -> u32 {
 /// How two existing file versions are displayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub enum ViewLayout {
+pub enum ViewerMode {
     #[default]
     SideBySide,
     Inline,
@@ -84,7 +84,7 @@ pub enum ExplorerMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default)]
-    pub layout: ViewLayout,
+    pub layout: ViewerMode,
     /// Whether long source lines are split into terminal lines.
     #[serde(default = "default_wrap")]
     pub wrap: bool,
@@ -101,7 +101,7 @@ pub struct UiConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
-            layout: ViewLayout::default(),
+            layout: ViewerMode::default(),
             wrap: default_wrap(),
             theme: default_theme(),
             explorer_width: default_explorer_width(),
@@ -277,7 +277,7 @@ mod tests {
     fn defaults_match_the_current_application() {
         let config = Config::default();
         assert_eq!(config.version, CURRENT_VERSION);
-        assert_eq!(config.ui.layout, ViewLayout::SideBySide);
+        assert_eq!(config.ui.layout, ViewerMode::SideBySide);
         assert!(config.ui.wrap);
         assert_eq!(config.ui.theme, "auto");
         assert_eq!(config.ui.explorer_width, 40);
@@ -292,7 +292,7 @@ mod tests {
         let config: Config =
             serde_json::from_str(r#"{"ui":{"layout":"inline"},"keybindings":{"quit":["x"]}}"#)
                 .unwrap();
-        assert_eq!(config.ui.layout, ViewLayout::Inline);
+        assert_eq!(config.ui.layout, ViewerMode::Inline);
         assert_eq!(config.ui.explorer_width, 40);
         assert_eq!(config.keybindings.quit, ["x"]);
         assert_eq!(config.keybindings.move_down, ["j", "down"]);

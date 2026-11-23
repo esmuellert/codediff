@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::DiffContent;
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Column, ColumnProps, Layout, Node, Ref, Scope, Scroll, ScrollOffset, ScrollProps, ScrollView,
     component, rsx, use_context, use_layout_effect, use_measure, use_memo, use_scroll,
@@ -91,25 +91,25 @@ impl DiffGeometry {
 pub(crate) fn diff_geometry(
     content: Option<&DiffContent>,
     width: u16,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
     compact: bool,
 ) -> DiffGeometry {
     match content {
-        Some(DiffContent::Diff(diff)) => match view_layout {
-            DiffType::Inline => DiffGeometry::Inline(Rc::new(inline_geometry(
+        Some(DiffContent::Diff(diff)) => match viewer_mode {
+            ViewerMode::Inline => DiffGeometry::Inline(Rc::new(inline_geometry(
                 &diff.alignment,
                 width,
                 wrap,
                 compact,
             ))),
-            DiffType::SideBySide => DiffGeometry::SideBySide(Rc::new(side_by_side_geometry(
+            ViewerMode::SideBySide => DiffGeometry::SideBySide(Rc::new(side_by_side_geometry(
                 &diff.alignment,
                 width,
                 wrap,
                 compact,
             ))),
-            DiffType::Single => unreachable!("a diff has no single-file layout"),
+            ViewerMode::Single => unreachable!("a diff has no single-file layout"),
         },
         Some(DiffContent::SingleFile(single)) => {
             DiffGeometry::SingleFile(Rc::new(single_file_geometry(single, width, wrap)))
@@ -123,14 +123,14 @@ pub fn DiffViewerContainer(
     scope: &mut Scope,
     content: Option<Arc<DiffContent>>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     view_state: Ref<ViewState>,
     wrap: bool,
     compact: bool,
     auto_focus: bool,
 ) -> Node {
     let content = content.clone();
-    let view_layout = *view_layout;
+    let viewer_mode = *viewer_mode;
     let wrap = *wrap;
     let compact = *compact;
     let auto_focus = *auto_focus;
@@ -144,12 +144,12 @@ pub fn DiffViewerContainer(
     let content_for_geometry = content.clone();
     let geometry = use_memo(
         scope,
-        (content_id, view_layout, wrap, compact, size.width),
+        (content_id, viewer_mode, wrap, compact, size.width),
         move || {
             diff_geometry(
                 content_for_geometry.as_deref(),
                 size.width,
-                view_layout,
+                viewer_mode,
                 wrap,
                 compact,
             )
@@ -168,7 +168,7 @@ pub fn DiffViewerContainer(
     });
     use_layout_effect(
         scope,
-        (content_id, view_layout, wrap, compact, size.width),
+        (content_id, viewer_mode, wrap, compact, size.width),
         move || {
             scroll_handle.scroll_to(ScrollOffset {
                 x: current_state.first_cell,
@@ -203,7 +203,7 @@ pub fn DiffViewerContainer(
     let view_node = render_view(
         content,
         Arc::clone(colours),
-        view_layout,
+        viewer_mode,
         geometry.as_ref(),
         visible_range,
         auto_focus,
@@ -239,7 +239,7 @@ pub fn DiffViewerContainer(
 fn render_view(
     content: Option<Arc<DiffContent>>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     geometry: &DiffGeometry,
     visible_range: DiffVisibleRange,
     auto_focus: bool,
@@ -247,8 +247,8 @@ fn render_view(
     let Some(content) = content else {
         return rsx! { Welcome {} };
     };
-    match (content.as_ref(), view_layout, geometry) {
-        (DiffContent::Diff(_), DiffType::Inline, DiffGeometry::Inline(geometry)) => rsx! {
+    match (content.as_ref(), viewer_mode, geometry) {
+        (DiffContent::Diff(_), ViewerMode::Inline, DiffGeometry::Inline(geometry)) => rsx! {
             Inline {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
@@ -258,16 +258,18 @@ fn render_view(
                 auto_focus,
             }
         },
-        (DiffContent::Diff(_), DiffType::SideBySide, DiffGeometry::SideBySide(geometry)) => rsx! {
-            SideBySide {
-                key: Arc::as_ptr(&content) as usize,
-                content: Arc::clone(&content),
-                colours,
-                geometry: Rc::clone(geometry),
-                viewport: visible_range,
-                auto_focus,
+        (DiffContent::Diff(_), ViewerMode::SideBySide, DiffGeometry::SideBySide(geometry)) => {
+            rsx! {
+                SideBySide {
+                    key: Arc::as_ptr(&content) as usize,
+                    content: Arc::clone(&content),
+                    colours,
+                    geometry: Rc::clone(geometry),
+                    viewport: visible_range,
+                    auto_focus,
+                }
             }
-        },
+        }
         (DiffContent::SingleFile(_), _, DiffGeometry::SingleFile(geometry)) => rsx! {
             SingleFile {
                 key: Arc::as_ptr(&content) as usize,

@@ -39,7 +39,7 @@ fn SingleFile(
         DiffViewerContainer {
             content: Some(Arc::clone(content)),
             colours: colours.clone(),
-            view_layout: file_types::DiffType::Single,
+            viewer_mode: file_types::ViewerMode::Single,
             view_state: active_state,
             wrap: *wrap,
             compact: false,

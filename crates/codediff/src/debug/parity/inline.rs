@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
@@ -31,7 +31,7 @@ fn InlineHost(
             key: content_id,
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
-            view_layout: DiffType::Inline,
+            viewer_mode: ViewerMode::Inline,
             view_state,
             wrap: *wrap,
             compact: false,
@@ -56,7 +56,7 @@ pub(super) fn run(
     let gutters = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
     let terminal_lines = terminal_line_pairs(
         &diff.alignment,
-        DiffType::Inline,
+        ViewerMode::Inline,
         width.saturating_sub(gutters),
         width.saturating_sub(gutters),
         wrap,

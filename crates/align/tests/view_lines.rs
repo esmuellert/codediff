@@ -3,7 +3,7 @@
 //! These tests pin the pairing of lines and fillers.
 
 use align::{Alignment, Malformed, ViewLineContent, ViewLineType};
-use file_types::DiffType;
+use file_types::ViewerMode;
 use vscode_diff::{
     CharRange, DetailedLineRangeMapping, LineRange, LinesDiff, Options, RangeMapping,
 };
@@ -20,7 +20,7 @@ fn compute(original: &[&str], modified: &[&str]) -> LinesDiff {
 /// `(original, modified, kind)` for every line, as a readable table.
 fn table(alignment: &Alignment) -> Vec<(Option<u32>, Option<u32>, ViewLineType)> {
     alignment
-        .view_lines(DiffType::SideBySide)
+        .view_lines(ViewerMode::SideBySide)
         .map(|r| (r.original.line(), r.modified.line(), r.kind))
         .collect()
 }
@@ -199,7 +199,7 @@ fn adjacent_changes_with_no_unchanged_run_between_them() {
             (Some(3), Some(3), Unchanged),
         ]
     );
-    assert_eq!(alignment.view_line_count(DiffType::SideBySide), 4);
+    assert_eq!(alignment.view_line_count(ViewerMode::SideBySide), 4);
 }
 
 #[test]
@@ -377,11 +377,11 @@ fn the_view_line_count_matches_the_walk() {
         let original = split(original);
         let modified = split(modified);
         let alignment = Alignment::new(compute(&original, &modified), &original, &modified);
-        for layout in [DiffType::SideBySide, DiffType::Inline] {
+        for viewer_mode in [ViewerMode::SideBySide, ViewerMode::Inline] {
             assert_eq!(
-                alignment.view_line_count(layout) as usize,
-                alignment.view_lines(layout).count(),
-                "{layout:?} on {original:?} -> {modified:?}"
+                alignment.view_line_count(viewer_mode) as usize,
+                alignment.view_lines(viewer_mode).count(),
+                "{viewer_mode:?} on {original:?} -> {modified:?}"
             );
         }
     }

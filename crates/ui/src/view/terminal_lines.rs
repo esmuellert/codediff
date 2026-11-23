@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use align::{Alignment, ViewLine, ViewLineContent, ViewLineType};
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 use line_index::{CellCol, LineIndex};
 
 const TAB_WIDTH: u8 = 4;
@@ -88,9 +88,9 @@ pub(crate) fn wrap_view_line(
     modified_source: Option<&str>,
     original_width: u16,
     modified_width: u16,
-    layout: DiffType,
+    viewer_mode: ViewerMode,
 ) -> WrappedViewLine {
-    let (mut original, mut modified) = if layout == DiffType::Inline {
+    let (mut original, mut modified) = if viewer_mode == ViewerMode::Inline {
         let modified =
             TerminalLine::wrap_source_line(view_line.modified, modified_source, modified_width);
         let original =
@@ -124,7 +124,7 @@ pub(crate) fn wrap_view_line(
 
 pub(crate) fn terminal_view_lines(
     alignment: &Alignment,
-    diff_type: DiffType,
+    viewer_mode: ViewerMode,
     view_lines: Vec<ViewLine>,
     original_width: u16,
     modified_width: u16,
@@ -148,7 +148,7 @@ pub(crate) fn terminal_view_lines(
                     modified_source,
                     original_width,
                     modified_width,
-                    diff_type,
+                    viewer_mode,
                 )
             } else {
                 WrappedViewLine::from_view_line(view_line, original_source, modified_source)
@@ -163,15 +163,15 @@ pub(crate) fn terminal_view_lines(
 /// components; parity uses this only to describe the lines it measures.
 pub fn terminal_line_pairs(
     alignment: &Alignment,
-    diff_type: DiffType,
+    viewer_mode: ViewerMode,
     original_width: u16,
     modified_width: u16,
     wrap: bool,
 ) -> Vec<(TerminalLine, TerminalLine)> {
     terminal_view_lines(
         alignment,
-        diff_type,
-        super::compact::view_lines(alignment, diff_type, false),
+        viewer_mode,
+        super::compact::view_lines(alignment, viewer_mode, false),
         original_width,
         modified_width,
         wrap,
@@ -402,7 +402,7 @@ mod tests {
                 Some("abc"),
                 3,
                 3,
-                DiffType::SideBySide,
+                ViewerMode::SideBySide,
             ),
             wrap_view_line(
                 ViewLine {
@@ -414,7 +414,7 @@ mod tests {
                 Some(""),
                 3,
                 3,
-                DiffType::SideBySide,
+                ViewerMode::SideBySide,
             ),
         ];
         let pairs = lines
@@ -475,7 +475,7 @@ mod tests {
             Some("abc"),
             3,
             3,
-            DiffType::SideBySide,
+            ViewerMode::SideBySide,
         );
 
         assert_eq!(
@@ -510,7 +510,14 @@ mod tests {
             modified: ViewLineContent::SourceLine(2),
             kind: ViewLineType::Inserted,
         };
-        let wrapped = wrap_view_line(view_line, None, Some("abcdef"), 3, 3, DiffType::SideBySide);
+        let wrapped = wrap_view_line(
+            view_line,
+            None,
+            Some("abcdef"),
+            3,
+            3,
+            ViewerMode::SideBySide,
+        );
 
         assert_eq!(
             wrapped.original,
@@ -544,7 +551,7 @@ mod tests {
             Some("abc"),
             3,
             3,
-            DiffType::Inline,
+            ViewerMode::Inline,
         );
 
         assert_eq!(
@@ -576,8 +583,8 @@ mod tests {
         let alignment = diff_service::diff::align(diff, &original, &modified).unwrap();
         let wrapped = terminal_view_lines(
             &alignment,
-            DiffType::SideBySide,
-            super::super::compact::view_lines(&alignment, DiffType::SideBySide, false),
+            ViewerMode::SideBySide,
+            super::super::compact::view_lines(&alignment, ViewerMode::SideBySide, false),
             3,
             3,
             true,
@@ -601,11 +608,11 @@ mod tests {
         let alignment = diff_service::diff::align(diff, &original, &modified).unwrap();
 
         assert_eq!(
-            terminal_line_pairs(&alignment, DiffType::SideBySide, 3, 3, true).len(),
+            terminal_line_pairs(&alignment, ViewerMode::SideBySide, 3, 3, true).len(),
             2
         );
         assert_eq!(
-            terminal_line_pairs(&alignment, DiffType::SideBySide, 3, 3, false).len(),
+            terminal_line_pairs(&alignment, ViewerMode::SideBySide, 3, 3, false).len(),
             1
         );
     }
@@ -629,8 +636,8 @@ mod tests {
         let alignment = diff_service::diff::align(diff, &original, &modified).unwrap();
         let lines = terminal_view_lines(
             &alignment,
-            DiffType::SideBySide,
-            super::super::compact::view_lines(&alignment, DiffType::SideBySide, true),
+            ViewerMode::SideBySide,
+            super::super::compact::view_lines(&alignment, ViewerMode::SideBySide, true),
             80,
             80,
             false,
@@ -745,7 +752,7 @@ mod tests {
             modified: ViewLineContent::Filler,
             kind: ViewLineType::Deleted,
         };
-        let wrapped = wrap_view_line(view_line, Some("日a"), None, 2, 2, DiffType::SideBySide);
+        let wrapped = wrap_view_line(view_line, Some("日a"), None, 2, 2, ViewerMode::SideBySide);
 
         assert_eq!(
             wrapped.original,

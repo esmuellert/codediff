@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::DiffContent;
-use file_types::{DiffType, DiffVersion, File, Rev};
+use file_types::{DiffVersion, File, Rev, ViewerMode};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, Stack, StackProps,
     Text, TextProps, component, rsx, use_context, use_effect, use_memo, use_ref, use_state,
@@ -182,7 +182,7 @@ fn layout_listener(
     is_diff: bool,
     menu_open: bool,
     set_menu_open: SetState<bool>,
-    set_view_layout: SetState<DiffType>,
+    set_viewer_mode: SetState<ViewerMode>,
     set_wrap: SetState<bool>,
 ) -> Listeners {
     let keybindings = use_context::<Ui>(scope).keybindings;
@@ -191,7 +191,7 @@ fn layout_listener(
             set_menu_open.set(false);
             Bubble::Stop
         } else if is_diff && keybindings.matches(Action::ToggleLayout, key) {
-            set_view_layout(&|view_layout| view_layout.other());
+            set_viewer_mode(&|viewer_mode| viewer_mode.other());
             Bubble::Stop
         } else if keybindings.matches(Action::ToggleWrap, key) {
             set_wrap(&|wrap| !wrap);
@@ -220,9 +220,9 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         .as_ref()
         .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
     let directory_files = use_directory_files(scope, &ctx);
-    let (view_layout, set_view_layout) = use_state(scope, || match ctx.config.ui.layout {
-        config::ViewLayout::SideBySide => DiffType::SideBySide,
-        config::ViewLayout::Inline => DiffType::Inline,
+    let (viewer_mode, set_viewer_mode) = use_state(scope, || match ctx.config.ui.layout {
+        config::ViewerMode::SideBySide => ViewerMode::SideBySide,
+        config::ViewerMode::Inline => ViewerMode::Inline,
     });
     let (wrap, set_wrap) = use_state(scope, || ctx.config.ui.wrap);
     let (menu_open, set_menu_open) = use_state(scope, || false);
@@ -248,7 +248,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         is_diff,
         menu_visible,
         set_menu_open,
-        set_view_layout,
+        set_viewer_mode,
         set_wrap,
     );
 
@@ -286,7 +286,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
                 files: Rc::new(opened),
                 more_files,
                 open_next,
-                view_layout,
+                viewer_mode,
                 wrap,
             }
         }
@@ -302,7 +302,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             DiffViewerContainer {
                 content,
                 colours,
-                view_layout,
+                viewer_mode,
                 view_state: active_view_state,
                 wrap,
                 compact: false,
@@ -314,8 +314,8 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     let menu = if menu_visible {
         rsx! {
             DiffViewMenu {
-                view_layout,
-                set_view_layout,
+                viewer_mode,
+                set_viewer_mode,
                 wrap,
                 set_wrap,
                 set_menu_open,
