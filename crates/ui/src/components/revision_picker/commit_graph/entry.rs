@@ -17,19 +17,6 @@ fn cell_width(text: &str) -> u16 {
     line_index::LineIndex::new(text, 1).width().0 as u16
 }
 
-/// Clips `text` at a grapheme boundary without appending `'…'`.
-fn clip(text: &str, cells: u16) -> &str {
-    if cells == 0 {
-        return "";
-    }
-    let line = line_index::LineIndex::new(text, 1);
-    if (line.width().0 as u16) <= cells {
-        return text;
-    }
-    let end = line.cell_to_byte(line_index::CellCol(u32::from(cells)));
-    &text[..end.0 as usize]
-}
-
 fn truncate(text: &str, cells: u16) -> String {
     let line = line_index::LineIndex::new(text, 1);
     let full = line.width().0 as u16;
@@ -132,9 +119,14 @@ struct EntryColumns {
     oid: FieldSpan,
 }
 
-fn entry_columns(area: Rect, graph_end: u16) -> EntryColumns {
+fn entry_columns(area: Rect, graph_end: u16, has_graph: bool) -> EntryColumns {
     let right_edge = area.right();
-    let text_x = graph_end.saturating_add(1).min(right_edge);
+    let text_x = if has_graph {
+        graph_end.saturating_add(1)
+    } else {
+        graph_end
+    }
+    .min(right_edge);
     let available = right_edge.saturating_sub(text_x);
 
     let oid_width = if available >= 25 { 7 } else { 0 };
@@ -182,14 +174,10 @@ fn paint_git_graph(
     let max_graph_width = if area.width > 24 {
         area.width.saturating_sub(20).min(area.width / 2)
     } else {
-        area.width.saturating_sub(2)
+        area.width.saturating_sub(1)
     };
-    let right = area
-        .x
-        .saturating_add(2)
-        .saturating_add(max_graph_width)
-        .min(area.right());
-    let start_x = area.x.saturating_add(2);
+    let start_x = area.x.saturating_add(1);
+    let right = start_x.saturating_add(max_graph_width).min(area.right());
     for (index, cell) in cells.iter().enumerate() {
         let x = start_x.saturating_add((index as u16).saturating_mul(2));
         if x >= right {
@@ -325,15 +313,12 @@ pub fn Entry(
                     return;
                 }
                 fill_entry_background(paint, area, base);
-
-                let selector = if selected { "› " } else { "  " };
-                paint.write(area.x, area.y, clip(selector, area.width), base.fg(theme.tree.heading));
-                if area.width <= 2 {
+                if area.width <= 1 {
                     return;
                 }
 
                 let graph_end = paint_git_graph(paint, area, &cells, &theme, base);
-                let columns = entry_columns(area, graph_end);
+                let columns = entry_columns(area, graph_end, !cells.is_empty());
 
                 paint_refs_and_subject(
                     paint,

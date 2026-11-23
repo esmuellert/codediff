@@ -5,39 +5,33 @@ use vcs::Commit;
 use super::super::definition::{StoryComponent, StoryDefinition, StoryFixture};
 use super::super::fixtures::commit_graph::CommitBuilder;
 
-const SELECTED_INITIAL_KEYS: &[KeyCombination] =
-    &[key!(j), key!(j), key!(j), key!(j), key!(j), key!(j)];
+const SEARCH_INITIAL_KEYS: &[KeyCombination] = &[
+    key!('/'),
+    key!(v),
+    key!('0'),
+    key!('.'),
+    key!('2'),
+    key!('8'),
+];
 
 pub const STORIES: &[StoryDefinition] = &[
     story(
-        "commit-graph/branches",
-        "Seamless U+F5D0..U+F60D branch-drawing circles, curves, and ref decorations",
+        "revision-picker/default",
+        "Pinned Working tree above a divider and seamless U+F5D0..U+F60D commit graph",
         &[],
-        branches,
+        branch_drawing_picker,
     ),
     story(
-        "commit-graph/box-fallback",
+        "revision-picker/box-fallback",
         "Box-drawing fallback (○/◎ + ╭ ╮ ╰ ╯ │ ─) for terminals without U+F5D0..U+F60D",
         &[],
-        box_fallback,
+        box_fallback_picker,
     ),
     story(
-        "commit-graph/selected",
-        "Keyboard navigation highlighting a merge commit's pipes",
-        SELECTED_INITIAL_KEYS,
-        branches,
-    ),
-    story(
-        "commit-graph/long-list",
-        "Eighty commits for virtualized vertical scrolling",
-        &[],
-        long_list,
-    ),
-    story(
-        "commit-graph/empty",
-        "Empty repository with no commits",
-        &[],
-        empty,
+        "revision-picker/search",
+        "Open / search bar packing distant matching tags into a flat list",
+        SEARCH_INITIAL_KEYS,
+        branch_drawing_picker,
     ),
 ];
 
@@ -50,7 +44,7 @@ const fn story(
     StoryDefinition {
         id,
         description,
-        component: StoryComponent::CommitGraph,
+        component: StoryComponent::RevisionPicker,
         compact: false,
         snapshot_size: (110, 24),
         initial_keys,
@@ -58,65 +52,19 @@ const fn story(
     }
 }
 
-fn empty() -> Result<StoryFixture> {
-    Ok(StoryFixture::CommitGraph {
-        commits: Vec::new(),
+fn branch_drawing_picker() -> Result<StoryFixture> {
+    Ok(StoryFixture::RevisionPicker {
+        commits: branching_history(),
+        worktree_summary: "changed · 6 files".to_owned(),
         branch_drawing: true,
     })
 }
 
-fn branches() -> Result<StoryFixture> {
-    Ok(StoryFixture::CommitGraph {
+fn box_fallback_picker() -> Result<StoryFixture> {
+    Ok(StoryFixture::RevisionPicker {
         commits: branching_history(),
-        branch_drawing: true,
-    })
-}
-
-fn box_fallback() -> Result<StoryFixture> {
-    Ok(StoryFixture::CommitGraph {
-        commits: branching_history(),
+        worktree_summary: "changed · 6 files".to_owned(),
         branch_drawing: false,
-    })
-}
-
-fn long_list() -> Result<StoryFixture> {
-    let mut commits = branching_history();
-    if let Some(last) = commits.last_mut() {
-        last.parents = vec![file_types::Oid::new("0000019")];
-    }
-
-    let start = commits.len() + 1;
-    let mut current_oid = format!("{start:07x}");
-    for index in start..=80 {
-        let next_parent = format!("{:07x}", index + 1);
-        let day = ((index - 1) % 28) + 1;
-        let subject = format!("chore(history): commit entry {index:02} for scroll virtualization");
-        let commit = if index == 80 {
-            CommitBuilder::new(
-                &current_oid,
-                &[],
-                &format!("2026-08-{day:02}"),
-                "Yanuo Ma",
-                &subject,
-            )
-            .build()
-        } else {
-            CommitBuilder::new(
-                &current_oid,
-                &[&next_parent],
-                &format!("2026-08-{day:02}"),
-                "Yanuo Ma",
-                &subject,
-            )
-            .build()
-        };
-        current_oid = next_parent;
-        commits.push(commit);
-    }
-
-    Ok(StoryFixture::CommitGraph {
-        commits,
-        branch_drawing: true,
     })
 }
 
@@ -339,18 +287,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn branches_and_box_fallback_share_commits_with_distinct_symbol_modes() {
-        let StoryFixture::CommitGraph {
+    fn default_and_box_fallback_share_commits_with_distinct_symbol_modes() {
+        let StoryFixture::RevisionPicker {
             commits: branch_commits,
             branch_drawing: true,
-        } = branches().unwrap()
+            ..
+        } = branch_drawing_picker().unwrap()
         else {
             unreachable!()
         };
-        let StoryFixture::CommitGraph {
+        let StoryFixture::RevisionPicker {
             commits: box_commits,
             branch_drawing: false,
-        } = box_fallback().unwrap()
+            ..
+        } = box_fallback_picker().unwrap()
         else {
             unreachable!()
         };
@@ -366,14 +316,5 @@ mod tests {
                 .any(|commit| commit.parents.len() >= 2)
         );
         assert!(branch_commits.last().unwrap().parents.is_empty());
-    }
-
-    #[test]
-    fn long_list_fixture_builds_eighty_commits() {
-        let StoryFixture::CommitGraph { commits, .. } = long_list().unwrap() else {
-            unreachable!()
-        };
-        assert_eq!(commits.len(), 80);
-        assert!(commits.last().unwrap().parents.is_empty());
     }
 }

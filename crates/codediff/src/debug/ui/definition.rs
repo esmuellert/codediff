@@ -14,7 +14,7 @@ pub enum StoryComponent {
     Welcome,
     Explorer,
     ExplorerCards,
-    CommitGraph,
+    RevisionPicker,
     SideBySide,
     Inline,
     SingleFile,
@@ -74,8 +74,9 @@ pub enum StoryFixture {
         repo: LiveRepo,
         revision_range: RevisionRange,
     },
-    CommitGraph {
+    RevisionPicker {
         commits: Vec<Commit>,
+        worktree_summary: String,
         branch_drawing: bool,
     },
     SideBySide(Rc<DiffContent>),
@@ -91,7 +92,7 @@ impl StoryFixture {
             Self::Welcome => StoryComponent::Welcome,
             Self::Explorer(_) => StoryComponent::Explorer,
             Self::ExplorerCards { .. } | Self::Repository { .. } => StoryComponent::ExplorerCards,
-            Self::CommitGraph { .. } => StoryComponent::CommitGraph,
+            Self::RevisionPicker { .. } => StoryComponent::RevisionPicker,
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,

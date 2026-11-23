@@ -55,30 +55,47 @@ pub(super) fn story_props(
             },
             files: Rc::new(Vec::new()),
             commits: Rc::new(Vec::new()),
+            worktree_summary: None,
             navigate,
         };
         return (pipeline, props, Some(repo));
     }
 
-    let (listed, contents, commits, branch_drawing, open) = match fixture {
-        StoryFixture::Welcome => (None, Vec::new(), Vec::new(), false, false),
-        StoryFixture::Explorer(files) => (Some(files), Vec::new(), Vec::new(), false, false),
+    let (listed, contents, commits, worktree_summary, branch_drawing, open) = match fixture {
+        StoryFixture::Welcome => (None, Vec::new(), Vec::new(), None, false, false),
+        StoryFixture::Explorer(files) => (Some(files), Vec::new(), Vec::new(), None, false, false),
         StoryFixture::ExplorerCards { files, diffs } => {
-            (Some(files), diffs, Vec::new(), false, false)
+            (Some(files), diffs, Vec::new(), None, false, false)
         }
         StoryFixture::Repository { .. } => unreachable!("handled above"),
-        StoryFixture::CommitGraph {
+        StoryFixture::RevisionPicker {
             commits,
+            worktree_summary,
             branch_drawing,
-        } => (None, Vec::new(), commits, branch_drawing, false),
+        } => (
+            None,
+            Vec::new(),
+            commits,
+            Some(Rc::from(worktree_summary)),
+            branch_drawing,
+            false,
+        ),
         StoryFixture::SideBySide(content)
         | StoryFixture::Inline(content)
         | StoryFixture::SingleFile(content)
-        | StoryFixture::Card(content) => (None, vec![(*content).clone()], Vec::new(), false, true),
+        | StoryFixture::Card(content) => (
+            None,
+            vec![(*content).clone()],
+            Vec::new(),
+            None,
+            false,
+            true,
+        ),
         StoryFixture::Cards(contents) => (
             None,
             contents.iter().map(|content| (**content).clone()).collect(),
             Vec::new(),
+            None,
             false,
             true,
         ),
@@ -114,6 +131,7 @@ pub(super) fn story_props(
         },
         files: Rc::new(files),
         commits: Rc::new(commits),
+        worktree_summary,
         navigate,
     };
     (pipeline, props, None)
@@ -272,13 +290,14 @@ mod tests {
     }
 
     #[test]
-    fn commit_graph_selected_story_preselects_a_merge_commit() {
-        let story = catalog::by_id("commit-graph/selected").unwrap();
+    fn revision_picker_search_story_filters_tags_via_initial_keys() {
+        let story = catalog::by_id("revision-picker/search").unwrap();
         let mut harness = story_harness(story, 110, 24).unwrap();
         let selected = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
 
-        assert_eq!(harness.style_at(0, 8).bg, selected);
-        assert!(harness.screen_line(8).contains("d9b9808"));
+        assert!(harness.screen_line(3).contains("> v0.28"));
+        assert_eq!(harness.style_at(0, 4).bg, selected);
+        assert!(harness.screen_line(4).contains("tag: v0.28.4"));
     }
 
     #[test]
@@ -330,7 +349,7 @@ mod tests {
                 }
                 StoryComponent::Welcome
                 | StoryComponent::Explorer
-                | StoryComponent::CommitGraph => unreachable!(),
+                | StoryComponent::RevisionPicker => unreachable!(),
             }
         }
     }

@@ -14,12 +14,12 @@ use loom::{
 use syntax::Span;
 use ui::Commit;
 use ui::components::border::{Border, BorderProps};
-use ui::components::commit_graph::{CommitGraph, CommitGraphProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
 use ui::components::diff_viewer::{DiffViewer, ScrollPosition};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
+use ui::components::revision_picker::{RevisionPicker, RevisionPickerProps};
 use ui::components::{Context, DirectorySelection, Ui, UiProps};
 
 use super::definition::{StoryComponent, StoryDefinition};
@@ -45,6 +45,7 @@ pub(super) fn StoryPreview(
         )>,
     >,
     commits: Rc<Vec<Commit>>,
+    worktree_summary: Option<Rc<str>>,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
@@ -59,7 +60,7 @@ pub(super) fn StoryPreview(
     let exit = use_exit(scope);
     let navigate_key = navigate.as_ref().map(Rc::clone);
     let listeners = Listeners::new().on_key(move |key| {
-        if key == loom::crokey::key!(q) {
+        if key == loom::crokey::key!(q) || key == loom::crokey::key!(ctrl - c) {
             exit();
             return Bubble::Stop;
         }
@@ -136,11 +137,14 @@ pub(super) fn StoryPreview(
                 }
             }
         },
-        StoryComponent::CommitGraph => rsx! {
-            CommitGraph {
+        StoryComponent::RevisionPicker => rsx! {
+            RevisionPicker {
                 commits: Rc::clone(commits),
+                worktree_summary: worktree_summary.clone(),
+                initial: None,
                 on_select: None,
                 on_open: None,
+                on_close: None,
             }
         },
         StoryComponent::SideBySide => rsx! {
