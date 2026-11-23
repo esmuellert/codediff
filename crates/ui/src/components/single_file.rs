@@ -56,16 +56,13 @@ pub(crate) fn SingleFile(
     scope: &mut Scope,
     content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    layout: Rc<SingleFileLayout>,
     viewport: DiffVisibleRange,
-    gutter_width: u16,
-    code_width: u16,
-    horizontal_scroll_extent: u32,
     auto_focus: bool,
 ) -> Node {
-    let gutter_width = *gutter_width;
-    let code_width = *code_width;
-    let horizontal_scroll_extent = *horizontal_scroll_extent;
+    let gutter_width = layout.gutter_width;
+    let code_width = layout.code_width;
+    let horizontal_scroll_extent = layout.horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
@@ -73,7 +70,7 @@ pub(crate) fn SingleFile(
         unreachable!("SingleFile requires one-sided file content")
     };
     let version = single.side();
-    let wrapped_lines = wrapped_lines.as_ref();
+    let wrapped_lines = layout.wrapped_lines.as_ref();
     let visible_terminal_line_count = viewport
         .visible_terminal_lines
         .end

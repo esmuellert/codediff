@@ -59,7 +59,7 @@ pub(crate) fn layout_side_by_side(
         modified_width,
         wrap,
     );
-    let (original_longest, modified_longest) = if wrap || compact {
+    let (original_longest, modified_longest) = if wrap {
         (u32::from(original_width), u32::from(modified_width))
     } else {
         (
@@ -91,22 +91,16 @@ pub(crate) fn SideBySide(
     scope: &mut Scope,
     content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    layout: Rc<SideBySideLayout>,
     viewport: DiffVisibleRange,
-    original_gutter_width: u16,
-    modified_gutter_width: u16,
-    original_width: u16,
-    modified_width: u16,
-    original_horizontal_scroll_extent: u32,
-    modified_horizontal_scroll_extent: u32,
     auto_focus: bool,
 ) -> Node {
-    let original_gutter_width = *original_gutter_width;
-    let modified_gutter_width = *modified_gutter_width;
-    let original_width = *original_width;
-    let modified_width = *modified_width;
-    let original_horizontal_scroll_extent = *original_horizontal_scroll_extent;
-    let modified_horizontal_scroll_extent = *modified_horizontal_scroll_extent;
+    let original_gutter_width = layout.original_gutter_width;
+    let modified_gutter_width = layout.modified_gutter_width;
+    let original_width = layout.original_width;
+    let modified_width = layout.modified_width;
+    let original_horizontal_scroll_extent = layout.original_horizontal_scroll_extent;
+    let modified_horizontal_scroll_extent = layout.modified_horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
@@ -114,7 +108,7 @@ pub(crate) fn SideBySide(
     let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to SideBySide")
     };
-    let wrapped_lines = wrapped_lines.as_ref();
+    let wrapped_lines = layout.wrapped_lines.as_ref();
     let visible_terminal_line_count = viewport
         .visible_terminal_lines
         .end

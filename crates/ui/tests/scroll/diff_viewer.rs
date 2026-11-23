@@ -447,3 +447,83 @@ fn t_does_not_bubble_from_the_explorer_to_the_diff_viewer() {
     assert_eq!(harness.focused_name(), Some("Explorer"));
     assert_eq!(harness.screen(), before);
 }
+
+#[test]
+fn switching_to_a_single_file_resets_scroll_and_keeps_diff_history() {
+    let first = file("first.rs");
+    let single = file_types::File::added(
+        file_types::RepoPath::new("added.rs", Path::new("/repo")),
+        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+    );
+    let first_lines: Vec<String> = (1..=20).map(|line| format!("first {line:02}")).collect();
+    let single_lines: Vec<String> = (1..=20).map(|line| format!("added {line:02}")).collect();
+    let first_refs: Vec<&str> = first_lines.iter().map(String::as_str).collect();
+    let single_content =
+        diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
+            file: single.clone(),
+            lines: Arc::new(single_lines),
+        });
+    let (pipeline, redraws) = fake_pipeline(
+        Vec::new(),
+        vec![
+            make_diff_with_lines(first.clone(), &first_refs, &first_refs),
+            single_content.clone(),
+            make_diff_with_lines(first.clone(), &first_refs, &first_refs),
+            single_content,
+        ],
+    );
+    let watcher_service = Rc::new(WatcherService::new());
+    let mut harness = Harness::new::<ViewerHost>(
+        ViewerHostProps {
+            file: Rc::new(first.clone()),
+            pipeline: Rc::clone(&pipeline),
+            watcher_service: Rc::clone(&watcher_service),
+        },
+        60,
+        6,
+    );
+    harness.force_draw();
+    wait(&pipeline, &redraws, &mut harness);
+    harness.force_draw().force_draw();
+    for _ in 0..4 {
+        harness.press(crokey::key!(j)).force_draw();
+    }
+    assert!(harness.screen_line(1).contains("first 05"));
+
+    // Switch to SingleFile: starts at line 01, scroll down to line 04.
+    harness.set_props::<ViewerHost>(ViewerHostProps {
+        file: Rc::new(single.clone()),
+        pipeline: Rc::clone(&pipeline),
+        watcher_service: Rc::clone(&watcher_service),
+    });
+    harness.force_draw();
+    wait(&pipeline, &redraws, &mut harness);
+    harness.force_draw().force_draw();
+    assert!(harness.screen_line(1).contains("added 01"));
+    for _ in 0..3 {
+        harness.press(crokey::key!(j)).force_draw();
+    }
+    assert!(harness.screen_line(1).contains("added 04"));
+
+    // Switch back to first.rs: restores line 05.
+    harness.set_props::<ViewerHost>(ViewerHostProps {
+        file: Rc::new(first),
+        pipeline: Rc::clone(&pipeline),
+        watcher_service: Rc::clone(&watcher_service),
+    });
+    harness.force_draw();
+    wait(&pipeline, &redraws, &mut harness);
+    harness.force_draw().force_draw();
+    assert!(harness.screen_line(1).contains("first 05"));
+
+    // Switch back to added.rs: SingleFile resets to line 01 instead of saving into diff history.
+    harness.set_props::<ViewerHost>(ViewerHostProps {
+        file: Rc::new(single),
+        pipeline: Rc::clone(&pipeline),
+        watcher_service,
+    });
+    harness.force_draw();
+    wait(&pipeline, &redraws, &mut harness);
+    harness.force_draw().force_draw();
+    assert!(harness.screen_line(1).contains("added 01"));
+}

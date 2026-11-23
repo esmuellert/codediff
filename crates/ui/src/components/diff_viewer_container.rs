@@ -27,14 +27,14 @@ pub(crate) struct DiffVisibleRange {
     pub(crate) write_horizontal_metrics: bool,
 }
 
-enum ViewLayout {
+pub(crate) enum ContentLayout {
     Empty,
-    Inline(InlineLayout),
-    SideBySide(SideBySideLayout),
-    SingleFile(SingleFileLayout),
+    Inline(Rc<InlineLayout>),
+    SideBySide(Rc<SideBySideLayout>),
+    SingleFile(Rc<SingleFileLayout>),
 }
 
-impl ViewLayout {
+impl ContentLayout {
     fn wrapped_lines(&self) -> Option<&Rc<Vec<WrappedViewLine>>> {
         match self {
             Self::Empty => None,
@@ -44,7 +44,7 @@ impl ViewLayout {
         }
     }
 
-    fn terminal_line_count(&self) -> u32 {
+    pub(crate) fn terminal_line_count(&self) -> u32 {
         match self {
             Self::Empty => 0,
             Self::Inline(layout) => layout.terminal_line_count,
@@ -88,6 +88,36 @@ impl ViewLayout {
     }
 }
 
+pub(crate) fn layout_content(
+    content: Option<&DiffContent>,
+    width: u16,
+    view_layout: DiffType,
+    wrap: bool,
+    compact: bool,
+) -> ContentLayout {
+    match content {
+        Some(DiffContent::Diff(diff)) => match view_layout {
+            DiffType::Inline => ContentLayout::Inline(Rc::new(layout_inline(
+                &diff.alignment,
+                width,
+                wrap,
+                compact,
+            ))),
+            DiffType::SideBySide => ContentLayout::SideBySide(Rc::new(layout_side_by_side(
+                &diff.alignment,
+                width,
+                wrap,
+                compact,
+            ))),
+            DiffType::Single => unreachable!("a diff has no single-file layout"),
+        },
+        Some(DiffContent::SingleFile(single)) => {
+            ContentLayout::SingleFile(Rc::new(layout_single_file(single, width, wrap)))
+        }
+        None => ContentLayout::Empty,
+    }
+}
+
 #[component]
 pub fn DiffViewerContainer(
     scope: &mut Scope,
@@ -112,26 +142,17 @@ pub fn DiffViewerContainer(
         .as_ref()
         .map(|content| Arc::as_ptr(content) as usize);
     let content_for_layout = content.clone();
-    let layout_data = use_memo(
+    let content_layout = use_memo(
         scope,
         (content_id, view_layout, wrap, compact, size.width),
-        move || match content_for_layout.as_deref() {
-            Some(DiffContent::Diff(diff)) => match view_layout {
-                DiffType::Inline => {
-                    ViewLayout::Inline(layout_inline(&diff.alignment, size.width, wrap, compact))
-                }
-                DiffType::SideBySide => ViewLayout::SideBySide(layout_side_by_side(
-                    &diff.alignment,
-                    size.width,
-                    wrap,
-                    compact,
-                )),
-                DiffType::Single => unreachable!("a diff has no single-file layout"),
-            },
-            Some(DiffContent::SingleFile(single)) => {
-                ViewLayout::SingleFile(layout_single_file(single, size.width, wrap))
-            }
-            None => ViewLayout::Empty,
+        move || {
+            layout_content(
+                content_for_layout.as_deref(),
+                size.width,
+                view_layout,
+                wrap,
+                compact,
+            )
         },
     );
 
@@ -139,7 +160,7 @@ pub fn DiffViewerContainer(
     let initial_top = current_state
         .first_terminal_line
         .as_ref()
-        .and_then(|line| layout_data.terminal_line_index_for(line))
+        .and_then(|line| content_layout.terminal_line_index_for(line))
         .unwrap_or(0);
     let (scroll_view, scroll_handle) = use_scroll(scope, || ScrollOffset {
         x: current_state.first_cell,
@@ -156,7 +177,7 @@ pub fn DiffViewerContainer(
         },
     );
 
-    let terminal_line_count = layout_data.terminal_line_count();
+    let terminal_line_count = content_layout.terminal_line_count();
     let offset = scroll_view.clamped_offset();
     let first_terminal_line = (offset.y as usize).min(terminal_line_count as usize);
     let last_terminal_line = first_terminal_line
@@ -172,7 +193,7 @@ pub fn DiffViewerContainer(
         let requested = scroll_view.requested_offset();
         view_state.current().clone_from(&ViewState {
             first_terminal_line: (requested.y > 0)
-                .then(|| layout_data.terminal_line_at_index(requested.y))
+                .then(|| content_layout.terminal_line_at_index(requested.y))
                 .flatten(),
             first_cell: requested.x,
         });
@@ -183,11 +204,11 @@ pub fn DiffViewerContainer(
         content,
         Arc::clone(colours),
         view_layout,
-        layout_data.as_ref(),
+        content_layout.as_ref(),
         visible_range,
         auto_focus,
     );
-    let scroll_content_width = layout_data
+    let scroll_content_width = content_layout
         .horizontal_scroll_extent()
         .saturating_add(u32::from(size.width));
 
@@ -219,65 +240,44 @@ fn render_view(
     content: Option<Arc<DiffContent>>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     view_layout: DiffType,
-    layout_data: &ViewLayout,
+    content_layout: &ContentLayout,
     visible_range: DiffVisibleRange,
     auto_focus: bool,
 ) -> Node {
     let Some(content) = content else {
         return rsx! { Welcome {} };
     };
-    match (content.as_ref(), view_layout, layout_data) {
-        (DiffContent::Diff(_), DiffType::Inline, ViewLayout::Inline(inline_layout)) => rsx! {
+    match (content.as_ref(), view_layout, content_layout) {
+        (DiffContent::Diff(_), DiffType::Inline, ContentLayout::Inline(layout)) => rsx! {
             Inline {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
                 colours,
-                wrapped_lines: Rc::clone(&inline_layout.wrapped_lines),
+                layout: Rc::clone(layout),
                 viewport: visible_range,
-                original_gutter_width: inline_layout.original_gutter_width,
-                modified_gutter_width: inline_layout.modified_gutter_width,
-                code_width: inline_layout.code_width,
-                horizontal_scroll_extent: inline_layout.horizontal_scroll_extent,
                 auto_focus,
             }
         },
-        (
-            DiffContent::Diff(_),
-            DiffType::SideBySide,
-            ViewLayout::SideBySide(side_by_side_layout),
-        ) => rsx! {
+        (DiffContent::Diff(_), DiffType::SideBySide, ContentLayout::SideBySide(layout)) => rsx! {
             SideBySide {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
                 colours,
-                wrapped_lines: Rc::clone(&side_by_side_layout.wrapped_lines),
+                layout: Rc::clone(layout),
                 viewport: visible_range,
-                original_gutter_width: side_by_side_layout.original_gutter_width,
-                modified_gutter_width: side_by_side_layout.modified_gutter_width,
-                original_width: side_by_side_layout.original_width,
-                modified_width: side_by_side_layout.modified_width,
-                original_horizontal_scroll_extent:
-                    side_by_side_layout.original_horizontal_scroll_extent,
-                modified_horizontal_scroll_extent:
-                    side_by_side_layout.modified_horizontal_scroll_extent,
                 auto_focus,
             }
         },
-        (DiffContent::SingleFile(_), _, ViewLayout::SingleFile(single_file_layout)) => {
-            rsx! {
-                SingleFile {
-                    key: Arc::as_ptr(&content) as usize,
-                    content: Arc::clone(&content),
-                    colours,
-                    wrapped_lines: Rc::clone(&single_file_layout.wrapped_lines),
-                    viewport: visible_range,
-                    gutter_width: single_file_layout.gutter_width,
-                    code_width: single_file_layout.code_width,
-                    horizontal_scroll_extent: single_file_layout.horizontal_scroll_extent,
-                    auto_focus,
-                }
+        (DiffContent::SingleFile(_), _, ContentLayout::SingleFile(layout)) => rsx! {
+            SingleFile {
+                key: Arc::as_ptr(&content) as usize,
+                content: Arc::clone(&content),
+                colours,
+                layout: Rc::clone(layout),
+                viewport: visible_range,
+                auto_focus,
             }
-        }
+        },
         _ => panic!("view layout does not match the selected content"),
     }
 }
