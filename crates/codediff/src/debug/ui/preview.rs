@@ -17,7 +17,7 @@ use ui::components::border::{Border, BorderProps};
 use ui::components::commit_graph::{CommitGraph, CommitGraphProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
-use ui::components::diff_viewer::{DiffViewer, ViewState};
+use ui::components::diff_viewer::{DiffViewer, ScrollPosition};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
 use ui::components::{Context, DirectorySelection, Ui, UiProps};
@@ -89,7 +89,7 @@ pub(super) fn StoryPreview(
     let colours = files
         .first()
         .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
-    let view_state = use_ref(scope, ViewState::default);
+    let scroll_position = use_ref(scope, ScrollPosition::default);
     let shortcuts = if navigate.is_some() {
         vec![
             Shortcut {
@@ -148,8 +148,8 @@ pub(super) fn StoryPreview(
                 key: content.as_ref().map_or(0, |content| Arc::as_ptr(content) as usize),
                 content: content.clone(),
                 colours: Arc::clone(&colours),
-                view_layout: file_types::DiffType::SideBySide,
-                view_state,
+                viewer_mode: file_types::ViewerMode::SideBySide,
+                scroll_position,
                 wrap: true,
                 compact: definition.compact,
                 auto_focus: false,
@@ -160,8 +160,8 @@ pub(super) fn StoryPreview(
                 key: content.as_ref().map_or(0, |content| Arc::as_ptr(content) as usize),
                 content: content.clone(),
                 colours: Arc::clone(&colours),
-                view_layout: file_types::DiffType::Inline,
-                view_state,
+                viewer_mode: file_types::ViewerMode::Inline,
+                scroll_position,
                 wrap: true,
                 compact: definition.compact,
                 auto_focus: false,
@@ -171,8 +171,8 @@ pub(super) fn StoryPreview(
             DiffViewerContainer {
                 content: content.clone(),
                 colours: Arc::clone(&colours),
-                view_layout: file_types::DiffType::Single,
-                view_state,
+                viewer_mode: file_types::ViewerMode::Single,
+                scroll_position,
                 wrap: true,
                 compact: false,
                 auto_focus: false,
@@ -183,7 +183,7 @@ pub(super) fn StoryPreview(
                 DiffCard {
                     content,
                     colours: Arc::clone(&colours),
-                    view_layout: file_types::DiffType::SideBySide,
+                    viewer_mode: file_types::ViewerMode::SideBySide,
                     wrap: false,
                     height: None,
                     auto_focus: true,
@@ -196,7 +196,7 @@ pub(super) fn StoryPreview(
                 files: Rc::clone(files),
                 more_files: false,
                 open_next: Rc::new(|| {}) as Rc<dyn Fn()>,
-                view_layout: file_types::DiffType::Inline,
+                viewer_mode: file_types::ViewerMode::Inline,
                 wrap: false,
             }
         },

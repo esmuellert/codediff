@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::DiffContent;
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, Scroll, ScrollOffset,
     ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_measure, use_scroll,
@@ -32,11 +32,11 @@ pub fn DiffCards(
     >,
     more_files: bool,
     open_next: Rc<dyn Fn()>,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
 ) -> Node {
     let theme = *use_context::<Ui>(scope).theme;
-    let view_layout = *view_layout;
+    let viewer_mode = *viewer_mode;
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
@@ -60,14 +60,14 @@ pub fn DiffCards(
         let diff = diff.lock().unwrap().clone();
         match diff {
             Some(Ok(content)) => {
-                let height = card_height(&content, card_width, view_layout, wrap);
+                let height = card_height(&content, card_width, viewer_mode, wrap);
                 heights.push(height);
                 cards.push(rsx! {
                     DiffCard {
                         key: index,
                         content,
                         colours: Arc::clone(colours),
-                        view_layout,
+                        viewer_mode,
                         wrap,
                         height: Some(height),
                         auto_focus: index == 0,

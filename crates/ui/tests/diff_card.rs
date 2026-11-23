@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::{self, DiffContent};
-use file_types::{DiffType, File, Oid, RepoPath, Revs, Stats};
+use file_types::{File, Oid, RepoPath, Revs, Stats, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
 use syntax::Span;
@@ -41,14 +41,14 @@ fn diff(original: &[&str], modified: &[&str]) -> DiffContent {
 fn CardHost(
     _scope: &mut Scope,
     content: Arc<DiffContent>,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
 ) -> Node {
     rsx! {
         DiffCard {
             content: Arc::clone(content),
             colours: Arc::default(),
-            view_layout: *view_layout,
+            viewer_mode: *viewer_mode,
             wrap: *wrap,
             height: None,
             auto_focus: true,
@@ -60,7 +60,7 @@ fn harness(content: DiffContent, width: u16, height: u16) -> Harness {
     Harness::new::<CardHost>(
         CardHostProps {
             content: Arc::new(content),
-            view_layout: DiffType::Inline,
+            viewer_mode: ViewerMode::Inline,
             wrap: false,
         },
         width,
@@ -87,7 +87,7 @@ fn CardsHost(
             files: Rc::clone(files),
             more_files: false,
             open_next: Rc::new(|| {}) as Rc<dyn Fn()>,
-            view_layout: DiffType::Inline,
+            viewer_mode: ViewerMode::Inline,
             wrap: false,
         }
     }

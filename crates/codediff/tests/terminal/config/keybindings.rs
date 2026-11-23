@@ -103,14 +103,14 @@ fn open_keybinding_expands_a_directory() {
 }
 
 #[test]
-fn toggle_layout_keybinding_switches_the_running_view() {
+fn toggle_viewer_mode_keybinding_switches_the_running_view() {
     let fixture = Fixture::new("key-layout");
     fixture.write("modified.txt", "one\nTWO\nthree\n");
     let toggled = run_app_steps(
         &fixture,
         json!({
             "keybindings": {
-                "toggle_layout": ["v"],
+                "toggle_viewer_mode": ["v"],
                 "focus_next": ["f"]
             }
         }),

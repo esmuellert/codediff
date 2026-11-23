@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use file_types::{DiffType, File};
+use file_types::{File, ViewerMode};
 use loom::{
     Basis, Bubble, Canvas, CanvasProps, Column, ColumnProps, Divider, DividerProps, Edges, Gap,
     GapProps, Layout, Listeners, Node, Row, RowProps, Scope, SetState, Stack, StackProps, Text,
@@ -353,8 +353,8 @@ fn menu_row(
 #[component]
 pub fn DiffViewMenu(
     scope: &mut Scope,
-    view_layout: DiffType,
-    set_view_layout: SetState<DiffType>,
+    viewer_mode: ViewerMode,
+    set_viewer_mode: SetState<ViewerMode>,
     wrap: bool,
     set_wrap: SetState<bool>,
     set_menu_open: SetState<bool>,
@@ -364,8 +364,8 @@ pub fn DiffViewMenu(
         return Node::Empty;
     }
     let theme = &ctx.theme;
-    let view_layout = *view_layout;
-    let set_view_layout = *set_view_layout;
+    let viewer_mode = *viewer_mode;
+    let set_viewer_mode = *set_viewer_mode;
     let wrap = *wrap;
     let set_wrap = *set_wrap;
     let set_menu_open = *set_menu_open;
@@ -373,33 +373,33 @@ pub fn DiffViewMenu(
     let rows = vec![
         menu_row(
             0,
-            if view_layout == DiffType::SideBySide {
+            if viewer_mode == ViewerMode::SideBySide {
                 "●"
             } else {
                 " "
             },
-            view_layout == DiffType::SideBySide,
+            viewer_mode == ViewerMode::SideBySide,
             "Side by side",
             "t",
             theme,
             move || {
-                set_view_layout.set(DiffType::SideBySide);
+                set_viewer_mode.set(ViewerMode::SideBySide);
                 set_menu_open.set(false);
             },
         ),
         menu_row(
             1,
-            if view_layout == DiffType::Inline {
+            if viewer_mode == ViewerMode::Inline {
                 "●"
             } else {
                 " "
             },
-            view_layout == DiffType::Inline,
+            viewer_mode == ViewerMode::Inline,
             "Inline",
             "t",
             theme,
             move || {
-                set_view_layout.set(DiffType::Inline);
+                set_viewer_mode.set(ViewerMode::Inline);
                 set_menu_open.set(false);
             },
         ),

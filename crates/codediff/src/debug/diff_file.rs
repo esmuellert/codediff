@@ -57,7 +57,7 @@ pub fn run(path: &str, verbose: bool) -> Result<()> {
         "{} line(s) -> {} line(s), {} view line(s), {} change(s)",
         alignment.lines(DiffVersion::Original).len(),
         alignment.lines(DiffVersion::Modified).len(),
-        alignment.view_line_count(file_types::DiffType::SideBySide),
+        alignment.view_line_count(file_types::ViewerMode::SideBySide),
         alignment.changes().len()
     );
     println!();

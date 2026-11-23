@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -6,7 +7,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use syntax::Span;
 use ui::Theme;
-use ui::components::diff_viewer::{ViewState, ViewStateHistory};
+use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
@@ -21,26 +22,30 @@ fn SingleFile(
     compact: bool,
 ) -> Node {
     let _ = compact;
-    let view_states = use_ref(scope, ViewStateHistory::default);
-    let active_state = use_ref(scope, ViewState::default);
+    let scroll_positions = use_ref(scope, HashMap::<String, ScrollPosition>::new);
+    let active_state = use_ref(scope, ScrollPosition::default);
     let active_key = use_ref(scope, || None::<String>);
     let key = content.file().path().as_str().to_owned();
     let previous_key = active_key.current().clone();
     if previous_key.as_deref() != Some(key.as_str()) {
         if let Some(previous_key) = previous_key {
-            view_states
+            scroll_positions
                 .current()
-                .save(&previous_key, active_state.current().clone());
+                .insert(previous_key, active_state.current().clone());
         }
-        *active_state.current() = view_states.current().load(&key);
+        *active_state.current() = scroll_positions
+            .current()
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
         *active_key.current() = Some(key);
     }
     rsx! {
         DiffViewerContainer {
             content: Some(Arc::clone(content)),
             colours: colours.clone(),
-            view_layout: file_types::DiffType::Single,
-            view_state: active_state,
+            viewer_mode: file_types::ViewerMode::Single,
+            scroll_position: active_state,
             wrap: *wrap,
             compact: false,
             auto_focus: false,

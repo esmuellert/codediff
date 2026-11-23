@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use align::{ViewLine, ViewLineContent, ViewLineType};
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollProps, component,
     rsx, use_context,
@@ -19,7 +19,7 @@ use crate::view::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, wrap_view_line,
 };
 
-pub(crate) struct SingleFileLayout {
+pub(crate) struct SingleFileGeometry {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
     pub(crate) gutter_width: u16,
     pub(crate) code_width: u16,
@@ -27,11 +27,11 @@ pub(crate) struct SingleFileLayout {
     pub(crate) terminal_line_count: u32,
 }
 
-pub(crate) fn layout_single_file(
+pub(crate) fn single_file_geometry(
     single: &diff_service::diff::SingleFile,
     width: u16,
     wrap: bool,
-) -> SingleFileLayout {
+) -> SingleFileGeometry {
     let line_count = single.lines.len() as u32;
     let gutter_width = width_for_line_count(line_count);
     let code_width = width.saturating_sub(gutter_width);
@@ -42,7 +42,7 @@ pub(crate) fn layout_single_file(
         longest_line_cells(&single.lines)
     };
     let terminal_line_count = terminal_line_count(&wrapped_lines);
-    SingleFileLayout {
+    SingleFileGeometry {
         wrapped_lines: Rc::new(wrapped_lines),
         gutter_width,
         code_width,
@@ -56,16 +56,13 @@ pub(crate) fn SingleFile(
     scope: &mut Scope,
     content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    geometry: Rc<SingleFileGeometry>,
     viewport: DiffVisibleRange,
-    gutter_width: u16,
-    code_width: u16,
-    horizontal_scroll_extent: u32,
     auto_focus: bool,
 ) -> Node {
-    let gutter_width = *gutter_width;
-    let code_width = *code_width;
-    let horizontal_scroll_extent = *horizontal_scroll_extent;
+    let gutter_width = geometry.gutter_width;
+    let code_width = geometry.code_width;
+    let horizontal_scroll_extent = geometry.horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
@@ -73,7 +70,7 @@ pub(crate) fn SingleFile(
         unreachable!("SingleFile requires one-sided file content")
     };
     let version = single.side();
-    let wrapped_lines = wrapped_lines.as_ref();
+    let wrapped_lines = geometry.wrapped_lines.as_ref();
     let visible_terminal_line_count = viewport
         .visible_terminal_lines
         .end
@@ -220,7 +217,7 @@ fn wrapped_lines(
                     modified,
                     code_width,
                     code_width,
-                    DiffType::SideBySide,
+                    ViewerMode::SideBySide,
                 )
             } else {
                 WrappedViewLine::from_view_line(view_line, original, modified)

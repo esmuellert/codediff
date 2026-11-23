@@ -101,11 +101,16 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     let base = theme.normal;
 
-    let nodes = if tree_mode {
-        grouped_tree(&files, &folded)
-    } else {
-        grouped_list(&files)
-    };
+    let nodes = use_memo(scope, (Rc::clone(&files), folded.clone(), tree_mode), {
+        let files = Rc::clone(&files);
+        move || {
+            if tree_mode {
+                grouped_tree(&files, &folded)
+            } else {
+                grouped_list(&files)
+            }
+        }
+    });
     let catalog_line_count = nodes.len() as u32;
     let (node_ref, size) = use_measure(scope);
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
@@ -143,11 +148,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         })
         .collect();
 
-    let nodes_ref = use_ref(scope, Vec::new);
-    *nodes_ref.current() = nodes;
-    let files_ref = use_ref(scope, || Rc::clone(&files));
-    *files_ref.current() = files;
-    let (nodes, files) = (nodes_ref, files_ref);
+    let nodes_for_keys = Rc::clone(&nodes);
+    let files_for_keys = Rc::clone(&files);
     let keybindings = Rc::clone(&ctx.keybindings);
     let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
@@ -160,8 +162,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                         .saturating_add(1)
                         .min(catalog_line_count.saturating_sub(1));
                     scroll.keep_y_visible(next, SCROLLOFF);
-                    if let Some(node) = nodes.current().get(next as usize) {
-                        select_node(node, &files.current(), set_file, set_directory);
+                    if let Some(node) = nodes_for_keys.get(next as usize) {
+                        select_node(node, &files_for_keys, set_file, set_directory);
                     }
                     *selected_line = next;
                 });
@@ -171,15 +173,15 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 set_selected_line.update(|selected_line| {
                     let next = selected_line.saturating_sub(1);
                     scroll.keep_y_visible(next, SCROLLOFF);
-                    if let Some(node) = nodes.current().get(next as usize) {
-                        select_node(node, &files.current(), set_file, set_directory);
+                    if let Some(node) = nodes_for_keys.get(next as usize) {
+                        select_node(node, &files_for_keys, set_file, set_directory);
                     }
                     *selected_line = next;
                 });
                 Bubble::Stop
             }
             k if keybindings.matches(Action::Open, k) => {
-                if let Some(node) = nodes.current().get(selected_line as usize) {
+                if let Some(node) = nodes_for_keys.get(selected_line as usize) {
                     activate_node(node, set_folded, set_file, set_directory);
                 }
                 Bubble::Stop
@@ -193,7 +195,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 Bubble::Stop
             }
             k if keybindings.matches(Action::Stage, k) => {
-                if let Some(node) = nodes.current().get(selected_line as usize) {
+                if let Some(node) = nodes_for_keys.get(selected_line as usize) {
                     toggle_stage(node, version_control_service.as_deref());
                 }
                 Bubble::Stop
@@ -209,11 +211,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 (top_line + u32::from(mouse.local.y)).min(catalog_line_count.saturating_sub(1));
             let already_selected = line == selected_line;
             set_selected_line.set(line);
-            if let Some(node) = nodes.current().get(line as usize) {
+            if let Some(node) = nodes.get(line as usize) {
                 if already_selected && matches!(node, Node::Directory { .. }) {
                     activate_node(node, set_folded, set_file, set_directory);
                 } else {
-                    select_node(node, &files.current(), set_file, set_directory);
+                    select_node(node, &files, set_file, set_directory);
                 }
             }
             Bubble::Stop

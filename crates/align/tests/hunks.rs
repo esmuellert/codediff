@@ -1,7 +1,7 @@
 //! Hunks: how changes group, and what keeps a hunk's identity across a refresh.
 
 use align::{Alignment, ViewLineContent, ViewLineType};
-use file_types::DiffType;
+use file_types::ViewerMode;
 use vscode_diff::{LinesDiff, Options};
 
 fn split(text: &str) -> Vec<&str> {
@@ -110,9 +110,9 @@ fn a_file_with_no_changes_has_no_hunks_and_only_unchanged_rows() {
     let diff = compute(&text, &text);
     let alignment = Alignment::new(diff.clone(), &text, &text);
 
-    assert_eq!(alignment.view_line_count(DiffType::SideBySide), 3);
+    assert_eq!(alignment.view_line_count(ViewerMode::SideBySide), 3);
     assert!(alignment.hunks().is_empty());
-    for (i, line) in alignment.view_lines(DiffType::SideBySide).enumerate() {
+    for (i, line) in alignment.view_lines(ViewerMode::SideBySide).enumerate() {
         assert_eq!(line.kind, ViewLineType::Unchanged);
         assert_eq!(line.original, ViewLineContent::SourceLine(i as u32 + 1));
         assert_eq!(line.modified, ViewLineContent::SourceLine(i as u32 + 1));
@@ -128,8 +128,8 @@ fn an_empty_file_is_one_empty_line() {
     let alignment = Alignment::new(diff.clone(), &empty, &added);
 
     assert_eq!(alignment.lines(align::DiffVersion::Original), &[""]);
-    assert_eq!(alignment.view_line_count(DiffType::SideBySide), 1);
-    assert_eq!(alignment.view_lines(DiffType::SideBySide).count(), 1);
+    assert_eq!(alignment.view_line_count(ViewerMode::SideBySide), 1);
+    assert_eq!(alignment.view_lines(ViewerMode::SideBySide).count(), 1);
 }
 
 #[test]

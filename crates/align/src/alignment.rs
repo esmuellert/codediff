@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use diff_types::{DetailedLineRangeMapping, LineRange, LinesDiff, MovedText};
-use file_types::DiffType;
 pub use file_types::DiffVersion;
+use file_types::ViewerMode;
 
 use crate::decoration::{LineDecorations, decorations};
 use crate::hunk::{DEFAULT_CONTEXT, Hunk, HunkId, hunks};
 use crate::inner::{Span, span_on};
-use crate::layout::{self, ViewLines};
 use crate::normalize::normalize_document_diff;
 use crate::view_line::{ViewLine, blocks, is_well_formed};
+use crate::viewer_mode::{self, ViewLines};
 
 /// A diff whose ranges cannot form a valid pairing.
 ///
@@ -151,9 +151,9 @@ impl Alignment {
     }
 
     /// Every view line, in order, laid out the way asked for.
-    pub fn view_lines(&self, layout: DiffType) -> ViewLines<'_> {
-        layout::view_lines(
-            layout,
+    pub fn view_lines(&self, viewer_mode: ViewerMode) -> ViewLines<'_> {
+        viewer_mode::view_lines(
+            viewer_mode,
             &self.diff,
             &self.original,
             self.originals(),
@@ -161,9 +161,9 @@ impl Alignment {
         )
     }
 
-    pub fn view_line_count(&self, layout: DiffType) -> u32 {
-        layout::view_line_count(
-            layout,
+    pub fn view_line_count(&self, viewer_mode: ViewerMode) -> u32 {
+        viewer_mode::view_line_count(
+            viewer_mode,
             &self.diff,
             &self.original,
             self.originals(),
@@ -174,23 +174,23 @@ impl Alignment {
     /// Iterates view lines starting at `first`.
     pub fn view_lines_from(
         &self,
-        layout: DiffType,
+        viewer_mode: ViewerMode,
         first: u32,
     ) -> impl Iterator<Item = ViewLine> + '_ {
-        self.view_lines(layout).skip(first as usize)
+        self.view_lines(viewer_mode).skip(first as usize)
     }
 
     /// Runs of adjacent changed view lines, in the given view layout.
-    pub fn blocks(&self, layout: DiffType) -> Vec<std::ops::Range<u32>> {
-        blocks(self.view_lines(layout))
+    pub fn blocks(&self, viewer_mode: ViewerMode) -> Vec<std::ops::Range<u32>> {
+        blocks(self.view_lines(viewer_mode))
     }
 
     /// Returns the file line shown by a view line.
     ///
     /// File line numbers are shared by both layouts.
-    pub fn line_at(&self, layout: DiffType, view_line: u32) -> Option<(DiffVersion, u32)> {
-        layout::line_at(
-            layout,
+    pub fn line_at(&self, viewer_mode: ViewerMode, view_line: u32) -> Option<(DiffVersion, u32)> {
+        viewer_mode::line_at(
+            viewer_mode,
             &self.diff,
             &self.original,
             self.originals(),
@@ -200,9 +200,14 @@ impl Alignment {
     }
 
     /// Which line shows a given line, if any.
-    pub fn view_line_at(&self, layout: DiffType, version: DiffVersion, line: u32) -> Option<u32> {
-        layout::view_line_at(
-            layout,
+    pub fn view_line_at(
+        &self,
+        viewer_mode: ViewerMode,
+        version: DiffVersion,
+        line: u32,
+    ) -> Option<u32> {
+        viewer_mode::view_line_at(
+            viewer_mode,
             &self.diff,
             &self.original,
             self.originals(),

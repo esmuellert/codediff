@@ -5,7 +5,7 @@
 /// The three produce different view-line counts from the same file, so a
 /// position in one is meaningless in another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DiffType {
+pub enum ViewerMode {
     /// Both versions at once, a view line carrying a slot for each.
     #[default]
     SideBySide,
@@ -15,7 +15,7 @@ pub enum DiffType {
     Single,
 }
 
-impl DiffType {
+impl ViewerMode {
     /// The other layout for two versions. `Single` has no other.
     pub fn other(self) -> Self {
         match self {

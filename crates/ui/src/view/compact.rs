@@ -4,16 +4,16 @@ use std::ops::Range;
 
 use align::{Alignment, ViewLine, ViewLineContent, ViewLineType};
 use diff_types::LineRange;
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 
 const COMPACT_CONTEXT_LINES: u32 = 3;
 
 pub(crate) fn view_lines(
     alignment: &Alignment,
-    diff_type: DiffType,
+    viewer_mode: ViewerMode,
     compact: bool,
 ) -> Vec<ViewLine> {
-    let view_lines = alignment.view_lines(diff_type).collect::<Vec<_>>();
+    let view_lines = alignment.view_lines(viewer_mode).collect::<Vec<_>>();
     if compact {
         compact_view_lines(alignment, view_lines)
     } else {

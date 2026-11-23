@@ -9,7 +9,7 @@ pub enum Action {
     MoveDown,
     MoveUp,
     Open,
-    ToggleLayout,
+    ToggleViewerMode,
     ToggleWrap,
     ToggleExplorerMode,
     Stage,
@@ -28,7 +28,7 @@ pub struct KeyMap {
     move_down: Vec<KeyCombination>,
     move_up: Vec<KeyCombination>,
     open: Vec<KeyCombination>,
-    toggle_layout: Vec<KeyCombination>,
+    toggle_viewer_mode: Vec<KeyCombination>,
     toggle_wrap: Vec<KeyCombination>,
     toggle_explorer_mode: Vec<KeyCombination>,
     stage: Vec<KeyCombination>,
@@ -49,7 +49,7 @@ impl KeyMap {
             move_down: parse(Action::MoveDown, &config.move_down)?,
             move_up: parse(Action::MoveUp, &config.move_up)?,
             open: parse(Action::Open, &config.open)?,
-            toggle_layout: parse(Action::ToggleLayout, &config.toggle_layout)?,
+            toggle_viewer_mode: parse(Action::ToggleViewerMode, &config.toggle_viewer_mode)?,
             toggle_wrap: parse(Action::ToggleWrap, &config.toggle_wrap)?,
             toggle_explorer_mode: parse(Action::ToggleExplorerMode, &config.toggle_explorer_mode)?,
             stage: parse(Action::Stage, &config.stage)?,
@@ -68,7 +68,7 @@ impl KeyMap {
             Action::MoveDown => &self.move_down,
             Action::MoveUp => &self.move_up,
             Action::Open => &self.open,
-            Action::ToggleLayout => &self.toggle_layout,
+            Action::ToggleViewerMode => &self.toggle_viewer_mode,
             Action::ToggleWrap => &self.toggle_wrap,
             Action::ToggleExplorerMode => &self.toggle_explorer_mode,
             Action::Stage => &self.stage,
@@ -106,7 +106,7 @@ mod tests {
         assert!(keys.matches(Action::Quit, crokey::key!(q)));
         assert!(keys.matches(Action::MoveDown, crokey::key!(j)));
         assert!(keys.matches(Action::MoveDown, crokey::key!(down)));
-        assert!(keys.matches(Action::ToggleLayout, crokey::key!(t)));
+        assert!(keys.matches(Action::ToggleViewerMode, crokey::key!(t)));
     }
 
     #[test]

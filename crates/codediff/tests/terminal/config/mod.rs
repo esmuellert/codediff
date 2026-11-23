@@ -240,10 +240,15 @@ fn screen(run: &Run) -> Screen {
 }
 
 #[test]
-fn layout_from_config_changes_the_running_app() {
+fn viewer_mode_from_config_changes_the_running_app() {
     let fixture = Fixture::new("layout");
     fixture.write("modified.txt", "one\nTWO\nthree\n");
-    let inline = run_app(&fixture, json!({"ui": {"layout": "inline"}}), true, b"q");
+    let inline = run_app(
+        &fixture,
+        json!({"ui": {"viewer_mode": "inline"}}),
+        true,
+        b"q",
+    );
     let side_by_side = run_app(&fixture, json!({}), true, b"q");
 
     assert!(

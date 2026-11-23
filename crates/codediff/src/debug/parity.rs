@@ -8,7 +8,7 @@ use file_types::{DiffVersion, File, Oid, RepoPath, Revs};
 use line_index::{ByteOff, CellCol, LineIndex};
 use serde::Serialize;
 
-use crate::cli::DiffLayout;
+use crate::cli::ViewerMode;
 
 mod inline;
 mod side_by_side;
@@ -69,15 +69,15 @@ enum Record {
 pub fn run(
     original_path: &str,
     modified_path: &str,
-    layout: DiffLayout,
+    viewer_mode: ViewerMode,
     ignore_trim_whitespace: bool,
     wrap: bool,
 ) -> Result<()> {
-    match layout {
-        DiffLayout::SideBySide => {
+    match viewer_mode {
+        ViewerMode::SideBySide => {
             side_by_side::run(original_path, modified_path, ignore_trim_whitespace, wrap)
         }
-        DiffLayout::Inline => {
+        ViewerMode::Inline => {
             inline::run(original_path, modified_path, ignore_trim_whitespace, wrap)
         }
     }

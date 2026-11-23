@@ -5,11 +5,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use file_types::{DiffType, DiffVersion};
+use file_types::{DiffVersion, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
-use ui::components::diff_viewer::ViewState;
+use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context as UiContext, TerminalLine, Ui, terminal_line_pairs};
 
@@ -24,15 +24,15 @@ fn InlineHost(
     content: Arc<diff_service::diff::DiffContent>,
     wrap: bool,
 ) -> Node {
-    let view_state = use_ref(scope, ViewState::default);
+    let scroll_position = use_ref(scope, ScrollPosition::default);
     let content_id = Arc::as_ptr(content) as usize;
     rsx! {
         DiffViewerContainer {
             key: content_id,
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
-            view_layout: DiffType::Inline,
-            view_state,
+            viewer_mode: ViewerMode::Inline,
+            scroll_position,
             wrap: *wrap,
             compact: false,
             auto_focus: false,
@@ -56,7 +56,7 @@ pub(super) fn run(
     let gutters = gutter_width(original.len() as u32) + gutter_width(modified.len() as u32);
     let terminal_lines = terminal_line_pairs(
         &diff.alignment,
-        DiffType::Inline,
+        ViewerMode::Inline,
         width.saturating_sub(gutters),
         width.saturating_sub(gutters),
         wrap,

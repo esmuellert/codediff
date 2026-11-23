@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::{self, DiffContent};
-use file_types::{DiffType, File, Oid, RepoPath, Revs};
+use file_types::{File, Oid, RepoPath, Revs, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx};
 use syntax::Span;
@@ -25,7 +25,7 @@ fn Cards(
             Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
         )>,
     >,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
 ) -> Node {
     rsx! {
@@ -33,7 +33,7 @@ fn Cards(
             files: Rc::clone(files),
             more_files: false,
             open_next: Rc::new(|| {}) as Rc<dyn Fn()>,
-            view_layout: *view_layout,
+            viewer_mode: *viewer_mode,
             wrap: *wrap,
         }
     }
@@ -106,14 +106,14 @@ fn harness(
             Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
         )>,
     >,
-    layout: DiffType,
+    layout: ViewerMode,
     wrap: bool,
     height: u16,
 ) -> Harness {
     Harness::new::<Cards>(
         CardsProps {
             files: Rc::clone(files),
-            view_layout: layout,
+            viewer_mode: layout,
             wrap,
         },
         72,
@@ -139,7 +139,7 @@ fn settle(h: &mut Harness) {
 #[test]
 fn every_three_line_scroll_matches_the_complete_card_content() {
     let files = files();
-    for layout in [DiffType::Inline, DiffType::SideBySide] {
+    for layout in [ViewerMode::Inline, ViewerMode::SideBySide] {
         for wrap in [false, true] {
             let mut full = harness(&files, layout, wrap, 2000);
             settle(&mut full);

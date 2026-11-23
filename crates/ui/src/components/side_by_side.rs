@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use align::{Alignment, DiffVersion};
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Basis, Column, ColumnProps, Divider, DividerProps, Layout, Node, Row, RowProps, Scope, Scroll,
     ScrollProps, component, rsx, use_context,
@@ -24,7 +24,7 @@ use crate::view::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
 };
 
-pub(crate) struct SideBySideLayout {
+pub(crate) struct SideBySideGeometry {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
     pub(crate) original_gutter_width: u16,
     pub(crate) modified_gutter_width: u16,
@@ -35,12 +35,12 @@ pub(crate) struct SideBySideLayout {
     pub(crate) terminal_line_count: u32,
 }
 
-pub(crate) fn layout_side_by_side(
+pub(crate) fn side_by_side_geometry(
     alignment: &Alignment,
     width: u16,
     wrap: bool,
     compact: bool,
-) -> SideBySideLayout {
+) -> SideBySideGeometry {
     let original_line_count = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter_width = width_for_line_count(original_line_count);
@@ -53,13 +53,13 @@ pub(crate) fn layout_side_by_side(
     let modified_width = text_width / 2;
     let wrapped_lines = terminal_view_lines(
         alignment,
-        DiffType::SideBySide,
-        compact_view_lines(alignment, DiffType::SideBySide, compact),
+        ViewerMode::SideBySide,
+        compact_view_lines(alignment, ViewerMode::SideBySide, compact),
         original_width,
         modified_width,
         wrap,
     );
-    let (original_longest, modified_longest) = if wrap || compact {
+    let (original_longest, modified_longest) = if wrap {
         (u32::from(original_width), u32::from(modified_width))
     } else {
         (
@@ -68,7 +68,7 @@ pub(crate) fn layout_side_by_side(
         )
     };
     let terminal_line_count = terminal_line_count(&wrapped_lines);
-    SideBySideLayout {
+    SideBySideGeometry {
         wrapped_lines: Rc::new(wrapped_lines),
         original_gutter_width,
         modified_gutter_width,
@@ -91,22 +91,16 @@ pub(crate) fn SideBySide(
     scope: &mut Scope,
     content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    wrapped_lines: Rc<Vec<WrappedViewLine>>,
+    geometry: Rc<SideBySideGeometry>,
     viewport: DiffVisibleRange,
-    original_gutter_width: u16,
-    modified_gutter_width: u16,
-    original_width: u16,
-    modified_width: u16,
-    original_horizontal_scroll_extent: u32,
-    modified_horizontal_scroll_extent: u32,
     auto_focus: bool,
 ) -> Node {
-    let original_gutter_width = *original_gutter_width;
-    let modified_gutter_width = *modified_gutter_width;
-    let original_width = *original_width;
-    let modified_width = *modified_width;
-    let original_horizontal_scroll_extent = *original_horizontal_scroll_extent;
-    let modified_horizontal_scroll_extent = *modified_horizontal_scroll_extent;
+    let original_gutter_width = geometry.original_gutter_width;
+    let modified_gutter_width = geometry.modified_gutter_width;
+    let original_width = geometry.original_width;
+    let modified_width = geometry.modified_width;
+    let original_horizontal_scroll_extent = geometry.original_horizontal_scroll_extent;
+    let modified_horizontal_scroll_extent = geometry.modified_horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
@@ -114,7 +108,7 @@ pub(crate) fn SideBySide(
     let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to SideBySide")
     };
-    let wrapped_lines = wrapped_lines.as_ref();
+    let wrapped_lines = geometry.wrapped_lines.as_ref();
     let visible_terminal_line_count = viewport
         .visible_terminal_lines
         .end

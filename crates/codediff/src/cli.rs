@@ -37,7 +37,7 @@ pub enum Command {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum DiffLayout {
+pub enum ViewerMode {
     SideBySide,
     Inline,
 }
@@ -75,7 +75,7 @@ pub enum Debug {
         original: String,
         modified: String,
         #[arg(long, value_enum, default_value = "side-by-side")]
-        layout: DiffLayout,
+        layout: ViewerMode,
         #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
         ignore_trim_whitespace: bool,
         /// Render with source wrapping enabled or disabled.

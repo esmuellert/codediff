@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::DiffContent;
-use file_types::DiffType;
+use file_types::ViewerMode;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, Text,
     TextProps, component, rsx, use_context, use_measure, use_memo, use_scroll,
@@ -13,38 +13,31 @@ use loom::{
 use syntax::Span;
 
 use super::border::{Border, BorderProps};
-use super::code_text::{horizontal_scroll_extent, longest_line_cells};
 use super::context::Ui;
-use super::diff_viewer_container::DiffVisibleRange;
-use super::inline::{Inline, InlineLayout, InlineProps, layout_inline};
-use super::side_by_side::{SideBySide, SideBySideLayout, SideBySideProps, layout_side_by_side};
-use super::single_file::{SingleFile, SingleFileLayout, SingleFileProps, layout_single_file};
+use super::diff_viewer_container::{DiffGeometry, DiffVisibleRange, diff_geometry};
+use super::inline::{Inline, InlineProps, inline_geometry};
+use super::side_by_side::{SideBySide, SideBySideProps, side_by_side_geometry};
+use super::single_file::{SingleFile, SingleFileProps, single_file_geometry};
 use crate::keybindings::Action;
-
-enum CardLayout {
-    Inline(InlineLayout),
-    SideBySide(SideBySideLayout),
-    SingleFile(SingleFileLayout),
-}
 
 pub(crate) fn card_height(
     content: &DiffContent,
     width: u16,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
 ) -> u16 {
     let terminal_line_count = match content {
-        DiffContent::Diff(diff) => match view_layout {
-            DiffType::Inline => {
-                layout_inline(&diff.alignment, width, wrap, true).terminal_line_count
+        DiffContent::Diff(diff) => match viewer_mode {
+            ViewerMode::Inline => {
+                inline_geometry(&diff.alignment, width, wrap, true).terminal_line_count
             }
-            DiffType::SideBySide => {
-                layout_side_by_side(&diff.alignment, width, wrap, true).terminal_line_count
+            ViewerMode::SideBySide => {
+                side_by_side_geometry(&diff.alignment, width, wrap, true).terminal_line_count
             }
-            DiffType::Single => unreachable!("a diff has no single-file layout"),
+            ViewerMode::Single => unreachable!("a diff has no single-file layout"),
         },
         DiffContent::SingleFile(single) => {
-            layout_single_file(single, width, wrap).terminal_line_count
+            single_file_geometry(single, width, wrap).terminal_line_count
         }
     };
     terminal_line_count
@@ -89,69 +82,34 @@ pub fn DiffCard(
     scope: &mut Scope,
     content: Arc<DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    view_layout: DiffType,
+    viewer_mode: ViewerMode,
     wrap: bool,
     height: Option<u16>,
     auto_focus: bool,
 ) -> Node {
     let theme = *use_context::<Ui>(scope).theme;
-    let view_layout = *view_layout;
+    let viewer_mode = *viewer_mode;
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
     let content_id = Arc::as_ptr(content) as usize;
-    let content_for_layout = Arc::clone(content);
-    let card_layout = use_memo(
+    let content_for_geometry = Arc::clone(content);
+    let geometry = use_memo(
         scope,
-        (content_id, view_layout, wrap, size.width),
-        move || match content_for_layout.as_ref() {
-            DiffContent::Diff(diff) => match view_layout {
-                DiffType::Inline => {
-                    let mut layout = layout_inline(&diff.alignment, size.width, wrap, true);
-                    if !wrap {
-                        let longest = longest_line_cells(
-                            diff.alignment.lines(file_types::DiffVersion::Original),
-                        )
-                        .max(longest_line_cells(
-                            diff.alignment.lines(file_types::DiffVersion::Modified),
-                        ));
-                        layout.horizontal_scroll_extent =
-                            horizontal_scroll_extent(longest, layout.code_width);
-                    }
-                    CardLayout::Inline(layout)
-                }
-                DiffType::SideBySide => {
-                    let mut layout = layout_side_by_side(&diff.alignment, size.width, wrap, true);
-                    if !wrap {
-                        layout.original_horizontal_scroll_extent = horizontal_scroll_extent(
-                            longest_line_cells(
-                                diff.alignment.lines(file_types::DiffVersion::Original),
-                            ),
-                            layout.original_width,
-                        );
-                        layout.modified_horizontal_scroll_extent = horizontal_scroll_extent(
-                            longest_line_cells(
-                                diff.alignment.lines(file_types::DiffVersion::Modified),
-                            ),
-                            layout.modified_width,
-                        );
-                    }
-                    CardLayout::SideBySide(layout)
-                }
-                DiffType::Single => unreachable!("a diff has no single-file layout"),
-            },
-            DiffContent::SingleFile(single) => {
-                CardLayout::SingleFile(layout_single_file(single, size.width, wrap))
-            }
+        (content_id, viewer_mode, wrap, size.width),
+        move || {
+            diff_geometry(
+                Some(content_for_geometry.as_ref()),
+                size.width,
+                viewer_mode,
+                wrap,
+                true,
+            )
         },
     );
 
     let (scroll_view, scroll_handle) = use_scroll(scope, loom::ScrollOffset::default);
     let listeners = horizontal_listeners(scope, scroll_handle);
-    let terminal_line_count = match card_layout.as_ref() {
-        CardLayout::Inline(layout) => layout.terminal_line_count,
-        CardLayout::SideBySide(layout) => layout.terminal_line_count,
-        CardLayout::SingleFile(layout) => layout.terminal_line_count,
-    } as usize;
+    let terminal_line_count = geometry.terminal_line_count() as usize;
     let visible_terminal_line_count = usize::from(size.height.saturating_sub(1));
     let visible_range = DiffVisibleRange {
         visible_terminal_lines: Range {
@@ -161,50 +119,38 @@ pub fn DiffCard(
         horizontal_view: scroll_view.axes(true, false),
         write_horizontal_metrics: true,
     };
-    let view_node = match card_layout.as_ref() {
-        CardLayout::Inline(layout) => rsx! {
+    let view_node = match geometry.as_ref() {
+        DiffGeometry::Inline(geometry) => rsx! {
             Inline {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
-                wrapped_lines: Rc::clone(&layout.wrapped_lines),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
-                original_gutter_width: layout.original_gutter_width,
-                modified_gutter_width: layout.modified_gutter_width,
-                code_width: layout.code_width,
-                horizontal_scroll_extent: layout.horizontal_scroll_extent,
                 auto_focus: false,
             }
         },
-        CardLayout::SideBySide(layout) => rsx! {
+        DiffGeometry::SideBySide(geometry) => rsx! {
             SideBySide {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
-                wrapped_lines: Rc::clone(&layout.wrapped_lines),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
-                original_gutter_width: layout.original_gutter_width,
-                modified_gutter_width: layout.modified_gutter_width,
-                original_width: layout.original_width,
-                modified_width: layout.modified_width,
-                original_horizontal_scroll_extent: layout.original_horizontal_scroll_extent,
-                modified_horizontal_scroll_extent: layout.modified_horizontal_scroll_extent,
                 auto_focus: false,
             }
         },
-        CardLayout::SingleFile(layout) => rsx! {
+        DiffGeometry::SingleFile(geometry) => rsx! {
             SingleFile {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
-                wrapped_lines: Rc::clone(&layout.wrapped_lines),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
-                gutter_width: layout.gutter_width,
-                code_width: layout.code_width,
-                horizontal_scroll_extent: layout.horizontal_scroll_extent,
                 auto_focus: false,
             }
         },
+        DiffGeometry::Empty => unreachable!("a diff card always has content"),
     };
 
     let file = content.file();

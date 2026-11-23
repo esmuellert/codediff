@@ -44,7 +44,7 @@ fn a_real_repo_mouse_click_keeps_side_by_side_horizontal_endpoints() {
     let config = repo.join("config.json");
     fs::write(
         &config,
-        r#"{"version":1,"ui":{"layout":"side-by-side","wrap":false}}"#,
+        r#"{"version":1,"ui":{"viewer_mode":"side-by-side","wrap":false}}"#,
     )
     .expect("writing the test config");
 
