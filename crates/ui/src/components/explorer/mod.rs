@@ -154,6 +154,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
 
     let nodes_for_keys = Rc::clone(&nodes);
     let files_for_keys = Rc::clone(&files);
+    let revision_range_for_keys = ctx.revision_range.clone();
     let keybindings = Rc::clone(&ctx.keybindings);
     let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
     let exit = use_exit(scope);
@@ -199,7 +200,9 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 Bubble::Stop
             }
             k if keybindings.matches(Action::Stage, k) => {
-                if let Some(node) = nodes_for_keys.get(selected_line as usize) {
+                if matches!(revision_range_for_keys, RevisionRange::Worktree)
+                    && let Some(node) = nodes_for_keys.get(selected_line as usize)
+                {
                     toggle_stage(node, version_control_service.as_deref());
                 }
                 Bubble::Stop

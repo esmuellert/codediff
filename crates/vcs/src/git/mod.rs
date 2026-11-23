@@ -30,30 +30,41 @@ pub enum GitCommand {
 
 /// Resolves revision names to ids and picks the command shape.
 pub fn resolve_command(repo: &Repo, revision_range: &RevisionRange) -> Result<GitCommand> {
-    let commit = |name: &str| -> Result<Rev> { Ok(Rev::Commit(rev_parse::resolve(repo, name)?)) };
-
     Ok(match revision_range {
         RevisionRange::Worktree => GitCommand::Worktree,
-        RevisionRange::Against(rev) => GitCommand::Diff {
-            args: vec![rev.clone()],
-            revs: Revs::new(commit(rev)?, Rev::Worktree),
-        },
-        RevisionRange::Between(a, b) => GitCommand::Diff {
-            args: vec![a.clone(), b.clone()],
-            revs: Revs::new(commit(a)?, commit(b)?),
-        },
-        RevisionRange::MergeBase(base, target) => {
-            // `a...b` compares the target with the merge base.
-            let base = merge_base::run(repo, base, target)?;
+        RevisionRange::Against(rev) => {
+            let oid = rev_parse::resolve(repo, rev)?;
             GitCommand::Diff {
-                args: vec![base.as_str().to_owned(), target.clone()],
-                revs: Revs::new(Rev::Commit(base), commit(target)?),
+                args: vec![oid.as_str().to_owned()],
+                revs: Revs::new(Rev::Commit(oid), Rev::Worktree),
             }
         }
-        RevisionRange::Staged(rev) => GitCommand::Diff {
-            args: vec!["--cached".to_owned(), rev.clone()],
-            revs: Revs::new(commit(rev)?, Rev::Index),
-        },
+        RevisionRange::Between(a, b) => {
+            let first = rev_parse::resolve(repo, a)?;
+            let second = rev_parse::resolve(repo, b)?;
+            GitCommand::Diff {
+                args: vec![first.as_str().to_owned(), second.as_str().to_owned()],
+                revs: Revs::new(Rev::Commit(first), Rev::Commit(second)),
+            }
+        }
+        RevisionRange::MergeBase(base, target) => {
+            // Resolve both sides first so unknown revisions report `UnknownRevision`
+            // and `merge-base` plus `diff` see immutable commit ids.
+            let base = rev_parse::resolve(repo, base)?;
+            let target = rev_parse::resolve(repo, target)?;
+            let merge_base = merge_base::run(repo, base.as_str(), target.as_str())?;
+            GitCommand::Diff {
+                args: vec![merge_base.as_str().to_owned(), target.as_str().to_owned()],
+                revs: Revs::new(Rev::Commit(merge_base), Rev::Commit(target)),
+            }
+        }
+        RevisionRange::Staged(rev) => {
+            let oid = rev_parse::resolve(repo, rev)?;
+            GitCommand::Diff {
+                args: vec!["--cached".to_owned(), oid.as_str().to_owned()],
+                revs: Revs::new(Rev::Commit(oid), Rev::Index),
+            }
+        }
     })
 }
 

@@ -8,6 +8,6 @@ use crate::git::run as runner;
 
 /// Returns the merge base used for an `a...b` comparison.
 pub fn run(repo: &Repo, a: &str, b: &str) -> Result<Oid> {
-    let text = runner::run_line(&repo.root, &["merge-base", a, b])?;
+    let text = runner::run_line(&repo.root, &["merge-base", "--end-of-options", a, b])?;
     Ok(Oid::new(text))
 }
