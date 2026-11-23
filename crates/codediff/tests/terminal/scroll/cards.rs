@@ -50,7 +50,7 @@ impl Repository {
             fs::write(path.join(format!("src/{name}.txt")), lines("NEW", name)).unwrap();
         }
         fs::write(path.join(".git/codediff-test.json"), format!(
-            r#"{{"ui":{{"layout":"{layout}","wrap":{wrap},"explorer_width":30,"theme":"catppuccin-mocha"}}}}"#,
+            r#"{{"ui":{{"viewer_mode":"{layout}","wrap":{wrap},"explorer_width":30,"theme":"catppuccin-mocha"}}}}"#,
         )).unwrap();
         Self(path)
     }

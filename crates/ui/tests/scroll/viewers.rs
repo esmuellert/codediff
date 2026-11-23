@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -5,23 +6,27 @@ use std::sync::Arc;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
-use ui::components::diff_viewer::{ViewState, ViewStateHistory};
+use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
 #[component]
 fn SideBySide(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) -> Node {
-    let view_states = use_ref(scope, ViewStateHistory::default);
-    let state = use_ref(scope, ViewState::default);
+    let scroll_positions = use_ref(scope, HashMap::<String, ScrollPosition>::new);
+    let state = use_ref(scope, ScrollPosition::default);
     let key = content.file().path().as_str().to_owned();
     let active_key = use_ref(scope, || None::<String>);
     if active_key.current().as_deref() != Some(key.as_str()) {
         if let Some(previous) = active_key.current().clone() {
-            view_states
+            scroll_positions
                 .current()
-                .save(&previous, state.current().clone());
+                .insert(previous, state.current().clone());
         }
-        *state.current() = view_states.current().load(&key);
+        *state.current() = scroll_positions
+            .current()
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
         *active_key.current() = Some(key);
     }
     rsx! {
@@ -29,7 +34,7 @@ fn SideBySide(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) 
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
             viewer_mode: file_types::ViewerMode::SideBySide,
-            view_state: state,
+            scroll_position: state,
             wrap: false,
             compact: false,
             auto_focus: false,

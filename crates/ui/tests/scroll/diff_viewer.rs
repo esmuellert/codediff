@@ -306,7 +306,7 @@ fn t_does_not_change_a_single_file() {
 }
 
 #[test]
-fn a_diff_view_state_survives_a_layout_switch() {
+fn a_diff_scroll_position_survives_a_viewer_mode_switch() {
     let file = file("test.rs");
     let original: Vec<String> = (1..=20)
         .map(|line| format!("line {line:02} 01234567890123456789012345678901234567890123456789"))
@@ -363,7 +363,7 @@ fn the_first_screen_view_line_is_preserved_without_an_offset() {
 }
 
 #[test]
-fn a_diff_view_state_survives_switching_files() {
+fn a_diff_scroll_position_survives_switching_files() {
     let first = file("first.rs");
     let second = file("second.rs");
     let first_lines: Vec<String> = (1..=20).map(|line| format!("first {line:02}")).collect();

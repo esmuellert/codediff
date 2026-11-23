@@ -9,7 +9,7 @@ use file_types::{DiffVersion, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
-use ui::components::diff_viewer::ViewState;
+use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context as UiContext, TerminalLine, Ui, terminal_line_pairs};
 
@@ -24,7 +24,7 @@ fn InlineHost(
     content: Arc<diff_service::diff::DiffContent>,
     wrap: bool,
 ) -> Node {
-    let view_state = use_ref(scope, ViewState::default);
+    let scroll_position = use_ref(scope, ScrollPosition::default);
     let content_id = Arc::as_ptr(content) as usize;
     rsx! {
         DiffViewerContainer {
@@ -32,7 +32,7 @@ fn InlineHost(
             content: Some(Arc::clone(content)),
             colours: Arc::default(),
             viewer_mode: ViewerMode::Inline,
-            view_state,
+            scroll_position,
             wrap: *wrap,
             compact: false,
             auto_focus: false,

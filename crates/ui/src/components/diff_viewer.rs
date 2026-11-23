@@ -25,25 +25,9 @@ use crate::view::terminal_lines::TerminalLine;
 
 /// The semantic screen position shared by a file's layouts.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ViewState {
+pub struct ScrollPosition {
     pub(crate) first_terminal_line: Option<TerminalLine>,
     pub first_cell: u32,
-}
-
-/// Screen positions saved independently for each file.
-#[derive(Debug, Default)]
-pub struct ViewStateHistory {
-    entries: HashMap<String, ViewState>,
-}
-
-impl ViewStateHistory {
-    pub fn load(&self, key: &str) -> ViewState {
-        self.entries.get(key).cloned().unwrap_or_default()
-    }
-
-    pub fn save(&mut self, key: &str, state: ViewState) {
-        self.entries.insert(key.to_owned(), state);
-    }
 }
 
 /// Opens the selected file and keeps it up to date.
@@ -150,9 +134,9 @@ fn use_directory_files(scope: &mut Scope, ctx: &Context) -> Rc<Option<DirectoryF
     })
 }
 
-fn sync_active_view_state(
-    history: Ref<ViewStateHistory>,
-    active_state: Ref<ViewState>,
+fn sync_active_scroll_position(
+    positions: Ref<HashMap<String, ScrollPosition>>,
+    active_position: Ref<ScrollPosition>,
     active_key: Ref<Option<String>>,
     content: Option<&DiffContent>,
 ) {
@@ -166,18 +150,18 @@ fn sync_active_view_state(
     }
 
     if let Some(previous_key) = previous_key {
-        let state = active_state.current().clone();
-        history.current().save(&previous_key, state);
+        let position = active_position.current().clone();
+        positions.current().insert(previous_key, position);
     }
-    let state = current_key
+    let position = current_key
         .as_deref()
-        .map(|key| history.current().load(key))
+        .and_then(|key| positions.current().get(key).cloned())
         .unwrap_or_default();
-    *active_state.current() = state;
+    *active_position.current() = position;
     *active_key.current() = current_key;
 }
 
-fn layout_listener(
+fn viewer_mode_listener(
     scope: &mut Scope,
     is_diff: bool,
     menu_open: bool,
@@ -190,7 +174,7 @@ fn layout_listener(
         if menu_open && key == loom::crokey::key!(esc) {
             set_menu_open.set(false);
             Bubble::Stop
-        } else if is_diff && keybindings.matches(Action::ToggleLayout, key) {
+        } else if is_diff && keybindings.matches(Action::ToggleViewerMode, key) {
             set_viewer_mode(&|viewer_mode| viewer_mode.other());
             Bubble::Stop
         } else if keybindings.matches(Action::ToggleWrap, key) {
@@ -220,7 +204,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
         .as_ref()
         .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
     let directory_files = use_directory_files(scope, &ctx);
-    let (viewer_mode, set_viewer_mode) = use_state(scope, || match ctx.config.ui.layout {
+    let (viewer_mode, set_viewer_mode) = use_state(scope, || match ctx.config.ui.viewer_mode {
         config::ViewerMode::SideBySide => ViewerMode::SideBySide,
         config::ViewerMode::Inline => ViewerMode::Inline,
     });
@@ -230,12 +214,12 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     if !has_selection && menu_open {
         set_menu_open.set(false);
     }
-    let view_states = use_ref(scope, ViewStateHistory::default);
-    let active_view_state = use_ref(scope, ViewState::default);
+    let scroll_positions = use_ref(scope, HashMap::<String, ScrollPosition>::new);
+    let active_scroll_position = use_ref(scope, ScrollPosition::default);
     let active_file_key = use_ref(scope, || None::<String>);
-    sync_active_view_state(
-        view_states,
-        active_view_state,
+    sync_active_scroll_position(
+        scroll_positions,
+        active_scroll_position,
         active_file_key,
         content.as_deref(),
     );
@@ -243,7 +227,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     let is_diff =
         ctx.directory.is_some() || matches!(content.as_deref(), Some(DiffContent::Diff(_)));
     let menu_visible = has_selection && menu_open;
-    let toggle = layout_listener(
+    let toggle = viewer_mode_listener(
         scope,
         is_diff,
         menu_visible,
@@ -303,7 +287,7 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
                 content,
                 colours,
                 viewer_mode,
-                view_state: active_view_state,
+                scroll_position: active_scroll_position,
                 wrap,
                 compact: false,
                 auto_focus: true,

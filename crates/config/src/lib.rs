@@ -84,7 +84,7 @@ pub enum ExplorerMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default)]
-    pub layout: ViewerMode,
+    pub viewer_mode: ViewerMode,
     /// Whether long source lines are split into terminal lines.
     #[serde(default = "default_wrap")]
     pub wrap: bool,
@@ -101,7 +101,7 @@ pub struct UiConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
-            layout: ViewerMode::default(),
+            viewer_mode: ViewerMode::default(),
             wrap: default_wrap(),
             theme: default_theme(),
             explorer_width: default_explorer_width(),
@@ -140,8 +140,8 @@ pub struct Keybindings {
     pub move_up: Vec<String>,
     #[serde(default = "default_open")]
     pub open: Vec<String>,
-    #[serde(default = "default_toggle_layout")]
-    pub toggle_layout: Vec<String>,
+    #[serde(default = "default_toggle_viewer_mode")]
+    pub toggle_viewer_mode: Vec<String>,
     #[serde(default = "default_toggle_wrap")]
     pub toggle_wrap: Vec<String>,
     #[serde(default = "default_toggle_explorer_mode")]
@@ -169,7 +169,7 @@ impl Default for Keybindings {
             move_down: default_move_down(),
             move_up: default_move_up(),
             open: default_open(),
-            toggle_layout: default_toggle_layout(),
+            toggle_viewer_mode: default_toggle_viewer_mode(),
             toggle_wrap: default_toggle_wrap(),
             toggle_explorer_mode: default_toggle_explorer_mode(),
             stage: default_stage(),
@@ -190,7 +190,7 @@ impl Keybindings {
             ("move_down", &self.move_down),
             ("move_up", &self.move_up),
             ("open", &self.open),
-            ("toggle_layout", &self.toggle_layout),
+            ("toggle_viewer_mode", &self.toggle_viewer_mode),
             ("toggle_wrap", &self.toggle_wrap),
             ("toggle_explorer_mode", &self.toggle_explorer_mode),
             ("stage", &self.stage),
@@ -229,7 +229,7 @@ fn default_open() -> Vec<String> {
     vec!["enter".to_owned()]
 }
 
-fn default_toggle_layout() -> Vec<String> {
+fn default_toggle_viewer_mode() -> Vec<String> {
     vec!["t".to_owned()]
 }
 
@@ -277,7 +277,7 @@ mod tests {
     fn defaults_match_the_current_application() {
         let config = Config::default();
         assert_eq!(config.version, CURRENT_VERSION);
-        assert_eq!(config.ui.layout, ViewerMode::SideBySide);
+        assert_eq!(config.ui.viewer_mode, ViewerMode::SideBySide);
         assert!(config.ui.wrap);
         assert_eq!(config.ui.theme, "auto");
         assert_eq!(config.ui.explorer_width, 40);
@@ -290,9 +290,9 @@ mod tests {
     #[test]
     fn partial_json_keeps_defaults_for_missing_sections() {
         let config: Config =
-            serde_json::from_str(r#"{"ui":{"layout":"inline"},"keybindings":{"quit":["x"]}}"#)
+            serde_json::from_str(r#"{"ui":{"viewer_mode":"inline"},"keybindings":{"quit":["x"]}}"#)
                 .unwrap();
-        assert_eq!(config.ui.layout, ViewerMode::Inline);
+        assert_eq!(config.ui.viewer_mode, ViewerMode::Inline);
         assert_eq!(config.ui.explorer_width, 40);
         assert_eq!(config.keybindings.quit, ["x"]);
         assert_eq!(config.keybindings.move_down, ["j", "down"]);

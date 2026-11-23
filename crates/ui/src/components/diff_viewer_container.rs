@@ -11,7 +11,7 @@ use loom::{
 use syntax::Span;
 
 use super::context::Ui;
-use super::diff_viewer::ViewState;
+use super::diff_viewer::ScrollPosition;
 use super::inline::{Inline, InlineGeometry, InlineProps, inline_geometry};
 use super::side_by_side::{SideBySide, SideBySideGeometry, SideBySideProps, side_by_side_geometry};
 use super::single_file::{SingleFile, SingleFileGeometry, SingleFileProps, single_file_geometry};
@@ -124,7 +124,7 @@ pub fn DiffViewerContainer(
     content: Option<Arc<DiffContent>>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     viewer_mode: ViewerMode,
-    view_state: Ref<ViewState>,
+    scroll_position: Ref<ScrollPosition>,
     wrap: bool,
     compact: bool,
     auto_focus: bool,
@@ -134,7 +134,7 @@ pub fn DiffViewerContainer(
     let wrap = *wrap;
     let compact = *compact;
     let auto_focus = *auto_focus;
-    let view_state = *view_state;
+    let scroll_position = *scroll_position;
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let (node_ref, size) = use_measure(scope);
@@ -156,14 +156,14 @@ pub fn DiffViewerContainer(
         },
     );
 
-    let current_state = view_state.current().clone();
-    let initial_top = current_state
+    let current_position = scroll_position.current().clone();
+    let initial_top = current_position
         .first_terminal_line
         .as_ref()
         .and_then(|line| geometry.terminal_line_index_for(line))
         .unwrap_or(0);
     let (scroll_view, scroll_handle) = use_scroll(scope, || ScrollOffset {
-        x: current_state.first_cell,
+        x: current_position.first_cell,
         y: initial_top,
     });
     use_layout_effect(
@@ -171,7 +171,7 @@ pub fn DiffViewerContainer(
         (content_id, viewer_mode, wrap, compact, size.width),
         move || {
             scroll_handle.scroll_to(ScrollOffset {
-                x: current_state.first_cell,
+                x: current_position.first_cell,
                 y: initial_top,
             });
         },
@@ -191,7 +191,7 @@ pub fn DiffViewerContainer(
 
     if size.width > 0 && size.height > 0 {
         let requested = scroll_view.requested_offset();
-        view_state.current().clone_from(&ViewState {
+        scroll_position.current().clone_from(&ScrollPosition {
             first_terminal_line: (requested.y > 0)
                 .then(|| geometry.terminal_line_at_index(requested.y))
                 .flatten(),

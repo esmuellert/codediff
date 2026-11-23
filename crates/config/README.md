@@ -20,7 +20,7 @@ A minimal file can override only the preferences it needs:
 {
   "version": 1,
   "ui": {
-    "layout": "inline",
+    "viewer_mode": "inline",
     "theme": "catppuccin-mocha",
     "explorer_width": 40,
     "explorer_mode": "tree",

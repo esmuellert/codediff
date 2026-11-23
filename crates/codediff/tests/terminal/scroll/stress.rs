@@ -69,7 +69,7 @@ fn large_scroll_workload_stays_responsive() {
     let config = repo.join("config.json");
     fs::write(
         &config,
-        r#"{"version":1,"ui":{"layout":"side-by-side","wrap":false}}"#,
+        r#"{"version":1,"ui":{"viewer_mode":"side-by-side","wrap":false}}"#,
     )
     .expect("writing the stress config");
 

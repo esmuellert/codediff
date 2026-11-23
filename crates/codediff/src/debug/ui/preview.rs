@@ -17,7 +17,7 @@ use ui::components::border::{Border, BorderProps};
 use ui::components::commit_graph::{CommitGraph, CommitGraphProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
-use ui::components::diff_viewer::{DiffViewer, ViewState};
+use ui::components::diff_viewer::{DiffViewer, ScrollPosition};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
 use ui::components::{Context, DirectorySelection, Ui, UiProps};
@@ -89,7 +89,7 @@ pub(super) fn StoryPreview(
     let colours = files
         .first()
         .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
-    let view_state = use_ref(scope, ViewState::default);
+    let scroll_position = use_ref(scope, ScrollPosition::default);
     let shortcuts = if navigate.is_some() {
         vec![
             Shortcut {
@@ -149,7 +149,7 @@ pub(super) fn StoryPreview(
                 content: content.clone(),
                 colours: Arc::clone(&colours),
                 viewer_mode: file_types::ViewerMode::SideBySide,
-                view_state,
+                scroll_position,
                 wrap: true,
                 compact: definition.compact,
                 auto_focus: false,
@@ -161,7 +161,7 @@ pub(super) fn StoryPreview(
                 content: content.clone(),
                 colours: Arc::clone(&colours),
                 viewer_mode: file_types::ViewerMode::Inline,
-                view_state,
+                scroll_position,
                 wrap: true,
                 compact: definition.compact,
                 auto_focus: false,
@@ -172,7 +172,7 @@ pub(super) fn StoryPreview(
                 content: content.clone(),
                 colours: Arc::clone(&colours),
                 viewer_mode: file_types::ViewerMode::Single,
-                view_state,
+                scroll_position,
                 wrap: true,
                 compact: false,
                 auto_focus: false,
