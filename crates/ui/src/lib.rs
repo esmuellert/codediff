@@ -39,10 +39,10 @@ enum Event {
     Redraw,
 }
 
-fn open_repository(cwd: &Path, diff_type: &vcs::DiffType) -> std::io::Result<PathBuf> {
+fn open_repository(cwd: &Path, revision_range: &vcs::RevisionRange) -> std::io::Result<PathBuf> {
     let repository = vcs::Repository::open(cwd).map_err(std::io::Error::other)?;
     repository
-        .check_diff_type(diff_type)
+        .check_revision_range(revision_range)
         .map_err(std::io::Error::other)?;
     Ok(repository.repo_path().root.clone())
 }
@@ -50,9 +50,9 @@ fn open_repository(cwd: &Path, diff_type: &vcs::DiffType) -> std::io::Result<Pat
 pub fn main(
     cwd: &Path,
     mut config: config::Config,
-    diff_type: vcs::DiffType,
+    revision_range: vcs::RevisionRange,
 ) -> std::io::Result<i32> {
-    let watcher_root = open_repository(cwd, &diff_type)?;
+    let watcher_root = open_repository(cwd, &revision_range)?;
     let probed = probe();
     if config.ui.theme == "auto" || Theme::named(&config.ui.theme).is_none() {
         config.ui.theme = Theme::resolve(probed, |key| std::env::var(key).ok())
@@ -85,7 +85,7 @@ pub fn main(
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
-        diff_type,
+        revision_range,
         config,
         keybindings,
         diff_service: pipeline,
@@ -190,7 +190,7 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
 
         assert_eq!(
-            open_repository(&nested, &vcs::DiffType::Worktree)
+            open_repository(&nested, &vcs::RevisionRange::Worktree)
                 .unwrap()
                 .canonicalize()
                 .unwrap(),
@@ -212,7 +212,7 @@ mod tests {
 
         let error = open_repository(
             repo.path(),
-            &vcs::DiffType::Against("nonexistent-rev".to_owned()),
+            &vcs::RevisionRange::Against("nonexistent-rev".to_owned()),
         )
         .unwrap_err();
         assert!(

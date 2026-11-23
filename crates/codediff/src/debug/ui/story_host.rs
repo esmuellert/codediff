@@ -35,7 +35,11 @@ pub(super) fn story_props(
     redraw: impl Fn() + Send + Sync + 'static,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> (Rc<DiffService>, StoryPreviewProps, Option<LiveRepo>) {
-    if let StoryFixture::Repository { repo, diff_type } = fixture {
+    if let StoryFixture::Repository {
+        repo,
+        revision_range,
+    } = fixture
+    {
         let pipeline = Rc::new(DiffService::start(
             redraw,
             diff_service::diff::Settings::default(),
@@ -45,7 +49,7 @@ pub(super) fn story_props(
             base_context: UiContext {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::from(repo.path()),
-                diff_type,
+                revision_range,
                 diff_service: Some(Rc::clone(&pipeline)),
                 ..UiContext::default()
             },

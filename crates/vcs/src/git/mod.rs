@@ -17,7 +17,7 @@ use file_types::{DiffVersion, File, FileContent, Rev, Revs};
 
 use crate::Repo;
 use crate::error::Result;
-use crate::repository::DiffType;
+use crate::repository::RevisionRange;
 use status::{Entry, Untracked};
 
 /// Which git command answers a comparison.
@@ -29,20 +29,20 @@ pub enum GitCommand {
 }
 
 /// Resolves revision names to ids and picks the command shape.
-pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> {
+pub fn resolve_command(repo: &Repo, revision_range: &RevisionRange) -> Result<GitCommand> {
     let commit = |name: &str| -> Result<Rev> { Ok(Rev::Commit(rev_parse::resolve(repo, name)?)) };
 
-    Ok(match diff_type {
-        DiffType::Worktree => GitCommand::Worktree,
-        DiffType::Against(rev) => GitCommand::Diff {
+    Ok(match revision_range {
+        RevisionRange::Worktree => GitCommand::Worktree,
+        RevisionRange::Against(rev) => GitCommand::Diff {
             args: vec![rev.clone()],
             revs: Revs::new(commit(rev)?, Rev::Worktree),
         },
-        DiffType::Between(a, b) => GitCommand::Diff {
+        RevisionRange::Between(a, b) => GitCommand::Diff {
             args: vec![a.clone(), b.clone()],
             revs: Revs::new(commit(a)?, commit(b)?),
         },
-        DiffType::MergeBase(base, target) => {
+        RevisionRange::MergeBase(base, target) => {
             // `a...b` compares the target with the merge base.
             let base = merge_base::run(repo, base, target)?;
             GitCommand::Diff {
@@ -50,7 +50,7 @@ pub fn resolve_command(repo: &Repo, diff_type: &DiffType) -> Result<GitCommand> 
                 revs: Revs::new(Rev::Commit(base), commit(target)?),
             }
         }
-        DiffType::Staged(rev) => GitCommand::Diff {
+        RevisionRange::Staged(rev) => GitCommand::Diff {
             args: vec!["--cached".to_owned(), rev.clone()],
             revs: Revs::new(commit(rev)?, Rev::Index),
         },

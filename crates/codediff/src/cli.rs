@@ -1,7 +1,7 @@
 //! The command tree.
 
 use clap::{Parser, Subcommand, ValueEnum};
-use vcs::DiffType;
+use vcs::RevisionRange;
 
 #[derive(Parser)]
 #[command(
@@ -34,16 +34,16 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn diff_type(&self) -> DiffType {
+    pub fn revision_range(&self) -> RevisionRange {
         match self.revision.as_deref() {
-            None => DiffType::Worktree,
+            None => RevisionRange::Worktree,
             Some(spec) => parse_revision(spec),
         }
     }
 }
 
-/// Parses a single revision or range specifier into [`DiffType`].
-pub fn parse_revision(spec: &str) -> DiffType {
+/// Parses a single revision or range specifier into [`RevisionRange`].
+pub fn parse_revision(spec: &str) -> RevisionRange {
     let default_head = |side: &str| {
         if side.is_empty() {
             "HEAD".to_owned()
@@ -53,11 +53,11 @@ pub fn parse_revision(spec: &str) -> DiffType {
     };
 
     if let Some((left, right)) = spec.split_once("...") {
-        DiffType::MergeBase(default_head(left), default_head(right))
+        RevisionRange::MergeBase(default_head(left), default_head(right))
     } else if let Some((left, right)) = spec.split_once("..") {
-        DiffType::Between(default_head(left), default_head(right))
+        RevisionRange::Between(default_head(left), default_head(right))
     } else {
-        DiffType::Against(spec.to_owned())
+        RevisionRange::Against(spec.to_owned())
     }
 }
 
@@ -202,53 +202,56 @@ mod tests {
         let cli = parse(&[]);
         assert_eq!(cli.command, None);
         assert_eq!(cli.revision, None);
-        assert_eq!(cli.diff_type(), DiffType::Worktree);
+        assert_eq!(cli.revision_range(), RevisionRange::Worktree);
     }
 
     #[test]
     fn single_revision_compares_against_the_worktree() {
         let cli = parse(&["main"]);
         assert_eq!(cli.command, None);
-        assert_eq!(cli.diff_type(), DiffType::Against("main".to_owned()));
+        assert_eq!(
+            cli.revision_range(),
+            RevisionRange::Against("main".to_owned())
+        );
     }
 
     #[test]
     fn two_dots_parse_as_between_and_default_empty_sides_to_head() {
         assert_eq!(
-            parse(&["HEAD~2..HEAD"]).diff_type(),
-            DiffType::Between("HEAD~2".to_owned(), "HEAD".to_owned())
+            parse(&["HEAD~2..HEAD"]).revision_range(),
+            RevisionRange::Between("HEAD~2".to_owned(), "HEAD".to_owned())
         );
         assert_eq!(
-            parse(&["main.."]).diff_type(),
-            DiffType::Between("main".to_owned(), "HEAD".to_owned())
+            parse(&["main.."]).revision_range(),
+            RevisionRange::Between("main".to_owned(), "HEAD".to_owned())
         );
         assert_eq!(
-            parse(&["..feat"]).diff_type(),
-            DiffType::Between("HEAD".to_owned(), "feat".to_owned())
+            parse(&["..feat"]).revision_range(),
+            RevisionRange::Between("HEAD".to_owned(), "feat".to_owned())
         );
         assert_eq!(
-            parse(&[".."]).diff_type(),
-            DiffType::Between("HEAD".to_owned(), "HEAD".to_owned())
+            parse(&[".."]).revision_range(),
+            RevisionRange::Between("HEAD".to_owned(), "HEAD".to_owned())
         );
     }
 
     #[test]
     fn three_dots_parse_as_merge_base_before_two_dots() {
         assert_eq!(
-            parse(&["main...feat"]).diff_type(),
-            DiffType::MergeBase("main".to_owned(), "feat".to_owned())
+            parse(&["main...feat"]).revision_range(),
+            RevisionRange::MergeBase("main".to_owned(), "feat".to_owned())
         );
         assert_eq!(
-            parse(&["main..."]).diff_type(),
-            DiffType::MergeBase("main".to_owned(), "HEAD".to_owned())
+            parse(&["main..."]).revision_range(),
+            RevisionRange::MergeBase("main".to_owned(), "HEAD".to_owned())
         );
         assert_eq!(
-            parse(&["...feat"]).diff_type(),
-            DiffType::MergeBase("HEAD".to_owned(), "feat".to_owned())
+            parse(&["...feat"]).revision_range(),
+            RevisionRange::MergeBase("HEAD".to_owned(), "feat".to_owned())
         );
         assert_eq!(
-            parse(&["..."]).diff_type(),
-            DiffType::MergeBase("HEAD".to_owned(), "HEAD".to_owned())
+            parse(&["..."]).revision_range(),
+            RevisionRange::MergeBase("HEAD".to_owned(), "HEAD".to_owned())
         );
     }
 
@@ -274,11 +277,17 @@ mod tests {
         let doctor = parse(&["--", "doctor"]);
         assert_eq!(doctor.command, None);
         assert_eq!(doctor.revision.as_deref(), Some("doctor"));
-        assert_eq!(doctor.diff_type(), DiffType::Against("doctor".to_owned()));
+        assert_eq!(
+            doctor.revision_range(),
+            RevisionRange::Against("doctor".to_owned())
+        );
 
         let debug = parse(&["--", "debug"]);
         assert_eq!(debug.command, None);
         assert_eq!(debug.revision.as_deref(), Some("debug"));
-        assert_eq!(debug.diff_type(), DiffType::Against("debug".to_owned()));
+        assert_eq!(
+            debug.revision_range(),
+            RevisionRange::Against("debug".to_owned())
+        );
     }
 }

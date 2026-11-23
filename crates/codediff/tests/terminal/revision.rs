@@ -143,8 +143,8 @@ fn double_dash_reviews_a_branch_named_doctor() {
     repo.git(&["commit", "-qm", "doctor base"]);
     repo.git(&["branch", "-M", "doctor"]);
 
-    // Commit on `feature` so the worktree is completely clean (`DiffType::Worktree`
-    // would list zero files); only `DiffType::Against("doctor")` finds `branch.txt`.
+    // Commit on `feature` so the worktree is completely clean (`RevisionRange::Worktree`
+    // would list zero files); only `RevisionRange::Against("doctor")` finds `branch.txt`.
     repo.git(&["checkout", "-qb", "feature"]);
     repo.write("branch.txt", "committed on feature\n");
     repo.git(&["add", "-A"]);

@@ -2,12 +2,12 @@
 //! and read content.
 
 mod commits;
-mod diff_type;
 pub(crate) mod list;
 mod read;
+mod revision_range;
 
 pub use commits::{Commit, CommitOrder};
-pub use diff_type::DiffType;
+pub use revision_range::RevisionRange;
 
 use std::path::Path;
 
@@ -47,9 +47,9 @@ impl Repository {
         &self.repo
     }
 
-    /// Checks that the revisions named by `diff_type` resolve in this repository.
-    pub fn check_diff_type(&self, diff_type: &DiffType) -> crate::Result<()> {
-        git::resolve_command(&self.repo, diff_type).map(|_| ())
+    /// Checks that the revisions named by `revision_range` resolve in this repository.
+    pub fn check_revision_range(&self, revision_range: &RevisionRange) -> crate::Result<()> {
+        git::resolve_command(&self.repo, revision_range).map(|_| ())
     }
 
     /// Stages a file or directory: `git add -- <path>`.

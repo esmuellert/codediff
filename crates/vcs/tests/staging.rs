@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use file_types::Rev;
-use vcs::{DiffType, Repository};
+use vcs::{Repository, RevisionRange};
 
 struct Fixture {
     dir: PathBuf,
@@ -20,7 +20,7 @@ impl Fixture {
     fn files(&self) -> Vec<file_types::File> {
         Repository::open(&self.dir)
             .expect("opening the fixture repository")
-            .get_changed_files(&DiffType::Worktree, &[])
+            .get_changed_files(&RevisionRange::Worktree, &[])
             .expect("listing changed files")
     }
 }

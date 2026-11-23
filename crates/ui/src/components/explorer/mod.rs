@@ -6,7 +6,7 @@ mod entry;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use diff_service::files::DiffType;
+use diff_service::files::RevisionRange;
 use file_types::{File, RepoPath, Rev, Revs};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, Scroll, ScrollOffset,
@@ -30,15 +30,15 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let set_directory = ctx.set_directory;
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
     let repo = Rc::clone(&ctx.repo);
-    let diff_type = ctx.diff_type.clone();
+    let revision_range = ctx.revision_range.clone();
     let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
     let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
     // A change on disk lists the files again; the previous list is dropped.
     let (refreshes, set_refreshes) = use_state(scope, || 0u32);
-    let diff_type_for_watcher = diff_type.clone();
+    let revision_range_for_watcher = revision_range.clone();
     use_effect(
         scope,
-        (Rc::clone(&repo), diff_type_for_watcher.clone()),
+        (Rc::clone(&repo), revision_range_for_watcher.clone()),
         move || {
             let Some(watcher_service) = watcher_service else {
                 return;
@@ -46,18 +46,18 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             watcher_service
                 .changes()
                 .subscribe(move |refresh: watcher::Refresh| {
-                    if refresh_affects_listing(refresh, &diff_type_for_watcher) {
+                    if refresh_affects_listing(refresh, &revision_range_for_watcher) {
                         set_refreshes.update(|refreshes| *refreshes += 1);
                     }
                 });
         },
     );
     let repo_to_list = Rc::clone(&repo);
-    let diff_type_to_list = diff_type.clone();
+    let revision_range_to_list = revision_range.clone();
     let listing = use_memo(
         scope,
-        (Rc::clone(&repo), diff_type.clone(), refreshes),
-        move || pipeline.map(|pipeline| pipeline.list_files(&repo_to_list, diff_type_to_list)),
+        (Rc::clone(&repo), revision_range.clone(), refreshes),
+        move || pipeline.map(|pipeline| pipeline.list_files(&repo_to_list, revision_range_to_list)),
     );
     let (listed, list_error) = match listing
         .as_ref()
@@ -71,27 +71,31 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         },
         None => (false, None),
     };
-    use_effect(scope, (repo, diff_type, refreshes, listed), move || {
-        let Some(Some(Ok(listed))) = listing
-            .as_ref()
-            .as_ref()
-            .map(|listing| listing.lock().unwrap().clone())
-        else {
-            return;
-        };
-        let matching_files = Rc::new(listed);
-        if let Some(set_file) = set_file {
-            let files_for_selection = Rc::clone(&matching_files);
-            set_file(&move |selected| matching_selected_file(selected, &files_for_selection));
-        }
-        if let Some(set_directory) = set_directory {
-            let files_for_selection = Rc::clone(&matching_files);
-            set_directory(&move |selected| {
-                matching_selected_directory(selected.as_ref(), &files_for_selection)
-            });
-        }
-        set_files.set(matching_files);
-    });
+    use_effect(
+        scope,
+        (repo, revision_range, refreshes, listed),
+        move || {
+            let Some(Some(Ok(listed))) = listing
+                .as_ref()
+                .as_ref()
+                .map(|listing| listing.lock().unwrap().clone())
+            else {
+                return;
+            };
+            let matching_files = Rc::new(listed);
+            if let Some(set_file) = set_file {
+                let files_for_selection = Rc::clone(&matching_files);
+                set_file(&move |selected| matching_selected_file(selected, &files_for_selection));
+            }
+            if let Some(set_directory) = set_directory {
+                let files_for_selection = Rc::clone(&matching_files);
+                set_directory(&move |selected| {
+                    matching_selected_directory(selected.as_ref(), &files_for_selection)
+                });
+            }
+            set_files.set(matching_files);
+        },
+    );
 
     let (selected_line, set_selected_line) = use_state(scope, || 0u32);
     let (folded, set_folded) = use_state(scope, HashSet::<String>::new);
@@ -272,12 +276,14 @@ pub fn letter(change: file_types::ChangeType) -> &'static str {
     }
 }
 
-fn refresh_affects_listing(refresh: watcher::Refresh, diff_type: &DiffType) -> bool {
-    match diff_type {
-        DiffType::Worktree => !refresh.is_empty(),
-        DiffType::Against(_) => refresh.worktree || refresh.head || refresh.refs,
-        DiffType::Staged(_) => refresh.index || refresh.head || refresh.refs,
-        DiffType::Between(_, _) | DiffType::MergeBase(_, _) => refresh.head || refresh.refs,
+fn refresh_affects_listing(refresh: watcher::Refresh, revision_range: &RevisionRange) -> bool {
+    match revision_range {
+        RevisionRange::Worktree => !refresh.is_empty(),
+        RevisionRange::Against(_) => refresh.worktree || refresh.head || refresh.refs,
+        RevisionRange::Staged(_) => refresh.index || refresh.head || refresh.refs,
+        RevisionRange::Between(_, _) | RevisionRange::MergeBase(_, _) => {
+            refresh.head || refresh.refs
+        }
     }
 }
 

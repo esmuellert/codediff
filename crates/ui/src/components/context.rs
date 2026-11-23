@@ -4,7 +4,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use diff_service::DiffService;
-use diff_service::files::DiffType;
+use diff_service::files::RevisionRange;
 use file_types::{File, RepoPath, Revs};
 use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
 
@@ -41,8 +41,8 @@ pub struct Context {
     pub theme: Rc<Theme>,
     pub branch_drawing: bool,
     pub repo: Rc<Path>,
-    pub diff_type: DiffType,
-    pub set_diff_type: Option<SetState<DiffType>>,
+    pub revision_range: RevisionRange,
+    pub set_revision_range: Option<SetState<RevisionRange>>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub directory: Option<Rc<DirectorySelection>>,
@@ -61,8 +61,8 @@ impl Default for Context {
             theme: Rc::new(Theme::DARK),
             branch_drawing: false,
             repo: Rc::from(Path::new("")),
-            diff_type: DiffType::Worktree,
-            set_diff_type: None,
+            revision_range: RevisionRange::Worktree,
+            set_revision_range: None,
             file: None,
             set_file: None,
             directory: None,
@@ -82,8 +82,8 @@ impl Context {
             && Rc::ptr_eq(&self.theme, &other.theme)
             && self.branch_drawing == other.branch_drawing
             && Rc::ptr_eq(&self.repo, &other.repo)
-            && self.diff_type == other.diff_type
-            && self.set_diff_type == other.set_diff_type
+            && self.revision_range == other.revision_range
+            && self.set_revision_range == other.set_revision_range
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
             && same_rc(&self.directory, &other.directory)
@@ -116,7 +116,7 @@ context!(
 pub fn UiProvider(
     scope: &mut Scope,
     cwd: Rc<Path>,
-    diff_type: DiffType,
+    revision_range: RevisionRange,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
     diff_service: Rc<DiffService>,
@@ -125,9 +125,9 @@ pub fn UiProvider(
     children: loom::Children,
 ) -> Node {
     let initial = Rc::clone(cwd);
-    let initial_diff_type = diff_type.clone();
+    let initial_revision_range = revision_range.clone();
     let (repo, set_repo) = use_state(scope, || initial);
-    let (diff_type, set_diff_type) = use_state(scope, || initial_diff_type);
+    let (revision_range, set_revision_range) = use_state(scope, || initial_revision_range);
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
     let (directory, set_directory) = use_state(scope, || None::<Rc<DirectorySelection>>);
 
@@ -145,8 +145,8 @@ pub fn UiProvider(
                 theme,
                 branch_drawing,
                 repo,
-                diff_type,
-                set_diff_type: Some(set_diff_type),
+                revision_range,
+                set_revision_range: Some(set_revision_range),
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
                 directory: directory.as_ref().map(Rc::clone),

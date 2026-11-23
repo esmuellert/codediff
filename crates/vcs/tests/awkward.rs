@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use file_types::DiffVersion;
-use vcs::{DiffType, Repository};
+use vcs::{Repository, RevisionRange};
 
 /// A repository built by hand, removed on drop.
 struct Repo {
@@ -62,7 +62,7 @@ fn a_repository_with_no_commit_yet_lists_what_is_staged() {
 
     let mut git = repo.open();
     let changes = git
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("listing an unborn repository");
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].path().as_str(), "a.txt");
@@ -89,7 +89,7 @@ fn a_rename_is_counted_the_same_whatever_the_reader_has_configured() {
 
     let mut git = repo.open();
     let files = git
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("listing");
     let moved = files
         .iter()
@@ -124,7 +124,7 @@ fn a_symlink_is_its_target_and_not_the_file_it_points_at() {
 
     let mut git = repo.open();
     let changes = git
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("listing");
     let link = changes
         .iter()
@@ -155,7 +155,7 @@ fn a_file_staged_and_then_edited_again_is_two_different_comparisons() {
 
     let mut git = repo.open();
     let changes = git
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("listing");
     // Each entry carries its own comparison revisions.
     assert_eq!(changes.len(), 2, "one path, two comparisons");
@@ -188,7 +188,7 @@ fn a_repository_that_converts_line_endings_diffs_only_what_changed() {
 
     let mut git = repo.open();
     let changes = git
-        .get_changed_files(&DiffType::Worktree, &[])
+        .get_changed_files(&RevisionRange::Worktree, &[])
         .expect("listing");
     let file = changes
         .iter()
