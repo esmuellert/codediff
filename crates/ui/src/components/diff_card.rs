@@ -14,10 +14,10 @@ use syntax::Span;
 
 use super::border::{Border, BorderProps};
 use super::context::Ui;
-use super::diff_viewer_container::{ContentLayout, DiffVisibleRange, layout_content};
-use super::inline::{Inline, InlineProps, layout_inline};
-use super::side_by_side::{SideBySide, SideBySideProps, layout_side_by_side};
-use super::single_file::{SingleFile, SingleFileProps, layout_single_file};
+use super::diff_viewer_container::{DiffGeometry, DiffVisibleRange, diff_geometry};
+use super::inline::{Inline, InlineProps, inline_geometry};
+use super::side_by_side::{SideBySide, SideBySideProps, side_by_side_geometry};
+use super::single_file::{SingleFile, SingleFileProps, single_file_geometry};
 use crate::keybindings::Action;
 
 pub(crate) fn card_height(
@@ -29,15 +29,15 @@ pub(crate) fn card_height(
     let terminal_line_count = match content {
         DiffContent::Diff(diff) => match view_layout {
             DiffType::Inline => {
-                layout_inline(&diff.alignment, width, wrap, true).terminal_line_count
+                inline_geometry(&diff.alignment, width, wrap, true).terminal_line_count
             }
             DiffType::SideBySide => {
-                layout_side_by_side(&diff.alignment, width, wrap, true).terminal_line_count
+                side_by_side_geometry(&diff.alignment, width, wrap, true).terminal_line_count
             }
             DiffType::Single => unreachable!("a diff has no single-file layout"),
         },
         DiffContent::SingleFile(single) => {
-            layout_single_file(single, width, wrap).terminal_line_count
+            single_file_geometry(single, width, wrap).terminal_line_count
         }
     };
     terminal_line_count
@@ -92,13 +92,13 @@ pub fn DiffCard(
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
     let content_id = Arc::as_ptr(content) as usize;
-    let content_for_layout = Arc::clone(content);
-    let card_layout = use_memo(
+    let content_for_geometry = Arc::clone(content);
+    let geometry = use_memo(
         scope,
         (content_id, view_layout, wrap, size.width),
         move || {
-            layout_content(
-                Some(content_for_layout.as_ref()),
+            diff_geometry(
+                Some(content_for_geometry.as_ref()),
                 size.width,
                 view_layout,
                 wrap,
@@ -109,7 +109,7 @@ pub fn DiffCard(
 
     let (scroll_view, scroll_handle) = use_scroll(scope, loom::ScrollOffset::default);
     let listeners = horizontal_listeners(scope, scroll_handle);
-    let terminal_line_count = card_layout.terminal_line_count() as usize;
+    let terminal_line_count = geometry.terminal_line_count() as usize;
     let visible_terminal_line_count = usize::from(size.height.saturating_sub(1));
     let visible_range = DiffVisibleRange {
         visible_terminal_lines: Range {
@@ -119,38 +119,38 @@ pub fn DiffCard(
         horizontal_view: scroll_view.axes(true, false),
         write_horizontal_metrics: true,
     };
-    let view_node = match card_layout.as_ref() {
-        ContentLayout::Inline(layout) => rsx! {
+    let view_node = match geometry.as_ref() {
+        DiffGeometry::Inline(geometry) => rsx! {
             Inline {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
-                layout: Rc::clone(layout),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
                 auto_focus: false,
             }
         },
-        ContentLayout::SideBySide(layout) => rsx! {
+        DiffGeometry::SideBySide(geometry) => rsx! {
             SideBySide {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
-                layout: Rc::clone(layout),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
                 auto_focus: false,
             }
         },
-        ContentLayout::SingleFile(layout) => rsx! {
+        DiffGeometry::SingleFile(geometry) => rsx! {
             SingleFile {
                 key: content_id,
                 content: Arc::clone(content),
                 colours: Arc::clone(colours),
-                layout: Rc::clone(layout),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
                 auto_focus: false,
             }
         },
-        ContentLayout::Empty => unreachable!("a diff card always has content"),
+        DiffGeometry::Empty => unreachable!("a diff card always has content"),
     };
 
     let file = content.file();

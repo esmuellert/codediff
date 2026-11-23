@@ -12,9 +12,9 @@ use syntax::Span;
 
 use super::context::Ui;
 use super::diff_viewer::ViewState;
-use super::inline::{Inline, InlineLayout, InlineProps, layout_inline};
-use super::side_by_side::{SideBySide, SideBySideLayout, SideBySideProps, layout_side_by_side};
-use super::single_file::{SingleFile, SingleFileLayout, SingleFileProps, layout_single_file};
+use super::inline::{Inline, InlineGeometry, InlineProps, inline_geometry};
+use super::side_by_side::{SideBySide, SideBySideGeometry, SideBySideProps, side_by_side_geometry};
+use super::single_file::{SingleFile, SingleFileGeometry, SingleFileProps, single_file_geometry};
 use super::welcome::Welcome;
 use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
 use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, find_terminal_line_index};
@@ -27,40 +27,40 @@ pub(crate) struct DiffVisibleRange {
     pub(crate) write_horizontal_metrics: bool,
 }
 
-pub(crate) enum ContentLayout {
+pub(crate) enum DiffGeometry {
     Empty,
-    Inline(Rc<InlineLayout>),
-    SideBySide(Rc<SideBySideLayout>),
-    SingleFile(Rc<SingleFileLayout>),
+    Inline(Rc<InlineGeometry>),
+    SideBySide(Rc<SideBySideGeometry>),
+    SingleFile(Rc<SingleFileGeometry>),
 }
 
-impl ContentLayout {
+impl DiffGeometry {
     fn wrapped_lines(&self) -> Option<&Rc<Vec<WrappedViewLine>>> {
         match self {
             Self::Empty => None,
-            Self::Inline(layout) => Some(&layout.wrapped_lines),
-            Self::SideBySide(layout) => Some(&layout.wrapped_lines),
-            Self::SingleFile(layout) => Some(&layout.wrapped_lines),
+            Self::Inline(geometry) => Some(&geometry.wrapped_lines),
+            Self::SideBySide(geometry) => Some(&geometry.wrapped_lines),
+            Self::SingleFile(geometry) => Some(&geometry.wrapped_lines),
         }
     }
 
     pub(crate) fn terminal_line_count(&self) -> u32 {
         match self {
             Self::Empty => 0,
-            Self::Inline(layout) => layout.terminal_line_count,
-            Self::SideBySide(layout) => layout.terminal_line_count,
-            Self::SingleFile(layout) => layout.terminal_line_count,
+            Self::Inline(geometry) => geometry.terminal_line_count,
+            Self::SideBySide(geometry) => geometry.terminal_line_count,
+            Self::SingleFile(geometry) => geometry.terminal_line_count,
         }
     }
 
     fn horizontal_scroll_extent(&self) -> u32 {
         match self {
             Self::Empty => 0,
-            Self::Inline(layout) => layout.horizontal_scroll_extent,
-            Self::SideBySide(layout) => layout
+            Self::Inline(geometry) => geometry.horizontal_scroll_extent,
+            Self::SideBySide(geometry) => geometry
                 .original_horizontal_scroll_extent
-                .max(layout.modified_horizontal_scroll_extent),
-            Self::SingleFile(layout) => layout.horizontal_scroll_extent,
+                .max(geometry.modified_horizontal_scroll_extent),
+            Self::SingleFile(geometry) => geometry.horizontal_scroll_extent,
         }
     }
 
@@ -88,22 +88,22 @@ impl ContentLayout {
     }
 }
 
-pub(crate) fn layout_content(
+pub(crate) fn diff_geometry(
     content: Option<&DiffContent>,
     width: u16,
     view_layout: DiffType,
     wrap: bool,
     compact: bool,
-) -> ContentLayout {
+) -> DiffGeometry {
     match content {
         Some(DiffContent::Diff(diff)) => match view_layout {
-            DiffType::Inline => ContentLayout::Inline(Rc::new(layout_inline(
+            DiffType::Inline => DiffGeometry::Inline(Rc::new(inline_geometry(
                 &diff.alignment,
                 width,
                 wrap,
                 compact,
             ))),
-            DiffType::SideBySide => ContentLayout::SideBySide(Rc::new(layout_side_by_side(
+            DiffType::SideBySide => DiffGeometry::SideBySide(Rc::new(side_by_side_geometry(
                 &diff.alignment,
                 width,
                 wrap,
@@ -112,9 +112,9 @@ pub(crate) fn layout_content(
             DiffType::Single => unreachable!("a diff has no single-file layout"),
         },
         Some(DiffContent::SingleFile(single)) => {
-            ContentLayout::SingleFile(Rc::new(layout_single_file(single, width, wrap)))
+            DiffGeometry::SingleFile(Rc::new(single_file_geometry(single, width, wrap)))
         }
-        None => ContentLayout::Empty,
+        None => DiffGeometry::Empty,
     }
 }
 
@@ -141,13 +141,13 @@ pub fn DiffViewerContainer(
     let content_id = content
         .as_ref()
         .map(|content| Arc::as_ptr(content) as usize);
-    let content_for_layout = content.clone();
-    let content_layout = use_memo(
+    let content_for_geometry = content.clone();
+    let geometry = use_memo(
         scope,
         (content_id, view_layout, wrap, compact, size.width),
         move || {
-            layout_content(
-                content_for_layout.as_deref(),
+            diff_geometry(
+                content_for_geometry.as_deref(),
                 size.width,
                 view_layout,
                 wrap,
@@ -160,7 +160,7 @@ pub fn DiffViewerContainer(
     let initial_top = current_state
         .first_terminal_line
         .as_ref()
-        .and_then(|line| content_layout.terminal_line_index_for(line))
+        .and_then(|line| geometry.terminal_line_index_for(line))
         .unwrap_or(0);
     let (scroll_view, scroll_handle) = use_scroll(scope, || ScrollOffset {
         x: current_state.first_cell,
@@ -177,7 +177,7 @@ pub fn DiffViewerContainer(
         },
     );
 
-    let terminal_line_count = content_layout.terminal_line_count();
+    let terminal_line_count = geometry.terminal_line_count();
     let offset = scroll_view.clamped_offset();
     let first_terminal_line = (offset.y as usize).min(terminal_line_count as usize);
     let last_terminal_line = first_terminal_line
@@ -193,7 +193,7 @@ pub fn DiffViewerContainer(
         let requested = scroll_view.requested_offset();
         view_state.current().clone_from(&ViewState {
             first_terminal_line: (requested.y > 0)
-                .then(|| content_layout.terminal_line_at_index(requested.y))
+                .then(|| geometry.terminal_line_at_index(requested.y))
                 .flatten(),
             first_cell: requested.x,
         });
@@ -204,11 +204,11 @@ pub fn DiffViewerContainer(
         content,
         Arc::clone(colours),
         view_layout,
-        content_layout.as_ref(),
+        geometry.as_ref(),
         visible_range,
         auto_focus,
     );
-    let scroll_content_width = content_layout
+    let scroll_content_width = geometry
         .horizontal_scroll_extent()
         .saturating_add(u32::from(size.width));
 
@@ -240,40 +240,40 @@ fn render_view(
     content: Option<Arc<DiffContent>>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     view_layout: DiffType,
-    content_layout: &ContentLayout,
+    geometry: &DiffGeometry,
     visible_range: DiffVisibleRange,
     auto_focus: bool,
 ) -> Node {
     let Some(content) = content else {
         return rsx! { Welcome {} };
     };
-    match (content.as_ref(), view_layout, content_layout) {
-        (DiffContent::Diff(_), DiffType::Inline, ContentLayout::Inline(layout)) => rsx! {
+    match (content.as_ref(), view_layout, geometry) {
+        (DiffContent::Diff(_), DiffType::Inline, DiffGeometry::Inline(geometry)) => rsx! {
             Inline {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
                 colours,
-                layout: Rc::clone(layout),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
                 auto_focus,
             }
         },
-        (DiffContent::Diff(_), DiffType::SideBySide, ContentLayout::SideBySide(layout)) => rsx! {
+        (DiffContent::Diff(_), DiffType::SideBySide, DiffGeometry::SideBySide(geometry)) => rsx! {
             SideBySide {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
                 colours,
-                layout: Rc::clone(layout),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
                 auto_focus,
             }
         },
-        (DiffContent::SingleFile(_), _, ContentLayout::SingleFile(layout)) => rsx! {
+        (DiffContent::SingleFile(_), _, DiffGeometry::SingleFile(geometry)) => rsx! {
             SingleFile {
                 key: Arc::as_ptr(&content) as usize,
                 content: Arc::clone(&content),
                 colours,
-                layout: Rc::clone(layout),
+                geometry: Rc::clone(geometry),
                 viewport: visible_range,
                 auto_focus,
             }

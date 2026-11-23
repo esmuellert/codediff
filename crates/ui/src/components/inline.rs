@@ -23,7 +23,7 @@ use crate::view::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
 };
 
-pub(crate) struct InlineLayout {
+pub(crate) struct InlineGeometry {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,
     pub(crate) original_gutter_width: u16,
     pub(crate) modified_gutter_width: u16,
@@ -32,12 +32,12 @@ pub(crate) struct InlineLayout {
     pub(crate) terminal_line_count: u32,
 }
 
-pub(crate) fn layout_inline(
+pub(crate) fn inline_geometry(
     alignment: &Alignment,
     width: u16,
     wrap: bool,
     compact: bool,
-) -> InlineLayout {
+) -> InlineGeometry {
     let original_line_count = alignment.lines(DiffVersion::Original).len() as u32;
     let modified_line_count = alignment.lines(DiffVersion::Modified).len() as u32;
     let original_gutter_width = width_for_line_count(original_line_count);
@@ -60,7 +60,7 @@ pub(crate) fn layout_inline(
             .max(longest_line_cells(alignment.lines(DiffVersion::Modified)))
     };
     let terminal_line_count = terminal_line_count(&wrapped_lines);
-    InlineLayout {
+    InlineGeometry {
         wrapped_lines: Rc::new(wrapped_lines),
         original_gutter_width,
         modified_gutter_width,
@@ -75,14 +75,14 @@ pub(crate) fn Inline(
     scope: &mut Scope,
     content: Arc<diff_service::diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    layout: Rc<InlineLayout>,
+    geometry: Rc<InlineGeometry>,
     viewport: DiffVisibleRange,
     auto_focus: bool,
 ) -> Node {
-    let original_gutter_width = layout.original_gutter_width;
-    let modified_gutter_width = layout.modified_gutter_width;
-    let code_width = layout.code_width;
-    let horizontal_scroll_extent = layout.horizontal_scroll_extent;
+    let original_gutter_width = geometry.original_gutter_width;
+    let modified_gutter_width = geometry.modified_gutter_width;
+    let code_width = geometry.code_width;
+    let horizontal_scroll_extent = geometry.horizontal_scroll_extent;
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
@@ -91,7 +91,7 @@ pub(crate) fn Inline(
         unreachable!("DiffViewer sends diffs to Inline")
     };
     let alignment = &diff.alignment;
-    let wrapped_lines = layout.wrapped_lines.as_ref();
+    let wrapped_lines = geometry.wrapped_lines.as_ref();
     let visible_terminal_line_count = viewport
         .visible_terminal_lines
         .end
