@@ -154,45 +154,56 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
         &[],
     ),
     (
-        "commit-graph/branches",
+        "revision-picker/default",
         &[
+            "git log",
+            "[/] search",
+            "Working tree",
+            "changed · 6 files",
             "HEAD -> main",
             "origin/main",
             "tag: v0.29.0",
             "fb0d76c",
             "\u{f604}\u{f5d0}\u{f5d7}",
         ],
-        &["No commits", "◎─╮"],
+        &["›", "No commits", "No revisions match.", "◎─╮"],
     ),
     (
-        "commit-graph/box-fallback",
+        "revision-picker/box-fallback",
         &[
+            "git log",
+            "[/] search",
+            "Working tree",
+            "changed · 6 files",
             "HEAD -> main",
             "origin/main",
             "tag: v0.29.0",
             "fb0d76c",
             "◎─╮",
         ],
-        &["No commits", "\u{f604}"],
+        &["›", "No commits", "No revisions match.", "\u{f604}"],
     ),
     (
-        "commit-graph/selected",
+        "revision-picker/search",
         &[
-            "d9b9808",
-            "map u to undo result edits (#555)",
-            "\u{f604}\u{f5d0}\u{f5df}",
+            "git log",
+            "[Esc] close",
+            "> v0.28",
+            "tag: v0.28.4",
+            "tag: v0.28.3",
+            "tag: v0.28.2",
+            "tag: v0.28.1",
+            "tag: v0.28.0",
         ],
-        &["No commits"],
-    ),
-    (
-        "commit-graph/long-list",
-        &["fb0d76c", "HEAD -> main"],
-        &["No commits"],
-    ),
-    (
-        "commit-graph/empty",
-        &["No commits"],
-        &["○", "◎", "\u{f5f6}"],
+        &[
+            "›",
+            "Working tree",
+            "v0.29.0",
+            "\u{f5ee}",
+            "●",
+            "\u{f604}\u{f5d0}\u{f5d7}",
+            "No revisions match.",
+        ],
     ),
 ];
 
@@ -251,7 +262,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  42"));
+    assert_eq!(lines.next(), Some(" STORIES  40"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");
@@ -326,7 +337,11 @@ fn every_story_draws_on_a_real_terminal() {
             "single-file/rust-syntax" => "highlighted",
             _ => required_text[0],
         };
-        let (output, ok) = on_a_terminal(&["debug", "ui", story], None, b"q");
+        let quit: &[u8] = match *story {
+            "revision-picker/search" => b"\x03",
+            _ => b"q",
+        };
+        let (output, ok) = on_a_terminal(&["debug", "ui", story], None, quit);
         assert!(ok, "{story} exited unsuccessfully:\n{output}");
         assert!(output.contains(ENTER_ALT), "{story} never took the screen");
         assert!(
@@ -467,6 +482,78 @@ fn cards_story_scrolls_a_long_diff_to_its_end() {
     drop(pty.master);
     let output = written(collector, &output);
 
+    assert!(status.success(), "{output}");
+    assert!(output.contains(ENTER_ALT));
+    assert!(output.contains(LEAVE_ALT));
+}
+
+#[test]
+#[cfg(unix)]
+fn revision_picker_story_preserves_pasted_slash_query_burst_on_a_real_terminal() {
+    let pty = native_pty_system()
+        .openpty(PtySize {
+            rows: 24,
+            cols: 110,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("opening a pty");
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codediff"));
+    command.args(["debug", "ui", "revision-picker/default"]);
+    command.env("TERM", "xterm-256color");
+    let mut child = pty.slave.spawn_command(command).expect("spawning codediff");
+    drop(pty.slave);
+
+    let reader = pty.master.try_clone_reader().expect("reading the pty");
+    let (collector, output) = collect(reader);
+    drawn(&output);
+    let initial =
+        String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
+            .into_owned();
+    let mut screen = vt100::Parser::new(
+        NonZero::new(24).expect("non-zero rows"),
+        NonZero::new(110).expect("non-zero cols"),
+        0,
+    );
+    screen.process(initial.as_bytes());
+    let initial_len = initial.len();
+
+    let mut writer = pty.master.take_writer().expect("writing to the pty");
+    writer
+        .write_all(b"/v0.28")
+        .expect("writing pasted /v0.28 burst");
+    writer.flush().expect("flushing pasted burst");
+    drawn_after(&output, initial_len);
+    let after_burst =
+        String::from_utf8_lossy(&output.lock().expect("nothing else holds the lock").bytes)
+            .into_owned();
+    screen.process(&after_burst.as_bytes()[initial_len..]);
+    let contents = screen.screen().contents();
+    assert!(
+        contents.contains("> v0.28"),
+        "pasted /v0.28 burst lost characters: {contents:?}"
+    );
+    assert!(
+        contents.contains("tag: v0.28.4"),
+        "filtered tag missing after burst: {contents:?}"
+    );
+
+    writer.write_all(b"\x03").expect("quitting");
+    writer.flush().expect("flushing quit");
+    drop(writer);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("waiting for codediff") {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "revision-picker story never exited"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    drop(pty.master);
+    let output = written(collector, &output);
     assert!(status.success(), "{output}");
     assert!(output.contains(ENTER_ALT));
     assert!(output.contains(LEAVE_ALT));

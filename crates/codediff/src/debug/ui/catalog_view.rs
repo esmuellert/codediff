@@ -352,7 +352,7 @@ mod tests {
             harness
                 .screen()
                 .iter()
-                .any(|line| line.contains("commit-graph/empty"))
+                .any(|line| line.contains("revision-picker/search"))
         );
     }
 }

@@ -3,7 +3,6 @@
 mod app;
 pub mod border;
 pub mod code_text;
-pub mod commit_graph;
 mod context;
 pub mod diff_card;
 pub mod diff_cards;
@@ -15,6 +14,7 @@ pub mod filler;
 mod fold;
 pub mod gutter;
 pub mod inline;
+pub mod revision_picker;
 pub mod side_by_side;
 pub mod single_file;
 mod welcome;
@@ -22,9 +22,9 @@ mod welcome;
 pub use crate::view::terminal_lines::{TerminalLine, terminal_line_pairs};
 
 pub use app::{App, AppProps};
-pub use commit_graph::{CommitGraph, CommitGraphProps};
 pub use context::{Context, DirectorySelection, Ui, UiProps, UiProvider, UiProviderProps};
 pub use diff_card::{DiffCard, DiffCardProps};
 pub use diff_cards::{DiffCards, DiffCardsProps};
 pub use diff_header::{DiffHeader, DiffHeaderProps, DiffViewMenu, DiffViewMenuProps};
 pub use explorer::{Explorer, ExplorerProps, letter};
+pub use revision_picker::{RevisionPicker, RevisionPickerProps};

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use super::definition::StoryDefinition;
 use super::stories::{
-    card, cards, commit_graph, explorer, inline, side_by_side, single_file, welcome,
+    card, cards, explorer, inline, revision_picker, side_by_side, single_file, welcome,
 };
 
 pub struct StoryGroup {
@@ -42,8 +42,8 @@ pub const GROUPS: &[StoryGroup] = &[
         stories: cards::STORIES,
     },
     StoryGroup {
-        label: "Commit graph",
-        stories: commit_graph::STORIES,
+        label: "Revision picker",
+        stories: revision_picker::STORIES,
     },
 ];
 
