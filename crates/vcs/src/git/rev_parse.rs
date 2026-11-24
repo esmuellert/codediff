@@ -38,10 +38,10 @@ pub fn find_repo(path: &Path) -> Result<Repo> {
 pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// Resolves `rev`, using the empty tree for an unborn `HEAD`.
-pub fn resolve_or_empty(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
+pub fn resolve_or_empty(repo: &Repo, rev: &str) -> Result<file_types::CommitHash> {
     match resolve(repo, rev) {
         Err(Error::UnknownRevision { .. }) if rev == "HEAD" && unborn(repo) => {
-            Ok(file_types::Oid::new(EMPTY_TREE))
+            Ok(file_types::CommitHash::new(EMPTY_TREE))
         }
         other => other,
     }
@@ -52,8 +52,8 @@ fn unborn(repo: &Repo) -> bool {
     run::run_line(&repo.root, &["symbolic-ref", "--quiet", "HEAD"]).is_ok_and(|r| !r.is_empty())
 }
 
-/// Resolves a commit-ish revision to its peeled commit object id.
-pub fn resolve(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
+/// Resolves a commit-ish revision to its peeled commit hash.
+pub fn resolve(repo: &Repo, rev: &str) -> Result<file_types::CommitHash> {
     // `--end-of-options` stops leading `-` names from being parsed as flags,
     // and `^{commit}` peels annotated tags while rejecting blobs and trees.
     let spec = format!("{rev}^{{commit}}");
@@ -78,5 +78,5 @@ pub fn resolve(repo: &Repo, rev: &str) -> Result<file_types::Oid> {
             rev: rev.to_owned(),
         });
     }
-    Ok(file_types::Oid::new(text))
+    Ok(file_types::CommitHash::new(text))
 }

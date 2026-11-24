@@ -78,7 +78,7 @@ pub(super) fn build_list(
         }
         for commit_index in matching_commits {
             let candidate_index = candidates.len();
-            candidates.push(Rev::Commit(commits[commit_index].oid.clone()));
+            candidates.push(Rev::Commit(commits[commit_index].hash.clone()));
             rows.push(DisplayRow::Commit {
                 commit_index,
                 candidate_index,
@@ -97,7 +97,7 @@ fn commit_matches(commit: &Commit, needle: &str) -> bool {
     if commit.current && "head".contains(needle) {
         return true;
     }
-    contains_lowercase(commit.oid.as_str(), needle)
+    contains_lowercase(commit.hash.as_str(), needle)
         || commit
             .branches
             .iter()

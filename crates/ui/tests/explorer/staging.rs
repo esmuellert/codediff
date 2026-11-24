@@ -7,7 +7,7 @@ use ui::components::explorer::build::{Node, grouped_tree};
 use super::common::file;
 
 fn staged_revs() -> Revs {
-    Revs::new(Rev::Commit(file_types::Oid::new("abc")), Rev::Index)
+    Revs::new(Rev::Commit(file_types::CommitHash::new("abc")), Rev::Index)
 }
 
 fn staged_file(path: &str) -> File {

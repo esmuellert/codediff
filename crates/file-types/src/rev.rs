@@ -1,6 +1,6 @@
 //! Versions from which file content can be read.
 
-use crate::Oid;
+use crate::CommitHash;
 
 /// Which version of a file's content.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -11,8 +11,8 @@ pub enum Rev {
     Index,
     /// One side of an unresolved merge. Git's stages 1 to 3.
     Conflict(Stage),
-    /// A commit identified by its immutable id.
-    Commit(Oid),
+    /// A commit identified by its immutable hash.
+    Commit(CommitHash),
 }
 
 /// Which side of an unresolved merge, by git's stage numbers.
@@ -35,7 +35,7 @@ impl Rev {
             Rev::Conflict(Stage::Base) => ":1",
             Rev::Conflict(Stage::Ours) => ":2",
             Rev::Conflict(Stage::Theirs) => ":3",
-            Rev::Commit(oid) => oid.as_str(),
+            Rev::Commit(hash) => hash.as_str(),
         })
     }
 
@@ -53,7 +53,7 @@ impl std::fmt::Display for Rev {
             Rev::Conflict(Stage::Base) => f.write_str("common ancestor"),
             Rev::Conflict(Stage::Ours) => f.write_str("ours"),
             Rev::Conflict(Stage::Theirs) => f.write_str("theirs"),
-            Rev::Commit(oid) => write!(f, "{oid}"),
+            Rev::Commit(hash) => write!(f, "{hash}"),
         }
     }
 }
@@ -68,7 +68,10 @@ mod tests {
         assert_eq!(Rev::Conflict(Stage::Base).stored(), Some(":1"));
         assert_eq!(Rev::Conflict(Stage::Ours).stored(), Some(":2"));
         assert_eq!(Rev::Conflict(Stage::Theirs).stored(), Some(":3"));
-        assert_eq!(Rev::Commit(Oid::new("abc123")).stored(), Some("abc123"));
+        assert_eq!(
+            Rev::Commit(CommitHash::new("abc123")).stored(),
+            Some("abc123")
+        );
     }
 
     #[test]
@@ -81,7 +84,7 @@ mod tests {
         assert!(Rev::Worktree.can_change());
         assert!(Rev::Index.can_change());
         assert!(Rev::Conflict(Stage::Ours).can_change());
-        assert!(!Rev::Commit(Oid::new("abc123")).can_change());
+        assert!(!Rev::Commit(CommitHash::new("abc123")).can_change());
     }
 
     #[test]
@@ -89,8 +92,8 @@ mod tests {
         assert_ne!(Rev::Worktree, Rev::Index);
         assert_ne!(Rev::Conflict(Stage::Ours), Rev::Conflict(Stage::Theirs));
         assert_ne!(
-            Rev::Commit(Oid::new("aaa")),
-            Rev::Commit(Oid::new("bbb")),
+            Rev::Commit(CommitHash::new("aaa")),
+            Rev::Commit(CommitHash::new("bbb")),
             "two commits are two versions"
         );
     }
@@ -100,6 +103,6 @@ mod tests {
         assert_eq!(Rev::Worktree.to_string(), "working tree");
         assert_eq!(Rev::Index.to_string(), "staged");
         assert_eq!(Rev::Conflict(Stage::Theirs).to_string(), "theirs");
-        assert_eq!(Rev::Commit(Oid::new("abc123")).to_string(), "abc123");
+        assert_eq!(Rev::Commit(CommitHash::new("abc123")).to_string(), "abc123");
     }
 }

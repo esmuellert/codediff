@@ -253,8 +253,8 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         anchor_index.unwrap_or_else(|| clamp_index(picker.selected, list.candidates.len()));
 
     let selected_rev = list.candidates.get(active_selected).cloned();
-    let selected_oid = match &selected_rev {
-        Some(Rev::Commit(oid)) => Some(oid.as_str()),
+    let selected_hash = match &selected_rev {
+        Some(Rev::Commit(hash)) => Some(hash.as_str()),
         _ => None,
     };
 
@@ -357,7 +357,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     let cells = if filtering {
                         Rc::from([])
                     } else {
-                        built.cells(commit_index, commits, selected_oid, symbol_set)
+                        built.cells(commit_index, commits, selected_hash, symbol_set)
                     };
                     rsx! {
                         Entry {

@@ -55,7 +55,7 @@ fn content(original: &str, modified: &str) -> Arc<diff_service::diff::DiffConten
         diff_service::diff::align(diff, &original_lines, &modified_lines).expect("an alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("scroll.rs", Path::new("/repo")),
-        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+        file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     );
     Arc::new(diff_service::diff::DiffContent::Diff(
         diff_service::diff::Diff { file, alignment },

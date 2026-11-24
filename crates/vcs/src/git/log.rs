@@ -28,7 +28,7 @@ impl Order {
 /// One raw record of `git log`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
-    pub oid: String,
+    pub hash: String,
     pub parents: Vec<String>,
     pub decorations: Vec<String>,
     pub subject: String,
@@ -72,10 +72,10 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>> {
 
     let mut fields = text.split('\0');
     let mut entries = Vec::new();
-    while let Some(oid) = fields.next() {
+    while let Some(hash) = fields.next() {
         // Git writes a trailing newline after each record's final NUL.
-        let oid = oid.trim_start_matches(['\n', '\r']);
-        if oid.is_empty() {
+        let hash = hash.trim_start_matches(['\n', '\r']);
+        if hash.is_empty() {
             continue;
         }
         let parents = next_field(&mut fields, "commit parents")?
@@ -94,7 +94,7 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>> {
         let date = next_field(&mut fields, "commit date")?.to_owned();
 
         entries.push(Entry {
-            oid: oid.to_owned(),
+            hash: hash.to_owned(),
             parents,
             decorations,
             subject,
@@ -146,7 +146,7 @@ mod tests {
 
         let entries = parse(&bytes).expect("parses");
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].oid, "63e1cbe");
+        assert_eq!(entries[0].hash, "63e1cbe");
         assert_eq!(entries[0].parents, vec!["09d43b9", "8339837"]);
         assert_eq!(
             entries[0].decorations,

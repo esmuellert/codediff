@@ -7,12 +7,12 @@ use std::time::{Duration, Instant};
 
 use diff_service::DiffService;
 use diff_service::diff::{self, Diff, DiffContent, SingleFile};
-use file_types::{DiffVersion, File, Oid, RepoPath, Revs};
+use file_types::{CommitHash, DiffVersion, File, RepoPath, Revs};
 
 fn file(path: &str) -> File {
     File::unchanged_path(
         RepoPath::new(path, Path::new("/repo")),
-        Revs::worktree_against(Oid::new("base")),
+        Revs::worktree_against(CommitHash::new("base")),
     )
 }
 

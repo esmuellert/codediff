@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use diff_service::DiffService;
-use file_types::{File, Oid, RepoPath, Revs};
+use file_types::{CommitHash, File, RepoPath, Revs};
 use loom::crokey::KeyCombination;
 use loom::ratatui::buffer::Buffer;
 use loom::ratatui::layout::Rect;
@@ -76,7 +76,7 @@ pub(super) fn story_props(
                 .map(|i| {
                     File::unchanged_path(
                         RepoPath::new(format!("src/file_{i}.rs"), Path::new("/codediff")),
-                        Revs::worktree_against(Oid::new("base")),
+                        Revs::worktree_against(CommitHash::new("base")),
                     )
                 })
                 .collect();

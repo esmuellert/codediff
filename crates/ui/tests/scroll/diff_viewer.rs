@@ -15,7 +15,7 @@ use crate::fake_pipeline::{fake_pipeline, wait};
 fn file(path: &str) -> file_types::File {
     file_types::File::unchanged_path(
         file_types::RepoPath::new(path, Path::new("/repo")),
-        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+        file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     )
 }
 
@@ -453,7 +453,7 @@ fn switching_to_a_single_file_resets_scroll_and_keeps_diff_history() {
     let first = file("first.rs");
     let single = file_types::File::added(
         file_types::RepoPath::new("added.rs", Path::new("/repo")),
-        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+        file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     );
     let first_lines: Vec<String> = (1..=20).map(|line| format!("first {line:02}")).collect();
     let single_lines: Vec<String> = (1..=20).map(|line| format!("added {line:02}")).collect();

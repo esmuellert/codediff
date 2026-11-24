@@ -117,7 +117,7 @@ fn refresh(harness: &mut SelectionHarness) {
 fn added_file(path: &str) -> file_types::File {
     file_types::File::added(
         file_types::RepoPath::new(path, Path::new("/repo")),
-        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+        file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     )
 }
 
@@ -125,7 +125,7 @@ fn staged_file(path: &str) -> file_types::File {
     file_types::File::unchanged_path(
         file_types::RepoPath::new(path, Path::new("/repo")),
         file_types::Revs::new(
-            file_types::Rev::Commit(file_types::Oid::new("abc")),
+            file_types::Rev::Commit(file_types::CommitHash::new("abc")),
             file_types::Rev::Index,
         ),
     )

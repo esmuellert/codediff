@@ -25,7 +25,7 @@ fn find(path: &str) -> Result<file_types::File> {
     let repo_path = file_types::RepoPath::new(path, &root);
     if repo_path.as_path().exists() {
         // Use identical revisions for an unchanged file.
-        let revs = file_types::Revs::worktree_against(file_types::Oid::new("HEAD"));
+        let revs = file_types::Revs::worktree_against(file_types::CommitHash::new("HEAD"));
         return Ok(file_types::File::unchanged_path(repo_path, revs));
     }
     anyhow::bail!("{path} is neither changed nor present")

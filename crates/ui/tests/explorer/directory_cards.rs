@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 
 use diff_service::DiffService;
-use file_types::{ChangeType, File, Oid, RepoPath, Revs, Stats};
+use file_types::{ChangeType, CommitHash, File, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Basis, Layout, Row, RowProps, Scope, component, rsx, use_state};
 use ui::Theme;
@@ -18,7 +18,7 @@ use super::common::{fake_pipeline, wait};
 fn file(path: &str) -> File {
     File::unchanged_path(
         RepoPath::new(path, Path::new("/repo")),
-        Revs::worktree_against(Oid::new("base")),
+        Revs::worktree_against(CommitHash::new("base")),
     )
     .set_stats(Stats::new(1, 1))
 }
@@ -90,7 +90,7 @@ fn setup(line_count: usize) -> (Harness, Rc<DiffService>, Receiver<()>) {
     let second = file("src/b.rs");
     let added = File::added(
         RepoPath::new("src/new.rs", Path::new("/repo")),
-        Revs::worktree_against(Oid::new("base")),
+        Revs::worktree_against(CommitHash::new("base")),
     )
     .set_stats(Stats::new(line_count as u32, 0));
     let outside = file("z-readme.rs");
@@ -481,7 +481,7 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
 #[test]
 fn directory_cards_render_added_deleted_untracked_empty_and_modified_files_and_scroll_horizontally()
 {
-    let revs = Revs::worktree_against(Oid::new("base"));
+    let revs = Revs::worktree_against(CommitHash::new("base"));
     let long_added_line = format!(
         "pub const ADDED_LONG: &str = \"{}TAIL_MARKER\";",
         "abcd_".repeat(16)
@@ -629,7 +629,7 @@ fn directory_cards_render_added_deleted_untracked_empty_and_modified_files_and_s
 
 #[test]
 fn directory_with_only_added_and_untracked_files_renders_their_cards() {
-    let revs = Revs::worktree_against(Oid::new("base"));
+    let revs = Revs::worktree_against(CommitHash::new("base"));
     let added = File::added(
         RepoPath::new("new_dir/first.rs", Path::new("/repo")),
         revs.clone(),

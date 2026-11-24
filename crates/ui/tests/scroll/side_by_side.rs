@@ -80,7 +80,7 @@ fn make_diff(original: &[&str], modified: &[&str]) -> diff_service::diff::Diff {
     let alignment = diff_service::diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("test.rs", std::path::Path::new("/repo")),
-        file_types::Revs::worktree_against(file_types::Oid::new("abc")),
+        file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     );
     diff_service::diff::Diff { file, alignment }
 }

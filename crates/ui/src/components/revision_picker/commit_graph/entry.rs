@@ -116,7 +116,7 @@ struct EntryColumns {
     text_width: u16,
     author: FieldSpan,
     date: FieldSpan,
-    oid: FieldSpan,
+    hash: FieldSpan,
 }
 
 fn entry_columns(area: Rect, graph_end: u16, has_graph: bool) -> EntryColumns {
@@ -129,7 +129,7 @@ fn entry_columns(area: Rect, graph_end: u16, has_graph: bool) -> EntryColumns {
     .min(right_edge);
     let available = right_edge.saturating_sub(text_x);
 
-    let oid_width = if available >= 25 { 7 } else { 0 };
+    let hash_width = if available >= 25 { 7 } else { 0 };
     let date_width = if available >= 50 { 5 } else { 0 };
     let author_width = if available >= 58 {
         16
@@ -150,7 +150,7 @@ fn entry_columns(area: Rect, graph_end: u16, has_graph: bool) -> EntryColumns {
         span
     };
 
-    let oid = take(oid_width);
+    let hash = take(hash_width);
     let date = take(date_width);
     let author = take(author_width);
     let text_width = right.saturating_sub(text_x);
@@ -160,7 +160,7 @@ fn entry_columns(area: Rect, graph_end: u16, has_graph: bool) -> EntryColumns {
         text_width,
         author,
         date,
-        oid,
+        hash,
     }
 }
 
@@ -348,10 +348,10 @@ pub fn Entry(
                         base.fg(theme.tree.heading),
                     );
                 }
-                if columns.oid.width > 0 {
-                    let cut = truncate(commit.oid.as_str(), columns.oid.width);
+                if columns.hash.width > 0 {
+                    let cut = truncate(commit.hash.as_str(), columns.hash.width);
                     paint.write(
-                        columns.oid.x,
+                        columns.hash.x,
                         area.y,
                         &cut,
                         base.fg(theme.tree.previous),

@@ -1,7 +1,7 @@
 //! Pure revision-endpoint domain logic shared by `App`, `RevisionHeader`, and `RevisionPicker`.
 
 use diff_service::files::RevisionRange;
-use file_types::{Oid, Rev};
+use file_types::{CommitHash, Rev};
 
 use crate::Commit;
 
@@ -17,16 +17,16 @@ pub fn head_commit(commits: &[Commit]) -> Option<&Commit> {
     commits.iter().find(|commit| commit.current)
 }
 
-/// Finds a commit matching `rev` by OID, OID prefix, branch, remote, or tag.
+/// Finds a commit matching `rev` by commit hash, hash prefix, branch, remote, or tag.
 pub fn find_commit<'a>(rev: &str, commits: &'a [Commit]) -> Option<&'a Commit> {
     if rev == "HEAD" {
         return head_commit(commits);
     }
     commits.iter().find(|commit| {
-        let oid = commit.oid.as_str();
-        oid == rev
-            || oid.starts_with(rev)
-            || rev.starts_with(oid)
+        let hash = commit.hash.as_str();
+        hash == rev
+            || hash.starts_with(rev)
+            || rev.starts_with(hash)
             || commit.branches.iter().any(|b| b == rev)
             || commit.remotes.iter().any(|r| r == rev)
             || commit.tags.iter().any(|t| t == rev)
@@ -47,7 +47,7 @@ pub fn swap_revision_range(range: &RevisionRange) -> Option<RevisionRange> {
 fn left_rev_string(range: &RevisionRange, commits: &[Commit]) -> String {
     match range {
         RevisionRange::Worktree => head_commit(commits)
-            .map(|commit| commit.oid.as_str().to_owned())
+            .map(|commit| commit.hash.as_str().to_owned())
             .unwrap_or_else(|| "HEAD".to_owned()),
         RevisionRange::Against(rev)
         | RevisionRange::Staged(rev)
@@ -65,19 +65,19 @@ pub fn initial_for_side(
     match side {
         RevisionSide::Left => {
             let left = left_rev_string(range, commits);
-            let oid = find_commit(&left, commits)
-                .map(|commit| commit.oid.clone())
-                .unwrap_or_else(|| Oid::new(left));
-            Some(Rev::Commit(oid))
+            let hash = find_commit(&left, commits)
+                .map(|commit| commit.hash.clone())
+                .unwrap_or_else(|| CommitHash::new(left));
+            Some(Rev::Commit(hash))
         }
         RevisionSide::Right => match range {
             RevisionRange::Worktree | RevisionRange::Against(_) => Some(Rev::Worktree),
             RevisionRange::Staged(_) => None,
             RevisionRange::Between(_, to) | RevisionRange::MergeBase(_, to) => {
-                let oid = find_commit(to, commits)
-                    .map(|commit| commit.oid.clone())
-                    .unwrap_or_else(|| Oid::new(to));
-                Some(Rev::Commit(oid))
+                let hash = find_commit(to, commits)
+                    .map(|commit| commit.hash.clone())
+                    .unwrap_or_else(|| CommitHash::new(to));
+                Some(Rev::Commit(hash))
             }
         },
     }
@@ -90,14 +90,14 @@ pub fn apply_picked_revision(
     range: &RevisionRange,
     commits: &[Commit],
 ) -> Option<RevisionRange> {
-    let head_oid = head_commit(commits).map(|commit| commit.oid.as_str());
+    let head_hash = head_commit(commits).map(|commit| commit.hash.as_str());
     match side {
         RevisionSide::Left => {
-            let Rev::Commit(oid) = picked else {
+            let Rev::Commit(hash) = picked else {
                 return None;
             };
-            let picked_str = oid.as_str().to_owned();
-            let is_head = head_oid == Some(picked_str.as_str());
+            let picked_str = hash.as_str().to_owned();
+            let is_head = head_hash == Some(picked_str.as_str());
             match range {
                 RevisionRange::Worktree | RevisionRange::Against(_) => {
                     if is_head {
@@ -125,7 +125,7 @@ pub fn apply_picked_revision(
                         Some(RevisionRange::Against(left))
                     }
                 }
-                Rev::Commit(oid) => Some(RevisionRange::Between(left, oid.as_str().to_owned())),
+                Rev::Commit(hash) => Some(RevisionRange::Between(left, hash.as_str().to_owned())),
                 Rev::Index | Rev::Conflict(_) => None,
             }
         }
@@ -140,8 +140,8 @@ mod tests {
     fn picking_worktree_on_right_when_left_is_named_head_branch_returns_worktree() {
         let commits = vec![
             Commit {
-                oid: Oid::new("6152138abcdef"),
-                parents: vec![Oid::new("fb0d76c111111")],
+                hash: CommitHash::new("6152138abcdef"),
+                parents: vec![CommitHash::new("fb0d76c111111")],
                 current: true,
                 branches: vec!["main".to_owned()],
                 remotes: Vec::new(),
@@ -151,7 +151,7 @@ mod tests {
                 date: "now".to_owned(),
             },
             Commit {
-                oid: Oid::new("fb0d76c111111"),
+                hash: CommitHash::new("fb0d76c111111"),
                 parents: Vec::new(),
                 current: false,
                 branches: Vec::new(),

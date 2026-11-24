@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use file_types::Oid;
+use file_types::CommitHash;
 use vcs::{CommitOrder, Repository};
 
 /// A temporary git repository removed on drop.
@@ -83,7 +83,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
     repo.write("base.txt", "base\n");
     repo.git(&["add", "-A"]);
     repo.git(&["commit", "-qm", "root commit"]);
-    let root_oid = Oid::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    let root_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
     repo.git(&["tag", "v1.0.0"]);
 
     repo.git(&["checkout", "-qb", "feat/topic"]);
@@ -94,7 +94,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
         "-qm",
         "feat: handle | pipes, commas, and \"quotes\"",
     ]);
-    let topic_oid = Oid::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    let topic_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
     repo.git(&["update-ref", "refs/remotes/origin/feat/topic", "HEAD"]);
     repo.git(&[
         "symbolic-ref",
@@ -106,7 +106,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
     repo.write("main.txt", "main\n");
     repo.git(&["add", "-A"]);
     repo.git(&["commit", "-qm", "main line work"]);
-    let main_oid = Oid::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    let main_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
 
     repo.git(&[
         "merge",
@@ -115,7 +115,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
         "merge topic into main",
         "feat/topic",
     ]);
-    let merge_oid = Oid::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    let merge_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
 
     // Stash helper commits must not pollute commit history.
     repo.write("main.txt", "stash me\n");
@@ -127,10 +127,10 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
         .expect("listing commits");
     assert_eq!(commits.len(), 4, "stash commits excluded: {commits:?}");
 
-    assert_eq!(commits[0].oid, merge_oid);
+    assert_eq!(commits[0].hash, merge_hash);
     assert_eq!(
         commits[0].parents,
-        vec![main_oid.clone(), topic_oid.clone()]
+        vec![main_hash.clone(), topic_hash.clone()]
     );
     assert!(commits[0].current);
     assert_eq!(commits[0].branches, vec!["main"]);
@@ -142,10 +142,10 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
 
     let topic = commits
         .iter()
-        .find(|commit| commit.oid == topic_oid)
+        .find(|commit| commit.hash == topic_hash)
         .expect("topic commit present");
     assert!(!topic.current);
-    assert_eq!(topic.parents, vec![root_oid.clone()]);
+    assert_eq!(topic.parents, vec![root_hash.clone()]);
     assert_eq!(
         topic.subject,
         "feat: handle | pipes, commas, and \"quotes\""
@@ -158,7 +158,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
     );
 
     let root_commit = commits.last().expect("root is last in topo order");
-    assert_eq!(root_commit.oid, root_oid);
+    assert_eq!(root_commit.hash, root_hash);
     assert!(root_commit.parents.is_empty());
     assert_eq!(root_commit.tags, vec!["v1.0.0"]);
 
@@ -167,7 +167,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
         .list_commits(CommitOrder::Topological, 2)
         .expect("limited commits");
     assert_eq!(limited.len(), 2);
-    assert_eq!(limited[0].oid, merge_oid);
+    assert_eq!(limited[0].hash, merge_hash);
     assert!(
         git.list_commits(CommitOrder::Topological, 0)
             .expect("zero limit")
@@ -181,24 +181,24 @@ fn detached_checkout_marks_current_commit_without_inventing_branch() {
     repo.write("a.txt", "one\n");
     repo.git(&["add", "-A"]);
     repo.git(&["commit", "-qm", "first"]);
-    let first_oid = Oid::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    let first_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
 
     repo.git(&["checkout", "-q", "--detach"]);
     repo.write("a.txt", "two\n");
     repo.git(&["add", "-A"]);
     repo.git(&["commit", "-qm", "detached commit"]);
-    let detached_oid = Oid::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    let detached_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
 
     let commits = repo
         .open()
         .list_commits(CommitOrder::Topological, 10)
         .expect("listing commits");
     assert_eq!(commits.len(), 2);
-    assert_eq!(commits[0].oid, detached_oid);
+    assert_eq!(commits[0].hash, detached_hash);
     assert!(commits[0].current);
     assert!(commits[0].branches.is_empty());
 
-    assert_eq!(commits[1].oid, first_oid);
+    assert_eq!(commits[1].hash, first_hash);
     assert!(!commits[1].current);
     assert_eq!(commits[1].branches, vec!["main"]);
 }

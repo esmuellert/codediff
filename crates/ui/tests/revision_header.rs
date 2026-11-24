@@ -2,7 +2,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use diff_service::files::RevisionRange;
-use file_types::Oid;
+use file_types::CommitHash;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_state};
 use ui::components::{Context, RevisionHeader, RevisionSide, Ui, UiProps};
@@ -25,8 +25,8 @@ fn col_of(line: &str, label: &str) -> u16 {
 fn sample_commits() -> Rc<Vec<Commit>> {
     Rc::new(vec![
         Commit {
-            oid: Oid::new("6152138abcdef0123456789"),
-            parents: vec![Oid::new("fb0d76c1111111111111111")],
+            hash: CommitHash::new("6152138abcdef0123456789"),
+            parents: vec![CommitHash::new("fb0d76c1111111111111111")],
             current: true,
             branches: vec!["main".to_owned()],
             remotes: Vec::new(),
@@ -36,8 +36,8 @@ fn sample_commits() -> Rc<Vec<Commit>> {
             date: "2h ago".to_owned(),
         },
         Commit {
-            oid: Oid::new("fb0d76c1111111111111111"),
-            parents: vec![Oid::new("deadbee2222222222222222")],
+            hash: CommitHash::new("fb0d76c1111111111111111"),
+            parents: vec![CommitHash::new("deadbee2222222222222222")],
             current: false,
             branches: Vec::new(),
             remotes: Vec::new(),
@@ -47,7 +47,7 @@ fn sample_commits() -> Rc<Vec<Commit>> {
             date: "1d ago".to_owned(),
         },
         Commit {
-            oid: Oid::new("deadbee2222222222222222"),
+            hash: CommitHash::new("deadbee2222222222222222"),
             parents: Vec::new(),
             current: false,
             branches: Vec::new(),
@@ -116,7 +116,7 @@ fn worktree_renders_from_to_semantic_icons_repo_branch_and_hides_swap() {
     assert!(line.contains(" \u{f418} main ▾ "), "{line:?}");
     assert!(
         !line.contains("6152138"),
-        "named branch should not append oid: {line:?}"
+        "named branch should not append commit hash: {line:?}"
     );
     assert!(line.contains("  to  "), "{line:?}");
     assert!(line.contains(" \u{e5fe} Working tree ▾ "), "{line:?}");
