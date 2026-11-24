@@ -8,19 +8,19 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use diff_service::diff::DiffContent;
+use diff::DiffContent;
 use file_types::{DiffVersion, File, Rev, ViewerMode};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Ref, Scope, SetState, Stack, StackProps,
     Text, TextProps, component, rsx, use_context, use_effect, use_memo, use_ref, use_state,
 };
-use syntax::Span;
 
 use super::context::{Context, Ui, directory_key};
 use super::diff_cards::{DiffCards, DiffCardsProps};
 use super::diff_header::{DiffHeader, DiffHeaderProps, DiffViewMenu, DiffViewMenuProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
+use crate::services::DiffService;
 use crate::view::terminal_lines::TerminalLine;
 
 /// The semantic screen position shared by a file's layouts.
@@ -32,17 +32,12 @@ pub struct ScrollPosition {
 
 /// Opens the selected file and keeps it up to date.
 ///
-/// Returns the file's diff and its colours. Background threads fill them in;
-/// the diff is `None` until the file has been read.
+/// Returns the file's diff slot. `DiffService` fills it in; the slot holds
+/// `None` until the file has been read.
 fn use_selected_file(
     scope: &mut Scope,
     ctx: &Context,
-) -> Rc<
-    Option<(
-        Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-        Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    )>,
-> {
+) -> Rc<Option<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>> {
     // A selected directory is shown as cards instead.
     let selected = if ctx.directory.is_some() {
         None
@@ -59,7 +54,7 @@ fn use_selected_file(
     let path_and_revs = selected
         .as_deref()
         .map(|file| (file.path().clone(), file.revs()));
-    let diff_and_colours = use_memo(scope, path_and_revs.clone(), {
+    let diff_slot = use_memo(scope, path_and_revs.clone(), {
         let diff_service = ctx.diff_service.clone();
         move || match (diff_service, selected) {
             (Some(diff_service), Some(file)) => Some(diff_service.open((*file).clone())),
@@ -67,14 +62,14 @@ fn use_selected_file(
         }
     });
 
-    // When the file changes on disk, read it again into the same diff and
-    // colours. They keep showing the file until the new result is ready.
+    // When the file changes on disk, read it again into the same diff slot.
+    // It keeps showing the file until the new result is ready.
     use_effect(scope, path_and_revs, {
         let diff_service = ctx.diff_service.clone();
         let watcher_service = ctx.watcher_service.clone();
-        let diff_and_colours = Rc::clone(&diff_and_colours);
+        let diff_slot = Rc::clone(&diff_slot);
         move || {
-            let Some((diff, colours)) = diff_and_colours.as_ref().clone() else {
+            let Some(diff) = diff_slot.as_ref().clone() else {
                 return;
             };
             let (Some(diff_service), Some(watcher_service)) = (diff_service, watcher_service)
@@ -86,34 +81,29 @@ fn use_selected_file(
                     return;
                 };
                 if refresh_affects_file(refresh, &file) {
-                    diff_service.refresh((*file).clone(), &diff, &colours);
+                    diff_service.refresh((*file).clone(), &diff);
                 }
             });
         }
     });
 
-    diff_and_colours
+    diff_slot
 }
 
 /// The files of the selected directory that have been opened, in order.
 /// The cards ask for the next one when their end comes into view.
 struct DirectoryFiles {
     files: Vec<File>,
-    opened: RefCell<
-        Vec<(
-            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-        )>,
-    >,
+    opened: RefCell<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
 }
 
 impl DirectoryFiles {
-    fn open_next(&self, diff_service: &diff_service::DiffService) {
+    fn open_next(&self, diff_service: &DiffService) {
         let mut opened = self.opened.borrow_mut();
         // One file at a time, in order.
         if opened
             .last()
-            .is_some_and(|(diff, _)| diff.lock().unwrap().is_none())
+            .is_some_and(|diff| diff.lock().unwrap().is_none())
         {
             return;
         }
@@ -189,20 +179,28 @@ fn viewer_mode_listener(
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
-    let diff_and_colours = use_selected_file(scope, &ctx);
+    let diff_slot = use_selected_file(scope, &ctx);
     // No file, a file not read yet, its diff, or why it could not be read.
-    let diff = diff_and_colours
+    let diff = diff_slot
         .as_ref()
         .as_ref()
-        .map(|(diff, _)| diff.lock().unwrap().clone());
+        .map(|diff| diff.lock().unwrap().clone());
     let content = match &diff {
         Some(Some(Ok(content))) => Some(Arc::clone(content)),
         _ => None,
     };
-    let colours = diff_and_colours
+    let content_key = content
         .as_ref()
-        .as_ref()
-        .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
+        .map(|content| Arc::as_ptr(content) as usize);
+    let syntax_service = ctx.syntax_service.clone();
+    let content_for_colours = content.clone();
+    let colours = use_memo(scope, content_key, move || {
+        match (syntax_service, content_for_colours) {
+            (Some(syntax_service), Some(content)) => syntax_service.colour(content),
+            _ => Arc::new(Mutex::new([Vec::new(), Vec::new()])),
+        }
+    });
+    let colours = Arc::clone(&colours);
     let directory_files = use_directory_files(scope, &ctx);
     let (viewer_mode, set_viewer_mode) = use_state(scope, || match ctx.config.ui.viewer_mode {
         config::ViewerMode::SideBySide => ViewerMode::SideBySide,

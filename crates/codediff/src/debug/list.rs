@@ -1,6 +1,6 @@
 //! Prints the groups and files produced by a list request.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use vcs::RevisionRange;
 
 use crate::cli::parse_revision;
@@ -20,11 +20,13 @@ pub fn revision_range(rev: &[String], staged: bool) -> RevisionRange {
 /// Prints each revision group and its files.
 pub fn run(revision_range: RevisionRange, pathspec: Vec<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let root = vcs::Repository::open(&cwd)?.repo_path().root.clone();
-    let request = diff_service::files::Request::new(root, revision_range).with_pathspec(pathspec);
+    let mut repository = vcs::Repository::open(&cwd).context("opening a repository")?;
+    let changed_files = repository
+        .get_changed_files(&revision_range, &pathspec)
+        .context("listing changed files and line counts")?;
 
     let mut groups: Vec<(file_types::Revs, Vec<file_types::File>)> = Vec::new();
-    for file in diff_service::files::get_files(&request)? {
+    for file in changed_files {
         let revs = file.revs();
         match groups.iter_mut().find(|(seen, _)| *seen == revs) {
             Some((_, files)) => files.push(file),

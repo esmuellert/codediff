@@ -4,11 +4,10 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::rc::Rc;
 
-use diff_service::DiffService;
-use diff_service::files::RevisionRange;
 use loom::{Scope, use_effect, use_memo, use_state};
 
-use crate::services::watcher::WatcherService;
+use crate::RevisionRange;
+use crate::services::{VcsService, WatcherService};
 
 fn format_worktree_summary(count: usize) -> String {
     match count {
@@ -22,7 +21,7 @@ pub fn use_worktree_summary(
     scope: &mut Scope,
     enabled: bool,
     repo: &Rc<Path>,
-    diff_service: Option<&Rc<DiffService>>,
+    vcs_service: Option<&Rc<VcsService>>,
     watcher_service: Option<&Rc<WatcherService>>,
 ) -> Option<Rc<str>> {
     let (summary, set_summary) = use_state(scope, || None::<Rc<str>>);
@@ -46,13 +45,13 @@ pub fn use_worktree_summary(
     });
 
     let repo_for_files = Rc::clone(repo);
-    let pipeline_for_files = diff_service.map(Rc::clone);
+    let vcs_for_files = vcs_service.map(Rc::clone);
     let file_slot = use_memo(scope, (enabled, Rc::clone(repo), refreshes), move || {
         if !enabled {
             return None;
         }
-        pipeline_for_files
-            .map(|pipeline| pipeline.list_files(&repo_for_files, RevisionRange::Worktree))
+        vcs_for_files
+            .map(|vcs_service| vcs_service.list_files(&repo_for_files, RevisionRange::Worktree))
     });
     let files_ready = file_slot
         .as_ref()
@@ -64,10 +63,10 @@ pub fn use_worktree_summary(
         scope,
         (enabled, Rc::clone(repo), refreshes, files_ready),
         move || {
-            let Some(Some(Ok(listed))) = file_slot_for_effect
+            let Some(Ok(listed)) = file_slot_for_effect
                 .as_ref()
                 .as_ref()
-                .map(|slot| slot.lock().unwrap().clone())
+                .and_then(|slot| slot.lock().unwrap().take())
             else {
                 return;
             };

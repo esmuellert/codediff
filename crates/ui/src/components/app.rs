@@ -3,8 +3,6 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use diff_service::DiffService;
-use diff_service::files::RevisionRange;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component,
@@ -18,10 +16,10 @@ use super::explorer::Explorer;
 use super::revision_header::RevisionHeader;
 use super::revision_picker::RevisionPicker;
 use super::revisions::{RevisionSide, swap_revision_range};
+use crate::RevisionRange;
 use crate::hooks::use_commits::use_commits;
 use crate::keybindings::{Action, KeyMap};
-use crate::services::version_control::VersionControlService;
-use crate::services::watcher::WatcherService;
+use crate::services::{DiffService, SyntaxService, VcsService, WatcherService};
 use crate::theme::{Theme, cached_branch_drawing};
 
 fn configured_theme(name: &str) -> Theme {
@@ -31,6 +29,7 @@ fn configured_theme(name: &str) -> Theme {
     Theme::named(name).unwrap_or_else(Theme::from_environment)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[component]
 pub fn App(
     scope: &mut Scope,
@@ -38,8 +37,9 @@ pub fn App(
     revision_range: RevisionRange,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
+    vcs_service: Rc<VcsService>,
     diff_service: Rc<DiffService>,
-    version_control_service: Rc<VersionControlService>,
+    syntax_service: Rc<SyntaxService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let initial_range = revision_range.clone();
@@ -53,7 +53,7 @@ pub fn App(
         configured_theme(&theme_name)
     });
     let branch_drawing = *use_memo(scope, (), cached_branch_drawing);
-    let commits = use_commits(scope, cwd, diff_service, watcher_service);
+    let commits = use_commits(scope, cwd, vcs_service, watcher_service);
 
     let exit = use_exit(scope);
     let explorer_width = config.ui.explorer_width;
@@ -112,8 +112,9 @@ pub fn App(
                 set_file: Some(set_file),
                 directory: directory.as_ref().map(Rc::clone),
                 set_directory: Some(set_directory),
+                vcs_service: Some(Rc::clone(vcs_service)),
                 diff_service: Some(Rc::clone(diff_service)),
-                version_control_service: Some(Rc::clone(version_control_service)),
+                syntax_service: Some(Rc::clone(syntax_service)),
                 watcher_service: Some(Rc::clone(watcher_service)),
             },
             Column {

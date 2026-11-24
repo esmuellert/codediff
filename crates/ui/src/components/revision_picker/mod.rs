@@ -197,7 +197,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         scope,
         show_worktree,
         &ctx.repo,
-        ctx.diff_service.as_ref(),
+        ctx.vcs_service.as_ref(),
         ctx.watcher_service.as_ref(),
     );
     let worktree_summary: Option<Rc<str>> =

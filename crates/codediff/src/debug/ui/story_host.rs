@@ -2,11 +2,11 @@
 
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use diff_service::DiffService;
 use file_types::{CommitHash, File, RepoPath, Revs};
 use loom::crokey::KeyCombination;
 use loom::ratatui::buffer::Buffer;
@@ -15,6 +15,7 @@ use loom::testing::Harness;
 use loom::{Flow, Tree, deliver_input};
 use ui::Theme;
 use ui::components::Context as UiContext;
+use ui::services::{DiffService, SyntaxService, VcsService};
 
 #[cfg(test)]
 use super::catalog;
@@ -28,36 +29,61 @@ enum StoryEvent {
     Redraw,
 }
 
-/// A pipeline that reads the story's fixture instead of Git, and the props
+pub(super) struct StoryServices {
+    pub vcs_service: Rc<VcsService>,
+    pub diff_service: Rc<DiffService>,
+    pub syntax_service: Rc<SyntaxService>,
+}
+
+impl StoryServices {
+    pub fn is_busy(&self) -> bool {
+        self.vcs_service.is_busy() || self.diff_service.is_busy() || self.syntax_service.is_busy()
+    }
+}
+
+/// Services that read the story's fixture instead of Git, and the props
 /// that show it. Code stories open their files at once.
 pub(super) fn story_props(
     definition: &'static StoryDefinition,
     fixture: StoryFixture,
     redraw: impl Fn() + Send + Sync + 'static,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
-) -> (Rc<DiffService>, StoryPreviewProps, Option<LiveRepo>) {
+) -> (StoryServices, StoryPreviewProps, Option<LiveRepo>) {
+    let redraw: Arc<dyn Fn() + Send + Sync> = Arc::new(redraw);
     if let StoryFixture::Repository {
         repo,
         revision_range,
     } = fixture
     {
-        let pipeline = Rc::new(DiffService::start(
-            redraw,
-            diff_service::diff::Settings::default(),
+        let vcs_redraw = Arc::clone(&redraw);
+        let vcs_service = Rc::new(VcsService::start(move || vcs_redraw()));
+        let diff_redraw = Arc::clone(&redraw);
+        let diff_service = Rc::new(DiffService::start(
+            move || diff_redraw(),
+            diff::Settings::default(),
         ));
+        let syntax_redraw = Arc::clone(&redraw);
+        let syntax_service = Rc::new(SyntaxService::start(move || syntax_redraw()));
         let props = StoryPreviewProps {
             definition,
             base_context: UiContext {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::from(repo.path()),
                 revision_range,
-                diff_service: Some(Rc::clone(&pipeline)),
+                vcs_service: Some(Rc::clone(&vcs_service)),
+                diff_service: Some(Rc::clone(&diff_service)),
+                syntax_service: Some(Rc::clone(&syntax_service)),
                 ..UiContext::default()
             },
             files: Rc::new(Vec::new()),
             navigate,
         };
-        return (pipeline, props, Some(repo));
+        let services = StoryServices {
+            vcs_service,
+            diff_service,
+            syntax_service,
+        };
+        return (services, props, Some(repo));
     }
 
     let (listed, contents, commits, picking, branch_drawing, open) = match fixture {
@@ -120,9 +146,15 @@ pub(super) fn story_props(
     } else {
         Vec::new()
     };
-    let pipeline = Rc::new(DiffService::new(
-        redraw,
-        move |_| Ok(listed.clone().unwrap_or_default()),
+    let vcs_redraw = Arc::clone(&redraw);
+    let vcs_service = Rc::new(VcsService::new(
+        move || vcs_redraw(),
+        move |_, _| Ok(listed.clone().unwrap_or_default()),
+        |_, _| Ok(Vec::new()),
+    ));
+    let diff_redraw = Arc::clone(&redraw);
+    let diff_service = Rc::new(DiffService::new(
+        move || diff_redraw(),
         move |file| {
             contents
                 .iter()
@@ -131,7 +163,12 @@ pub(super) fn story_props(
                 .ok_or_else(|| format!("the story has no diff for {}", file.path()))
         },
     ));
-    let files = opened.into_iter().map(|file| pipeline.open(file)).collect();
+    let syntax_redraw = Arc::clone(&redraw);
+    let syntax_service = Rc::new(SyntaxService::start(move || syntax_redraw()));
+    let files = opened
+        .into_iter()
+        .map(|file| diff_service.open(file))
+        .collect();
     let props = StoryPreviewProps {
         definition,
         base_context: UiContext {
@@ -140,20 +177,27 @@ pub(super) fn story_props(
             repo: Rc::from(Path::new("/codediff")),
             picking,
             commits: Rc::new(commits),
-            diff_service: Some(Rc::clone(&pipeline)),
+            vcs_service: Some(Rc::clone(&vcs_service)),
+            diff_service: Some(Rc::clone(&diff_service)),
+            syntax_service: Some(Rc::clone(&syntax_service)),
             ..UiContext::default()
         },
         files: Rc::new(files),
         navigate,
     };
-    (pipeline, props, None)
+    let services = StoryServices {
+        vcs_service,
+        diff_service,
+        syntax_service,
+    };
+    (services, props, None)
 }
 
 struct StoryHost {
     definition: &'static StoryDefinition,
     events_tx: Sender<StoryEvent>,
     events_rx: Receiver<StoryEvent>,
-    pipeline: Rc<DiffService>,
+    services: StoryServices,
     _repo: Option<LiveRepo>,
 }
 
@@ -162,7 +206,7 @@ impl StoryHost {
         let fixture = definition.create_fixture()?;
         let (events_tx, events_rx) = mpsc::channel();
         let redraw = events_tx.clone();
-        let (pipeline, props, repo) = story_props(
+        let (services, props, repo) = story_props(
             definition,
             fixture,
             move || {
@@ -174,7 +218,7 @@ impl StoryHost {
             definition,
             events_tx,
             events_rx,
-            pipeline,
+            services,
             _repo: repo,
         };
         Ok((host, props))
@@ -192,12 +236,12 @@ impl StoryHost {
     fn settle(&self, draw: &mut impl FnMut(Option<KeyCombination>)) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let idle = !self.pipeline.is_busy();
+            let idle = !self.services.is_busy();
             while self.events_rx.try_recv().is_ok() {}
             draw(None);
             // A job asks for a redraw before it stops counting as busy, so
             // work that finished during the drawing has left a request behind.
-            if idle && !self.pipeline.is_busy() && self.events_rx.try_recv().is_err() {
+            if idle && !self.services.is_busy() && self.events_rx.try_recv().is_err() {
                 return Ok(());
             }
             if Instant::now() > deadline {

@@ -11,12 +11,12 @@ use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
-use crate::fake_pipeline::coloured;
+use crate::fake_services::coloured;
 
 #[component]
 fn SingleFile(
     scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
+    content: Arc<diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     wrap: bool,
     compact: bool,
@@ -75,12 +75,10 @@ fn harness_with_colours(
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Harness {
     let file = file(deleted);
-    let content = Arc::new(diff_service::diff::DiffContent::SingleFile(
-        diff_service::diff::SingleFile {
-            file,
-            lines: Arc::new(lines),
-        },
-    ));
+    let content = Arc::new(diff::DiffContent::SingleFile(diff::SingleFile {
+        file,
+        lines: Arc::new(lines),
+    }));
     Harness::new::<SingleFile>(
         SingleFileProps {
             colours,
@@ -103,12 +101,10 @@ fn harness(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harnes
 
 fn harness_unwrapped(lines: Vec<String>, deleted: bool, width: u16, height: u16) -> Harness {
     let file = file(deleted);
-    let content = Arc::new(diff_service::diff::DiffContent::SingleFile(
-        diff_service::diff::SingleFile {
-            file,
-            lines: Arc::new(lines),
-        },
-    ));
+    let content = Arc::new(diff::DiffContent::SingleFile(diff::SingleFile {
+        file,
+        lines: Arc::new(lines),
+    }));
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
             colours: Arc::default(),
@@ -170,12 +166,10 @@ fn unwrapped_long_lines_scroll_horizontally_instead_of_wrapping() {
 #[test]
 fn toggling_wrap_preserves_the_current_terminal_line() {
     let long = "SINGLE_TOGGLE ".to_owned() + &"0123456789".repeat(12);
-    let content = Arc::new(diff_service::diff::DiffContent::SingleFile(
-        diff_service::diff::SingleFile {
-            file: named_file("toggle.rs", false),
-            lines: Arc::new(vec![long, "second".into(), "third".into()]),
-        },
-    ));
+    let content = Arc::new(diff::DiffContent::SingleFile(diff::SingleFile {
+        file: named_file("toggle.rs", false),
+        lines: Arc::new(vec![long, "second".into(), "third".into()]),
+    }));
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
             colours: Arc::default(),
@@ -254,13 +248,11 @@ fn added_and_deleted_files_have_no_diff_background() {
 }
 
 #[test]
-fn the_pipeline_colours_the_present_side() {
-    let colours = coloured(diff_service::diff::DiffContent::SingleFile(
-        diff_service::diff::SingleFile {
-            file: file(false),
-            lines: Arc::new(vec!["fn main() {}".into()]),
-        },
-    ));
+fn syntax_service_colours_the_present_side() {
+    let colours = coloured(diff::DiffContent::SingleFile(diff::SingleFile {
+        file: file(false),
+        lines: Arc::new(vec!["fn main() {}".into()]),
+    }));
     let mut harness = harness_with_colours(vec!["fn main() {}".into()], false, 30, 2, colours);
     harness.force_draw().force_draw();
 
@@ -307,18 +299,14 @@ fn a_long_file_scrolls() {
 fn each_file_restores_its_position() {
     let first_lines: Vec<String> = (1..=12).map(|line| format!("first {line:02}")).collect();
     let second_lines: Vec<String> = (1..=12).map(|line| format!("second {line:02}")).collect();
-    let first = Arc::new(diff_service::diff::DiffContent::SingleFile(
-        diff_service::diff::SingleFile {
-            file: named_file("first.rs", false),
-            lines: Arc::new(first_lines),
-        },
-    ));
-    let second = Arc::new(diff_service::diff::DiffContent::SingleFile(
-        diff_service::diff::SingleFile {
-            file: named_file("second.rs", false),
-            lines: Arc::new(second_lines),
-        },
-    ));
+    let first = Arc::new(diff::DiffContent::SingleFile(diff::SingleFile {
+        file: named_file("first.rs", false),
+        lines: Arc::new(first_lines),
+    }));
+    let second = Arc::new(diff::DiffContent::SingleFile(diff::SingleFile {
+        file: named_file("second.rs", false),
+        lines: Arc::new(second_lines),
+    }));
     let mut harness = Harness::new::<SingleFile>(
         SingleFileProps {
             colours: Arc::default(),

@@ -6,12 +6,11 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use diff_service::diff::DiffContent;
+use diff::DiffContent;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component, rsx,
-    use_exit, use_ref, use_state,
+    use_exit, use_memo, use_ref, use_state,
 };
-use syntax::Span;
 use ui::components::border::{Border, BorderProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
@@ -38,12 +37,7 @@ pub(super) fn StoryPreview(
     scope: &mut Scope,
     definition: &'static StoryDefinition,
     base_context: Context,
-    files: Rc<
-        Vec<(
-            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-        )>,
-    >,
+    files: Rc<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
@@ -91,11 +85,20 @@ pub(super) fn StoryPreview(
     // Code stories show the files they opened, once they have been diffed.
     let content = files
         .first()
-        .and_then(|(diff, _)| diff.lock().unwrap().clone())
+        .and_then(|diff| diff.lock().unwrap().clone())
         .and_then(Result::ok);
-    let colours = files
-        .first()
-        .map_or_else(Arc::default, |(_, colours)| Arc::clone(colours));
+    let content_key = content
+        .as_ref()
+        .map(|content| Arc::as_ptr(content) as usize);
+    let syntax_service = context.syntax_service.clone();
+    let content_for_colours = content.clone();
+    let colours = use_memo(scope, content_key, move || {
+        match (syntax_service, content_for_colours) {
+            (Some(syntax_service), Some(content)) => syntax_service.colour(content),
+            _ => Arc::new(Mutex::new([Vec::new(), Vec::new()])),
+        }
+    });
+    let colours = Arc::clone(&colours);
     let scroll_position = use_ref(scope, ScrollPosition::default);
     let shortcuts = if navigate.is_some() {
         vec![

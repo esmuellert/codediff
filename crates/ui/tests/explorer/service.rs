@@ -2,20 +2,19 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc;
 
-use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx};
 use ui::Theme;
 use ui::components::{Context, Explorer, Ui, UiProps};
-use ui::services::watcher::WatcherService;
+use ui::services::{VcsService, WatcherService};
 
-use super::common::{fake_pipeline, file, wait};
+use super::common::{fake_vcs_service, file, wait_vcs};
 
 #[component]
 fn Host(
     scope: &mut Scope,
     repo: Rc<Path>,
-    pipeline: Rc<DiffService>,
+    vcs_service: Rc<VcsService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -24,7 +23,7 @@ fn Host(
             value: Context {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
-                diff_service: Some(Rc::clone(pipeline)),
+                vcs_service: Some(Rc::clone(vcs_service)),
                 watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
@@ -38,9 +37,8 @@ fn RevisionRangeHost(
     scope: &mut Scope,
     repo: Rc<Path>,
     revision_range: vcs::RevisionRange,
-    pipeline: Rc<DiffService>,
+    vcs_service: Rc<VcsService>,
     watcher_service: Rc<WatcherService>,
-    version_control_service: Option<Rc<ui::services::version_control::VersionControlService>>,
 ) -> Node {
     let _ = scope;
     rsx! {
@@ -49,9 +47,8 @@ fn RevisionRangeHost(
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
                 revision_range: revision_range.clone(),
-                diff_service: Some(Rc::clone(pipeline)),
+                vcs_service: Some(Rc::clone(vcs_service)),
                 watcher_service: Some(Rc::clone(watcher_service)),
-                version_control_service: version_control_service.as_ref().map(Rc::clone),
                 ..Context::default()
             },
             Explorer {}
@@ -61,49 +58,59 @@ fn RevisionRangeHost(
 
 #[test]
 fn explorer_requests_its_file_list() {
-    let (pipeline, redraws) = fake_pipeline(vec![vec![file("one.rs")]], Vec::new());
+    let (vcs_service, redraws) = fake_vcs_service(vec![vec![file("one.rs")]]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service,
         },
         40,
         5,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
-    assert!(harness.screen().join("\n").contains("one.rs"));
+    assert!(
+        harness
+            .screen()
+            .join(
+                "
+"
+            )
+            .contains("one.rs")
+    );
 }
 
 #[test]
 fn changing_repository_requests_a_new_file_list() {
-    let (pipeline, redraws) =
-        fake_pipeline(vec![vec![file("one.rs")], vec![file("two.rs")]], Vec::new());
+    let (vcs_service, redraws) = fake_vcs_service(vec![vec![file("one.rs")], vec![file("two.rs")]]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
-        pipeline: Rc::clone(&pipeline),
+        vcs_service: Rc::clone(&vcs_service),
         watcher_service,
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
-    let screen = harness.screen().join("\n");
+    let screen = harness.screen().join(
+        "
+",
+    );
     assert!(screen.contains("two.rs"), "got {screen:?}");
     assert!(!screen.contains("one.rs"), "got {screen:?}");
 }
@@ -112,25 +119,25 @@ fn changing_repository_requests_a_new_file_list() {
 fn a_list_still_being_read_for_the_previous_repository_never_appears() {
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(DiffService::new(
+    let vcs_service = Rc::new(VcsService::new(
         move || {
             let _ = redraw.send(());
         },
-        move |request| {
-            if request.repo == Path::new("/one") {
+        move |repo, _| {
+            if repo == Path::new("/one") {
                 released.recv().unwrap();
                 Ok(vec![file("one.rs")])
             } else {
                 Ok(vec![file("two.rs")])
             }
         },
-        |_| unreachable!("nothing is opened"),
+        |_, _| Ok(Vec::new()),
     ));
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
@@ -139,14 +146,17 @@ fn a_list_still_being_read_for_the_previous_repository_never_appears() {
     harness.force_draw();
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
-        pipeline: Rc::clone(&pipeline),
+        vcs_service: Rc::clone(&vcs_service),
         watcher_service,
     });
     harness.force_draw();
     release.send(()).unwrap();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
-    let screen = harness.screen().join("\n");
+    let screen = harness.screen().join(
+        "
+",
+    );
     assert!(screen.contains("two.rs"), "got {screen:?}");
     assert!(!screen.contains("one.rs"), "got {screen:?}");
 }
@@ -154,24 +164,24 @@ fn a_list_still_being_read_for_the_previous_repository_never_appears() {
 #[test]
 fn a_list_that_cannot_be_read_says_why() {
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(DiffService::new(
+    let vcs_service = Rc::new(VcsService::new(
         move || {
             let _ = redraw.send(());
         },
-        |_| Err("not a git repository".to_owned()),
-        |_| unreachable!("nothing is opened"),
+        |_, _| Err("not a git repository".to_owned()),
+        |_, _| Ok(Vec::new()),
     ));
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::new(WatcherService::new()),
         },
         60,
         5,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
     assert!(
         harness
@@ -184,25 +194,22 @@ fn a_list_that_cannot_be_read_says_why() {
 
 #[test]
 fn refresh_keeps_the_same_file_selected() {
-    let (pipeline, redraws) = fake_pipeline(
-        vec![
-            vec![file("a.rs"), file("b.rs"), file("c.rs")],
-            vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],
-        ],
-        Vec::new(),
-    );
+    let (vcs_service, redraws) = fake_vcs_service(vec![
+        vec![file("a.rs"), file("b.rs"), file("c.rs")],
+        vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],
+    ]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         6,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
     harness.press(crokey::key!(j));
     harness.force_draw();
     harness.press(crokey::key!(j));
@@ -214,7 +221,7 @@ fn refresh_keeps_the_same_file_selected() {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
     assert!(harness.screen_line(3).contains("b.rs"));
     assert_eq!(harness.style_at(0, 3).bg, selected_background);
@@ -223,30 +230,31 @@ fn refresh_keeps_the_same_file_selected() {
 
 #[test]
 fn filesystem_changes_refresh_the_current_repository() {
-    let (pipeline, redraws) = fake_pipeline(
-        vec![vec![file("before.rs")], vec![file("after.rs")]],
-        Vec::new(),
-    );
+    let (vcs_service, redraws) =
+        fake_vcs_service(vec![vec![file("before.rs")], vec![file("after.rs")]]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         40,
         5,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
     watcher_service.deliver(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
-    let screen = harness.screen().join("\n");
+    let screen = harness.screen().join(
+        "
+",
+    );
     assert!(screen.contains("after.rs"), "got {screen:?}");
 }
 
@@ -257,16 +265,13 @@ fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_fl
     let (redraw, redraws) = mpsc::channel();
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen_in_worker = std::sync::Arc::clone(&seen);
-    let pipeline = Rc::new(DiffService::new(
+    let vcs_service = Rc::new(VcsService::new(
         move || {
             let _ = redraw.send(());
         },
-        move |request| {
-            seen_in_worker
-                .lock()
-                .unwrap()
-                .push(request.revision_range.clone());
-            match &request.revision_range {
+        move |_, revision_range| {
+            seen_in_worker.lock().unwrap().push(revision_range.clone());
+            match revision_range {
                 vcs::RevisionRange::Worktree => {
                     started.send(()).unwrap();
                     released.recv().unwrap();
@@ -278,16 +283,15 @@ fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_fl
                 other => panic!("unexpected revision_range {other:?}"),
             }
         },
-        |_| unreachable!("nothing is opened"),
+        |_, _| Ok(Vec::new()),
     ));
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<RevisionRangeHost>(
         RevisionRangeHostProps {
             repo: Rc::from(Path::new("/repo")),
             revision_range: vcs::RevisionRange::Worktree,
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::clone(&watcher_service),
-            version_control_service: None,
         },
         40,
         5,
@@ -295,20 +299,22 @@ fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_fl
     harness.force_draw();
     listing_worktree
         .recv_timeout(std::time::Duration::from_secs(10))
-        .expect("the files worker started listing Worktree");
+        .expect("the vcs worker started listing Worktree");
 
     harness.set_props::<RevisionRangeHost>(RevisionRangeHostProps {
         repo: Rc::from(Path::new("/repo")),
         revision_range: vcs::RevisionRange::Between("a".into(), "b".into()),
-        pipeline: Rc::clone(&pipeline),
+        vcs_service: Rc::clone(&vcs_service),
         watcher_service: Rc::clone(&watcher_service),
-        version_control_service: None,
     });
     harness.force_draw();
     release.send(()).unwrap();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
-    let screen = harness.screen().join("\n");
+    let screen = harness.screen().join(
+        "
+",
+    );
     assert!(screen.contains("between.rs"), "got {screen:?}");
     assert!(!screen.contains("worktree.rs"), "got {screen:?}");
     assert_eq!(
@@ -325,30 +331,29 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
     let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let calls_in_worker = std::sync::Arc::clone(&calls);
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(DiffService::new(
+    let vcs_service = Rc::new(VcsService::new(
         move || {
             let _ = redraw.send(());
         },
-        move |_| {
+        move |_, _| {
             let call = calls_in_worker.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(vec![file(&format!("call-{call}.rs"))])
         },
-        |_| unreachable!("nothing is opened"),
+        |_, _| Ok(Vec::new()),
     ));
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<RevisionRangeHost>(
         RevisionRangeHostProps {
             repo: Rc::from(Path::new("/repo")),
             revision_range: vcs::RevisionRange::Between("a".into(), "b".into()),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::clone(&watcher_service),
-            version_control_service: None,
         },
         40,
         5,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     watcher_service.deliver(watcher::Refresh {
@@ -356,7 +361,7 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
         index: true,
         ..watcher::Refresh::default()
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
     assert_eq!(
         calls.load(std::sync::atomic::Ordering::SeqCst),
         1,
@@ -367,7 +372,7 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
         refs: true,
         ..watcher::Refresh::default()
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
     assert_eq!(
         calls.load(std::sync::atomic::Ordering::SeqCst),
         2,
@@ -378,9 +383,6 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
 #[test]
 fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     use std::process::Command;
-
-    use file_types::{CommitHash, File, RepoPath, Rev, Revs};
-    use ui::services::version_control::VersionControlService;
 
     let repo_dir = tempfile::tempdir().expect("creating temp git repo");
     let git = |args: &[&str]| {
@@ -406,40 +408,50 @@ fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     git(&["init", "-q", "-b", "main"]);
     git(&["config", "core.autocrlf", "false"]);
     std::fs::create_dir_all(repo_dir.path().join("src")).unwrap();
-    std::fs::write(repo_dir.path().join("src/lib.rs"), "pub fn v1() {}\n").unwrap();
+    std::fs::write(
+        repo_dir.path().join("src/lib.rs"),
+        "pub fn v1() {}
+",
+    )
+    .unwrap();
     git(&["add", "-A"]);
     git(&["commit", "-qm", "first"]);
     let first = git(&["rev-parse", "HEAD"]);
 
-    std::fs::write(repo_dir.path().join("src/lib.rs"), "pub fn v2() {}\n").unwrap();
+    std::fs::write(
+        repo_dir.path().join("src/lib.rs"),
+        "pub fn v2() {}
+",
+    )
+    .unwrap();
     git(&["add", "-A"]);
     git(&["commit", "-qm", "second"]);
     let second = git(&["rev-parse", "HEAD"]);
 
     // Modify the same path in the working tree so an accidental `git add` would stage it.
-    std::fs::write(repo_dir.path().join("src/lib.rs"), "pub fn dirty() {}\n").unwrap();
+    std::fs::write(
+        repo_dir.path().join("src/lib.rs"),
+        "pub fn dirty() {}
+",
+    )
+    .unwrap();
 
-    let commit_file = File::unchanged_path(
-        RepoPath::new("src/lib.rs", repo_dir.path()),
-        Revs::new(
-            Rev::Commit(CommitHash::new(&first)),
-            Rev::Commit(CommitHash::new(&second)),
-        ),
-    );
-    let (pipeline, redraws) = fake_pipeline(vec![vec![commit_file]], Vec::new());
+    let (redraw_tx, redraws) = mpsc::channel();
+    let vcs_service = Rc::new(VcsService::start(move || {
+        let _ = redraw_tx.send(());
+    }));
     let mut harness = Harness::new::<RevisionRangeHost>(
         RevisionRangeHostProps {
             repo: Rc::from(repo_dir.path()),
             revision_range: vcs::RevisionRange::Between(first, second),
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&vcs_service),
             watcher_service: Rc::new(WatcherService::new()),
-            version_control_service: Some(Rc::new(VersionControlService::new())),
         },
         50,
         6,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
     // Line 0: Heading ("Changes"), Line 1: Directory ("src"), Line 2: File ("lib.rs").
     // Press Space on both the directory and the file.
@@ -455,8 +467,7 @@ fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     harness.press(crokey::key!(space));
     harness.force_draw();
 
-    // Give any background thread plenty of time if one had been spawned.
-    std::thread::sleep(std::time::Duration::from_millis(120));
+    wait_vcs(&vcs_service, &redraws, &mut harness);
 
     let staged = git(&["diff", "--cached", "--name-only"]);
     assert!(

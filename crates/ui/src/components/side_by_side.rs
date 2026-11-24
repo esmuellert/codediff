@@ -89,7 +89,7 @@ pub(crate) fn side_by_side_geometry(
 #[component]
 pub(crate) fn SideBySide(
     scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
+    content: Arc<diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     geometry: Rc<SideBySideGeometry>,
     viewport: DiffVisibleRange,
@@ -105,7 +105,7 @@ pub(crate) fn SideBySide(
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
     let theme = &ctx.theme;
-    let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
+    let diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to SideBySide")
     };
     let wrapped_lines = geometry.wrapped_lines.as_ref();
@@ -299,7 +299,7 @@ fn make_side(
     version: DiffVersion,
     line: &TerminalLine,
     gutter_width: u16,
-    diff: &diff_service::diff::Diff,
+    diff: &diff::Diff,
     theme: &crate::theme::Theme,
     colours: &[Vec<Vec<Span>>; 2],
 ) -> (Node, Node) {

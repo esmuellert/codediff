@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use anyhow::Result;
-use diff_service::diff::{Diff, DiffContent};
+use diff::{Diff, DiffContent};
 use file_types::{File, Stats};
 
 use super::{repo_path, worktree_revs};
@@ -104,12 +104,8 @@ impl DiffFixture {
     pub fn build(self) -> Result<Rc<DiffContent>> {
         let original: Vec<&str> = self.original.iter().map(String::as_str).collect();
         let modified: Vec<&str> = self.modified.iter().map(String::as_str).collect();
-        let changed = diff_service::diff::compute(
-            &original,
-            &modified,
-            diff_service::diff::Settings::default(),
-        )?;
-        let alignment = diff_service::diff::align(changed, &original, &modified)?;
+        let changed = diff::compute(&original, &modified, diff::Settings::default())?;
+        let alignment = diff::align(changed, &original, &modified)?;
         let mut file = File::unchanged_path(repo_path(&self.path), worktree_revs());
         if let Some(stats) = self.stats {
             file = file.set_stats(stats);

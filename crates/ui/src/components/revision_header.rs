@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use diff_service::files::RevisionRange;
+use crate::RevisionRange;
 use loom::{
     Basis, Bubble, Gap, GapProps, Layout, Listeners, Node, Row, RowProps, Scope, Text, TextProps,
     component, crossterm::event::MouseButton, rsx, use_context, use_measure,

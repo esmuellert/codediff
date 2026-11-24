@@ -73,7 +73,7 @@ pub(crate) fn inline_geometry(
 #[component]
 pub(crate) fn Inline(
     scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
+    content: Arc<diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     geometry: Rc<InlineGeometry>,
     viewport: DiffVisibleRange,
@@ -87,7 +87,7 @@ pub(crate) fn Inline(
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
     let theme = &ctx.theme;
-    let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
+    let diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!("DiffViewer sends diffs to Inline")
     };
     let alignment = &diff.alignment;

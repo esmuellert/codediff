@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use diff_service::diff::DiffContent;
+use diff::DiffContent;
 use file_types::ViewerMode;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, Text,

@@ -1,6 +1,6 @@
 //! Pure revision-endpoint domain logic shared by `App`, `RevisionHeader`, and `RevisionPicker`.
 
-use diff_service::files::RevisionRange;
+use crate::RevisionRange;
 use file_types::{CommitHash, Rev};
 
 use crate::Commit;

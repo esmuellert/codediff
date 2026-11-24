@@ -19,8 +19,8 @@ pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
     ),
     (
         "loom",
-        "diff-service",
-        "the framework paints cells; application pipelines stay above it",
+        "diff",
+        "the framework paints cells; diff models stay above it",
     ),
     (
         "loom",
@@ -31,6 +31,16 @@ pub const FORBIDDEN_EDGES: &[(&str, &str, &str)] = &[
         "loom",
         "syntax",
         "styles arrive as props; the framework does not compute them",
+    ),
+    (
+        "diff",
+        "vcs",
+        "the diff crate is pure and must not perform IO",
+    ),
+    (
+        "diff",
+        "syntax",
+        "diff computation does not highlight syntax",
     ),
     (
         "align",
@@ -46,8 +56,7 @@ pub const FORBIDDEN_SHIPPED_EDGES: &[(&str, &str, &str)] = &[
     (
         "align",
         "vscode-diff",
-        "pairing is handed a diff, it does not compute one — depending on the \
-         engine would drag a C toolchain into a pure crate",
+        "pairing is handed a diff, it does not compute one — depending on the          engine would drag a C toolchain into a pure crate",
     ),
     (
         "align",
@@ -62,8 +71,7 @@ pub const FORBIDDEN_SHIPPED_EDGES: &[(&str, &str, &str)] = &[
     (
         "file-types",
         "vcs",
-        "every layer names the shared file vocabulary, so it can name none of \
-         them — an edge here would be a cycle waiting to happen",
+        "every layer names the shared file vocabulary, so it can name none of          them — an edge here would be a cycle waiting to happen",
     ),
     (
         "file-types",
@@ -77,6 +85,7 @@ pub const PURE_CRATES: &[&str] = &[
     "line-index",
     "syntax",
     "align",
+    "diff",
     "vscode-diff",
     "diff-types",
     "file-types",
@@ -147,9 +156,10 @@ pub const BANNED_TYPE_WORDS: &[(&str, &str)] = &[
 /// Files allowed to start threads.
 pub const THREAD_FILES: &[&str] = &[
     "crates/loom/src/run.rs",
-    "crates/diff-service/src/threads.rs",
     "crates/ui/src/lib.rs",
-    "crates/ui/src/services/version_control.rs",
+    "crates/ui/src/services/vcs.rs",
+    "crates/ui/src/services/diff.rs",
+    "crates/ui/src/services/syntax.rs",
     "crates/watcher/src/watch.rs",
 ];
 pub const THREAD_MARKERS: &[&str] = &["thread::spawn", "thread::Builder"];

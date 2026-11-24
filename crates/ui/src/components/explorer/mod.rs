@@ -6,7 +6,6 @@ mod entry;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use diff_service::files::RevisionRange;
 use file_types::{File, RepoPath, Rev, Revs};
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node as LoomNode, Scope, Scroll, ScrollOffset,
@@ -17,8 +16,9 @@ use loom::{
 use self::build::{Node, grouped_list, grouped_tree};
 use self::entry::{Entry, EntryProps};
 use super::context::{DirectorySelection, Ui, directory_key};
+use crate::RevisionRange;
 use crate::keybindings::Action;
-use crate::services::version_control::VersionControlService;
+use crate::services::VcsService;
 
 const SCROLLOFF: u32 = 3;
 
@@ -29,9 +29,10 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let set_file = ctx.set_file;
     let set_directory = ctx.set_directory;
     let (files, set_files) = use_state(scope, || Rc::new(Vec::<File>::new()));
+    let (list_error, set_list_error) = use_state(scope, || None::<String>);
     let repo = Rc::clone(&ctx.repo);
     let revision_range = ctx.revision_range.clone();
-    let pipeline = ctx.diff_service.as_ref().map(Rc::clone);
+    let vcs_service = ctx.vcs_service.as_ref().map(Rc::clone);
     let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
     // A change on disk lists the files again; the previous list is dropped.
     let (refreshes, set_refreshes) = use_state(scope, || 0u32);
@@ -54,46 +55,56 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     );
     let repo_to_list = Rc::clone(&repo);
     let revision_range_to_list = revision_range.clone();
+    let vcs_for_list = vcs_service.clone();
     let listing = use_memo(
         scope,
         (Rc::clone(&repo), revision_range.clone(), refreshes),
-        move || pipeline.map(|pipeline| pipeline.list_files(&repo_to_list, revision_range_to_list)),
-    );
-    let (listed, list_error) = match listing
-        .as_ref()
-        .as_ref()
-        .map(|listing| listing.lock().unwrap())
-    {
-        Some(result) => match result.as_ref() {
-            Some(Ok(_)) => (true, None),
-            Some(Err(error)) => (false, Some(error.clone())),
-            None => (false, None),
+        move || {
+            vcs_for_list
+                .map(|vcs_service| vcs_service.list_files(&repo_to_list, revision_range_to_list))
         },
-        None => (false, None),
-    };
+    );
+    let listing_ready = listing
+        .as_ref()
+        .as_ref()
+        .is_some_and(|listing| listing.lock().unwrap().is_some());
     use_effect(
         scope,
-        (repo, revision_range, refreshes, listed),
+        (repo, revision_range, refreshes, listing_ready),
         move || {
-            let Some(Some(Ok(listed))) = listing
+            let Some(result) = listing
                 .as_ref()
                 .as_ref()
-                .map(|listing| listing.lock().unwrap().clone())
+                .and_then(|listing| listing.lock().unwrap().take())
             else {
                 return;
             };
-            let matching_files = Rc::new(listed);
-            if let Some(set_file) = set_file {
-                let files_for_selection = Rc::clone(&matching_files);
-                set_file(&move |selected| matching_selected_file(selected, &files_for_selection));
+            match result {
+                Ok(listed) => {
+                    set_list_error.set(None);
+                    let matching_files = Rc::new(listed);
+                    if let Some(set_file) = set_file {
+                        let files_for_selection = Rc::clone(&matching_files);
+                        set_file.update(|selected| {
+                            *selected =
+                                matching_selected_file(selected.take(), &files_for_selection);
+                        });
+                    }
+                    if let Some(set_directory) = set_directory {
+                        let files_for_selection = Rc::clone(&matching_files);
+                        set_directory.update(|selected| {
+                            *selected = matching_selected_directory(
+                                selected.as_ref(),
+                                &files_for_selection,
+                            );
+                        });
+                    }
+                    set_files.set(matching_files);
+                }
+                Err(error) => {
+                    set_list_error.set(Some(error));
+                }
             }
-            if let Some(set_directory) = set_directory {
-                let files_for_selection = Rc::clone(&matching_files);
-                set_directory(&move |selected| {
-                    matching_selected_directory(selected.as_ref(), &files_for_selection)
-                });
-            }
-            set_files.set(matching_files);
         },
     );
 
@@ -156,7 +167,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let files_for_keys = Rc::clone(&files);
     let revision_range_for_keys = ctx.revision_range.clone();
     let keybindings = Rc::clone(&ctx.keybindings);
-    let version_control_service = ctx.version_control_service.as_ref().map(Rc::clone);
+    let vcs_for_stage = vcs_service;
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
@@ -203,7 +214,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
                 if matches!(revision_range_for_keys, RevisionRange::Worktree)
                     && let Some(node) = nodes_for_keys.get(selected_line as usize)
                 {
-                    toggle_stage(node, version_control_service.as_deref());
+                    toggle_stage(node, vcs_for_stage.as_deref());
                 }
                 Bubble::Stop
             }
@@ -290,8 +301,8 @@ fn refresh_affects_listing(refresh: watcher::Refresh, revision_range: &RevisionR
     }
 }
 
-fn toggle_stage(node: &Node, version_control_service: Option<&VersionControlService>) {
-    let Some(version_control_service) = version_control_service else {
+fn toggle_stage(node: &Node, vcs_service: Option<&VcsService>) {
+    let Some(vcs_service) = vcs_service else {
         return;
     };
     let (path, revs) = match node {
@@ -300,7 +311,7 @@ fn toggle_stage(node: &Node, version_control_service: Option<&VersionControlServ
         Node::File { file, .. } => (file.path(), file.revs()),
     };
     if matches!(revs.after, Rev::Index | Rev::Worktree) {
-        version_control_service.toggle_stage(path, &revs);
+        vcs_service.toggle_stage(path, &revs);
     }
 }
 

@@ -2,15 +2,15 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 
-use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Layout, Node, Row, RowProps, Scope, component, rsx};
 use ui::Theme;
 use ui::components::diff_viewer::{DiffViewer, DiffViewerProps};
 use ui::components::{Context, Explorer, Ui, UiProps};
+use ui::services::DiffService;
 use ui::services::watcher::WatcherService;
 
-use crate::fake_pipeline::{fake_pipeline, wait};
+use crate::fake_services::{fake_diff_service, wait_diff};
 
 fn file(path: &str) -> file_types::File {
     file_types::File::unchanged_path(
@@ -19,7 +19,7 @@ fn file(path: &str) -> file_types::File {
     )
 }
 
-fn make_diff(file: file_types::File) -> diff_service::diff::DiffContent {
+fn make_diff(file: file_types::File) -> diff::DiffContent {
     make_diff_with_lines(file, &["hello", "world"], &["hello", "world"])
 }
 
@@ -27,44 +27,42 @@ fn make_diff_with_lines(
     file: file_types::File,
     original: &[&str],
     modified: &[&str],
-) -> diff_service::diff::DiffContent {
-    let diff =
-        diff_service::diff::compute(original, modified, diff_service::diff::Settings::default())
-            .expect("a diff");
-    let alignment = diff_service::diff::align(diff, original, modified).expect("alignment");
-    diff_service::diff::DiffContent::Diff(diff_service::diff::Diff { file, alignment })
+) -> diff::DiffContent {
+    let diff = diff::compute(original, modified, diff::Settings::default()).expect("a diff");
+    let alignment = diff::align(diff, original, modified).expect("alignment");
+    diff::DiffContent::Diff(diff::Diff { file, alignment })
 }
 
-fn make_single(file: file_types::File) -> diff_service::diff::DiffContent {
+fn make_single(file: file_types::File) -> diff::DiffContent {
     make_single_with_text(file, "untracked body")
 }
 
-fn make_single_with_text(file: file_types::File, text: &str) -> diff_service::diff::DiffContent {
-    diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
+fn make_single_with_text(file: file_types::File, text: &str) -> diff::DiffContent {
+    diff::DiffContent::SingleFile(diff::SingleFile {
         file,
         lines: Arc::new(vec![text.to_owned()]),
     })
 }
 
-fn with_response(file: file_types::File, content: diff_service::diff::DiffContent) -> Harness {
+fn with_response(file: file_types::File, content: diff::DiffContent) -> Harness {
     with_response_at(file, content, 60, 10)
 }
 
 fn with_response_at(
     file: file_types::File,
-    content: diff_service::diff::DiffContent,
+    content: diff::DiffContent,
     width: u16,
     height: u16,
 ) -> Harness {
-    let (pipeline, redraws) = fake_pipeline(Vec::new(), vec![content]);
+    let (diff_service, redraws) = fake_diff_service(vec![content]);
     let mut harness =
         Harness::new::<DiffViewer>(DiffViewerProps {}, width, height).provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             file: Some(Rc::new(file)),
-            diff_service: Some(pipeline.clone()),
+            diff_service: Some(diff_service.clone()),
             ..Context::default()
         });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness
 }
 
@@ -72,7 +70,7 @@ fn with_response_at(
 fn ViewerHost(
     scope: &mut Scope,
     file: Rc<file_types::File>,
-    pipeline: Rc<DiffService>,
+    diff_service: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -81,7 +79,7 @@ fn ViewerHost(
             value: Context {
                 theme: Rc::new(Theme::DARK),
                 file: Some(Rc::clone(file)),
-                diff_service: Some(Rc::clone(pipeline)),
+                diff_service: Some(Rc::clone(diff_service)),
                 watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
@@ -94,7 +92,7 @@ fn ViewerHost(
 fn ExplorerAndViewerHost(
     scope: &mut Scope,
     file: Rc<file_types::File>,
-    pipeline: Rc<DiffService>,
+    diff_service: Rc<DiffService>,
     watcher_service: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
@@ -103,7 +101,7 @@ fn ExplorerAndViewerHost(
             value: Context {
                 theme: Rc::new(Theme::DARK),
                 file: Some(Rc::clone(file)),
-                diff_service: Some(Rc::clone(pipeline)),
+                diff_service: Some(Rc::clone(diff_service)),
                 watcher_service: Some(Rc::clone(watcher_service)),
                 ..Context::default()
             },
@@ -132,15 +130,15 @@ fn no_file_shows_welcome() {
 #[test]
 fn a_file_that_cannot_be_read_says_why() {
     let selected = file("selected.rs");
-    let (pipeline, redraws) = fake_pipeline(Vec::new(), Vec::new());
+    let (diff_service, redraws) = fake_diff_service(Vec::new());
     let mut harness =
         Harness::new::<DiffViewer>(DiffViewerProps {}, 60, 10).provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             file: Some(Rc::new(selected)),
-            diff_service: Some(pipeline.clone()),
+            diff_service: Some(diff_service.clone()),
             ..Context::default()
         });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
 
     assert!(
         harness.screen_line(1).contains("cannot read selected.rs"),
@@ -155,11 +153,10 @@ fn the_previous_file_is_hidden_while_the_next_one_loads() {
     let second = file("second.rs");
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(DiffService::new(
+    let diff_service = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },
-        |_| Ok(Vec::new()),
         move |file| {
             if file.path().as_str() == "second.rs" {
                 released.recv().unwrap();
@@ -172,18 +169,18 @@ fn the_previous_file_is_hidden_while_the_next_one_loads() {
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             file: Rc::new(first),
-            pipeline: Rc::clone(&pipeline),
+            diff_service: Rc::clone(&diff_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         60,
         10,
     );
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     assert!(harness.screen().join("\n").contains("first body"));
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(second),
-        pipeline: Rc::clone(&pipeline),
+        diff_service: Rc::clone(&diff_service),
         watcher_service,
     });
     harness.force_draw();
@@ -192,7 +189,7 @@ fn the_previous_file_is_hidden_while_the_next_one_loads() {
     assert!(!text.contains("first body"), "got {text:?}");
 
     release.send(()).unwrap();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     let text = harness.screen().join("\n");
     assert!(text.contains("second body"), "got {text:?}");
     assert!(!text.contains("first body"), "got {text:?}");
@@ -201,25 +198,22 @@ fn the_previous_file_is_hidden_while_the_next_one_loads() {
 #[test]
 fn a_worktree_change_refreshes_the_selected_file() {
     let selected = file("selected.rs");
-    let (pipeline, redraws) = fake_pipeline(
-        Vec::new(),
-        vec![
-            make_single_with_text(selected.clone(), "before refresh"),
-            make_single_with_text(selected.clone(), "after refresh"),
-        ],
-    );
+    let (diff_service, redraws) = fake_diff_service(vec![
+        make_single_with_text(selected.clone(), "before refresh"),
+        make_single_with_text(selected.clone(), "after refresh"),
+    ]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             file: Rc::new(selected),
-            pipeline: Rc::clone(&pipeline),
+            diff_service: Rc::clone(&diff_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         60,
         10,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     assert!(harness.screen().join("\n").contains("before refresh"));
 
@@ -227,7 +221,7 @@ fn a_worktree_change_refreshes_the_selected_file() {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
 
     let screen = harness.screen().join("\n");
@@ -370,26 +364,23 @@ fn a_diff_scroll_position_survives_switching_files() {
     let second_lines: Vec<String> = (1..=20).map(|line| format!("second {line:02}")).collect();
     let first_lines: Vec<&str> = first_lines.iter().map(String::as_str).collect();
     let second_lines: Vec<&str> = second_lines.iter().map(String::as_str).collect();
-    let (pipeline, redraws) = fake_pipeline(
-        Vec::new(),
-        vec![
-            make_diff_with_lines(first.clone(), &first_lines, &first_lines),
-            make_diff_with_lines(second.clone(), &second_lines, &second_lines),
-            make_diff_with_lines(first.clone(), &first_lines, &first_lines),
-        ],
-    );
+    let (diff_service, redraws) = fake_diff_service(vec![
+        make_diff_with_lines(first.clone(), &first_lines, &first_lines),
+        make_diff_with_lines(second.clone(), &second_lines, &second_lines),
+        make_diff_with_lines(first.clone(), &first_lines, &first_lines),
+    ]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             file: Rc::new(first),
-            pipeline: Rc::clone(&pipeline),
+            diff_service: Rc::clone(&diff_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         60,
         10,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     for _ in 0..3 {
         harness.press(crokey::key!(j)).force_draw();
@@ -398,21 +389,21 @@ fn a_diff_scroll_position_survives_switching_files() {
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(second),
-        pipeline: Rc::clone(&pipeline),
+        diff_service: Rc::clone(&diff_service),
         watcher_service: Rc::clone(&watcher_service),
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     assert!(harness.screen_line(1).contains("second 01"));
 
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(file("first.rs")),
-        pipeline: Rc::clone(&pipeline),
+        diff_service: Rc::clone(&diff_service),
         watcher_service: Rc::clone(&watcher_service),
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     assert!(harness.screen_line(1).contains("first 04"));
 }
@@ -421,12 +412,12 @@ fn a_diff_scroll_position_survives_switching_files() {
 fn t_does_not_bubble_from_the_explorer_to_the_diff_viewer() {
     let file = file("test.rs");
     let content = make_diff(file.clone());
-    let (pipeline, redraws) = fake_pipeline(Vec::new(), vec![content]);
+    let (diff_service, redraws) = fake_diff_service(vec![content]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<ExplorerAndViewerHost>(
         ExplorerAndViewerHostProps {
             file: Rc::new(file),
-            pipeline: Rc::clone(&pipeline),
+            diff_service: Rc::clone(&diff_service),
             watcher_service,
         },
         100,
@@ -437,7 +428,7 @@ fn t_does_not_bubble_from_the_explorer_to_the_diff_viewer() {
         ..Context::default()
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
 
     assert_eq!(harness.focused_name(), Some("Explorer"));
@@ -458,32 +449,28 @@ fn switching_to_a_single_file_resets_scroll_and_keeps_diff_history() {
     let first_lines: Vec<String> = (1..=20).map(|line| format!("first {line:02}")).collect();
     let single_lines: Vec<String> = (1..=20).map(|line| format!("added {line:02}")).collect();
     let first_refs: Vec<&str> = first_lines.iter().map(String::as_str).collect();
-    let single_content =
-        diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
-            file: single.clone(),
-            lines: Arc::new(single_lines),
-        });
-    let (pipeline, redraws) = fake_pipeline(
-        Vec::new(),
-        vec![
-            make_diff_with_lines(first.clone(), &first_refs, &first_refs),
-            single_content.clone(),
-            make_diff_with_lines(first.clone(), &first_refs, &first_refs),
-            single_content,
-        ],
-    );
+    let single_content = diff::DiffContent::SingleFile(diff::SingleFile {
+        file: single.clone(),
+        lines: Arc::new(single_lines),
+    });
+    let (diff_service, redraws) = fake_diff_service(vec![
+        make_diff_with_lines(first.clone(), &first_refs, &first_refs),
+        single_content.clone(),
+        make_diff_with_lines(first.clone(), &first_refs, &first_refs),
+        single_content,
+    ]);
     let watcher_service = Rc::new(WatcherService::new());
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             file: Rc::new(first.clone()),
-            pipeline: Rc::clone(&pipeline),
+            diff_service: Rc::clone(&diff_service),
             watcher_service: Rc::clone(&watcher_service),
         },
         60,
         6,
     );
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     for _ in 0..4 {
         harness.press(crokey::key!(j)).force_draw();
@@ -493,11 +480,11 @@ fn switching_to_a_single_file_resets_scroll_and_keeps_diff_history() {
     // Switch to SingleFile: starts at line 01, scroll down to line 04.
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(single.clone()),
-        pipeline: Rc::clone(&pipeline),
+        diff_service: Rc::clone(&diff_service),
         watcher_service: Rc::clone(&watcher_service),
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     assert!(harness.screen_line(1).contains("added 01"));
     for _ in 0..3 {
@@ -508,22 +495,22 @@ fn switching_to_a_single_file_resets_scroll_and_keeps_diff_history() {
     // Switch back to first.rs: restores line 05.
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(first),
-        pipeline: Rc::clone(&pipeline),
+        diff_service: Rc::clone(&diff_service),
         watcher_service: Rc::clone(&watcher_service),
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     assert!(harness.screen_line(1).contains("first 05"));
 
     // Switch back to added.rs: SingleFile resets to line 01 instead of saving into diff history.
     harness.set_props::<ViewerHost>(ViewerHostProps {
         file: Rc::new(single),
-        pipeline: Rc::clone(&pipeline),
+        diff_service: Rc::clone(&diff_service),
         watcher_service,
     });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     harness.force_draw().force_draw();
     assert!(harness.screen_line(1).contains("added 01"));
 }

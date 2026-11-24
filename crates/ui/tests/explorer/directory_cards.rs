@@ -3,7 +3,6 @@ use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 
-use diff_service::DiffService;
 use file_types::{ChangeType, CommitHash, File, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Basis, Layout, Row, RowProps, Scope, component, rsx, use_state};
@@ -12,8 +11,9 @@ use ui::components::border::{Border, BorderProps};
 use ui::components::diff_viewer::DiffViewer;
 use ui::components::explorer::Explorer;
 use ui::components::{Context, DirectorySelection, Ui, UiProps};
+use ui::services::DiffService;
 
-use super::common::{fake_pipeline, wait};
+use super::common::{FakeServices, fake_diff_service, fake_services, wait, wait_diff};
 
 fn file(path: &str) -> File {
     File::unchanged_path(
@@ -23,21 +23,17 @@ fn file(path: &str) -> File {
     .set_stats(Stats::new(1, 1))
 }
 
-fn diff(file: File, original: &str, modified: &str) -> diff_service::diff::DiffContent {
+fn diff(file: File, original: &str, modified: &str) -> diff::DiffContent {
     let original: Vec<_> = original.lines().collect();
     let modified: Vec<_> = modified.lines().collect();
-    let changed = diff_service::diff::compute(
-        &original,
-        &modified,
-        diff_service::diff::Settings::default(),
-    )
-    .expect("diff computes");
-    let alignment = diff_service::diff::align(changed, &original, &modified).expect("alignment");
-    diff_service::diff::DiffContent::Diff(diff_service::diff::Diff { file, alignment })
+    let changed =
+        diff::compute(&original, &modified, diff::Settings::default()).expect("diff computes");
+    let alignment = diff::align(changed, &original, &modified).expect("alignment");
+    diff::DiffContent::Diff(diff::Diff { file, alignment })
 }
 
-fn single_file(file: File, lines: &[&str]) -> diff_service::diff::DiffContent {
-    diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
+fn single_file(file: File, lines: &[&str]) -> diff::DiffContent {
+    diff::DiffContent::SingleFile(diff::SingleFile {
         file,
         lines: Arc::new(lines.iter().map(|line| (*line).to_owned()).collect()),
     })
@@ -54,7 +50,12 @@ fn SelectedDiffHost(_scope: &mut Scope, context: Context) -> loom::Node {
 }
 
 #[component]
-fn ExplorerDiffHost(scope: &mut Scope, pipeline: Rc<DiffService>) -> loom::Node {
+fn ExplorerDiffHost(
+    scope: &mut Scope,
+    vcs_service: Rc<ui::services::VcsService>,
+    diff_service: Rc<DiffService>,
+    syntax_service: Rc<ui::services::SyntaxService>,
+) -> loom::Node {
     let (file, set_file) = use_state(scope, || None::<Rc<File>>);
     let (directory, set_directory) = use_state(scope, || None::<Rc<DirectorySelection>>);
     rsx! {
@@ -66,7 +67,9 @@ fn ExplorerDiffHost(scope: &mut Scope, pipeline: Rc<DiffService>) -> loom::Node 
                 set_file: Some(set_file),
                 directory,
                 set_directory: Some(set_directory),
-                diff_service: Some(Rc::clone(pipeline)),
+                vcs_service: Some(Rc::clone(vcs_service)),
+                diff_service: Some(Rc::clone(diff_service)),
+                syntax_service: Some(Rc::clone(syntax_service)),
                 ..Context::default()
             },
             Row {
@@ -85,7 +88,7 @@ fn ExplorerDiffHost(scope: &mut Scope, pipeline: Rc<DiffService>) -> loom::Node 
     }
 }
 
-fn setup(line_count: usize) -> (Harness, Rc<DiffService>, Receiver<()>) {
+fn setup(line_count: usize) -> (Harness, FakeServices, Receiver<()>) {
     let first = file("src/a.rs");
     let second = file("src/b.rs");
     let added = File::added(
@@ -105,7 +108,7 @@ fn setup(line_count: usize) -> (Harness, Rc<DiffService>, Receiver<()>) {
         .map(|line| format!("added_new_marker_{line:02}"))
         .collect();
     let added_refs: Vec<&str> = added_lines.iter().map(String::as_str).collect();
-    let (pipeline, redraws) = fake_pipeline(
+    let (services, redraws) = fake_services(
         vec![files],
         vec![
             diff(first, &text("old_a_marker"), &text("new_a_marker")),
@@ -115,25 +118,27 @@ fn setup(line_count: usize) -> (Harness, Rc<DiffService>, Receiver<()>) {
     );
     let mut harness = Harness::new::<ExplorerDiffHost>(
         ExplorerDiffHostProps {
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&services.vcs_service),
+            diff_service: Rc::clone(&services.diff_service),
+            syntax_service: Rc::clone(&services.syntax_service),
         },
         100,
         18,
     );
-    wait(&pipeline, &redraws, &mut harness);
-    (harness, pipeline, redraws)
+    wait(&services, &redraws, &mut harness);
+    (harness, services, redraws)
 }
 
 #[test]
 fn folding_a_selected_directory_keeps_its_loaded_cards_and_scroll_position() {
-    let (mut harness, pipeline, redraws) = setup(32);
+    let (mut harness, services, redraws) = setup(32);
     let directory_row = harness
         .screen()
         .iter()
         .position(|line| line.chars().take(32).collect::<String>().contains("src"))
         .expect("src directory");
     harness.click(2, directory_row as u16).force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
     let initial = harness.screen();
     harness.wheel(80, 6, 1).force_draw();
     assert_ne!(
@@ -177,7 +182,7 @@ fn folding_a_selected_directory_keeps_its_loaded_cards_and_scroll_position() {
             }
         }
     }
-    assert!(!pipeline.is_busy(), "folding opened the files again");
+    assert!(!services.is_busy(), "folding opened the files again");
 }
 
 #[test]
@@ -195,10 +200,8 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
             .join("\n");
         diff(file.clone(), &original, &modified)
     };
-    let (pipeline, redraws) = fake_pipeline(
-        Vec::new(),
-        vec![content(&first, "a"), content(&second, "b")],
-    );
+    let (diff_service, redraws) =
+        fake_diff_service(vec![content(&first, "a"), content(&second, "b")]);
     let directory = |path: &str, file: &File| {
         Rc::new(DirectorySelection {
             path: RepoPath::new(path, Path::new("/repo")),
@@ -208,7 +211,7 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
     };
     let first_context = Context {
         directory: Some(directory("first", &first)),
-        diff_service: Some(Rc::clone(&pipeline)),
+        diff_service: Some(Rc::clone(&diff_service)),
         ..Context::default()
     };
     let second_context = Context {
@@ -222,7 +225,7 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
         80,
         10,
     );
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     assert!(harness.screen().join("\n").contains("first/a.rs"));
     harness.wheel(50, 5, 1).force_draw();
     assert!(!harness.screen().join("\n").contains("first/a.rs"));
@@ -234,7 +237,7 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
         .force_draw();
     let text = harness.screen().join("\n");
     assert!(!text.contains("new_a_"), "old cards stayed: {text}");
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     let second_screen = harness.screen();
     let text = second_screen.join("\n");
     assert!(
@@ -250,21 +253,21 @@ fn changing_directories_clears_old_cards_and_resets_scrolling() {
             ..first_context
         },
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     assert!(harness.screen().join("\n").contains("new_a_00"));
     harness.set_props::<SelectedDiffHost>(SelectedDiffHostProps {
         context: second_context,
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     assert_eq!(harness.screen(), second_screen);
 }
 
 #[test]
 fn selecting_a_directory_shows_all_changed_files_and_a_file_keeps_the_regular_viewer() {
-    let (mut harness, pipeline, redraws) = setup(1);
+    let (mut harness, services, redraws) = setup(1);
 
     harness.press(loom::crokey::key!(j)).force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
     let cards = harness
         .screen()
         .iter()
@@ -287,7 +290,7 @@ fn selecting_a_directory_shows_all_changed_files_and_a_file_keeps_the_regular_vi
         .position(|line| line.chars().take(32).collect::<String>().contains("a.rs"))
         .expect("Explorer lists src/a.rs");
     harness.click(2, selected_file_row as u16).force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
 
     let file_view = harness.screen().join("\n");
     assert!(file_view.contains("new_a_marker"), "{file_view}");
@@ -297,7 +300,7 @@ fn selecting_a_directory_shows_all_changed_files_and_a_file_keeps_the_regular_vi
     );
 }
 
-/// The paths a pipeline has read, in order.
+/// The paths a diff service has read, in order.
 type Reads = Arc<Mutex<Vec<String>>>;
 
 /// A directory of `count` files with `lines` changed lines each, shown in a
@@ -323,11 +326,10 @@ fn directory_viewer(
     let reads = Arc::new(Mutex::new(Vec::new()));
     let read_paths = Arc::clone(&reads);
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(DiffService::new(
+    let diff_service = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },
-        |_| Ok(Vec::new()),
         move |file| {
             read_paths
                 .lock()
@@ -346,32 +348,32 @@ fn directory_viewer(
             revs: files[0].revs().clone(),
             files: Rc::new(files),
         })),
-        diff_service: Some(Rc::clone(&pipeline)),
+        diff_service: Some(Rc::clone(&diff_service)),
         ..Context::default()
     };
     let mut harness =
         Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 80, height);
-    wait(&pipeline, &redraws, &mut harness);
-    (harness, pipeline, redraws, reads)
+    wait_diff(&diff_service, &redraws, &mut harness);
+    (harness, diff_service, redraws, reads)
 }
 
 #[test]
 fn a_file_is_read_only_when_the_end_of_the_cards_comes_into_view() {
-    let (mut harness, pipeline, redraws, reads) = directory_viewer(3, 20, 11);
+    let (mut harness, diff_service, redraws, reads) = directory_viewer(3, 20, 11);
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs"]);
 
     // Scroll near the end of the first card; the end line is still below.
     for _ in 0..3 {
         harness.wheel(40, 5, 1).force_draw();
     }
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs"]);
 
     for _ in 0..2 {
         harness.wheel(40, 5, 1).force_draw();
     }
     let before = harness.screen();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs", "dir/1.rs"]);
     let after = harness.screen();
     assert_eq!(
@@ -383,7 +385,7 @@ fn a_file_is_read_only_when_the_end_of_the_cards_comes_into_view() {
 
 #[test]
 fn short_files_keep_loading_until_the_view_is_full() {
-    let (mut harness, _pipeline, _redraws, reads) = directory_viewer(3, 1, 30);
+    let (mut harness, _diff_service, _redraws, reads) = directory_viewer(3, 1, 30);
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs", "dir/1.rs", "dir/2.rs"]);
     let screen = harness.screen().join("\n");
     for index in 0..3 {
@@ -396,18 +398,18 @@ fn short_files_keep_loading_until_the_view_is_full() {
 fn a_file_that_cannot_be_read_is_reported_and_the_next_one_still_loads() {
     let good = file("dir/good.rs");
     let bad = file("dir/bad.rs");
-    let (pipeline, redraws) = fake_pipeline(Vec::new(), vec![diff(good.clone(), "a", "b")]);
+    let (diff_service, redraws) = fake_diff_service(vec![diff(good.clone(), "a", "b")]);
     let context = Context {
         directory: Some(Rc::new(DirectorySelection {
             path: RepoPath::new("dir", Path::new("/repo")),
             revs: good.revs().clone(),
             files: Rc::new(vec![bad, good]),
         })),
-        diff_service: Some(Rc::clone(&pipeline)),
+        diff_service: Some(Rc::clone(&diff_service)),
         ..Context::default()
     };
     let mut harness = Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 80, 20);
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
 
     let screen = harness.screen().join("\n");
     assert!(screen.contains("cannot read dir/bad.rs"), "{screen}");
@@ -433,11 +435,10 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
     let read_paths = Arc::clone(&reads);
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let pipeline = Rc::new(DiffService::new(
+    let diff_service = Rc::new(DiffService::new(
         move || {
             let _ = redraw.send(());
         },
-        |_| Ok(Vec::new()),
         move |file| {
             read_paths
                 .lock()
@@ -459,11 +460,11 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
             revs: files[0].revs().clone(),
             files: Rc::new(files),
         })),
-        diff_service: Some(Rc::clone(&pipeline)),
+        diff_service: Some(Rc::clone(&diff_service)),
         ..Context::default()
     };
     let mut harness = Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 80, 11);
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
     for _ in 0..5 {
         harness.wheel(40, 5, 1).force_draw();
     }
@@ -472,7 +473,7 @@ fn only_one_file_is_read_at_a_time_while_the_end_line_comes_and_goes() {
         harness.wheel(40, 5, lines).force_draw();
     }
     release.send(()).unwrap();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
 
     // The second card pushed the end line out of view, so nothing else is read.
     assert_eq!(*reads.lock().unwrap(), ["dir/0.rs", "dir/1.rs"]);
@@ -514,22 +515,19 @@ fn directory_cards_render_added_deleted_untracked_empty_and_modified_files_and_s
         untracked.clone(),
         modified.clone(),
     ];
-    let (pipeline, redraws) = fake_pipeline(
-        vec![files.clone()],
-        vec![
-            single_file(
-                added,
-                &[long_added_line.as_str(), "fn added_second_line() {}"],
-            ),
-            single_file(empty_added, &[]),
-            single_file(
-                deleted,
-                &["fn deleted_first_line() {}", "fn deleted_second_line() {}"],
-            ),
-            single_file(untracked, &["fn untracked_full_line() {}"]),
-            diff(modified, "fn old_mod() {}", "fn new_mod() {}"),
-        ],
-    );
+    let (diff_service, redraws) = fake_diff_service(vec![
+        single_file(
+            added,
+            &[long_added_line.as_str(), "fn added_second_line() {}"],
+        ),
+        single_file(empty_added, &[]),
+        single_file(
+            deleted,
+            &["fn deleted_first_line() {}", "fn deleted_second_line() {}"],
+        ),
+        single_file(untracked, &["fn untracked_full_line() {}"]),
+        diff(modified, "fn old_mod() {}", "fn new_mod() {}"),
+    ]);
     let mut config = config::Config::default();
     config.ui.wrap = false;
     let context = Context {
@@ -540,11 +538,11 @@ fn directory_cards_render_added_deleted_untracked_empty_and_modified_files_and_s
             revs,
             files: Rc::new(files),
         })),
-        diff_service: Some(Rc::clone(&pipeline)),
+        diff_service: Some(Rc::clone(&diff_service)),
         ..Context::default()
     };
     let mut harness = Harness::new::<SelectedDiffHost>(SelectedDiffHostProps { context }, 72, 32);
-    wait(&pipeline, &redraws, &mut harness);
+    wait_diff(&diff_service, &redraws, &mut harness);
 
     let screen = harness.screen().join("\n");
     assert!(
@@ -641,7 +639,7 @@ fn directory_with_only_added_and_untracked_files_renders_their_cards() {
     )
     .set_change_type(ChangeType::Untracked);
     let files = vec![added.clone(), untracked.clone()];
-    let (pipeline, redraws) = fake_pipeline(
+    let (services, redraws) = fake_services(
         vec![files],
         vec![
             single_file(added, &["pub fn first_added() -> usize {", "    1", "}"]),
@@ -650,16 +648,18 @@ fn directory_with_only_added_and_untracked_files_renders_their_cards() {
     );
     let mut harness = Harness::new::<ExplorerDiffHost>(
         ExplorerDiffHostProps {
-            pipeline: Rc::clone(&pipeline),
+            vcs_service: Rc::clone(&services.vcs_service),
+            diff_service: Rc::clone(&services.diff_service),
+            syntax_service: Rc::clone(&services.syntax_service),
         },
         100,
         20,
     );
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
 
     // Select `new_dir` in Explorer.
     harness.press(loom::crokey::key!(j)).force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
 
     let pane = harness
         .screen()

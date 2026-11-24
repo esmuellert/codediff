@@ -18,12 +18,13 @@ App
                   └─ SingleFile
 ```
 
-`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the slots `diff_service::DiffService::open` returned for the selected file (or for a selected directory's opened files), chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
+`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the diff slot `DiffService::open` returned for the selected file (or for a selected directory's opened files), requests syntax spans from `SyntaxService`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
 
 ## Services and background work
 
-- `diff_service` (a `diff_service::DiffService`) lists files and opens files. Its threads fill the returned slots in and send `Redraw`; the main loop then redraws every component.
-- `VersionControlService` stages and unstages paths through `vcs`.
+- `VcsService` lists changed files, lists commits, and stages or unstages paths on one `"vcs"` thread.
+- `DiffService` reads file contents and computes aligned diffs on one `"diff"` thread.
+- `SyntaxService` highlights diffed files in chunks on one `"syntax"` thread.
 - `WatcherService` multicasts `watcher::Refresh` values.
 
 The UI thread never runs Git or computes a diff while painting. Selecting another file or directory drops the old slots, and the threads skip work for files nobody holds.

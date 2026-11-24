@@ -6,14 +6,16 @@
 // The opened files are spelled out in full rather than hidden behind a name.
 #![allow(clippy::type_complexity)]
 
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use diff_service::diff::DiffContent;
+use diff::DiffContent;
 use file_types::ViewerMode;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Layout, Listeners, Node, Scope, Scroll, ScrollOffset,
-    ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_measure, use_scroll,
+    ScrollProps, Text, TextProps, component, rsx, use_context, use_effect, use_measure, use_ref,
+    use_scroll,
 };
 use syntax::Span;
 
@@ -24,22 +26,23 @@ use crate::keybindings::Action;
 #[component]
 pub fn DiffCards(
     scope: &mut Scope,
-    files: Rc<
-        Vec<(
-            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-        )>,
-    >,
+    files: Rc<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
     more_files: bool,
     open_next: Rc<dyn Fn()>,
     viewer_mode: ViewerMode,
     wrap: bool,
 ) -> Node {
-    let theme = *use_context::<Ui>(scope).theme;
+    let ctx = use_context::<Ui>(scope);
+    let theme = *ctx.theme;
+    let syntax_service = ctx.syntax_service.clone();
     let viewer_mode = *viewer_mode;
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
+    let card_colours = use_ref(
+        scope,
+        HashMap::<usize, (usize, Arc<Mutex<[Vec<Vec<Span>>; 2]>>)>::new,
+    );
     let card_width = size.width.saturating_sub(2);
     let line = |key: usize, text: String| {
         rsx! {
@@ -56,17 +59,34 @@ pub fn DiffCards(
     let mut cards = Vec::new();
     let mut heights = Vec::new();
     let mut reading = false;
-    for (index, (diff, colours)) in files.iter().enumerate() {
+    for (index, diff) in files.iter().enumerate() {
         let diff = diff.lock().unwrap().clone();
         match diff {
             Some(Ok(content)) => {
+                let content_id = Arc::as_ptr(&content) as usize;
+                let colours = {
+                    let mut cached = card_colours.current();
+                    match cached.get(&index) {
+                        Some((cached_id, colours)) if *cached_id == content_id => {
+                            Arc::clone(colours)
+                        }
+                        _ => {
+                            let next_colours = match &syntax_service {
+                                Some(syntax_service) => syntax_service.colour(Arc::clone(&content)),
+                                None => Arc::new(Mutex::new([Vec::new(), Vec::new()])),
+                            };
+                            cached.insert(index, (content_id, Arc::clone(&next_colours)));
+                            next_colours
+                        }
+                    }
+                };
                 let height = card_height(&content, card_width, viewer_mode, wrap);
                 heights.push(height);
                 cards.push(rsx! {
                     DiffCard {
                         key: index,
                         content,
-                        colours: Arc::clone(colours),
+                        colours,
                         viewer_mode,
                         wrap,
                         height: Some(height),
@@ -75,6 +95,7 @@ pub fn DiffCards(
                 });
             }
             Some(Err(error)) => {
+                card_colours.current().remove(&index);
                 heights.push(1);
                 cards.push(line(index, error));
             }
@@ -85,6 +106,10 @@ pub fn DiffCards(
             }
         }
     }
+    card_colours
+        .current()
+        .retain(|&index, _| index < files.len());
+
     let shown = cards.len();
     let mut content_height: u32 = heights
         .iter()
@@ -107,7 +132,7 @@ pub fn DiffCards(
         }
     });
 
-    let keybindings = use_context::<Ui>(scope).keybindings;
+    let keybindings = ctx.keybindings;
     let listeners = Listeners::new().on_key(move |key| {
         if keybindings.matches(Action::MoveDown, key) {
             scroll.scroll_y_by(1);
