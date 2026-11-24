@@ -197,8 +197,8 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         scope,
         show_worktree,
         &ctx.repo,
-        ctx.diff_service.as_ref(),
-        ctx.watcher_service.as_ref(),
+        ctx.vcs.as_ref(),
+        ctx.watcher.as_ref(),
     );
     let worktree_summary: Option<Rc<str>> =
         show_worktree.then(|| loaded_summary.unwrap_or_else(|| Rc::from("")));

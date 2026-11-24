@@ -9,7 +9,7 @@ mod view;
 
 pub use keybindings::{Action, KeyMap};
 pub use theme::{Flavour, Rgb, TerminalProbe, Theme, blend, catppuccin, probe};
-pub use vcs::Commit;
+pub use vcs::{Commit, RevisionRange};
 
 pub use crossterm;
 pub use ratatui;
@@ -27,15 +27,14 @@ use std::thread;
 use loom::{Flow, Tree, deliver_input};
 
 use components::{App, AppProps};
-use services::version_control::VersionControlService;
-use services::watcher::WatcherService;
+use services::{DiffService, SyntaxService, VcsService, WatcherService};
 
 enum Event {
     Terminal(crossterm::event::Event),
     #[cfg(unix)]
     Signal(i32),
     RepositoryChanged(watcher::Refresh),
-    /// A background thread changed a file list or file diff.
+    /// A background thread changed a file list, file diff, or syntax spans.
     Redraw,
 }
 
@@ -62,35 +61,43 @@ pub fn main(
     let config = Rc::new(config);
     let keybindings =
         Rc::new(KeyMap::from_config(&config.keybindings).map_err(std::io::Error::other)?);
-    let diff_settings = diff_service::diff::Settings {
+    let diff_settings = diff::Settings {
         ignore_trim_whitespace: config.diff.ignore_trim_whitespace,
     };
     let (events_tx, events_rx) = mpsc::channel::<Event>();
 
-    let redraw = events_tx.clone();
-    let pipeline = Rc::new(diff_service::DiffService::start(
+    let vcs_redraw = events_tx.clone();
+    let vcs = Rc::new(VcsService::start(move || {
+        let _ = vcs_redraw.send(Event::Redraw);
+    }));
+    let diff_redraw = events_tx.clone();
+    let diff = Rc::new(DiffService::start(
         move || {
-            let _ = redraw.send(Event::Redraw);
+            let _ = diff_redraw.send(Event::Redraw);
         },
         diff_settings,
     ));
-    let _watcher_subscription = watcher::subscribe(
-        &watcher_root,
-        channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
-    )
-    .map_err(std::io::Error::other)?;
-
-    let version_control_service = Rc::new(VersionControlService::new());
-    let watcher_service = Rc::new(WatcherService::new());
+    let syntax_redraw = events_tx.clone();
+    let syntax = Rc::new(SyntaxService::start(move || {
+        let _ = syntax_redraw.send(Event::Redraw);
+    }));
+    let watcher = Rc::new(
+        WatcherService::start(
+            &watcher_root,
+            channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
+        )
+        .map_err(std::io::Error::other)?,
+    );
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
         revision_range,
         config,
         keybindings,
-        diff_service: pipeline,
-        version_control_service,
-        watcher_service: Rc::clone(&watcher_service),
+        vcs,
+        diff,
+        syntax,
+        watcher: Rc::clone(&watcher),
     });
 
     #[cfg(unix)]
@@ -122,7 +129,7 @@ pub fn main(
                 std::process::exit(128 + signal);
             }
             Event::RepositoryChanged(refresh) => {
-                watcher_service.deliver(refresh);
+                watcher.notify(refresh);
                 Flow::Continue
             }
             Event::Redraw => {

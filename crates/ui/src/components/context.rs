@@ -3,17 +3,14 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use diff_service::DiffService;
-use diff_service::files::RevisionRange;
 use file_types::{File, RepoPath, Revs};
 use loom::{SetState, context};
 
 use super::revisions::RevisionSide;
-use crate::Commit;
 use crate::keybindings::KeyMap;
-use crate::services::version_control::VersionControlService;
-use crate::services::watcher::WatcherService;
+use crate::services::{DiffService, SyntaxService, VcsService, WatcherService};
 use crate::theme::Theme;
+use crate::{Commit, RevisionRange};
 
 /// A selected directory and the changed files beneath it.
 #[derive(Clone)]
@@ -52,9 +49,10 @@ pub struct Context {
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub directory: Option<Rc<DirectorySelection>>,
     pub set_directory: Option<SetState<Option<Rc<DirectorySelection>>>>,
-    pub diff_service: Option<Rc<DiffService>>,
-    pub version_control_service: Option<Rc<VersionControlService>>,
-    pub watcher_service: Option<Rc<WatcherService>>,
+    pub vcs: Option<Rc<VcsService>>,
+    pub diff: Option<Rc<DiffService>>,
+    pub syntax: Option<Rc<SyntaxService>>,
+    pub watcher: Option<Rc<WatcherService>>,
 }
 
 impl Default for Context {
@@ -74,9 +72,10 @@ impl Default for Context {
             set_file: None,
             directory: None,
             set_directory: None,
-            diff_service: None,
-            version_control_service: None,
-            watcher_service: None,
+            vcs: None,
+            diff: None,
+            syntax: None,
+            watcher: None,
         }
     }
 }
@@ -97,12 +96,10 @@ impl Context {
             && self.set_file == other.set_file
             && same_rc(&self.directory, &other.directory)
             && self.set_directory == other.set_directory
-            && same_rc(&self.diff_service, &other.diff_service)
-            && same_rc(
-                &self.version_control_service,
-                &other.version_control_service,
-            )
-            && same_rc(&self.watcher_service, &other.watcher_service)
+            && same_rc(&self.vcs, &other.vcs)
+            && same_rc(&self.diff, &other.diff)
+            && same_rc(&self.syntax, &other.syntax)
+            && same_rc(&self.watcher, &other.watcher)
     }
 }
 

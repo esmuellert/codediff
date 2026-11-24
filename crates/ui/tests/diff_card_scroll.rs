@@ -1,30 +1,22 @@
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
-
-#[path = "support/fake_pipeline.rs"]
-mod fake_pipeline;
+#[path = "support/fake_services.rs"]
+mod fake_services;
 
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use diff_service::diff::{self, DiffContent};
+use diff::DiffContent;
 use file_types::{CommitHash, File, RepoPath, Revs, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx};
-use syntax::Span;
 use ui::Theme;
 use ui::components::{Context, DiffCards, DiffCardsProps, Ui};
+use ui::services::Resource;
 
 #[component]
 fn Cards(
     _scope: &mut Scope,
-    files: Rc<
-        Vec<(
-            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-        )>,
-    >,
+    files: Rc<Vec<Resource<Arc<DiffContent>>>>,
     viewer_mode: ViewerMode,
     wrap: bool,
 ) -> Node {
@@ -39,13 +31,8 @@ fn Cards(
     }
 }
 
-fn files() -> Rc<
-    Vec<(
-        Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-        Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-    )>,
-> {
-    Rc::new(fake_pipeline::opened(
+fn files() -> Rc<Vec<Resource<Arc<DiffContent>>>> {
+    Rc::new(fake_services::loaded(
         (0..3)
             .map(|file| {
                 let original: Vec<_> = (1..=36)
@@ -100,12 +87,7 @@ fn files() -> Rc<
 }
 
 fn harness(
-    files: &Rc<
-        Vec<(
-            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-        )>,
-    >,
+    files: &Rc<Vec<Resource<Arc<DiffContent>>>>,
     layout: ViewerMode,
     wrap: bool,
     height: u16,

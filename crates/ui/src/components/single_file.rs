@@ -28,7 +28,7 @@ pub(crate) struct SingleFileGeometry {
 }
 
 pub(crate) fn single_file_geometry(
-    single: &diff_service::diff::SingleFile,
+    single: &diff::SingleFile,
     width: u16,
     wrap: bool,
 ) -> SingleFileGeometry {
@@ -54,7 +54,7 @@ pub(crate) fn single_file_geometry(
 #[component]
 pub(crate) fn SingleFile(
     scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
+    content: Arc<diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
     geometry: Rc<SingleFileGeometry>,
     viewport: DiffVisibleRange,
@@ -66,7 +66,7 @@ pub(crate) fn SingleFile(
     let viewport = viewport.clone();
     let ctx = use_context::<Ui>(scope);
     let colours = colours.lock().unwrap();
-    let diff_service::diff::DiffContent::SingleFile(single) = content.as_ref() else {
+    let diff::DiffContent::SingleFile(single) = content.as_ref() else {
         unreachable!("SingleFile requires one-sided file content")
     };
     let version = single.side();
@@ -183,7 +183,7 @@ pub(crate) fn SingleFile(
 }
 
 fn wrapped_lines(
-    single: &diff_service::diff::SingleFile,
+    single: &diff::SingleFile,
     version: DiffVersion,
     code_width: u16,
     wrap: bool,

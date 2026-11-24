@@ -3,7 +3,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use diff_service::diff::{DiffContent, SingleFile};
+use diff::{DiffContent, SingleFile};
 use file_types::File;
 
 use super::{repo_path, worktree_revs};

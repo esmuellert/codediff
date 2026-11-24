@@ -4,21 +4,20 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
-use diff_service::DiffService;
 use loom::testing::Harness;
 use loom::{Layout, Node, Row, RowProps, Scope, component, rsx};
 use ui::Theme;
 use ui::components::diff_viewer::DiffViewer;
 use ui::components::{Context, Explorer, Ui, UiProps};
-use ui::services::watcher::WatcherService;
+use ui::services::{DiffService, VcsService, WatcherService};
 
-use super::common::{fake_pipeline, file, file_with_stats, wait};
+use super::common::{fake_services, fake_vcs, file, file_with_stats, wait, wait_vcs};
 
 #[component]
 fn SelectionHost(
     scope: &mut Scope,
-    pipeline: Rc<DiffService>,
-    watcher_service: Rc<WatcherService>,
+    vcs: Rc<VcsService>,
+    watcher: Rc<WatcherService>,
     initial_file: Rc<file_types::File>,
     observed_file: Rc<RefCell<Option<file_types::File>>>,
 ) -> Node {
@@ -32,8 +31,8 @@ fn SelectionHost(
                 repo: Rc::from(Path::new("/repo")),
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
-                diff_service: Some(Rc::clone(pipeline)),
-                watcher_service: Some(Rc::clone(watcher_service)),
+                vcs: Some(Rc::clone(vcs)),
+                watcher: Some(Rc::clone(watcher)),
                 ..Context::default()
             },
             Explorer {}
@@ -44,8 +43,9 @@ fn SelectionHost(
 #[component]
 fn ReviewHost(
     scope: &mut Scope,
-    pipeline: Rc<DiffService>,
-    watcher_service: Rc<WatcherService>,
+    vcs: Rc<VcsService>,
+    diff: Rc<DiffService>,
+    watcher: Rc<WatcherService>,
     initial_file: Rc<file_types::File>,
 ) -> Node {
     let initial_file = Rc::clone(initial_file);
@@ -57,8 +57,9 @@ fn ReviewHost(
                 repo: Rc::from(Path::new("/repo")),
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
-                diff_service: Some(Rc::clone(pipeline)),
-                watcher_service: Some(Rc::clone(watcher_service)),
+                vcs: Some(Rc::clone(vcs)),
+                diff: Some(Rc::clone(diff)),
+                watcher: Some(Rc::clone(watcher)),
                 ..Context::default()
             },
             Row {
@@ -73,8 +74,8 @@ fn ReviewHost(
 
 struct SelectionHarness {
     harness: Harness,
-    pipeline: Rc<DiffService>,
-    watcher_service: Rc<WatcherService>,
+    vcs: Rc<VcsService>,
+    watcher: Rc<WatcherService>,
     redraws: Receiver<()>,
     observed_file: Rc<RefCell<Option<file_types::File>>>,
 }
@@ -83,35 +84,35 @@ fn selection_harness(
     lists: Vec<Vec<file_types::File>>,
     selected: file_types::File,
 ) -> SelectionHarness {
-    let (pipeline, redraws) = fake_pipeline(lists, Vec::new());
-    let watcher_service = Rc::new(WatcherService::new());
+    let (vcs, redraws) = fake_vcs(lists);
+    let watcher = Rc::new(WatcherService::fake());
     let observed_file = Rc::new(RefCell::new(None));
     let mut harness = Harness::new::<SelectionHost>(
         SelectionHostProps {
-            pipeline: Rc::clone(&pipeline),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
             initial_file: Rc::new(selected),
             observed_file: Rc::clone(&observed_file),
         },
         40,
         5,
     );
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
     SelectionHarness {
         harness,
-        pipeline,
-        watcher_service,
+        vcs,
+        watcher,
         redraws,
         observed_file,
     }
 }
 
 fn refresh(harness: &mut SelectionHarness) {
-    harness.watcher_service.deliver(watcher::Refresh {
+    harness.watcher.notify(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait(&harness.pipeline, &harness.redraws, &mut harness.harness);
+    wait_vcs(&harness.vcs, &harness.redraws, &mut harness.harness);
 }
 
 fn added_file(path: &str) -> file_types::File {
@@ -144,30 +145,31 @@ fn an_empty_refresh_clears_the_selected_file() {
 #[test]
 fn clearing_the_last_change_replaces_its_diff_with_welcome() {
     let selected = added_file("selected.rs");
-    let content = diff_service::diff::DiffContent::SingleFile(diff_service::diff::SingleFile {
+    let content = diff::DiffContent::SingleFile(diff::SingleFile {
         file: selected.clone(),
         lines: Arc::new(vec!["stale body".to_owned()]),
     });
-    let (pipeline, redraws) =
-        fake_pipeline(vec![vec![selected.clone()], Vec::new()], vec![content]);
-    let watcher_service = Rc::new(WatcherService::new());
+    let (services, redraws) =
+        fake_services(vec![vec![selected.clone()], Vec::new()], vec![content]);
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<ReviewHost>(
         ReviewHostProps {
-            pipeline: Rc::clone(&pipeline),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&services.vcs),
+            diff: Rc::clone(&services.diff),
+            watcher: Rc::clone(&watcher),
             initial_file: Rc::new(selected),
         },
         100,
         12,
     );
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
     assert!(harness.screen().join("\n").contains("stale body"));
 
-    watcher_service.deliver(watcher::Refresh {
+    watcher.notify(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait(&pipeline, &redraws, &mut harness);
+    wait(&services, &redraws, &mut harness);
 
     let screen = harness.screen().join("\n");
     assert!(screen.contains("Select a file"), "got {screen:?}");

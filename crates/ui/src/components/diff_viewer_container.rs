@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use diff_service::diff::DiffContent;
+use diff::DiffContent;
 use file_types::ViewerMode;
 use loom::{
     Column, ColumnProps, Layout, Node, Ref, Scope, Scroll, ScrollOffset, ScrollProps, ScrollView,

@@ -11,7 +11,7 @@ use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerConta
 use ui::components::{Context, Ui};
 
 #[component]
-fn SideBySide(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) -> Node {
+fn SideBySide(scope: &mut Scope, content: Arc<diff::DiffContent>) -> Node {
     let scroll_positions = use_ref(scope, HashMap::<String, ScrollPosition>::new);
     let state = use_ref(scope, ScrollPosition::default);
     let key = content.file().path().as_str().to_owned();
@@ -42,24 +42,17 @@ fn SideBySide(scope: &mut Scope, content: Arc<diff_service::diff::DiffContent>) 
     }
 }
 
-fn content(original: &str, modified: &str) -> Arc<diff_service::diff::DiffContent> {
+fn content(original: &str, modified: &str) -> Arc<diff::DiffContent> {
     let original_lines = [original];
     let modified_lines = [modified];
-    let diff = diff_service::diff::compute(
-        &original_lines,
-        &modified_lines,
-        diff_service::diff::Settings::default(),
-    )
-    .expect("a diff");
-    let alignment =
-        diff_service::diff::align(diff, &original_lines, &modified_lines).expect("an alignment");
+    let diff =
+        diff::compute(&original_lines, &modified_lines, diff::Settings::default()).expect("a diff");
+    let alignment = diff::align(diff, &original_lines, &modified_lines).expect("an alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("scroll.rs", Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     );
-    Arc::new(diff_service::diff::DiffContent::Diff(
-        diff_service::diff::Diff { file, alignment },
-    ))
+    Arc::new(diff::DiffContent::Diff(diff::Diff { file, alignment }))
 }
 
 #[test]

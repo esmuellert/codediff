@@ -19,11 +19,7 @@ use super::{
 };
 
 #[component]
-fn InlineHost(
-    scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
-    wrap: bool,
-) -> Node {
+fn InlineHost(scope: &mut Scope, content: Arc<diff::DiffContent>, wrap: bool) -> Node {
     let scroll_position = use_ref(scope, ScrollPosition::default);
     let content_id = Arc::as_ptr(content) as usize;
     rsx! {
@@ -47,7 +43,7 @@ pub(super) fn run(
     wrap: bool,
 ) -> Result<()> {
     let content = load_diff_content(original_path, modified_path, ignore_trim_whitespace)?;
-    let diff_service::diff::DiffContent::Diff(diff) = content.as_ref() else {
+    let diff::DiffContent::Diff(diff) = content.as_ref() else {
         unreachable!()
     };
     let original = diff.alignment.lines(DiffVersion::Original);

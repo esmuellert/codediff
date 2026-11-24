@@ -1,20 +1,18 @@
 //! Tests for the `RevisionPicker` component.
 
-#![allow(clippy::type_complexity)]
-
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use std::path::Path;
 
-use diff_service::DiffService;
-use diff_service::files::RevisionRange;
 use file_types::{CommitHash, File, RepoPath, Revs};
 use loom::crokey::key;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_memo, use_state};
 use ratatui::style::{Color, Modifier};
+use ui::RevisionRange;
 use ui::components::{Context, RevisionPicker, RevisionSide, Ui, UiProps};
+use ui::services::VcsService;
 use ui::{Commit, Theme};
 
 fn commit(hash: &str, parents: &[&str], subject: &str) -> Commit {
@@ -100,9 +98,9 @@ fn PickerHost(
     let theme_val = *theme;
     let theme_rc = use_memo(scope, theme_val.name, move || theme_val);
     let files_count = *worktree_files;
-    let diff_service = use_memo(scope, files_count, move || {
+    let vcs = use_memo(scope, files_count, move || {
         let files = files_count.map(fake_worktree_files).unwrap_or_default();
-        DiffService::new(|| {}, move |_| Ok(files.clone()), |_| Err(String::new()))
+        VcsService::fake(|| {}, move |_, _| Ok(files.clone()), |_, _| Ok(Vec::new()))
     });
     let mut ctx = (*base).clone();
     ctx.theme = theme_rc;
@@ -112,7 +110,7 @@ fn PickerHost(
     ctx.picking = picking;
     ctx.set_picking = picking_log.is_some().then_some(set_picking);
     ctx.commits = Rc::clone(commits);
-    ctx.diff_service = files_count.map(|_| Rc::clone(&diff_service));
+    ctx.vcs = files_count.map(|_| Rc::clone(&vcs));
     rsx! {
         Ui {
             value: ctx,

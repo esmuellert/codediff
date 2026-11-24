@@ -7,7 +7,7 @@ use ui::Theme;
 use ui::components::border::{Border, BorderProps};
 use ui::components::{Context, Explorer, Ui};
 
-use super::common::{fake_pipeline, file, harness as explorer_harness, wait};
+use super::common::{fake_vcs, file, harness as explorer_harness, wait_vcs};
 
 #[component]
 fn BorderedExplorer(scope: &mut Scope) -> Node {
@@ -36,17 +36,16 @@ fn selection_background_fills_an_unbordered_explorer() {
 
 #[test]
 fn selection_background_fills_every_cell_inside_the_border() {
-    let (pipeline, redraws) =
-        fake_pipeline(vec![vec![file("src/a.rs"), file("src/b.rs")]], Vec::new());
+    let (vcs, redraws) = fake_vcs(vec![vec![file("src/a.rs"), file("src/b.rs")]]);
     let mut harness = Harness::new::<BorderedExplorer>(BorderedExplorerProps {}, 44, 8)
         .provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
             repo: Rc::from(Path::new("/repo")),
-            diff_service: Some(Rc::clone(&pipeline)),
+            vcs: Some(Rc::clone(&vcs)),
             ..Context::default()
         });
     harness.force_draw();
-    wait(&pipeline, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
     harness.force_draw();
     harness.press(crokey::key!(j));
     harness.force_draw();

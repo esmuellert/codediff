@@ -1,10 +1,10 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use diff_service::files::RevisionRange;
 use file_types::CommitHash;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_state};
+use ui::RevisionRange;
 use ui::components::{Context, RevisionHeader, RevisionSide, Ui, UiProps};
 use ui::ratatui::style::Modifier;
 use ui::{Commit, Theme};

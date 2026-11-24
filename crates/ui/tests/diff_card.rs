@@ -1,20 +1,17 @@
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
-
-#[path = "support/fake_pipeline.rs"]
-mod fake_pipeline;
+#[path = "support/fake_services.rs"]
+mod fake_services;
 
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use diff_service::diff::{self, DiffContent};
+use diff::DiffContent;
 use file_types::{CommitHash, File, RepoPath, Revs, Stats, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
-use syntax::Span;
 use ui::Theme;
 use ui::components::{Context, DiffCard, DiffCardProps, DiffCards, DiffCardsProps, Ui};
+use ui::services::Resource;
 
 fn file_at(path: &str) -> File {
     File::unchanged_path(
@@ -73,15 +70,7 @@ fn harness(content: DiffContent, width: u16, height: u16) -> Harness {
 }
 
 #[component]
-fn CardsHost(
-    _scope: &mut Scope,
-    files: Rc<
-        Vec<(
-            Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-            Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
-        )>,
-    >,
-) -> Node {
+fn CardsHost(_scope: &mut Scope, files: Rc<Vec<Resource<Arc<DiffContent>>>>) -> Node {
     rsx! {
         DiffCards {
             files: Rc::clone(files),
@@ -94,7 +83,7 @@ fn CardsHost(
 }
 
 fn cards_harness(contents: Vec<DiffContent>, width: u16, height: u16) -> Harness {
-    let files = Rc::new(fake_pipeline::opened(contents));
+    let files = Rc::new(fake_services::loaded(contents));
     Harness::new::<CardsHost>(CardsHostProps { files }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         ..Context::default()
@@ -106,7 +95,10 @@ fn card_draws_its_header_and_compact_diff() {
     let mut harness = harness(diff(&["before"], &["after"]), 60, 8);
     harness.force_draw().force_draw();
 
-    let screen = harness.screen().join("\n");
+    let screen = harness.screen().join(
+        "
+",
+    );
     assert!(screen.contains("src/card.rs"), "{screen}");
     assert!(screen.contains("before"), "{screen}");
     assert!(screen.contains("after"), "{screen}");
@@ -133,18 +125,30 @@ fn card_scrolls_horizontally_without_vertical_scrolling() {
     let modified = [modified.as_str()];
     let mut harness = harness(diff(&original, &modified), 40, 8);
     harness.force_draw().force_draw();
-    let start = harness.screen().join("\n");
+    let start = harness.screen().join(
+        "
+",
+    );
 
     for _ in 0..20 {
         harness.press(crokey::key!(l));
     }
     harness.force_draw();
-    let horizontal = harness.screen().join("\n");
+    let horizontal = harness.screen().join(
+        "
+",
+    );
     assert_ne!(horizontal, start);
     assert!(horizontal.contains("fedcba"), "{horizontal}");
 
     harness.press(crokey::key!(j)).force_draw();
-    assert_eq!(harness.screen().join("\n"), horizontal);
+    assert_eq!(
+        harness.screen().join(
+            "
+"
+        ),
+        horizontal
+    );
 }
 
 #[test]
@@ -187,7 +191,10 @@ fn cards_scroll_vertically_as_one_collection() {
     ];
     let mut harness = cards_harness(contents, 50, 8);
     harness.force_draw().force_draw();
-    let start = harness.screen().join("\n");
+    let start = harness.screen().join(
+        "
+",
+    );
     assert!(start.contains("first.rs"), "{start}");
     assert!(!start.contains("second.rs"), "{start}");
 
@@ -202,7 +209,10 @@ fn cards_scroll_vertically_as_one_collection() {
         harness.press(crokey::key!(j));
     }
     harness.force_draw();
-    let scrolled = harness.screen().join("\n");
+    let scrolled = harness.screen().join(
+        "
+",
+    );
     assert!(scrolled.contains("second.rs"), "{scrolled}");
     assert_ne!(scrolled, start);
 }

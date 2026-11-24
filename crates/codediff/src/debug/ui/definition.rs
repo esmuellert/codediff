@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use diff_service::diff::DiffContent;
+use diff::DiffContent;
 use file_types::File;
 use loom::crokey::KeyCombination;
 use ui::components::RevisionSide;

@@ -348,7 +348,7 @@ dependencies = [
  "anyhow",
  "clap",
  "config",
- "diff-service",
+ "diff",
  "file-types",
  "fixtures",
  "line-index",
@@ -606,16 +606,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "diff-service"
+name = "diff"
 version = "0.36.0"
 dependencies = [
  "align",
  "anyhow",
+ "diff-types",
  "file-types",
- "fixtures",
- "syntax",
  "tracing",
- "vcs",
  "vscode-diff",
 ]
 
@@ -2755,9 +2753,10 @@ dependencies = [
  "config",
  "crokey",
  "crossterm",
- "diff-service",
+ "diff",
  "diff-types",
  "file-types",
+ "fixtures",
  "line-index",
  "loom",
  "portable-pty",

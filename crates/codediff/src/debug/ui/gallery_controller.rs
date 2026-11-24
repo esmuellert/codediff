@@ -5,14 +5,13 @@ use std::rc::Rc;
 use std::sync::mpsc::{self, Sender};
 
 use anyhow::Result;
-use diff_service::DiffService;
 use loom::{Flow, Tree, deliver_input};
 
 use super::catalog;
 use super::catalog_view::{CatalogRoot, CatalogRootProps};
 use super::definition::{LiveRepo, StoryDefinition};
 use super::preview::{PreviewAction, StoryPreview};
-use super::story_host::{settle_story_tree, story_props};
+use super::story_host::{StoryServices, settle_story_tree, story_props};
 
 enum GalleryEvent {
     Terminal(ui::crossterm::event::Event),
@@ -25,7 +24,7 @@ enum GalleryEvent {
 
 struct ActiveStory {
     definition: &'static StoryDefinition,
-    pipeline: Rc<DiffService>,
+    services: StoryServices,
     _repo: Option<LiveRepo>,
     initial_keys_applied: bool,
 }
@@ -62,7 +61,7 @@ impl GalleryController {
         let fixture = definition.create_fixture()?;
         let redraw = self.events_tx.clone();
         let navigation_tx = self.events_tx.clone();
-        let (pipeline, props, repo) = story_props(
+        let (services, props, repo) = story_props(
             definition,
             fixture,
             move || {
@@ -77,7 +76,7 @@ impl GalleryController {
         self.selected_story_index = index;
         self.active_story = Some(ActiveStory {
             definition,
-            pipeline,
+            services,
             _repo: repo,
             initial_keys_applied: definition.initial_keys.is_empty(),
         });
@@ -106,17 +105,17 @@ impl GalleryController {
     }
 
     /// Draws what the background threads changed. A story's keys are pressed
-    /// once its files have loaded.
+    /// once its files and colours have loaded.
     fn redraw(&mut self, tree: &mut Tree) {
         tree.redraw_all();
+        settle_story_tree(tree);
         let Some(story) = self.active_story.as_mut() else {
             return;
         };
-        if story.initial_keys_applied || story.pipeline.is_busy() {
+        if story.initial_keys_applied || story.services.is_busy() {
             return;
         }
         story.initial_keys_applied = true;
-        settle_story_tree(tree);
         for &key in story.definition.initial_keys {
             tree.press(key);
             settle_story_tree(tree);

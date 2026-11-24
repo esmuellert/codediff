@@ -8,24 +8,24 @@ This file describes the implementation that is currently in the repository. It i
 codediff
   └─ ui::main
       ├─ config              load user preferences before terminal setup
-      ├─ diff-service        three background threads:
-      │   ├─ files           Git status and line statistics
+      ├─ services            three background worker threads:
+      │   ├─ vcs             Git status, commits, line statistics, and staging
       │   ├─ diff            Git content → VS Code diff → alignment
       │   └─ syntax          syntax spans for each diffed file
       ├─ watcher             filesystem and Git-directory invalidations
       └─ loom tree           event routing, layout, components, painting
 ```
 
-The UI thread owns the terminal and the Loom tree. Background threads perform blocking Git, diff, syntax, and filesystem work. The pipeline threads write each result straight into the shared slot (`Arc<Mutex<…>>`) it was given and then ask the main loop to redraw. A result nobody holds any more is not written, so a file the user has left cannot appear.
+The UI thread owns the terminal and the Loom tree. Background threads perform blocking Git, diff, syntax, and filesystem work. Each service worker writes its result into the `Resource<T>` it was given and then asks the main loop to redraw. A result nobody holds any more is not written, so a file the user has left cannot appear.
 
 Opening a file follows this path:
 
-1. `Explorer` calls `DiffService::list_files` and shows the files once the slot is filled in.
+1. `Explorer` calls `VcsService::list_files` and shows the files once the `Resource` is ready.
 2. `Explorer` puts the selected `file_types::File` into shared context.
-3. `DiffViewer` calls `DiffService::open`, which returns two slots: the diff (or why it failed), and the syntax spans of each line.
-4. The diff thread reads both sides, computes the diff with `vscode-diff`, and builds an `align::Alignment`.
-5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there.
-6. The syntax thread then colours the whole file in pieces; each piece is drawn as it arrives.
+3. `DiffViewer` calls `DiffService::load`, which returns a `Resource<Arc<DiffContent>>`.
+4. The diff thread reads both sides, computes the diff with `vscode-diff`, and builds a `diff::DiffContent`.
+5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there, and calls `SyntaxService::highlight` for its syntax spans.
+6. The syntax thread colours the file in chunks; each chunk is drawn as it arrives.
 
 A selected directory opens its files one at a time, when the line below the last card comes into view.
 
@@ -39,7 +39,7 @@ The watcher sends refresh categories, not a list of changed paths. Explorer resc
 | `ui` | application components, services, navigation, themes, terminal integration |
 | `config` | versioned JSON user preferences, platform paths, and atomic persistence |
 | `loom` / `loom-macros` | terminal component tree, hooks, layout, paint, events, and RSX macros |
-| `diff-service` | `DiffService`: lists files, then reads, diffs and colours them on background threads |
+| `diff` | computes and aligns file diffs from loaded file contents |
 | `vcs` | Git commands, status parsing, revision reads, line statistics, staging |
 | `watcher` | repository filesystem invalidations and the watcher helper binary |
 | `syntax` | language detection, Tree-sitter/TextMate engines, syntax spans and cache |

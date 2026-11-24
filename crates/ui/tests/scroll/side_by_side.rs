@@ -12,12 +12,12 @@ use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
-use crate::fake_pipeline::coloured;
+use crate::fake_services::highlighted;
 
 #[component]
 fn TestSideBySide(
     scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
+    content: Arc<diff::DiffContent>,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Node {
     let scroll_positions = use_ref(scope, HashMap::<String, ScrollPosition>::new);
@@ -53,10 +53,7 @@ fn TestSideBySide(
 }
 
 #[component]
-fn TestSideBySideUnwrapped(
-    scope: &mut Scope,
-    content: Arc<diff_service::diff::DiffContent>,
-) -> Node {
+fn TestSideBySideUnwrapped(scope: &mut Scope, content: Arc<diff::DiffContent>) -> Node {
     let scroll_position = use_ref(scope, ScrollPosition::default);
     let content_id = Arc::as_ptr(content) as usize;
     rsx! {
@@ -73,16 +70,14 @@ fn TestSideBySideUnwrapped(
     }
 }
 
-fn make_diff(original: &[&str], modified: &[&str]) -> diff_service::diff::Diff {
-    let diff =
-        diff_service::diff::compute(original, modified, diff_service::diff::Settings::default())
-            .expect("a diff");
-    let alignment = diff_service::diff::align(diff, original, modified).expect("alignment");
+fn make_diff(original: &[&str], modified: &[&str]) -> diff::Diff {
+    let diff = diff::compute(original, modified, diff::Settings::default()).expect("a diff");
+    let alignment = diff::align(diff, original, modified).expect("alignment");
     let file = file_types::File::unchanged_path(
         file_types::RepoPath::new("test.rs", std::path::Path::new("/repo")),
         file_types::Revs::worktree_against(file_types::CommitHash::new("abc")),
     );
-    diff_service::diff::Diff { file, alignment }
+    diff::Diff { file, alignment }
 }
 
 fn harness_with_colours(
@@ -92,9 +87,7 @@ fn harness_with_colours(
     height: u16,
     colours: Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
 ) -> Harness {
-    let content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
-        original, modified,
-    )));
+    let content = Arc::new(diff::DiffContent::Diff(make_diff(original, modified)));
     Harness::new::<TestSideBySide>(TestSideBySideProps { content, colours }, width, height)
         .provide::<Ui>(Context {
             theme: Rc::new(Theme::DARK),
@@ -111,9 +104,7 @@ fn render(original: &[&str], modified: &[&str], width: u16, height: u16) -> Vec<
 }
 
 fn harness_unwrapped(original: &[&str], modified: &[&str], width: u16, height: u16) -> Harness {
-    let content = Arc::new(diff_service::diff::DiffContent::Diff(make_diff(
-        original, modified,
-    )));
+    let content = Arc::new(diff::DiffContent::Diff(make_diff(original, modified)));
     let mut harness = Harness::new::<TestSideBySideUnwrapped>(
         TestSideBySideUnwrappedProps { content },
         width,
@@ -171,8 +162,8 @@ fn a_divider_separates_the_two_sides() {
 }
 
 #[test]
-fn the_pipeline_colours_both_sides() {
-    let colours = coloured(diff_service::diff::DiffContent::Diff(make_diff(
+fn syntax_service_colours_both_sides() {
+    let colours = highlighted(diff::DiffContent::Diff(make_diff(
         &["fn before() {}"],
         &["fn after() {}"],
     )));
