@@ -12,7 +12,7 @@ use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
-use crate::fake_services::coloured;
+use crate::fake_services::highlighted;
 
 #[component]
 fn TestSideBySide(
@@ -163,7 +163,7 @@ fn a_divider_separates_the_two_sides() {
 
 #[test]
 fn syntax_service_colours_both_sides() {
-    let colours = coloured(diff::DiffContent::Diff(make_diff(
+    let colours = highlighted(diff::DiffContent::Diff(make_diff(
         &["fn before() {}"],
         &["fn after() {}"],
     )));

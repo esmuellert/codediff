@@ -14,19 +14,19 @@ use ui::components::{App, AppProps};
 use ui::services::{DiffService, SyntaxService, VcsService, WatcherService};
 
 fn idle_app() -> Harness {
-    let vcs_service = VcsService::new(|| {}, |_, _| Ok(Vec::new()), |_, _| Ok(Vec::new()));
-    let diff_service = DiffService::new(|| {}, |_| Err("no files".to_owned()));
-    let syntax_service = SyntaxService::start(|| {});
+    let vcs = VcsService::fake(|| {}, |_, _| Ok(Vec::new()), |_, _| Ok(Vec::new()));
+    let diff = DiffService::fake(|| {}, |_| Err("no files".to_owned()));
+    let syntax = SyntaxService::start(|| {});
     Harness::new::<App>(
         AppProps {
             cwd: Rc::from(Path::new("/tmp")),
             revision_range: RevisionRange::Worktree,
             config: Rc::new(config::Config::default()),
             keybindings: Rc::new(ui::KeyMap::default()),
-            vcs_service: Rc::new(vcs_service),
-            diff_service: Rc::new(diff_service),
-            syntax_service: Rc::new(syntax_service),
-            watcher_service: Rc::new(WatcherService::new()),
+            vcs: Rc::new(vcs),
+            diff: Rc::new(diff),
+            syntax: Rc::new(syntax),
+            watcher: Rc::new(WatcherService::fake()),
         },
         80,
         24,

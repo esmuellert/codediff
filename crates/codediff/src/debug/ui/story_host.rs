@@ -30,14 +30,14 @@ enum StoryEvent {
 }
 
 pub(super) struct StoryServices {
-    pub vcs_service: Rc<VcsService>,
-    pub diff_service: Rc<DiffService>,
-    pub syntax_service: Rc<SyntaxService>,
+    pub vcs: Rc<VcsService>,
+    pub diff: Rc<DiffService>,
+    pub syntax: Rc<SyntaxService>,
 }
 
 impl StoryServices {
     pub fn is_busy(&self) -> bool {
-        self.vcs_service.is_busy() || self.diff_service.is_busy() || self.syntax_service.is_busy()
+        self.vcs.is_busy() || self.diff.is_busy() || self.syntax.is_busy()
     }
 }
 
@@ -56,33 +56,29 @@ pub(super) fn story_props(
     } = fixture
     {
         let vcs_redraw = Arc::clone(&redraw);
-        let vcs_service = Rc::new(VcsService::start(move || vcs_redraw()));
+        let vcs = Rc::new(VcsService::start(move || vcs_redraw()));
         let diff_redraw = Arc::clone(&redraw);
-        let diff_service = Rc::new(DiffService::start(
+        let diff = Rc::new(DiffService::start(
             move || diff_redraw(),
             diff::Settings::default(),
         ));
         let syntax_redraw = Arc::clone(&redraw);
-        let syntax_service = Rc::new(SyntaxService::start(move || syntax_redraw()));
+        let syntax = Rc::new(SyntaxService::start(move || syntax_redraw()));
         let props = StoryPreviewProps {
             definition,
             base_context: UiContext {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::from(repo.path()),
                 revision_range,
-                vcs_service: Some(Rc::clone(&vcs_service)),
-                diff_service: Some(Rc::clone(&diff_service)),
-                syntax_service: Some(Rc::clone(&syntax_service)),
+                vcs: Some(Rc::clone(&vcs)),
+                diff: Some(Rc::clone(&diff)),
+                syntax: Some(Rc::clone(&syntax)),
                 ..UiContext::default()
             },
             files: Rc::new(Vec::new()),
             navigate,
         };
-        let services = StoryServices {
-            vcs_service,
-            diff_service,
-            syntax_service,
-        };
+        let services = StoryServices { vcs, diff, syntax };
         return (services, props, Some(repo));
     }
 
@@ -147,13 +143,13 @@ pub(super) fn story_props(
         Vec::new()
     };
     let vcs_redraw = Arc::clone(&redraw);
-    let vcs_service = Rc::new(VcsService::new(
+    let vcs = Rc::new(VcsService::fake(
         move || vcs_redraw(),
         move |_, _| Ok(listed.clone().unwrap_or_default()),
         |_, _| Ok(Vec::new()),
     ));
     let diff_redraw = Arc::clone(&redraw);
-    let diff_service = Rc::new(DiffService::new(
+    let diff = Rc::new(DiffService::fake(
         move || diff_redraw(),
         move |file| {
             contents
@@ -164,11 +160,8 @@ pub(super) fn story_props(
         },
     ));
     let syntax_redraw = Arc::clone(&redraw);
-    let syntax_service = Rc::new(SyntaxService::start(move || syntax_redraw()));
-    let files = opened
-        .into_iter()
-        .map(|file| diff_service.open(file))
-        .collect();
+    let syntax = Rc::new(SyntaxService::start(move || syntax_redraw()));
+    let files = opened.into_iter().map(|file| diff.load(file)).collect();
     let props = StoryPreviewProps {
         definition,
         base_context: UiContext {
@@ -177,19 +170,15 @@ pub(super) fn story_props(
             repo: Rc::from(Path::new("/codediff")),
             picking,
             commits: Rc::new(commits),
-            vcs_service: Some(Rc::clone(&vcs_service)),
-            diff_service: Some(Rc::clone(&diff_service)),
-            syntax_service: Some(Rc::clone(&syntax_service)),
+            vcs: Some(Rc::clone(&vcs)),
+            diff: Some(Rc::clone(&diff)),
+            syntax: Some(Rc::clone(&syntax)),
             ..UiContext::default()
         },
         files: Rc::new(files),
         navigate,
     };
-    let services = StoryServices {
-        vcs_service,
-        diff_service,
-        syntax_service,
-    };
+    let services = StoryServices { vcs, diff, syntax };
     (services, props, None)
 }
 

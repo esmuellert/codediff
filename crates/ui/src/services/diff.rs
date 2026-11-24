@@ -1,8 +1,8 @@
-//! Reads and diffs files on one background thread.
+//! Loads and diffs files on one background thread.
 
 #![allow(clippy::type_complexity)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, Weak};
@@ -23,15 +23,13 @@ impl DiffService {
     /// Starts the `"diff"` worker thread backed by Git repositories.
     pub fn start(redraw: impl Fn() + Send + Sync + 'static, settings: Settings) -> Self {
         let mut cached: Option<(PathBuf, Repository)> = None;
-        Self::new(redraw, move |file| {
-            read_and_diff(&mut cached, file, settings)
-        })
+        Self::fake(redraw, move |file| load_file(&mut cached, file, settings))
     }
 
-    /// Starts the `"diff"` worker thread with a custom file reader.
-    pub fn new(
+    /// Starts the `"diff"` worker thread with a custom file loader for tests and stories.
+    pub fn fake(
         redraw: impl Fn() + Send + Sync + 'static,
-        read: impl FnMut(&File) -> Result<DiffContent, String> + Send + 'static,
+        load: impl FnMut(&File) -> Result<DiffContent, String> + Send + 'static,
     ) -> Self {
         let redraw: Arc<dyn Fn() + Send + Sync> = Arc::new(redraw);
         let pending_jobs = Arc::new(AtomicUsize::new(0));
@@ -39,7 +37,7 @@ impl DiffService {
         let worker_pending = Arc::clone(&pending_jobs);
         thread::Builder::new()
             .name("diff".to_owned())
-            .spawn(move || run_diffs(read, receiver, &redraw, &worker_pending))
+            .spawn(move || worker(load, receiver, &redraw, &worker_pending))
             .expect("the diff thread starts");
         Self {
             requests,
@@ -47,16 +45,16 @@ impl DiffService {
         }
     }
 
-    /// Starts reading and diffing one file.
+    /// Starts loading and diffing one file.
     ///
     /// The returned slot holds `None` until the file has been diffed.
-    pub fn open(&self, file: File) -> Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>> {
+    pub fn load(&self, file: File) -> Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>> {
         let slot = Arc::new(Mutex::new(None));
         self.refresh(file, &slot);
         slot
     }
 
-    /// Reads and diffs `file` again into an existing `slot`.
+    /// Loads and diffs `file` again into an existing `slot`.
     ///
     /// Keeps the current `Arc<DiffContent>` untouched when the text on both
     /// sides is unchanged so downstream syntax spans stay valid.
@@ -73,15 +71,15 @@ impl DiffService {
     }
 }
 
-fn run_diffs(
-    mut read: impl FnMut(&File) -> Result<DiffContent, String>,
+fn worker(
+    mut load: impl FnMut(&File) -> Result<DiffContent, String>,
     requests: Receiver<(File, Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>)>,
     redraw: &Arc<dyn Fn() + Send + Sync>,
     pending_jobs: &AtomicUsize,
 ) {
     for (file, slot) in requests {
         if slot.strong_count() > 0 {
-            let result = read(&file).map(Arc::new);
+            let result = load(&file).map(Arc::new);
             if let Some(slot) = slot.upgrade() {
                 replace_diff(result, &slot);
             }
@@ -118,28 +116,32 @@ fn same_text(old: &DiffContent, new: &DiffContent) -> bool {
         }
 }
 
-fn read_and_diff(
+fn repository<'a>(
+    cached: &'a mut Option<(PathBuf, Repository)>,
+    root: &Path,
+) -> anyhow::Result<&'a mut Repository> {
+    let matches_cached = cached
+        .as_ref()
+        .is_some_and(|(cached_root, _)| cached_root == root);
+    if !matches_cached {
+        let opened = Repository::open(root).context("opening a repository")?;
+        *cached = Some((root.to_path_buf(), opened));
+    }
+    Ok(&mut cached.as_mut().expect("just populated").1)
+}
+
+fn load_file(
     cached: &mut Option<(PathBuf, Repository)>,
     file: &File,
     settings: Settings,
 ) -> Result<DiffContent, String> {
     let path = file.path().as_str().to_owned();
-    let root = file.path().root();
-    let matches_cached = cached
-        .as_ref()
-        .is_some_and(|(cached_root, _)| cached_root == root);
-    if !matches_cached {
-        let repository = Repository::open(root)
-            .context("opening a repository")
-            .map_err(|why| format!("{path}: {why:#}"))?;
-        *cached = Some((root.to_path_buf(), repository));
-    }
-    let repository = &mut cached.as_mut().expect("just populated").1;
-    let original = repository
+    let repo = repository(cached, file.path().root()).map_err(|why| format!("{path}: {why:#}"))?;
+    let original = repo
         .get_file_content(file, DiffVersion::Original)
         .context("reading the before side")
         .map_err(|why| format!("{path}: {why:#}"))?;
-    let modified = repository
+    let modified = repo
         .get_file_content(file, DiffVersion::Modified)
         .context("reading the after side")
         .map_err(|why| format!("{path}: {why:#}"))?;

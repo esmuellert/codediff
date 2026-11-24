@@ -35,7 +35,7 @@ fn diff_and_syntax_services(
 ) -> (DiffService, SyntaxService, Receiver<()>) {
     let (redraw_tx, redraws) = mpsc::channel();
     let diff_redraw = redraw_tx.clone();
-    let diff_service = DiffService::new(
+    let diff = DiffService::fake(
         move || {
             let _ = diff_redraw.send(());
         },
@@ -47,10 +47,10 @@ fn diff_and_syntax_services(
                 .ok_or_else(|| format!("cannot read {}", file.path()))
         },
     );
-    let syntax_service = SyntaxService::start(move || {
+    let syntax = SyntaxService::start(move || {
         let _ = redraw_tx.send(());
     });
-    (diff_service, syntax_service, redraws)
+    (diff, syntax, redraws)
 }
 
 fn wait_until_idle(mut is_busy: impl FnMut() -> bool, redraws: &Receiver<()>) {
@@ -63,19 +63,19 @@ fn wait_until_idle(mut is_busy: impl FnMut() -> bool, redraws: &Receiver<()>) {
 
 #[test]
 fn every_open_file_gets_its_own_diff_and_colours() {
-    let (diff_service, syntax_service, redraws) = diff_and_syntax_services(vec![
+    let (diff, syntax, redraws) = diff_and_syntax_services(vec![
         content("a.rs", "fn main() { let value = 2; }"),
         content("b.rs", "fn main() { let other = 3; }"),
     ]);
-    let a = diff_service.open(file("a.rs"));
-    let b = diff_service.open(file("b.rs"));
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    let a = diff.load(file("a.rs"));
+    let b = diff.load(file("b.rs"));
+    wait_until_idle(|| diff.is_busy(), &redraws);
 
     let a_content = a.lock().unwrap().clone().unwrap().unwrap();
     let b_content = b.lock().unwrap().clone().unwrap().unwrap();
-    let a_colours = syntax_service.colour(Arc::clone(&a_content));
-    let b_colours = syntax_service.colour(Arc::clone(&b_content));
-    wait_until_idle(|| syntax_service.is_busy(), &redraws);
+    let a_colours = syntax.highlight(Arc::clone(&a_content));
+    let b_colours = syntax.highlight(Arc::clone(&b_content));
+    wait_until_idle(|| syntax.is_busy(), &redraws);
 
     for ((content, colours), expected) in [(&a_content, &a_colours), (&b_content, &b_colours)]
         .into_iter()
@@ -95,11 +95,11 @@ fn every_open_file_gets_its_own_diff_and_colours() {
 
 #[test]
 fn a_file_that_cannot_be_read_reports_why_and_the_next_one_still_loads() {
-    let (diff_service, _syntax_service, redraws) =
+    let (diff, _syntax, redraws) =
         diff_and_syntax_services(vec![content("good.rs", "fn good() {}")]);
-    let bad = diff_service.open(file("bad.rs"));
-    let good = diff_service.open(file("good.rs"));
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    let bad = diff.load(file("bad.rs"));
+    let good = diff.load(file("good.rs"));
+    wait_until_idle(|| diff.is_busy(), &redraws);
 
     assert_eq!(
         bad.lock().unwrap().clone().unwrap().err().as_deref(),
@@ -116,7 +116,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
     let reads = Arc::new(Mutex::new(Vec::new()));
     let read_paths = Arc::clone(&reads);
     let (redraw, redraws) = mpsc::channel();
-    let diff_service = DiffService::new(
+    let diff = DiffService::fake(
         move || {
             let _ = redraw.send(());
         },
@@ -137,14 +137,14 @@ fn a_file_nobody_holds_any_more_is_not_read() {
     );
 
     // A is being read while B is queued; the user then moves back to A.
-    let first_a = diff_service.open(file("a.txt"));
+    let first_a = diff.load(file("a.txt"));
     reading.recv_timeout(Duration::from_secs(10)).unwrap();
-    let b = diff_service.open(file("b.txt"));
+    let b = diff.load(file("b.txt"));
     drop(b);
     drop(first_a);
-    let second_a = diff_service.open(file("a.txt"));
+    let second_a = diff.load(file("a.txt"));
     release.send(()).unwrap();
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    wait_until_idle(|| diff.is_busy(), &redraws);
 
     assert_eq!(*reads.lock().unwrap(), ["a.txt", "a.txt"]);
     assert!(matches!(*second_a.lock().unwrap(), Some(Ok(_))));
@@ -154,7 +154,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
 fn a_listed_repository_reports_its_files_or_why_it_could_not() {
     let (redraw, redraws) = mpsc::channel();
     let mut responses = vec![Err("not a repository".to_owned()), Ok(vec![file("a.rs")])];
-    let vcs_service = VcsService::new(
+    let vcs = VcsService::fake(
         move || {
             let _ = redraw.send(());
         },
@@ -162,12 +162,12 @@ fn a_listed_repository_reports_its_files_or_why_it_could_not() {
         |_, _| Ok(Vec::new()),
     );
 
-    let listed = vcs_service.list_files(Path::new("/repo"), RevisionRange::Worktree);
-    wait_until_idle(|| vcs_service.is_busy(), &redraws);
+    let listed = vcs.list_files(Path::new("/repo"), RevisionRange::Worktree);
+    wait_until_idle(|| vcs.is_busy(), &redraws);
     assert_eq!(*listed.lock().unwrap(), Some(Ok(vec![file("a.rs")])));
 
-    let failed = vcs_service.list_files(Path::new("/elsewhere"), RevisionRange::Worktree);
-    wait_until_idle(|| vcs_service.is_busy(), &redraws);
+    let failed = vcs.list_files(Path::new("/elsewhere"), RevisionRange::Worktree);
+    wait_until_idle(|| vcs.is_busy(), &redraws);
     assert_eq!(
         *failed.lock().unwrap(),
         Some(Err("not a repository".to_owned()))
@@ -178,18 +178,18 @@ fn a_listed_repository_reports_its_files_or_why_it_could_not() {
 fn refreshing_a_file_whose_text_is_the_same_keeps_its_arc_identity() {
     let text = content("a.rs", "fn main() { let value = 2; }");
     let (redraw, redraws) = mpsc::channel();
-    let diff_service = DiffService::new(
+    let diff = DiffService::fake(
         move || {
             let _ = redraw.send(());
         },
         move |_| Ok(text.clone()),
     );
-    let slot = diff_service.open(file("a.rs"));
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    let slot = diff.load(file("a.rs"));
+    wait_until_idle(|| diff.is_busy(), &redraws);
     let diff_before = slot.lock().unwrap().clone().unwrap().unwrap();
 
-    diff_service.refresh(file("a.rs"), &slot);
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    diff.refresh(file("a.rs"), &slot);
+    wait_until_idle(|| diff.is_busy(), &redraws);
 
     let diff_after = slot.lock().unwrap().clone().unwrap().unwrap();
     assert!(
@@ -214,28 +214,28 @@ fn refreshing_a_file_whose_text_changed_replaces_its_diff_and_stops_dropped_synt
     let mut reads = vec![short_text, long_text];
     let (redraw_tx, redraws) = mpsc::channel();
     let diff_redraw = redraw_tx.clone();
-    let diff_service = DiffService::new(
+    let diff = DiffService::fake(
         move || {
             let _ = diff_redraw.send(());
         },
         move |_| Ok(reads.pop().unwrap()),
     );
-    let syntax_service = SyntaxService::start(move || {
+    let syntax = SyntaxService::start(move || {
         let _ = redraw_tx.send(());
     });
 
-    let slot = diff_service.open(file("a.rs"));
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    let slot = diff.load(file("a.rs"));
+    wait_until_idle(|| diff.is_busy(), &redraws);
     let old_content = slot.lock().unwrap().clone().unwrap().unwrap();
-    let old_colours = syntax_service.colour(old_content);
+    let old_colours = syntax.highlight(old_content);
 
-    diff_service.refresh(file("a.rs"), &slot);
-    wait_until_idle(|| diff_service.is_busy(), &redraws);
+    diff.refresh(file("a.rs"), &slot);
+    wait_until_idle(|| diff.is_busy(), &redraws);
     drop(old_colours);
 
     let new_content = slot.lock().unwrap().clone().unwrap().unwrap();
-    let new_colours = syntax_service.colour(Arc::clone(&new_content));
-    wait_until_idle(|| syntax_service.is_busy(), &redraws);
+    let new_colours = syntax.highlight(Arc::clone(&new_content));
+    wait_until_idle(|| syntax.is_busy(), &redraws);
 
     assert_eq!(
         new_content
@@ -272,11 +272,11 @@ impl Drop for FixtureRepo {
 fn untracked_and_deleted_files_carry_one_sided_counts() {
     let fixture = FixtureRepo::new("one-sided-counts");
     let (redraw_tx, redraws) = mpsc::channel();
-    let vcs_service = VcsService::start(move || {
+    let vcs = VcsService::start(move || {
         let _ = redraw_tx.send(());
     });
-    let slot = vcs_service.list_files(&fixture.dir, RevisionRange::Worktree);
-    wait_until_idle(|| vcs_service.is_busy(), &redraws);
+    let slot = vcs.list_files(&fixture.dir, RevisionRange::Worktree);
+    wait_until_idle(|| vcs.is_busy(), &redraws);
     let files = slot.lock().unwrap().take().unwrap().unwrap();
 
     let untracked = files
@@ -296,14 +296,14 @@ fn untracked_and_deleted_files_carry_one_sided_counts() {
         .find(|file| file.path().as_str() == "picture.png")
         .expect("binary file is listed");
     let (diff_tx, diff_rx) = mpsc::channel();
-    let diff_service = DiffService::start(
+    let diff = DiffService::start(
         move || {
             let _ = diff_tx.send(());
         },
         Settings::default(),
     );
-    let binary_slot = diff_service.open(binary);
-    wait_until_idle(|| diff_service.is_busy(), &diff_rx);
+    let binary_slot = diff.load(binary);
+    wait_until_idle(|| diff.is_busy(), &diff_rx);
     assert_eq!(
         binary_slot.lock().unwrap().take().unwrap().err().as_deref(),
         Some("picture.png is binary — there are no lines to review")
@@ -314,11 +314,11 @@ fn untracked_and_deleted_files_carry_one_sided_counts() {
 fn a_file_staged_and_edited_again_carries_a_count_per_revision_pair() {
     let fixture = FixtureRepo::new("counts");
     let (redraw_tx, redraws) = mpsc::channel();
-    let vcs_service = VcsService::start(move || {
+    let vcs = VcsService::start(move || {
         let _ = redraw_tx.send(());
     });
-    let slot = vcs_service.list_files(&fixture.dir, RevisionRange::Worktree);
-    wait_until_idle(|| vcs_service.is_busy(), &redraws);
+    let slot = vcs.list_files(&fixture.dir, RevisionRange::Worktree);
+    wait_until_idle(|| vcs.is_busy(), &redraws);
     let files = slot.lock().unwrap().take().unwrap().unwrap();
 
     let found: Vec<(&'static str, Option<Stats>)> = files
@@ -433,22 +433,22 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
 
     let (redraw_tx, redraw_rx) = mpsc::channel();
     let vcs_redraw = redraw_tx.clone();
-    let vcs_service = VcsService::start(move || {
+    let vcs = VcsService::start(move || {
         let _ = vcs_redraw.send(());
     });
     let diff_redraw = redraw_tx.clone();
-    let diff_service = DiffService::start(
+    let diff = DiffService::start(
         move || {
             let _ = diff_redraw.send(());
         },
         Settings::default(),
     );
-    let syntax_service = SyntaxService::start(move || {
+    let syntax = SyntaxService::start(move || {
         let _ = redraw_tx.send(());
     });
 
-    let slot = vcs_service.list_files(&dir, RevisionRange::Between(first, second));
-    wait_until_idle(|| vcs_service.is_busy(), &redraw_rx);
+    let slot = vcs.list_files(&dir, RevisionRange::Between(first, second));
+    wait_until_idle(|| vcs.is_busy(), &redraw_rx);
     let files = slot
         .lock()
         .unwrap()
@@ -487,8 +487,8 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
         .into_iter()
         .find(|file| file.path().as_str() == "src/engine.rs")
         .expect("engine.rs listed");
-    let diff_slot = diff_service.open(engine);
-    wait_until_idle(|| diff_service.is_busy(), &redraw_rx);
+    let diff_slot = diff.load(engine);
+    wait_until_idle(|| diff.is_busy(), &redraw_rx);
 
     let content = diff_slot
         .lock()
@@ -506,8 +506,8 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
         Some("    let step = 2;")
     );
 
-    let colours_slot = syntax_service.colour(content);
-    wait_until_idle(|| syntax_service.is_busy(), &redraw_rx);
+    let colours_slot = syntax.highlight(content);
+    wait_until_idle(|| syntax.is_busy(), &redraw_rx);
     let colours = colours_slot.lock().unwrap();
     assert!(!colours[DiffVersion::Original as usize].is_empty());
     assert!(!colours[DiffVersion::Modified as usize].is_empty());
@@ -585,13 +585,13 @@ fn list_commits_and_toggle_stage_serialize_cleanly_on_vcs_service() {
     .unwrap();
 
     let (tx, rx) = mpsc::channel();
-    let vcs_service = VcsService::start(move || {
+    let vcs = VcsService::start(move || {
         let _ = tx.send(());
     });
-    let commit_slot = vcs_service.list_commits(root, 10);
+    let commit_slot = vcs.list_commits(root, 10);
     rx.recv_timeout(Duration::from_secs(5))
         .expect("redraw notification after list_commits");
-    wait_until_idle(|| vcs_service.is_busy(), &rx);
+    wait_until_idle(|| vcs.is_busy(), &rx);
 
     let commits = commit_slot
         .lock()
@@ -606,9 +606,9 @@ fn list_commits_and_toggle_stage_serialize_cleanly_on_vcs_service() {
     // Stage via VcsService::toggle_stage and immediately list_files on the same worker thread!
     let repo_path = RepoPath::new("a.txt", root);
     let worktree_revs = Revs::worktree_against(commits[0].hash.clone());
-    vcs_service.toggle_stage(&repo_path, &worktree_revs);
-    let staged_slot = vcs_service.list_files(root, RevisionRange::Worktree);
-    wait_until_idle(|| vcs_service.is_busy(), &rx);
+    vcs.toggle_stage(&repo_path, &worktree_revs);
+    let staged_slot = vcs.list_files(root, RevisionRange::Worktree);
+    wait_until_idle(|| vcs.is_busy(), &rx);
 
     let staged_files = staged_slot.lock().unwrap().take().unwrap().unwrap();
     assert_eq!(staged_files.len(), 1);
@@ -616,9 +616,9 @@ fn list_commits_and_toggle_stage_serialize_cleanly_on_vcs_service() {
 
     // Unstage via VcsService::toggle_stage and list_files again!
     let index_revs = Revs::new(Rev::Commit(commits[0].hash.clone()), Rev::Index);
-    vcs_service.toggle_stage(&repo_path, &index_revs);
-    let unstaged_slot = vcs_service.list_files(root, RevisionRange::Worktree);
-    wait_until_idle(|| vcs_service.is_busy(), &rx);
+    vcs.toggle_stage(&repo_path, &index_revs);
+    let unstaged_slot = vcs.list_files(root, RevisionRange::Worktree);
+    wait_until_idle(|| vcs.is_busy(), &rx);
 
     let unstaged_files = unstaged_slot.lock().unwrap().take().unwrap().unwrap();
     assert_eq!(unstaged_files.len(), 1);

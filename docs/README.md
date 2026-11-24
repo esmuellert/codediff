@@ -22,9 +22,9 @@ Opening a file follows this path:
 
 1. `Explorer` calls `VcsService::list_files` and shows the files once the slot is filled in.
 2. `Explorer` puts the selected `file_types::File` into shared context.
-3. `DiffViewer` calls `DiffService::open`, which returns the diff slot.
+3. `DiffViewer` calls `DiffService::load`, which returns the diff slot.
 4. The diff thread reads both sides, computes the diff with `vscode-diff`, and builds a `diff::DiffContent`.
-5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there, and asks `SyntaxService::colour` for its span slot.
+5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there, and calls `SyntaxService::highlight` for its span slot.
 6. The syntax thread colours the file in chunks; each chunk is drawn as it arrives.
 
 A selected directory opens its files one at a time, when the line below the last card comes into view.

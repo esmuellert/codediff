@@ -12,7 +12,7 @@ use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
-use crate::fake_services::coloured;
+use crate::fake_services::highlighted;
 
 #[component]
 fn TestInline(
@@ -180,7 +180,7 @@ fn empty_and_nonempty_character_ranges_reach_code_text() {
 
 #[test]
 fn syntax_service_colours_both_versions() {
-    let colours = coloured(diff::DiffContent::Diff(make_diff(
+    let colours = highlighted(diff::DiffContent::Diff(make_diff(
         "test.rs",
         &["fn before() {}"],
         &["fn after() {}"],

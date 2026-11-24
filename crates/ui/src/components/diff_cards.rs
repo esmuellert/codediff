@@ -34,7 +34,7 @@ pub fn DiffCards(
 ) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = *ctx.theme;
-    let syntax_service = ctx.syntax_service.clone();
+    let syntax = ctx.syntax.clone();
     let viewer_mode = *viewer_mode;
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
@@ -71,8 +71,8 @@ pub fn DiffCards(
                             Arc::clone(colours)
                         }
                         _ => {
-                            let next_colours = match &syntax_service {
-                                Some(syntax_service) => syntax_service.colour(Arc::clone(&content)),
+                            let next_colours = match &syntax {
+                                Some(syntax) => syntax.highlight(Arc::clone(&content)),
                                 None => Arc::new(Mutex::new([Vec::new(), Vec::new()])),
                             };
                             cached.insert(index, (content_id, Arc::clone(&next_colours)));

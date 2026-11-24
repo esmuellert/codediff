@@ -100,9 +100,9 @@ fn PickerHost(
     let theme_val = *theme;
     let theme_rc = use_memo(scope, theme_val.name, move || theme_val);
     let files_count = *worktree_files;
-    let vcs_service = use_memo(scope, files_count, move || {
+    let vcs = use_memo(scope, files_count, move || {
         let files = files_count.map(fake_worktree_files).unwrap_or_default();
-        VcsService::new(|| {}, move |_, _| Ok(files.clone()), |_, _| Ok(Vec::new()))
+        VcsService::fake(|| {}, move |_, _| Ok(files.clone()), |_, _| Ok(Vec::new()))
     });
     let mut ctx = (*base).clone();
     ctx.theme = theme_rc;
@@ -112,7 +112,7 @@ fn PickerHost(
     ctx.picking = picking;
     ctx.set_picking = picking_log.is_some().then_some(set_picking);
     ctx.commits = Rc::clone(commits);
-    ctx.vcs_service = files_count.map(|_| Rc::clone(&vcs_service));
+    ctx.vcs = files_count.map(|_| Rc::clone(&vcs));
     rsx! {
         Ui {
             value: ctx,

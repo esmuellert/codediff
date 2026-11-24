@@ -90,11 +90,11 @@ pub(super) fn StoryPreview(
     let content_key = content
         .as_ref()
         .map(|content| Arc::as_ptr(content) as usize);
-    let syntax_service = context.syntax_service.clone();
+    let syntax = context.syntax.clone();
     let content_for_colours = content.clone();
     let colours = use_memo(scope, content_key, move || {
-        match (syntax_service, content_for_colours) {
-            (Some(syntax_service), Some(content)) => syntax_service.colour(content),
+        match (syntax, content_for_colours) {
+            (Some(syntax), Some(content)) => syntax.highlight(content),
             _ => Arc::new(Mutex::new([Vec::new(), Vec::new()])),
         }
     });

@@ -22,7 +22,7 @@ fn path(relative: &str) -> RepoPath {
     RepoPath::new(relative, Path::new("/repo"))
 }
 
-fn diff(file: File, original: &[&str], modified: &[&str]) -> DiffContent {
+fn make_diff(file: File, original: &[&str], modified: &[&str]) -> DiffContent {
     let changes = diff::compute(original, modified, diff::Settings::default()).unwrap();
     let alignment = diff::align(changes, original, modified).unwrap();
     DiffContent::Diff(diff::Diff { file, alignment })
@@ -88,13 +88,13 @@ fn welcome_hides_the_header_and_selected_file_opens_floating_menu_without_shifti
         File::unchanged_path(path("src/modified.rs"), revs()).set_stats(Stats::new(4, 2));
     let renamed = File::renamed(path("src/old_name.rs"), path("src/new_name.rs"), revs())
         .set_stats(Stats::new(7, 3));
-    let (diff_service, redraws) = fake_services::fake_diff_service(vec![
-        diff(
+    let (diff, redraws) = fake_services::fake_diff(vec![
+        make_diff(
             modified.clone(),
             &["left_row_1", "left_row_2"],
             &["right_row_1", "right_row_2"],
         ),
-        diff(renamed.clone(), &["before"], &["after"]),
+        make_diff(renamed.clone(), &["before"], &["after"]),
     ]);
 
     let mut harness = Harness::new::<ViewerHost>(
@@ -102,14 +102,14 @@ fn welcome_hides_the_header_and_selected_file_opens_floating_menu_without_shifti
             context: Context {
                 theme: Rc::new(Theme::DARK),
                 file: Some(Rc::new(modified)),
-                diff_service: Some(Rc::clone(&diff_service)),
+                diff: Some(Rc::clone(&diff)),
                 ..Context::default()
             },
         },
         80,
         10,
     );
-    fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+    fake_services::wait_diff(&diff, &redraws, &mut harness);
 
     let header = harness.screen_line(0);
     assert!(header.starts_with(" M  src/modified.rs"), "{header:?}");
@@ -142,11 +142,11 @@ fn welcome_hides_the_header_and_selected_file_opens_floating_menu_without_shifti
         context: Context {
             theme: Rc::new(Theme::DARK),
             file: Some(Rc::new(renamed)),
-            diff_service: Some(Rc::clone(&diff_service)),
+            diff: Some(Rc::clone(&diff)),
             ..Context::default()
         },
     });
-    fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+    fake_services::wait_diff(&diff, &redraws, &mut harness);
     let renamed_header = harness.screen_line(0);
     assert!(
         renamed_header.starts_with(" R  src/new_name.rs ← src/old_name.rs"),
@@ -160,21 +160,21 @@ fn dropdown_items_toggle_layout_and_wrap_and_esc_or_backdrop_closes_menu() {
     let selected = File::unchanged_path(path("src/layout.rs"), revs()).set_stats(Stats::new(1, 1));
     let long_old = "OLD_START_0123456789_0123456789_0123456789_OLD_TAIL";
     let long_new = "NEW_START_0123456789_0123456789_0123456789_NEW_TAIL";
-    let (diff_service, redraws) =
-        fake_services::fake_diff_service(vec![diff(selected.clone(), &[long_old], &[long_new])]);
+    let (diff, redraws) =
+        fake_services::fake_diff(vec![make_diff(selected.clone(), &[long_old], &[long_new])]);
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             context: Context {
                 theme: Rc::new(Theme::DARK),
                 file: Some(Rc::new(selected)),
-                diff_service: Some(Rc::clone(&diff_service)),
+                diff: Some(Rc::clone(&diff)),
                 ..Context::default()
             },
         },
         64,
         12,
     );
-    fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+    fake_services::wait_diff(&diff, &redraws, &mut harness);
 
     let trigger_col = col_of(&harness.screen_line(0), "View ▾");
 
@@ -231,23 +231,23 @@ fn one_sided_file_dropdown_shows_all_view_options_and_pre_switches_layout() {
     let two_sided =
         File::unchanged_path(path("src/modified.rs"), revs()).set_stats(Stats::new(1, 1));
     let body = "one_sided_0123456789_0123456789_0123456789_0123456789_0123456789_TAIL";
-    let (diff_service, redraws) = fake_services::fake_diff_service(vec![
+    let (diff, redraws) = fake_services::fake_diff(vec![
         single(added.clone(), &[body]),
-        diff(two_sided.clone(), &["old_line"], &["new_line"]),
+        make_diff(two_sided.clone(), &["old_line"], &["new_line"]),
     ]);
     let mut harness = Harness::new::<ViewerHost>(
         ViewerHostProps {
             context: Context {
                 theme: Rc::new(Theme::DARK),
                 file: Some(Rc::new(added)),
-                diff_service: Some(Rc::clone(&diff_service)),
+                diff: Some(Rc::clone(&diff)),
                 ..Context::default()
             },
         },
         60,
         10,
     );
-    fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+    fake_services::wait_diff(&diff, &redraws, &mut harness);
 
     let header = harness.screen_line(0);
     assert!(header.starts_with(" A  src/added.rs"), "{header:?}");
@@ -275,11 +275,11 @@ fn one_sided_file_dropdown_shows_all_view_options_and_pre_switches_layout() {
         context: Context {
             theme: Rc::new(Theme::DARK),
             file: Some(Rc::new(two_sided)),
-            diff_service: Some(Rc::clone(&diff_service)),
+            diff: Some(Rc::clone(&diff)),
             ..Context::default()
         },
     });
-    fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+    fake_services::wait_diff(&diff, &redraws, &mut harness);
     assert!(
         !harness.screen()[1..].iter().any(|line| line.contains('│')),
         "pre-selected Inline layout did not carry over to two-sided diff: {:?}",
@@ -294,9 +294,9 @@ fn directory_selection_shows_folder_path_on_left_and_dropdown_switches_cards() {
     let second =
         File::unchanged_path(path("src/components/b.rs"), revs()).set_stats(Stats::new(2, 0));
     let added = File::added(path("src/components/new.rs"), revs());
-    let (diff_service, redraws) = fake_services::fake_diff_service(vec![
-        diff(first.clone(), &["old_a"], &["new_a"]),
-        diff(second.clone(), &["old_b"], &["new_b"]),
+    let (diff, redraws) = fake_services::fake_diff(vec![
+        make_diff(first.clone(), &["old_a"], &["new_a"]),
+        make_diff(second.clone(), &["old_b"], &["new_b"]),
     ]);
     let directory = Rc::new(DirectorySelection {
         path: path("src/components"),
@@ -308,14 +308,14 @@ fn directory_selection_shows_folder_path_on_left_and_dropdown_switches_cards() {
             context: Context {
                 theme: Rc::new(Theme::DARK),
                 directory: Some(directory),
-                diff_service: Some(Rc::clone(&diff_service)),
+                diff: Some(Rc::clone(&diff)),
                 ..Context::default()
             },
         },
         80,
         18,
     );
-    fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+    fake_services::wait_diff(&diff, &redraws, &mut harness);
 
     let header = harness.screen_line(0);
     assert!(header.contains("src/components (3)"), "{header:?}");
@@ -356,21 +356,21 @@ fn directory_selection_shows_folder_path_on_left_and_dropdown_switches_cards() {
 fn every_theme_highlights_open_trigger_and_menu_items_cleanly() {
     let selected = File::unchanged_path(path("src/theme.rs"), revs());
     for theme in Theme::ALL {
-        let (diff_service, redraws) =
-            fake_services::fake_diff_service(vec![diff(selected.clone(), &["old"], &["new"])]);
+        let (diff, redraws) =
+            fake_services::fake_diff(vec![make_diff(selected.clone(), &["old"], &["new"])]);
         let mut harness = Harness::new::<ViewerHost>(
             ViewerHostProps {
                 context: Context {
                     theme: Rc::new(theme),
                     file: Some(Rc::new(selected.clone())),
-                    diff_service: Some(Rc::clone(&diff_service)),
+                    diff: Some(Rc::clone(&diff)),
                     ..Context::default()
                 },
             },
             70,
             10,
         );
-        fake_services::wait_diff(&diff_service, &redraws, &mut harness);
+        fake_services::wait_diff(&diff, &redraws, &mut harness);
 
         let header = harness.screen_line(0);
         let trigger_col = col_of(&header, "View ▾");

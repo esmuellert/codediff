@@ -14,16 +14,16 @@ const COMMIT_LIMIT: usize = 500;
 pub fn use_commits(
     scope: &mut Scope,
     repo: &Rc<Path>,
-    vcs_service: &Rc<VcsService>,
-    watcher_service: &Rc<WatcherService>,
+    vcs: &Rc<VcsService>,
+    watcher: &Rc<WatcherService>,
 ) -> Rc<Vec<Commit>> {
     let (commits, set_commits) = use_state(scope, || Rc::new(Vec::<Commit>::new()));
     let (refreshes, set_refreshes) = use_state(scope, || 0u32);
 
-    let watcher_for_effect = Rc::clone(watcher_service);
+    let watcher_for_effect = Rc::clone(watcher);
     use_effect(scope, Rc::clone(repo), move || {
         watcher_for_effect
-            .changes()
+            .subscribe()
             .subscribe(move |refresh: watcher::Refresh| {
                 if refresh.head || refresh.refs {
                     set_refreshes.update(|n| *n += 1);
@@ -32,7 +32,7 @@ pub fn use_commits(
     });
 
     let repo_for_commits = Rc::clone(repo);
-    let vcs_for_commits = Rc::clone(vcs_service);
+    let vcs_for_commits = Rc::clone(vcs);
     let commit_slot = use_memo(scope, (Rc::clone(repo), refreshes), move || {
         vcs_for_commits.list_commits(&repo_for_commits, COMMIT_LIMIT)
     });

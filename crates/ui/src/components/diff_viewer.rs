@@ -55,33 +55,32 @@ fn use_selected_file(
         .as_deref()
         .map(|file| (file.path().clone(), file.revs()));
     let diff_slot = use_memo(scope, path_and_revs.clone(), {
-        let diff_service = ctx.diff_service.clone();
-        move || match (diff_service, selected) {
-            (Some(diff_service), Some(file)) => Some(diff_service.open((*file).clone())),
+        let diff = ctx.diff.clone();
+        move || match (diff, selected) {
+            (Some(diff), Some(file)) => Some(diff.load((*file).clone())),
             _ => None,
         }
     });
 
-    // When the file changes on disk, read it again into the same diff slot.
+    // When the file changes on disk, load it again into the same diff slot.
     // It keeps showing the file until the new result is ready.
     use_effect(scope, path_and_revs, {
-        let diff_service = ctx.diff_service.clone();
-        let watcher_service = ctx.watcher_service.clone();
+        let diff = ctx.diff.clone();
+        let watcher = ctx.watcher.clone();
         let diff_slot = Rc::clone(&diff_slot);
         move || {
-            let Some(diff) = diff_slot.as_ref().clone() else {
+            let Some(slot) = diff_slot.as_ref().clone() else {
                 return;
             };
-            let (Some(diff_service), Some(watcher_service)) = (diff_service, watcher_service)
-            else {
+            let (Some(diff), Some(watcher)) = (diff, watcher) else {
                 return;
             };
-            watcher_service.changes().subscribe(move |refresh| {
+            watcher.subscribe().subscribe(move |refresh| {
                 let Some(file) = selected_file.current().clone() else {
                     return;
                 };
                 if refresh_affects_file(refresh, &file) {
-                    diff_service.refresh((*file).clone(), &diff);
+                    diff.refresh((*file).clone(), &slot);
                 }
             });
         }
@@ -98,17 +97,17 @@ struct DirectoryFiles {
 }
 
 impl DirectoryFiles {
-    fn open_next(&self, diff_service: &DiffService) {
+    fn open_next(&self, diff: &DiffService) {
         let mut opened = self.opened.borrow_mut();
         // One file at a time, in order.
         if opened
             .last()
-            .is_some_and(|diff| diff.lock().unwrap().is_none())
+            .is_some_and(|slot| slot.lock().unwrap().is_none())
         {
             return;
         }
         if let Some(file) = self.files.get(opened.len()) {
-            opened.push(diff_service.open(file.clone()));
+            opened.push(diff.load(file.clone()));
         }
     }
 }
@@ -192,11 +191,11 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
     let content_key = content
         .as_ref()
         .map(|content| Arc::as_ptr(content) as usize);
-    let syntax_service = ctx.syntax_service.clone();
+    let syntax = ctx.syntax.clone();
     let content_for_colours = content.clone();
     let colours = use_memo(scope, content_key, move || {
-        match (syntax_service, content_for_colours) {
-            (Some(syntax_service), Some(content)) => syntax_service.colour(content),
+        match (syntax, content_for_colours) {
+            (Some(syntax), Some(content)) => syntax.highlight(content),
             _ => Arc::new(Mutex::new([Vec::new(), Vec::new()])),
         }
     });
@@ -245,19 +244,19 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             }
         }
     };
-    let view = if let (Some(directory), Some(files), Some(diff_service)) = (
+    let view = if let (Some(directory), Some(files), Some(diff)) = (
         ctx.directory.as_ref(),
         directory_files.as_ref().as_ref(),
-        ctx.diff_service.as_ref(),
+        ctx.diff.as_ref(),
     ) {
         let opened = files.opened.borrow().clone();
         let more_files = opened.len() < files.files.len();
         let open_next = {
             let directory_files = Rc::clone(&directory_files);
-            let diff_service = Rc::clone(diff_service);
+            let diff = Rc::clone(diff);
             Rc::new(move || {
                 if let Some(files) = directory_files.as_ref() {
-                    files.open_next(&diff_service);
+                    files.open_next(&diff);
                 }
             }) as Rc<dyn Fn()>
         };

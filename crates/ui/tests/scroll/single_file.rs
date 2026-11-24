@@ -11,7 +11,7 @@ use ui::components::diff_viewer::ScrollPosition;
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::{Context, Ui};
 
-use crate::fake_services::coloured;
+use crate::fake_services::highlighted;
 
 #[component]
 fn SingleFile(
@@ -249,7 +249,7 @@ fn added_and_deleted_files_have_no_diff_background() {
 
 #[test]
 fn syntax_service_colours_the_present_side() {
-    let colours = coloured(diff::DiffContent::SingleFile(diff::SingleFile {
+    let colours = highlighted(diff::DiffContent::SingleFile(diff::SingleFile {
         file: file(false),
         lines: Arc::new(vec!["fn main() {}".into()]),
     }));

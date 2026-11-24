@@ -34,7 +34,7 @@ fn Cards(
 }
 
 fn files() -> Rc<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>> {
-    Rc::new(fake_services::opened(
+    Rc::new(fake_services::loaded(
         (0..3)
             .map(|file| {
                 let original: Vec<_> = (1..=36)

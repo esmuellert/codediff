@@ -18,7 +18,7 @@ App
                   └─ SingleFile
 ```
 
-`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the diff slot `DiffService::open` returned for the selected file (or for a selected directory's opened files), requests syntax spans from `SyntaxService`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
+`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the diff slot `DiffService::load` returned for the selected file (or for a selected directory's opened files), requests syntax spans from `SyntaxService::highlight`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
 
 ## Services and background work
 

@@ -21,22 +21,22 @@ pub fn use_worktree_summary(
     scope: &mut Scope,
     enabled: bool,
     repo: &Rc<Path>,
-    vcs_service: Option<&Rc<VcsService>>,
-    watcher_service: Option<&Rc<WatcherService>>,
+    vcs: Option<&Rc<VcsService>>,
+    watcher: Option<&Rc<WatcherService>>,
 ) -> Option<Rc<str>> {
     let (summary, set_summary) = use_state(scope, || None::<Rc<str>>);
     let (refreshes, set_refreshes) = use_state(scope, || 0u32);
 
-    let watcher_for_effect = watcher_service.map(Rc::clone);
+    let watcher_for_effect = watcher.map(Rc::clone);
     use_effect(scope, (enabled, Rc::clone(repo)), move || {
         if !enabled {
             return;
         }
-        let Some(watcher_service) = watcher_for_effect else {
+        let Some(watcher) = watcher_for_effect else {
             return;
         };
-        watcher_service
-            .changes()
+        watcher
+            .subscribe()
             .subscribe(move |refresh: watcher::Refresh| {
                 if !refresh.is_empty() {
                     set_refreshes.update(|n| *n += 1);
@@ -45,13 +45,12 @@ pub fn use_worktree_summary(
     });
 
     let repo_for_files = Rc::clone(repo);
-    let vcs_for_files = vcs_service.map(Rc::clone);
+    let vcs_for_files = vcs.map(Rc::clone);
     let file_slot = use_memo(scope, (enabled, Rc::clone(repo), refreshes), move || {
         if !enabled {
             return None;
         }
-        vcs_for_files
-            .map(|vcs_service| vcs_service.list_files(&repo_for_files, RevisionRange::Worktree))
+        vcs_for_files.map(|vcs| vcs.list_files(&repo_for_files, RevisionRange::Worktree))
     });
     let files_ready = file_slot
         .as_ref()

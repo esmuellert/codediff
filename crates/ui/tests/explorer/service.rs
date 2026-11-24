@@ -8,14 +8,14 @@ use ui::Theme;
 use ui::components::{Context, Explorer, Ui, UiProps};
 use ui::services::{VcsService, WatcherService};
 
-use super::common::{fake_vcs_service, file, wait_vcs};
+use super::common::{fake_vcs, file, wait_vcs};
 
 #[component]
 fn Host(
     scope: &mut Scope,
     repo: Rc<Path>,
-    vcs_service: Rc<VcsService>,
-    watcher_service: Rc<WatcherService>,
+    vcs: Rc<VcsService>,
+    watcher: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
     rsx! {
@@ -23,8 +23,8 @@ fn Host(
             value: Context {
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
-                vcs_service: Some(Rc::clone(vcs_service)),
-                watcher_service: Some(Rc::clone(watcher_service)),
+                vcs: Some(Rc::clone(vcs)),
+                watcher: Some(Rc::clone(watcher)),
                 ..Context::default()
             },
             Explorer {}
@@ -37,8 +37,8 @@ fn RevisionRangeHost(
     scope: &mut Scope,
     repo: Rc<Path>,
     revision_range: vcs::RevisionRange,
-    vcs_service: Rc<VcsService>,
-    watcher_service: Rc<WatcherService>,
+    vcs: Rc<VcsService>,
+    watcher: Rc<WatcherService>,
 ) -> Node {
     let _ = scope;
     rsx! {
@@ -47,8 +47,8 @@ fn RevisionRangeHost(
                 theme: Rc::new(Theme::DARK),
                 repo: Rc::clone(repo),
                 revision_range: revision_range.clone(),
-                vcs_service: Some(Rc::clone(vcs_service)),
-                watcher_service: Some(Rc::clone(watcher_service)),
+                vcs: Some(Rc::clone(vcs)),
+                watcher: Some(Rc::clone(watcher)),
                 ..Context::default()
             },
             Explorer {}
@@ -58,19 +58,19 @@ fn RevisionRangeHost(
 
 #[test]
 fn explorer_requests_its_file_list() {
-    let (vcs_service, redraws) = fake_vcs_service(vec![vec![file("one.rs")]]);
-    let watcher_service = Rc::new(WatcherService::new());
+    let (vcs, redraws) = fake_vcs(vec![vec![file("one.rs")]]);
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service,
+            vcs: Rc::clone(&vcs),
+            watcher,
         },
         40,
         5,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     assert!(
         harness
@@ -85,27 +85,27 @@ fn explorer_requests_its_file_list() {
 
 #[test]
 fn changing_repository_requests_a_new_file_list() {
-    let (vcs_service, redraws) = fake_vcs_service(vec![vec![file("one.rs")], vec![file("two.rs")]]);
-    let watcher_service = Rc::new(WatcherService::new());
+    let (vcs, redraws) = fake_vcs(vec![vec![file("one.rs")], vec![file("two.rs")]]);
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
         },
         40,
         5,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
-        vcs_service: Rc::clone(&vcs_service),
-        watcher_service,
+        vcs: Rc::clone(&vcs),
+        watcher,
     });
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     let screen = harness.screen().join(
         "
@@ -119,7 +119,7 @@ fn changing_repository_requests_a_new_file_list() {
 fn a_list_still_being_read_for_the_previous_repository_never_appears() {
     let (release, released) = mpsc::channel::<()>();
     let (redraw, redraws) = mpsc::channel();
-    let vcs_service = Rc::new(VcsService::new(
+    let vcs = Rc::new(VcsService::fake(
         move || {
             let _ = redraw.send(());
         },
@@ -133,12 +133,12 @@ fn a_list_still_being_read_for_the_previous_repository_never_appears() {
         },
         |_, _| Ok(Vec::new()),
     ));
-    let watcher_service = Rc::new(WatcherService::new());
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/one")),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
         },
         40,
         5,
@@ -146,12 +146,12 @@ fn a_list_still_being_read_for_the_previous_repository_never_appears() {
     harness.force_draw();
     harness.set_props::<Host>(HostProps {
         repo: Rc::from(Path::new("/two")),
-        vcs_service: Rc::clone(&vcs_service),
-        watcher_service,
+        vcs: Rc::clone(&vcs),
+        watcher,
     });
     harness.force_draw();
     release.send(()).unwrap();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     let screen = harness.screen().join(
         "
@@ -164,7 +164,7 @@ fn a_list_still_being_read_for_the_previous_repository_never_appears() {
 #[test]
 fn a_list_that_cannot_be_read_says_why() {
     let (redraw, redraws) = mpsc::channel();
-    let vcs_service = Rc::new(VcsService::new(
+    let vcs = Rc::new(VcsService::fake(
         move || {
             let _ = redraw.send(());
         },
@@ -174,14 +174,14 @@ fn a_list_that_cannot_be_read_says_why() {
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::new(WatcherService::new()),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::new(WatcherService::fake()),
         },
         60,
         5,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     assert!(
         harness
@@ -194,22 +194,22 @@ fn a_list_that_cannot_be_read_says_why() {
 
 #[test]
 fn refresh_keeps_the_same_file_selected() {
-    let (vcs_service, redraws) = fake_vcs_service(vec![
+    let (vcs, redraws) = fake_vcs(vec![
         vec![file("a.rs"), file("b.rs"), file("c.rs")],
         vec![file("0.rs"), file("a.rs"), file("b.rs"), file("c.rs")],
     ]);
-    let watcher_service = Rc::new(WatcherService::new());
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
         },
         40,
         6,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
     harness.press(crokey::key!(j));
     harness.force_draw();
     harness.press(crokey::key!(j));
@@ -217,11 +217,11 @@ fn refresh_keeps_the_same_file_selected() {
     let selected_background = harness.style_at(0, 2).bg;
     assert_ne!(selected_background, harness.style_at(0, 1).bg);
 
-    watcher_service.deliver(watcher::Refresh {
+    watcher.notify(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     assert!(harness.screen_line(3).contains("b.rs"));
     assert_eq!(harness.style_at(0, 3).bg, selected_background);
@@ -230,26 +230,25 @@ fn refresh_keeps_the_same_file_selected() {
 
 #[test]
 fn filesystem_changes_refresh_the_current_repository() {
-    let (vcs_service, redraws) =
-        fake_vcs_service(vec![vec![file("before.rs")], vec![file("after.rs")]]);
-    let watcher_service = Rc::new(WatcherService::new());
+    let (vcs, redraws) = fake_vcs(vec![vec![file("before.rs")], vec![file("after.rs")]]);
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<Host>(
         HostProps {
             repo: Rc::from(Path::new("/repo")),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
         },
         40,
         5,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
-    watcher_service.deliver(watcher::Refresh {
+    watcher.notify(watcher::Refresh {
         worktree: true,
         ..watcher::Refresh::default()
     });
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     let screen = harness.screen().join(
         "
@@ -265,7 +264,7 @@ fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_fl
     let (redraw, redraws) = mpsc::channel();
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen_in_worker = std::sync::Arc::clone(&seen);
-    let vcs_service = Rc::new(VcsService::new(
+    let vcs = Rc::new(VcsService::fake(
         move || {
             let _ = redraw.send(());
         },
@@ -285,13 +284,13 @@ fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_fl
         },
         |_, _| Ok(Vec::new()),
     ));
-    let watcher_service = Rc::new(WatcherService::new());
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<RevisionRangeHost>(
         RevisionRangeHostProps {
             repo: Rc::from(Path::new("/repo")),
             revision_range: vcs::RevisionRange::Worktree,
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
         },
         40,
         5,
@@ -304,12 +303,12 @@ fn changing_revision_range_requests_the_new_revision_range_and_drops_stale_in_fl
     harness.set_props::<RevisionRangeHost>(RevisionRangeHostProps {
         repo: Rc::from(Path::new("/repo")),
         revision_range: vcs::RevisionRange::Between("a".into(), "b".into()),
-        vcs_service: Rc::clone(&vcs_service),
-        watcher_service: Rc::clone(&watcher_service),
+        vcs: Rc::clone(&vcs),
+        watcher: Rc::clone(&watcher),
     });
     harness.force_draw();
     release.send(()).unwrap();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     let screen = harness.screen().join(
         "
@@ -331,7 +330,7 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
     let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let calls_in_worker = std::sync::Arc::clone(&calls);
     let (redraw, redraws) = mpsc::channel();
-    let vcs_service = Rc::new(VcsService::new(
+    let vcs = Rc::new(VcsService::fake(
         move || {
             let _ = redraw.send(());
         },
@@ -341,38 +340,38 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
         },
         |_, _| Ok(Vec::new()),
     ));
-    let watcher_service = Rc::new(WatcherService::new());
+    let watcher = Rc::new(WatcherService::fake());
     let mut harness = Harness::new::<RevisionRangeHost>(
         RevisionRangeHostProps {
             repo: Rc::from(Path::new("/repo")),
             revision_range: vcs::RevisionRange::Between("a".into(), "b".into()),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::clone(&watcher_service),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
         },
         40,
         5,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-    watcher_service.deliver(watcher::Refresh {
+    watcher.notify(watcher::Refresh {
         worktree: true,
         index: true,
         ..watcher::Refresh::default()
     });
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
     assert_eq!(
         calls.load(std::sync::atomic::Ordering::SeqCst),
         1,
         "worktree/index edits do not re-run commit-to-commit diff"
     );
 
-    watcher_service.deliver(watcher::Refresh {
+    watcher.notify(watcher::Refresh {
         refs: true,
         ..watcher::Refresh::default()
     });
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
     assert_eq!(
         calls.load(std::sync::atomic::Ordering::SeqCst),
         2,
@@ -437,21 +436,21 @@ fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     .unwrap();
 
     let (redraw_tx, redraws) = mpsc::channel();
-    let vcs_service = Rc::new(VcsService::start(move || {
+    let vcs = Rc::new(VcsService::start(move || {
         let _ = redraw_tx.send(());
     }));
     let mut harness = Harness::new::<RevisionRangeHost>(
         RevisionRangeHostProps {
             repo: Rc::from(repo_dir.path()),
             revision_range: vcs::RevisionRange::Between(first, second),
-            vcs_service: Rc::clone(&vcs_service),
-            watcher_service: Rc::new(WatcherService::new()),
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::new(WatcherService::fake()),
         },
         50,
         6,
     );
     harness.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     // Line 0: Heading ("Changes"), Line 1: Directory ("src"), Line 2: File ("lib.rs").
     // Press Space on both the directory and the file.
@@ -467,7 +466,7 @@ fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     harness.press(crokey::key!(space));
     harness.force_draw();
 
-    wait_vcs(&vcs_service, &redraws, &mut harness);
+    wait_vcs(&vcs, &redraws, &mut harness);
 
     let staged = git(&["diff", "--cached", "--name-only"]);
     assert!(

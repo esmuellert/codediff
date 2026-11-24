@@ -88,7 +88,7 @@ fn CardsHost(
 }
 
 fn cards_harness(contents: Vec<DiffContent>, width: u16, height: u16) -> Harness {
-    let files = Rc::new(fake_services::opened(contents));
+    let files = Rc::new(fake_services::loaded(contents));
     Harness::new::<CardsHost>(CardsHostProps { files }, width, height).provide::<Ui>(Context {
         theme: Rc::new(Theme::DARK),
         ..Context::default()

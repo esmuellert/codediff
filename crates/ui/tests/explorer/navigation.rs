@@ -230,7 +230,7 @@ fn enter_on_a_file_sets_the_focused_file() {
     #[component]
     fn WithFile(
         scope: &mut Scope,
-        vcs_service: Rc<ui::services::VcsService>,
+        vcs: Rc<ui::services::VcsService>,
         file_set: Rc<Cell<bool>>,
     ) -> Node {
         let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
@@ -242,7 +242,7 @@ fn enter_on_a_file_sets_the_focused_file() {
                 value: Context {
                     theme: Rc::new(Theme::DARK),
                     repo: Rc::from(std::path::Path::new("/repo")),
-                    vcs_service: Some(Rc::clone(vcs_service)),
+                    vcs: Some(Rc::clone(vcs)),
                     set_file: Some(set_file),
                     file: file.as_ref().map(Rc::clone),
                     ..Default::default()
@@ -253,11 +253,11 @@ fn enter_on_a_file_sets_the_focused_file() {
     }
 
     let files = vec![file("src/app.rs"), file("src/lib.rs")];
-    let (vcs_service, redraws) = fake_vcs_service(vec![files]);
+    let (vcs, redraws) = fake_vcs(vec![files]);
     let file_set = Rc::new(Cell::new(false));
     let mut h = Harness::new::<WithFile>(
         WithFileProps {
-            vcs_service: Rc::clone(&vcs_service),
+            vcs: Rc::clone(&vcs),
             file_set: Rc::clone(&file_set),
         },
         40,
@@ -265,7 +265,7 @@ fn enter_on_a_file_sets_the_focused_file() {
     );
 
     h.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut h);
+    wait_vcs(&vcs, &redraws, &mut h);
     h.force_draw();
     h.press(crokey::key!(j));
     h.force_draw();
@@ -417,7 +417,7 @@ fn moving_to_a_file_opens_it() {
     #[component]
     fn Recorder(
         scope: &mut Scope,
-        vcs_service: Rc<ui::services::VcsService>,
+        vcs: Rc<ui::services::VcsService>,
         opened: Rc<RefCell<Vec<String>>>,
     ) -> Node {
         let (file, set_file) = use_state(scope, || None::<Rc<file_types::File>>);
@@ -433,7 +433,7 @@ fn moving_to_a_file_opens_it() {
                 value: Context {
                     theme: Rc::new(Theme::DARK),
                     repo: Rc::from(std::path::Path::new("/repo")),
-                    vcs_service: Some(Rc::clone(vcs_service)),
+                    vcs: Some(Rc::clone(vcs)),
                     set_file: Some(set_file),
                     file: file.as_ref().map(Rc::clone),
                     ..Default::default()
@@ -444,18 +444,18 @@ fn moving_to_a_file_opens_it() {
     }
 
     let files = vec![file("a.rs"), file("b.rs")];
-    let (vcs_service, redraws) = fake_vcs_service(vec![files]);
+    let (vcs, redraws) = fake_vcs(vec![files]);
     let opened = Rc::new(RefCell::new(Vec::new()));
     let mut h = Harness::new::<Recorder>(
         RecorderProps {
-            vcs_service: Rc::clone(&vcs_service),
+            vcs: Rc::clone(&vcs),
             opened: Rc::clone(&opened),
         },
         40,
         10,
     );
     h.force_draw();
-    wait_vcs(&vcs_service, &redraws, &mut h);
+    wait_vcs(&vcs, &redraws, &mut h);
     for _ in 0..4 {
         h.force_draw();
     }

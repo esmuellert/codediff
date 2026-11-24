@@ -32,8 +32,8 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let (list_error, set_list_error) = use_state(scope, || None::<String>);
     let repo = Rc::clone(&ctx.repo);
     let revision_range = ctx.revision_range.clone();
-    let vcs_service = ctx.vcs_service.as_ref().map(Rc::clone);
-    let watcher_service = ctx.watcher_service.as_ref().map(Rc::clone);
+    let vcs = ctx.vcs.as_ref().map(Rc::clone);
+    let watcher = ctx.watcher.as_ref().map(Rc::clone);
     // A change on disk lists the files again; the previous list is dropped.
     let (refreshes, set_refreshes) = use_state(scope, || 0u32);
     let revision_range_for_watcher = revision_range.clone();
@@ -41,11 +41,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
         scope,
         (Rc::clone(&repo), revision_range_for_watcher.clone()),
         move || {
-            let Some(watcher_service) = watcher_service else {
+            let Some(watcher) = watcher else {
                 return;
             };
-            watcher_service
-                .changes()
+            watcher
+                .subscribe()
                 .subscribe(move |refresh: watcher::Refresh| {
                     if refresh_affects_listing(refresh, &revision_range_for_watcher) {
                         set_refreshes.update(|refreshes| *refreshes += 1);
@@ -55,14 +55,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     );
     let repo_to_list = Rc::clone(&repo);
     let revision_range_to_list = revision_range.clone();
-    let vcs_for_list = vcs_service.clone();
+    let vcs_for_list = vcs.clone();
     let listing = use_memo(
         scope,
         (Rc::clone(&repo), revision_range.clone(), refreshes),
-        move || {
-            vcs_for_list
-                .map(|vcs_service| vcs_service.list_files(&repo_to_list, revision_range_to_list))
-        },
+        move || vcs_for_list.map(|vcs| vcs.list_files(&repo_to_list, revision_range_to_list)),
     );
     let listing_ready = listing
         .as_ref()
@@ -167,7 +164,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let files_for_keys = Rc::clone(&files);
     let revision_range_for_keys = ctx.revision_range.clone();
     let keybindings = Rc::clone(&ctx.keybindings);
-    let vcs_for_stage = vcs_service;
+    let vcs_for_stage = vcs;
     let exit = use_exit(scope);
 
     let listeners = Listeners::new()
@@ -301,8 +298,8 @@ fn refresh_affects_listing(refresh: watcher::Refresh, revision_range: &RevisionR
     }
 }
 
-fn toggle_stage(node: &Node, vcs_service: Option<&VcsService>) {
-    let Some(vcs_service) = vcs_service else {
+fn toggle_stage(node: &Node, vcs: Option<&VcsService>) {
+    let Some(vcs) = vcs else {
         return;
     };
     let (path, revs) = match node {
@@ -311,7 +308,7 @@ fn toggle_stage(node: &Node, vcs_service: Option<&VcsService>) {
         Node::File { file, .. } => (file.path(), file.revs()),
     };
     if matches!(revs.after, Rev::Index | Rev::Worktree) {
-        vcs_service.toggle_stage(path, &revs);
+        vcs.toggle_stage(path, &revs);
     }
 }
 

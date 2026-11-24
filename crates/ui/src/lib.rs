@@ -67,37 +67,37 @@ pub fn main(
     let (events_tx, events_rx) = mpsc::channel::<Event>();
 
     let vcs_redraw = events_tx.clone();
-    let vcs_service = Rc::new(VcsService::start(move || {
+    let vcs = Rc::new(VcsService::start(move || {
         let _ = vcs_redraw.send(Event::Redraw);
     }));
     let diff_redraw = events_tx.clone();
-    let diff_service = Rc::new(DiffService::start(
+    let diff = Rc::new(DiffService::start(
         move || {
             let _ = diff_redraw.send(Event::Redraw);
         },
         diff_settings,
     ));
     let syntax_redraw = events_tx.clone();
-    let syntax_service = Rc::new(SyntaxService::start(move || {
+    let syntax = Rc::new(SyntaxService::start(move || {
         let _ = syntax_redraw.send(Event::Redraw);
     }));
-    let _watcher_subscription = watcher::subscribe(
-        &watcher_root,
-        channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
-    )
-    .map_err(std::io::Error::other)?;
-
-    let watcher_service = Rc::new(WatcherService::new());
+    let watcher = Rc::new(
+        WatcherService::start(
+            &watcher_root,
+            channel::Emitter::new(events_tx.clone(), Event::RepositoryChanged),
+        )
+        .map_err(std::io::Error::other)?,
+    );
 
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
         revision_range,
         config,
         keybindings,
-        vcs_service,
-        diff_service,
-        syntax_service,
-        watcher_service: Rc::clone(&watcher_service),
+        vcs,
+        diff,
+        syntax,
+        watcher: Rc::clone(&watcher),
     });
 
     #[cfg(unix)]
@@ -129,7 +129,7 @@ pub fn main(
                 std::process::exit(128 + signal);
             }
             Event::RepositoryChanged(refresh) => {
-                watcher_service.deliver(refresh);
+                watcher.notify(refresh);
                 Flow::Continue
             }
             Event::Redraw => {

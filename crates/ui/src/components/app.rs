@@ -37,10 +37,10 @@ pub fn App(
     revision_range: RevisionRange,
     config: Rc<config::Config>,
     keybindings: Rc<KeyMap>,
-    vcs_service: Rc<VcsService>,
-    diff_service: Rc<DiffService>,
-    syntax_service: Rc<SyntaxService>,
-    watcher_service: Rc<WatcherService>,
+    vcs: Rc<VcsService>,
+    diff: Rc<DiffService>,
+    syntax: Rc<SyntaxService>,
+    watcher: Rc<WatcherService>,
 ) -> Node {
     let initial_range = revision_range.clone();
     let (revision_range, set_revision_range) = use_state(scope, || initial_range);
@@ -53,7 +53,7 @@ pub fn App(
         configured_theme(&theme_name)
     });
     let branch_drawing = *use_memo(scope, (), cached_branch_drawing);
-    let commits = use_commits(scope, cwd, vcs_service, watcher_service);
+    let commits = use_commits(scope, cwd, vcs, watcher);
 
     let exit = use_exit(scope);
     let explorer_width = config.ui.explorer_width;
@@ -112,10 +112,10 @@ pub fn App(
                 set_file: Some(set_file),
                 directory: directory.as_ref().map(Rc::clone),
                 set_directory: Some(set_directory),
-                vcs_service: Some(Rc::clone(vcs_service)),
-                diff_service: Some(Rc::clone(diff_service)),
-                syntax_service: Some(Rc::clone(syntax_service)),
-                watcher_service: Some(Rc::clone(watcher_service)),
+                vcs: Some(Rc::clone(vcs)),
+                diff: Some(Rc::clone(diff)),
+                syntax: Some(Rc::clone(syntax)),
+                watcher: Some(Rc::clone(watcher)),
             },
             Column {
                 listeners: keys,
