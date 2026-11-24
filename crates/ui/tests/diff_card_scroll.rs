@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::{self, DiffContent};
-use file_types::{File, Oid, RepoPath, Revs, ViewerMode};
+use file_types::{CommitHash, File, RepoPath, Revs, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx};
 use syntax::Span;
@@ -66,7 +66,7 @@ fn files() -> Rc<
                 DiffContent::Diff(diff::Diff {
                     file: File::unchanged_path(
                         RepoPath::new(format!("src/card_{file}.rs"), Path::new("/repo")),
-                        Revs::worktree_against(Oid::new("base")),
+                        Revs::worktree_against(CommitHash::new("base")),
                     ),
                     alignment,
                 })
@@ -75,14 +75,14 @@ fn files() -> Rc<
                 DiffContent::SingleFile(diff::SingleFile {
                     file: File::added(
                         RepoPath::new("src/empty.rs", Path::new("/repo")),
-                        Revs::worktree_against(Oid::new("base")),
+                        Revs::worktree_against(CommitHash::new("base")),
                     ),
                     lines: Arc::new(Vec::new()),
                 }),
                 DiffContent::SingleFile(diff::SingleFile {
                     file: File::added(
                         RepoPath::new("src/added.rs", Path::new("/repo")),
-                        Revs::worktree_against(Oid::new("base")),
+                        Revs::worktree_against(CommitHash::new("base")),
                     ),
                     lines: Arc::new(
                         (1..=12)

@@ -346,7 +346,7 @@ fn refresh_affects_file(refresh: watcher::Refresh, file: &File) -> bool {
 mod tests {
     use std::path::Path;
 
-    use file_types::{Oid, RepoPath, Revs};
+    use file_types::{CommitHash, RepoPath, Revs};
 
     use super::*;
 
@@ -356,11 +356,11 @@ mod tests {
 
     #[test]
     fn only_changes_to_a_present_mutable_side_refresh() {
-        let worktree = file(Revs::worktree_against(Oid::new("abc")));
-        let staged = file(Revs::new(Rev::Commit(Oid::new("abc")), Rev::Index));
+        let worktree = file(Revs::worktree_against(CommitHash::new("abc")));
+        let staged = file(Revs::new(Rev::Commit(CommitHash::new("abc")), Rev::Index));
         let deleted = File::deleted(
             RepoPath::new("selected.rs", Path::new("/repo")),
-            Revs::worktree_against(Oid::new("abc")),
+            Revs::worktree_against(CommitHash::new("abc")),
         );
 
         assert!(refresh_affects_file(

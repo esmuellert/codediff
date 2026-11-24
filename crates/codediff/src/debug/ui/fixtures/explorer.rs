@@ -1,6 +1,6 @@
 //! Semantic construction of Explorer file lists.
 
-use file_types::{ChangeType, File, Oid, Rev, Revs, Stats};
+use file_types::{ChangeType, CommitHash, File, Rev, Revs, Stats};
 
 use super::{repo_path, worktree_revs};
 
@@ -26,7 +26,7 @@ impl ExplorerFixture {
     pub fn staged(mut self, configure: impl FnOnce(&mut FileGroupBuilder<'_>)) -> Self {
         let mut group = FileGroupBuilder {
             files: &mut self.files,
-            revs: Revs::new(Rev::Commit(Oid::new("story-base")), Rev::Index),
+            revs: Revs::new(Rev::Commit(CommitHash::new("story-base")), Rev::Index),
         };
         configure(&mut group);
         self

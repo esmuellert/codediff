@@ -55,12 +55,12 @@ impl Batch {
         }
         let header = header.trim_end();
 
-        // "<oid> missing" for anything that does not resolve.
+        // "<hash> missing" for anything that does not resolve.
         if header.ends_with(" missing") || header.ends_with(" ambiguous") {
             return Ok(None);
         }
 
-        // "<oid> <type> <size>"
+        // "<hash> <type> <size>"
         let size: usize = header
             .rsplit(' ')
             .next()

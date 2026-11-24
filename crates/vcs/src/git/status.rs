@@ -252,7 +252,7 @@ mod tests {
     }
 
     fn revs() -> file_types::Revs {
-        file_types::Revs::worktree_against(file_types::Oid::new("b87b24c"))
+        file_types::Revs::worktree_against(file_types::CommitHash::new("b87b24c"))
     }
 
     #[test]
@@ -395,7 +395,7 @@ mod tests {
     fn a_branch_header_is_ignored() {
         // Ignore branch headers if they are present.
         let bytes = stream(&[
-            "# branch.oid 1234abcd",
+            "# branch.head main",
             "1 .M N... 100644 100644 100644 4cb29ea 4cb29ea modified.txt",
         ]);
         let entries = parse(&bytes).expect("parses");

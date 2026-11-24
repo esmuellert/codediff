@@ -7,7 +7,7 @@ pub mod single_file;
 
 use std::path::Path;
 
-use file_types::{Oid, RepoPath, Revs};
+use file_types::{CommitHash, RepoPath, Revs};
 
 const STORY_ROOT: &str = "/codediff-story";
 pub const MIN_LONG_LINE_CELLS: u32 = 512;
@@ -17,7 +17,7 @@ pub(super) fn repo_path(path: &str) -> RepoPath {
 }
 
 pub(super) fn worktree_revs() -> Revs {
-    Revs::worktree_against(Oid::new("story-base"))
+    Revs::worktree_against(CommitHash::new("story-base"))
 }
 
 pub fn long_rust_line(name: &str, pattern: &str) -> String {

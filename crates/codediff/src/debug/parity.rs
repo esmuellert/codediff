@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use file_types::{DiffVersion, File, Oid, RepoPath, Revs};
+use file_types::{CommitHash, DiffVersion, File, RepoPath, Revs};
 use line_index::{ByteOff, CellCol, LineIndex};
 use serde::Serialize;
 
@@ -101,7 +101,7 @@ fn load_diff_content(
     let root = std::env::current_dir()?;
     let file = File::unchanged_path(
         RepoPath::new("render.txt", &root),
-        Revs::worktree_against(Oid::new("render")),
+        Revs::worktree_against(CommitHash::new("render")),
     );
     Ok(Arc::new(diff_service::diff::DiffContent::Diff(
         diff_service::diff::Diff { file, alignment },

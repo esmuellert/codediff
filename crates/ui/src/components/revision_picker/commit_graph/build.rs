@@ -66,17 +66,17 @@ impl Graph {
         &self,
         index: usize,
         commits: &[Commit],
-        selected_oid: Option<&str>,
+        selected_hash: Option<&str>,
         symbol_set: SymbolSet,
     ) -> Rc<[GraphCell]> {
         let Some(pipes) = self.pipe_sets.get(index) else {
             return Rc::from([]);
         };
-        let prev_commit_oid = index
+        let prev_commit_hash = index
             .checked_sub(1)
             .and_then(|prev| commits.get(prev))
-            .map(|commit| commit.oid.as_str());
-        let routed = route_pipe_set(pipes, selected_oid, prev_commit_oid, symbol_set);
+            .map(|commit| commit.hash.as_str());
+        let routed = route_pipe_set(pipes, selected_hash, prev_commit_hash, symbol_set);
         let mut resolved = Vec::with_capacity(self.lane_count);
         for cell in &routed {
             resolved.push(resolve_cell(cell, symbol_set));
@@ -273,7 +273,7 @@ fn get_pipe_sets(commits: &[Commit]) -> Vec<Vec<GraphPipe>> {
 
     let mut pipes = vec![GraphPipe {
         from_hash: START_HASH.to_owned(),
-        to_hash: Some(commits[0].oid.as_str().to_owned()),
+        to_hash: Some(commits[0].hash.as_str().to_owned()),
         from_pos: 0,
         to_pos: 0,
         step: PipeStep::Starts,
@@ -295,7 +295,7 @@ fn get_next_pipes(
     commit: &Commit,
     allocate_colour: &mut impl FnMut() -> u8,
 ) -> Vec<GraphPipe> {
-    let commit_hash = commit.oid.as_str();
+    let commit_hash = commit.hash.as_str();
 
     let current_pipes: Vec<&GraphPipe> = prev_pipes
         .iter()
@@ -317,7 +317,7 @@ fn get_next_pipes(
     let mut taken_spots = HashSet::new();
     let mut traversed_spots = HashSet::new();
 
-    let first_parent = commit.parents.first().map(|oid| oid.as_str().to_owned());
+    let first_parent = commit.parents.first().map(|hash| hash.as_str().to_owned());
     let mut new_pipes = Vec::with_capacity(current_pipes.len() + commit.parents.len().max(1));
     new_pipes.push(GraphPipe {
         from_hash: commit_hash.to_owned(),
@@ -431,8 +431,8 @@ fn get_next_pipes(
 
 fn route_pipe_set(
     pipes: &[GraphPipe],
-    selected_oid: Option<&str>,
-    prev_commit_oid: Option<&str>,
+    selected_hash: Option<&str>,
+    prev_commit_hash: Option<&str>,
     symbol_set: SymbolSet,
 ) -> Vec<RoutedCell> {
     let mut max_pos = 0usize;
@@ -458,9 +458,9 @@ fn route_pipe_set(
     let is_merge = start_count > 1;
     let mut cells = vec![RoutedCell::default(); max_pos + 1];
 
-    let highlight = if prev_commit_oid.is_some() && prev_commit_oid == selected_oid {
+    let highlight = if prev_commit_hash.is_some() && prev_commit_hash == selected_hash {
         pipes.iter().any(|pipe| {
-            Some(pipe.from_hash.as_str()) == selected_oid
+            Some(pipe.from_hash.as_str()) == selected_hash
                 && (pipe.step != PipeStep::Terminates || pipe.from_pos != pipe.to_pos)
         })
     } else {
@@ -470,7 +470,7 @@ fn route_pipe_set(
     let mut selected_pipes = Vec::new();
     let mut non_selected_pipes = Vec::new();
     for pipe in pipes {
-        if highlight && Some(pipe.from_hash.as_str()) == selected_oid {
+        if highlight && Some(pipe.from_hash.as_str()) == selected_hash {
             selected_pipes.push(pipe);
         } else {
             non_selected_pipes.push(pipe);
@@ -717,19 +717,19 @@ const fn box_drawing_chars(
 
 #[cfg(test)]
 mod tests {
-    use file_types::Oid;
+    use file_types::CommitHash;
 
     use super::*;
 
-    fn commit(oid: &str, parents: &[&str]) -> Commit {
+    fn commit(hash: &str, parents: &[&str]) -> Commit {
         Commit {
-            oid: Oid::new(oid),
-            parents: parents.iter().copied().map(Oid::new).collect(),
+            hash: CommitHash::new(hash),
+            parents: parents.iter().copied().map(CommitHash::new).collect(),
             current: false,
             branches: Vec::new(),
             remotes: Vec::new(),
             tags: Vec::new(),
-            subject: format!("commit {oid}"),
+            subject: format!("commit {hash}"),
             author: "Test".to_owned(),
             date: "2026-09-10".to_owned(),
         }
@@ -761,20 +761,20 @@ mod tests {
     fn assert_lazygit_box_graph(
         name: &str,
         specs: &[(&str, &[&str])],
-        selected_oid: Option<&str>,
+        selected_hash: Option<&str>,
         expected_block: &str,
     ) {
         let commits: Vec<Commit> = specs
             .iter()
-            .map(|(oid, parents)| commit(oid, parents))
+            .map(|(hash, parents)| commit(hash, parents))
             .collect();
         let built = graph(&commits);
         let actual: Vec<String> = specs
             .iter()
             .enumerate()
-            .map(|(index, (oid, _))| {
-                let cells = built.cells(index, &commits, selected_oid, SymbolSet::BoxDrawing);
-                format!("{oid} {}", format_cells(&cells)).trim().to_owned()
+            .map(|(index, (hash, _))| {
+                let cells = built.cells(index, &commits, selected_hash, SymbolSet::BoxDrawing);
+                format!("{hash} {}", format_cells(&cells)).trim().to_owned()
             })
             .collect();
         let expected: Vec<String> = expected_block
@@ -788,25 +788,25 @@ mod tests {
     fn assert_lazygit_branch_graph(
         name: &str,
         specs: &[(&str, &[&str])],
-        selected_oid: Option<&str>,
+        selected_hash: Option<&str>,
         expected_block: &str,
     ) {
         let commits: Vec<Commit> = specs
             .iter()
-            .map(|(oid, parents)| commit(oid, parents))
+            .map(|(hash, parents)| commit(hash, parents))
             .collect();
         let built = graph(&commits);
         let actual: Vec<String> = specs
             .iter()
             .enumerate()
-            .map(|(index, (oid, parents))| {
+            .map(|(index, (hash, parents))| {
                 let is_merge = parents.len() > 1;
-                let cells = built.cells(index, &commits, selected_oid, SymbolSet::BranchDrawing);
+                let cells = built.cells(index, &commits, selected_hash, SymbolSet::BranchDrawing);
                 let mapped: String = format_cells(&cells)
                     .chars()
                     .map(|ch| branch_drawing_look_alike(ch, is_merge))
                     .collect();
-                format!("{oid} {mapped}").trim().to_owned()
+                format!("{hash} {mapped}").trim().to_owned()
             })
             .collect();
         let expected: Vec<String> = expected_block

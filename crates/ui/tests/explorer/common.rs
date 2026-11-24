@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use file_types::{File, Oid, RepoPath, Revs, Stats};
+use file_types::{CommitHash, File, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use ui::Theme;
 use ui::components::{Context, Explorer, ExplorerProps, Ui};
@@ -11,7 +11,7 @@ pub use crate::fake_pipeline::{fake_pipeline, wait};
 pub fn file(path: &str) -> File {
     File::unchanged_path(
         RepoPath::new(path, Path::new("/repo")),
-        Revs::worktree_against(Oid::new("abc")),
+        Revs::worktree_against(CommitHash::new("abc")),
     )
 }
 
@@ -23,7 +23,7 @@ pub fn moved(from: &str, to: &str) -> File {
     File::new(
         Some(RepoPath::new(from, Path::new("/repo"))),
         Some(RepoPath::new(to, Path::new("/repo"))),
-        Revs::worktree_against(Oid::new("abc")),
+        Revs::worktree_against(CommitHash::new("abc")),
     )
     .expect("a file on both sides")
 }

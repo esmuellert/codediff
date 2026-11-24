@@ -9,7 +9,7 @@ use std::path::Path;
 
 use diff_service::DiffService;
 use diff_service::files::RevisionRange;
-use file_types::{File, Oid, RepoPath, Revs};
+use file_types::{CommitHash, File, RepoPath, Revs};
 use loom::crokey::key;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_memo, use_state};
@@ -17,10 +17,10 @@ use ratatui::style::{Color, Modifier};
 use ui::components::{Context, RevisionPicker, RevisionSide, Ui, UiProps};
 use ui::{Commit, Theme};
 
-fn commit(oid: &str, parents: &[&str], subject: &str) -> Commit {
+fn commit(hash: &str, parents: &[&str], subject: &str) -> Commit {
     Commit {
-        oid: Oid::new(oid),
-        parents: parents.iter().copied().map(Oid::new).collect(),
+        hash: CommitHash::new(hash),
+        parents: parents.iter().copied().map(CommitHash::new).collect(),
         current: false,
         branches: Vec::new(),
         remotes: Vec::new(),
@@ -68,7 +68,7 @@ fn fake_worktree_files(count: usize) -> Vec<File> {
         .map(|i| {
             File::unchanged_path(
                 RepoPath::new(format!("src/file_{i}.rs"), Path::new("/repo")),
-                Revs::worktree_against(Oid::new("base")),
+                Revs::worktree_against(CommitHash::new("base")),
             )
         })
         .collect()
@@ -301,9 +301,9 @@ fn search_filters_into_compact_flat_list_without_pipes_and_treats_j_k_q_as_query
 fn exiting_search_via_esc_or_backspace_restores_exact_browse_selection_and_scroll_offset() {
     let commits: Vec<Commit> = (0..40)
         .map(|index| {
-            let oid = format!("{index:07x}");
+            let hash = format!("{index:07x}");
             let parent = format!("{:07x}", index + 1);
-            let mut c = commit(&oid, &[&parent], &format!("subject-{index:02}"));
+            let mut c = commit(&hash, &[&parent], &format!("subject-{index:02}"));
             if index == 2 || index == 30 {
                 c.tags = vec![format!("match-tag-{index:02}")];
             }
@@ -534,16 +534,16 @@ fn multi_key_bursts_in_a_single_frame_preserve_every_keystroke_and_navigation() 
 fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_restores_after_search() {
     let commits: Vec<Commit> = (0..40)
         .map(|index| {
-            let oid = format!("{index:07x}");
+            let hash = format!("{index:07x}");
             let parent = format!("{:07x}", index + 1);
-            let mut c = commit(&oid, &[&parent], &format!("subject-{index:02}"));
+            let mut c = commit(&hash, &[&parent], &format!("subject-{index:02}"));
             if index == 2 {
                 c.tags = vec!["early-tag".to_owned()];
             }
             c
         })
         .collect();
-    let target_oid = Oid::new("0000019"); // commit #25 (`subject-25`)
+    let target_hash = CommitHash::new("0000019"); // commit #25 (`subject-25`)
     let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
 
     // Case 1: `commits` already populated at mount.
@@ -553,7 +553,7 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
             worktree_files: Some(6),
             initial_range: RevisionRange::Between(
                 "HEAD".to_owned(),
-                target_oid.as_str().to_owned(),
+                target_hash.as_str().to_owned(),
             ),
             initial_picking: Some(RevisionSide::Right),
             theme: Theme::DARK,
@@ -590,7 +590,7 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
             worktree_files: Some(6),
             initial_range: RevisionRange::Between(
                 "HEAD".to_owned(),
-                target_oid.as_str().to_owned(),
+                target_hash.as_str().to_owned(),
             ),
             initial_picking: Some(RevisionSide::Right),
             theme: Theme::DARK,
@@ -607,7 +607,7 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
     async_h.set_props::<PickerHost>(PickerHostProps {
         commits: Rc::new(commits),
         worktree_files: None,
-        initial_range: RevisionRange::Against(target_oid.as_str().to_owned()),
+        initial_range: RevisionRange::Against(target_hash.as_str().to_owned()),
         initial_picking: Some(RevisionSide::Left),
         theme: Theme::DARK,
         branch_drawing: true,
@@ -877,9 +877,9 @@ fn ref_colours_and_lane_colours_never_emit_rgb_in_basic_themes() {
 fn start_and_end_keys_jump_across_eighty_virtualized_commits() {
     let commits: Vec<Commit> = (0..80)
         .map(|index| {
-            let oid = format!("{index:07x}");
+            let hash = format!("{index:07x}");
             let parent = format!("{:07x}", index + 1);
-            commit(&oid, &[&parent], &format!("subject-{index:02}"))
+            commit(&hash, &[&parent], &format!("subject-{index:02}"))
         })
         .collect();
 
@@ -900,7 +900,7 @@ fn start_and_end_keys_jump_across_eighty_virtualized_commits() {
 }
 
 #[test]
-fn reloading_commits_preserves_selected_commit_by_oid_and_settles() {
+fn reloading_commits_preserves_selected_commit_by_hash_and_settles() {
     let initial = vec![
         commit("1111111", &["2222222"], "first"),
         commit("2222222", &[], "target"),

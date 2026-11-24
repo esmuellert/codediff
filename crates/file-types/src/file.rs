@@ -60,7 +60,7 @@ impl Revs {
     }
 
     /// A commit compared with the working tree.
-    pub fn worktree_against(commit: crate::Oid) -> Self {
+    pub fn worktree_against(commit: crate::CommitHash) -> Self {
         Self::new(Rev::Commit(commit), Rev::Worktree)
     }
 
@@ -273,7 +273,7 @@ mod tests {
     use std::path::Path;
 
     fn a_comparison() -> Revs {
-        Revs::worktree_against(crate::Oid::new("b87b24c"))
+        Revs::worktree_against(crate::CommitHash::new("b87b24c"))
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod tests {
     }
 
     fn revs() -> Revs {
-        Revs::worktree_against(crate::Oid::new("b87b24c"))
+        Revs::worktree_against(crate::CommitHash::new("b87b24c"))
     }
 
     #[test]
@@ -414,7 +414,7 @@ mod tests {
     fn two_versions_of_one_path_are_named_differently() {
         let staged = File::unchanged_path(
             at("src/main.rs"),
-            Revs::new(Rev::Commit(crate::Oid::new("b87b24c")), Rev::Index),
+            Revs::new(Rev::Commit(crate::CommitHash::new("b87b24c")), Rev::Index),
         );
         let working = File::unchanged_path(at("src/main.rs"), revs());
         assert_ne!(
@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(added.path_of_version(DiffVersion::Original), None);
         assert_eq!(
             added.rev(DiffVersion::Original),
-            &Rev::Commit(crate::Oid::new("b87b24c"))
+            &Rev::Commit(crate::CommitHash::new("b87b24c"))
         );
     }
 

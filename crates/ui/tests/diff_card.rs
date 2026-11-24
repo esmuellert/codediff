@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use diff_service::diff::{self, DiffContent};
-use file_types::{File, Oid, RepoPath, Revs, Stats, ViewerMode};
+use file_types::{CommitHash, File, RepoPath, Revs, Stats, ViewerMode};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
 use syntax::Span;
@@ -19,7 +19,7 @@ use ui::components::{Context, DiffCard, DiffCardProps, DiffCards, DiffCardsProps
 fn file_at(path: &str) -> File {
     File::unchanged_path(
         RepoPath::new(path, Path::new("/repo")),
-        Revs::worktree_against(Oid::new("card")),
+        Revs::worktree_against(CommitHash::new("card")),
     )
     .set_stats(Stats::new(4, 2))
 }

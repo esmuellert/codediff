@@ -52,7 +52,7 @@ pub fn run(dir: &str, order: LogOrder, limit: usize) -> Result<()> {
         };
         println!(
             "{marker} {} ({parents}) {} {} {}{suffix}",
-            sanitize(commit.oid.as_str()),
+            sanitize(commit.hash.as_str()),
             sanitize(&commit.date),
             sanitize(&commit.author),
             sanitize(&commit.subject),

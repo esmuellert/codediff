@@ -58,8 +58,8 @@ fn cell_width(text: &str) -> u16 {
     line_index::LineIndex::new(text, 1).width().0 as u16
 }
 
-fn short_oid(oid: &str) -> &str {
-    &oid[..oid.len().min(7)]
+fn short_hash(hash: &str) -> &str {
+    &hash[..hash.len().min(7)]
 }
 
 fn format_commit(commit: &Commit) -> EndpointLabel {
@@ -83,7 +83,7 @@ fn format_commit(commit: &Commit) -> EndpointLabel {
     }
     EndpointLabel {
         glyph: EndpointGlyph::Commit,
-        text: short_oid(commit.oid.as_str()).to_owned(),
+        text: short_hash(commit.hash.as_str()).to_owned(),
     }
 }
 
@@ -118,7 +118,7 @@ fn format_rev(rev: &str, commits: &[Commit]) -> EndpointLabel {
     if rev.len() >= 12 && rev.bytes().all(|b| b.is_ascii_hexdigit()) {
         return EndpointLabel {
             glyph: EndpointGlyph::Commit,
-            text: short_oid(rev).to_owned(),
+            text: short_hash(rev).to_owned(),
         };
     }
     EndpointLabel {
@@ -132,7 +132,7 @@ fn current_branch(commits: &[Commit]) -> Option<String> {
     if let Some(branch) = head.branches.first() {
         return Some(branch.clone());
     }
-    Some(short_oid(head.oid.as_str()).to_owned())
+    Some(short_hash(head.hash.as_str()).to_owned())
 }
 
 fn pill_base_style(theme: &Theme, active: bool) -> Style {

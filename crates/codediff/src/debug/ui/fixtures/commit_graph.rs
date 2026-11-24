@@ -1,6 +1,6 @@
 //! Semantic construction of commit graph fixtures.
 
-use file_types::Oid;
+use file_types::CommitHash;
 use vcs::Commit;
 
 pub struct CommitBuilder {
@@ -8,11 +8,11 @@ pub struct CommitBuilder {
 }
 
 impl CommitBuilder {
-    pub fn new(oid: &str, parents: &[&str], date: &str, author: &str, subject: &str) -> Self {
+    pub fn new(hash: &str, parents: &[&str], date: &str, author: &str, subject: &str) -> Self {
         Self {
             commit: Commit {
-                oid: Oid::new(oid),
-                parents: parents.iter().copied().map(Oid::new).collect(),
+                hash: CommitHash::new(hash),
+                parents: parents.iter().copied().map(CommitHash::new).collect(),
                 current: false,
                 branches: Vec::new(),
                 remotes: Vec::new(),

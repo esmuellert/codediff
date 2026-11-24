@@ -193,7 +193,7 @@ fn interactive_revision_picking_search_swap_and_return_to_worktree() {
     let repo = build_test_repo();
     let mut app = PtyApp::start(repo.path());
 
-    // 1. Wait for header to load commits (main · <oid>) and explorer to show worktree groups
+    // 1. Wait for header to load commits (main · <hash>) and explorer to show worktree groups
     let initial = app.wait_for("initial worktree header", |s| {
         s.contains("Working tree ▾")
             && s.contains("\u{f418} main ▾")

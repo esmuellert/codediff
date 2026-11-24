@@ -1,6 +1,6 @@
 //! Lists commit history as VCS-agnostic [`Commit`] records.
 
-use file_types::Oid;
+use file_types::CommitHash;
 
 use crate::git::log::{self, Entry, Order};
 
@@ -31,8 +31,8 @@ impl CommitOrder {
 /// One commit in repository history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
-    pub oid: Oid,
-    pub parents: Vec<Oid>,
+    pub hash: CommitHash,
+    pub parents: Vec<CommitHash>,
     /// Whether this commit is currently checked out.
     pub current: bool,
     pub branches: Vec<String>,
@@ -82,8 +82,8 @@ fn entry_to_commit(entry: Entry) -> Commit {
     }
 
     Commit {
-        oid: Oid::new(entry.oid),
-        parents: entry.parents.into_iter().map(Oid::new).collect(),
+        hash: CommitHash::new(entry.hash),
+        parents: entry.parents.into_iter().map(CommitHash::new).collect(),
         current,
         branches,
         remotes,
@@ -100,7 +100,7 @@ mod tests {
 
     fn entry(decorations: &[&str]) -> Entry {
         Entry {
-            oid: "8339837".to_owned(),
+            hash: "8339837".to_owned(),
             parents: vec!["09d43b9".to_owned()],
             decorations: decorations.iter().map(|s| (*s).to_owned()).collect(),
             subject: "subject".to_owned(),

@@ -4,7 +4,7 @@ The shared vocabulary for a file under review. It contains no Git commands, term
 
 - `RepoPath` keeps Git's repository-relative spelling and the corresponding filesystem path.
 - `File` records the path and revision present on each side of one comparison.
-- `Rev`, `Revs`, and `Oid` identify worktree, index, conflict stages, and commits.
+- `Rev`, `Revs`, and `CommitHash` identify worktree, index, conflict stages, and commits.
 - `ChangeType` describes added, deleted, modified, moved, untracked, and conflicted entries.
 - `FileContent` classifies a side as text, binary, or absent.
 - `DiffVersion` names the original or modified side.

@@ -425,7 +425,7 @@ pub fn identity(node: &Node) -> String {
 mod tests {
     use std::path::Path;
 
-    use file_types::{Oid, RepoPath, Revs};
+    use file_types::{CommitHash, RepoPath, Revs};
 
     use super::*;
 
@@ -433,7 +433,7 @@ mod tests {
     fn an_unchanged_selection_keeps_its_rc() {
         let file = File::unchanged_path(
             RepoPath::new("selected.rs", Path::new("/repo")),
-            Revs::worktree_against(Oid::new("abc")),
+            Revs::worktree_against(CommitHash::new("abc")),
         );
         let selected = Rc::new(file.clone());
 

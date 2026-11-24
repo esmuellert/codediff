@@ -1,5 +1,5 @@
 use anyhow::Result;
-use file_types::Oid;
+use file_types::CommitHash;
 use ui::Commit;
 use ui::components::RevisionSide;
 
@@ -28,7 +28,7 @@ pub const STORIES: &[StoryDefinition] = &[
 
 fn sample_commits() -> Vec<Commit> {
     vec![Commit {
-        oid: Oid::new("6152138abcdef0123456789"),
+        hash: CommitHash::new("6152138abcdef0123456789"),
         parents: Vec::new(),
         current: true,
         branches: vec!["main".to_owned()],

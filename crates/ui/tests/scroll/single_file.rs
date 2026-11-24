@@ -59,7 +59,7 @@ fn file(deleted: bool) -> file_types::File {
 
 fn named_file(path: &str, deleted: bool) -> file_types::File {
     let path = file_types::RepoPath::new(path, Path::new("/repo"));
-    let revs = file_types::Revs::worktree_against(file_types::Oid::new("abc"));
+    let revs = file_types::Revs::worktree_against(file_types::CommitHash::new("abc"));
     if deleted {
         file_types::File::deleted(path, revs)
     } else {

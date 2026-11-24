@@ -166,10 +166,10 @@ fn fold_state_survives_a_refresh() {
 #[test]
 fn folding_a_directory_in_one_group_does_not_fold_the_same_name_in_another() {
     let staged = file_types::Revs::new(
-        file_types::Rev::Commit(file_types::Oid::new("abc")),
+        file_types::Rev::Commit(file_types::CommitHash::new("abc")),
         file_types::Rev::Index,
     );
-    let unstaged = file_types::Revs::worktree_against(file_types::Oid::new("abc"));
+    let unstaged = file_types::Revs::worktree_against(file_types::CommitHash::new("abc"));
 
     let files = vec![
         File::unchanged_path(

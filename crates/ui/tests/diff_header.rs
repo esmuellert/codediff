@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use diff_service::diff::{self, DiffContent};
-use file_types::{File, Oid, RepoPath, Revs, Stats};
+use file_types::{CommitHash, File, RepoPath, Revs, Stats};
 use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
 use ui::Theme;
@@ -15,7 +15,7 @@ use ui::components::{Context, DirectorySelection, Ui, UiProps};
 use ui::ratatui::style::Modifier;
 
 fn revs() -> Revs {
-    Revs::worktree_against(Oid::new("base"))
+    Revs::worktree_against(CommitHash::new("base"))
 }
 
 fn path(relative: &str) -> RepoPath {

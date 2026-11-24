@@ -28,15 +28,15 @@ pub enum GitCommand {
     Diff { args: Vec<String>, revs: Revs },
 }
 
-/// Resolves revision names to ids and picks the command shape.
+/// Resolves revision names to commit hashes and picks the command shape.
 pub fn resolve_command(repo: &Repo, revision_range: &RevisionRange) -> Result<GitCommand> {
     Ok(match revision_range {
         RevisionRange::Worktree => GitCommand::Worktree,
         RevisionRange::Against(rev) => {
-            let oid = rev_parse::resolve(repo, rev)?;
+            let hash = rev_parse::resolve(repo, rev)?;
             GitCommand::Diff {
-                args: vec![oid.as_str().to_owned()],
-                revs: Revs::new(Rev::Commit(oid), Rev::Worktree),
+                args: vec![hash.as_str().to_owned()],
+                revs: Revs::new(Rev::Commit(hash), Rev::Worktree),
             }
         }
         RevisionRange::Between(a, b) => {
@@ -49,7 +49,7 @@ pub fn resolve_command(repo: &Repo, revision_range: &RevisionRange) -> Result<Gi
         }
         RevisionRange::MergeBase(base, target) => {
             // Resolve both sides first so unknown revisions report `UnknownRevision`
-            // and `merge-base` plus `diff` see immutable commit ids.
+            // and `merge-base` plus `diff` see immutable commit hashes.
             let base = rev_parse::resolve(repo, base)?;
             let target = rev_parse::resolve(repo, target)?;
             let merge_base = merge_base::run(repo, base.as_str(), target.as_str())?;
@@ -59,10 +59,10 @@ pub fn resolve_command(repo: &Repo, revision_range: &RevisionRange) -> Result<Gi
             }
         }
         RevisionRange::Staged(rev) => {
-            let oid = rev_parse::resolve(repo, rev)?;
+            let hash = rev_parse::resolve(repo, rev)?;
             GitCommand::Diff {
-                args: vec!["--cached".to_owned(), oid.as_str().to_owned()],
-                revs: Revs::new(Rev::Commit(oid), Rev::Index),
+                args: vec!["--cached".to_owned(), hash.as_str().to_owned()],
+                revs: Revs::new(Rev::Commit(hash), Rev::Index),
             }
         }
     })

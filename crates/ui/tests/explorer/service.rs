@@ -379,7 +379,7 @@ fn worktree_only_refresh_does_not_relist_commit_to_commit_range() {
 fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     use std::process::Command;
 
-    use file_types::{File, Oid, RepoPath, Rev, Revs};
+    use file_types::{CommitHash, File, RepoPath, Rev, Revs};
     use ui::services::version_control::VersionControlService;
 
     let repo_dir = tempfile::tempdir().expect("creating temp git repo");
@@ -422,8 +422,8 @@ fn pressing_space_on_a_commit_to_commit_file_does_not_stage_worktree_changes() {
     let commit_file = File::unchanged_path(
         RepoPath::new("src/lib.rs", repo_dir.path()),
         Revs::new(
-            Rev::Commit(Oid::new(&first)),
-            Rev::Commit(Oid::new(&second)),
+            Rev::Commit(CommitHash::new(&first)),
+            Rev::Commit(CommitHash::new(&second)),
         ),
     );
     let (pipeline, redraws) = fake_pipeline(vec![vec![commit_file]], Vec::new());
