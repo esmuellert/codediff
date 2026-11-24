@@ -146,7 +146,7 @@ pub(super) fn story_props(
     let vcs = Rc::new(VcsService::fake(
         move || vcs_redraw(),
         move |_, _| Ok(listed.clone().unwrap_or_default()),
-        |_, _| Ok(Vec::new()),
+        move |_, limit| Ok(commits.iter().take(limit).cloned().collect()),
     ));
     let diff_redraw = Arc::clone(&redraw);
     let diff = Rc::new(DiffService::fake(
@@ -169,7 +169,6 @@ pub(super) fn story_props(
             branch_drawing,
             repo: Rc::from(Path::new("/codediff")),
             picking,
-            commits: Rc::new(commits),
             vcs: Some(Rc::clone(&vcs)),
             diff: Some(Rc::clone(&diff)),
             syntax: Some(Rc::clone(&syntax)),

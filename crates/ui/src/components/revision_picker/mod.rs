@@ -3,6 +3,7 @@
 
 mod build;
 pub mod commit_graph;
+mod commits;
 mod header;
 mod worktree;
 mod worktree_summary;
@@ -15,18 +16,19 @@ use file_types::Rev;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node as LoomNode,
     Scope, Scroll, ScrollHandle, ScrollOffset, ScrollProps, Text, TextProps, component, rsx,
-    use_context, use_exit, use_layout_effect, use_measure, use_memo, use_scroll, use_state,
+    use_context, use_exit, use_layout_effect, use_measure, use_memo, use_ref, use_scroll,
+    use_state,
 };
 
 use self::build::{DisplayRow, RevisionList, build_list};
 use self::commit_graph::build::{SymbolSet, graph};
 use self::commit_graph::entry::{Entry, EntryProps};
+use self::commits::use_commits;
 use self::header::header;
 use self::worktree::{WorktreeRow, WorktreeRowProps, worktree_indent};
 use self::worktree_summary::use_worktree_summary;
 use super::context::Ui;
 use super::revisions::{RevisionSide, apply_picked_revision, initial_for_side};
-use crate::Commit;
 use crate::keybindings::Action;
 
 const SCROLLOFF: u32 = 3;
@@ -44,42 +46,28 @@ struct PickerState {
     selected: usize,
     browse_anchor: Option<Rev>,
     saved_browse: Option<SavedBrowse>,
-    pending_initial: Option<Rev>,
 }
 
 impl PickerState {
-    fn from_initial(
-        initial: Option<&Rev>,
-        commits: &[Commit],
-        worktree_summary: Option<&str>,
-    ) -> Self {
-        let list = build_list(commits, worktree_summary, "");
-        let Some(target) = initial else {
-            return Self {
-                browse_anchor: list.candidates.first().cloned(),
-                ..Self::default()
-            };
-        };
-        if let Some(index) = list.candidates.iter().position(|rev| rev == target) {
-            Self {
-                selected: index,
-                browse_anchor: Some(target.clone()),
-                ..Self::default()
-            }
-        } else {
-            Self {
-                browse_anchor: list.candidates.first().cloned(),
-                pending_initial: Some(target.clone()),
-                ..Self::default()
-            }
+    fn active_index(&self, initial: Option<&Rev>, current_list: &RevisionList) -> usize {
+        if self.query.trim().is_empty()
+            && let Some(target) = self.browse_anchor.as_ref().or(initial)
+            && let Some(index) = current_list.candidates.iter().position(|rev| rev == target)
+        {
+            return index;
         }
+        clamp_index(self.selected, current_list.candidates.len())
     }
 
-    fn open_search(&mut self, active_selected: usize, top_line: u32) {
-        self.pending_initial = None;
+    fn open_search(&mut self, initial: Option<&Rev>, current_list: &RevisionList, top_line: u32) {
+        let current = self.active_index(initial, current_list);
+        self.selected = current;
+        if self.browse_anchor.is_none() {
+            self.browse_anchor = current_list.candidates.get(current).cloned();
+        }
         if self.saved_browse.is_none() {
             self.saved_browse = Some(SavedBrowse {
-                selected: active_selected,
+                selected: current,
                 scroll_offset: ScrollOffset { x: 0, y: top_line },
             });
         }
@@ -103,18 +91,19 @@ impl PickerState {
     fn apply_query(
         &mut self,
         next_query: String,
+        initial: Option<&Rev>,
         current_list: &RevisionList,
         next_list: RevisionList,
         top_line: u32,
         scroll: ScrollHandle,
     ) {
-        self.pending_initial = None;
         let was_filtering = !self.query.trim().is_empty();
         let now_filtering = !next_query.trim().is_empty();
 
         if !was_filtering && now_filtering && self.saved_browse.is_none() {
+            let current = self.active_index(initial, current_list);
             self.saved_browse = Some(SavedBrowse {
-                selected: clamp_index(self.selected, current_list.candidates.len()),
+                selected: current,
                 scroll_offset: ScrollOffset { x: 0, y: top_line },
             });
         }
@@ -139,13 +128,18 @@ impl PickerState {
         }
     }
 
-    fn move_by(&mut self, delta: isize, current_list: &RevisionList, scroll: ScrollHandle) {
-        self.pending_initial = None;
+    fn move_by(
+        &mut self,
+        delta: isize,
+        initial: Option<&Rev>,
+        current_list: &RevisionList,
+        scroll: ScrollHandle,
+    ) {
         let total = current_list.candidates.len();
         if total == 0 {
             return;
         }
-        let prev = self.selected.min(total - 1);
+        let prev = self.active_index(initial, current_list);
         let next = if delta < 0 {
             prev.saturating_sub(delta.unsigned_abs())
         } else {
@@ -161,7 +155,6 @@ impl PickerState {
     }
 
     fn jump_to(&mut self, to_end: bool, current_list: &RevisionList, scroll: ScrollHandle) {
-        self.pending_initial = None;
         let total = current_list.candidates.len();
         if total == 0 {
             return;
@@ -192,7 +185,8 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         SymbolSet::BoxDrawing
     };
 
-    let commits = &ctx.commits;
+    let commits = use_commits(scope, &ctx.repo, ctx.vcs.as_ref(), ctx.watcher.as_ref());
+    let commits = &commits;
     let show_worktree = ctx.picking != Some(RevisionSide::Left);
     let loaded_summary = use_worktree_summary(
         scope,
@@ -207,17 +201,14 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         .picking
         .and_then(|side| initial_for_side(side, &ctx.revision_range, commits));
 
-    let initial_for_state = initial.clone();
-    let commits_for_init = Rc::clone(commits);
-    let summary_for_init = worktree_summary.clone();
-    let (picker, set_picker) = use_state(scope, move || {
-        PickerState::from_initial(
-            initial_for_state.as_ref(),
-            &commits_for_init,
-            summary_for_init.as_deref(),
-        )
-    });
-    let (initial_scrolled, set_initial_scrolled) = use_state(scope, || initial.is_none());
+    let (picker, set_picker) = use_state(scope, PickerState::default);
+    let (initial_scrolled, set_initial_scrolled) = use_state(scope, || false);
+    let last_side = use_ref(scope, || ctx.picking);
+    if *last_side.current() != ctx.picking {
+        *last_side.current() = ctx.picking;
+        set_picker.set(PickerState::default());
+        set_initial_scrolled.set(false);
+    }
 
     let commits_for_graph = Rc::clone(commits);
     let built = use_memo(scope, Rc::clone(commits), move || graph(&commits_for_graph));
@@ -242,11 +233,9 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
     );
 
     let filtering = !picker.query.trim().is_empty();
-    let anchor_index = if !filtering && picker.pending_initial.is_none() {
-        picker
-            .browse_anchor
-            .as_ref()
-            .and_then(|anchor| list.candidates.iter().position(|rev| rev == anchor))
+    let target = picker.browse_anchor.as_ref().or(initial.as_ref());
+    let anchor_index = if !filtering {
+        target.and_then(|rev| list.candidates.iter().position(|c| c == rev))
     } else {
         None
     };
@@ -271,44 +260,28 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
     let visible_start = top_line.min(row_count.saturating_sub(1));
     let visible_count = u32::from(size.height).saturating_add(4);
 
-    let resolved_async_initial = picker
-        .pending_initial
-        .as_ref()
-        .and_then(|target| list.candidates.iter().position(|rev| rev == target));
-    let needs_mount_scroll = !initial_scrolled && picker.pending_initial.is_none();
-    let anchor_shifted = anchor_index.is_some_and(|index| index != picker.selected);
+    let has_commits = !commits.is_empty();
+    let anchor_shifted = picker.browse_anchor.is_some()
+        && anchor_index.is_some_and(|index| index != picker.selected);
     let list_for_initial = Rc::clone(&list);
     use_layout_effect(
         scope,
         (
-            resolved_async_initial,
-            needs_mount_scroll,
+            has_commits,
+            initial_scrolled,
             anchor_shifted,
             size.height,
             row_count,
         ),
         move || {
-            if let Some(index) = resolved_async_initial {
-                let target_rev = list_for_initial.candidates.get(index).cloned();
+            if anchor_shifted {
                 set_picker.update(|state| {
-                    if state.pending_initial.is_some() && !state.searching && state.query.is_empty()
-                    {
-                        state.selected = index;
-                        state.browse_anchor = target_rev;
-                        state.pending_initial = None;
-                        if let Some(row_y) = list_for_initial.row_for_candidate(index) {
-                            scroll.keep_y_visible(row_y as u32, SCROLLOFF);
-                        }
-                    }
-                });
-                set_initial_scrolled.set(true);
-            } else if anchor_shifted {
-                set_picker.update(|state| {
-                    if state.pending_initial.is_none() && state.query.trim().is_empty() {
+                    if state.query.trim().is_empty() {
                         state.selected = active_selected;
                     }
                 });
-            } else if needs_mount_scroll && size.height > 0 && row_count > 0 {
+            }
+            if has_commits && !initial_scrolled && size.height > 0 && row_count > 0 {
                 if let Some(row_y) = list_for_initial.row_for_candidate(active_selected) {
                     scroll.keep_y_visible(row_y as u32, SCROLLOFF);
                 }
@@ -385,6 +358,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
     let set_revision_range = ctx.set_revision_range;
     let revision_range_for_keys = ctx.revision_range.clone();
     let commits_for_open = Rc::clone(commits);
+    let initial_for_keys = initial.clone();
     let can_close = picking.is_some() && set_picking.is_some();
 
     let list_for_state = move |query: &str| -> Rc<RevisionList> {
@@ -409,6 +383,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
 
         set_picker.update(|state| {
             let current_list = list_for_state(&state.query);
+            let init_ref = initial_for_keys.as_ref();
             if state.searching {
                 if pressed == key!(esc) {
                     let browse_list =
@@ -418,18 +393,18 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     return;
                 }
                 if pressed == key!(enter) {
-                    let index = clamp_index(state.selected, current_list.candidates.len());
+                    let index = state.active_index(init_ref, &current_list);
                     opened = current_list.candidates.get(index).cloned();
                     bubble = Bubble::Stop;
                     return;
                 }
                 if pressed == key!(down) || pressed == key!(ctrl - n) {
-                    state.move_by(1, &current_list, scroll);
+                    state.move_by(1, init_ref, &current_list, scroll);
                     bubble = Bubble::Stop;
                     return;
                 }
                 if pressed == key!(up) || pressed == key!(ctrl - p) {
-                    state.move_by(-1, &current_list, scroll);
+                    state.move_by(-1, init_ref, &current_list, scroll);
                     bubble = Bubble::Stop;
                     return;
                 }
@@ -438,7 +413,14 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     if next.pop().is_some() {
                         let next_list =
                             build_list(&commits_for_update, summary_for_update.as_deref(), &next);
-                        state.apply_query(next, &current_list, next_list, top_line, scroll);
+                        state.apply_query(
+                            next,
+                            init_ref,
+                            &current_list,
+                            next_list,
+                            top_line,
+                            scroll,
+                        );
                     }
                     bubble = Bubble::Stop;
                     return;
@@ -448,7 +430,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     next.push(ch);
                     let next_list =
                         build_list(&commits_for_update, summary_for_update.as_deref(), &next);
-                    state.apply_query(next, &current_list, next_list, top_line, scroll);
+                    state.apply_query(next, init_ref, &current_list, next_list, top_line, scroll);
                     bubble = Bubble::Stop;
                 }
                 return;
@@ -456,8 +438,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
 
             match pressed {
                 k if k == key!('/') => {
-                    let current = clamp_index(state.selected, current_list.candidates.len());
-                    state.open_search(current, top_line);
+                    state.open_search(init_ref, &current_list, top_line);
                     bubble = Bubble::Stop;
                 }
                 k if k == key!(esc) => {
@@ -472,11 +453,11 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     }
                 }
                 k if keybindings.matches(Action::MoveDown, k) => {
-                    state.move_by(1, &current_list, scroll);
+                    state.move_by(1, init_ref, &current_list, scroll);
                     bubble = Bubble::Stop;
                 }
                 k if keybindings.matches(Action::MoveUp, k) => {
-                    state.move_by(-1, &current_list, scroll);
+                    state.move_by(-1, init_ref, &current_list, scroll);
                     bubble = Bubble::Stop;
                 }
                 k if keybindings.matches(Action::Start, k) => {
@@ -488,7 +469,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     bubble = Bubble::Stop;
                 }
                 k if keybindings.matches(Action::Open, k) => {
-                    let index = clamp_index(state.selected, current_list.candidates.len());
+                    let index = state.active_index(init_ref, &current_list);
                     opened = current_list.candidates.get(index).cloned();
                     bubble = Bubble::Stop;
                 }
@@ -535,6 +516,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
     let list_for_mouse = Rc::clone(&list);
     let revision_range_for_mouse = ctx.revision_range.clone();
     let commits_for_mouse = Rc::clone(commits);
+    let initial_for_mouse = initial.clone();
     let list_mouse_listeners = Listeners::new().on_mouse_down(move |mouse| {
         if mouse.button != Some(MouseButton::Left) {
             return Bubble::Continue;
@@ -545,8 +527,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         };
         let mut opened: Option<Rev> = None;
         set_picker.update(|state| {
-            state.pending_initial = None;
-            let prev = clamp_index(state.selected, list_for_mouse.candidates.len());
+            let prev = state.active_index(initial_for_mouse.as_ref(), &list_for_mouse);
             if candidate == prev {
                 opened = list_for_mouse.candidates.get(candidate).cloned();
             } else {
@@ -573,6 +554,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
     let commits_for_header = Rc::clone(commits);
     let summary_for_header = worktree_summary.clone();
     let list_for_header = Rc::clone(&list);
+    let initial_for_header = initial;
     let header_node = header(picker.searching, &picker.query, theme, move || {
         set_picker.update(|state| {
             if state.searching {
@@ -580,8 +562,7 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     build_list(&commits_for_header, summary_for_header.as_deref(), "");
                 state.close_search(browse_list, scroll);
             } else {
-                let current = clamp_index(state.selected, list_for_header.candidates.len());
-                state.open_search(current, top_line);
+                state.open_search(initial_for_header.as_ref(), &list_for_header, top_line);
             }
         });
     });

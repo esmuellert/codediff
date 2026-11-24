@@ -51,6 +51,14 @@ impl Repository {
             .map(entry_to_commit)
             .collect())
     }
+
+    /// Resolves `revs` to deduplicated commits in caller order.
+    pub fn resolve_commits(&self, revs: &[String]) -> crate::Result<Vec<Commit>> {
+        Ok(log::resolve(&self.repo, revs)?
+            .into_iter()
+            .map(entry_to_commit)
+            .collect())
+    }
 }
 
 fn entry_to_commit(entry: Entry) -> Commit {

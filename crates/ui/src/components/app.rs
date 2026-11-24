@@ -6,7 +6,7 @@ use std::rc::Rc;
 use file_types::File;
 use loom::{
     Bubble, Column, ColumnProps, Layout, Listeners, Node, Row, RowProps, Scope, component,
-    crokey::key, rsx, use_effect, use_exit, use_memo, use_state,
+    crokey::key, rsx, use_exit, use_memo, use_state,
 };
 
 use super::border::{Border, BorderProps};
@@ -16,56 +16,10 @@ use super::explorer::Explorer;
 use super::revision_header::RevisionHeader;
 use super::revision_picker::RevisionPicker;
 use super::revisions::{RevisionSide, swap_revision_range};
+use crate::RevisionRange;
 use crate::keybindings::{Action, KeyMap};
 use crate::services::{DiffService, SyntaxService, VcsService, WatcherService};
 use crate::theme::{Theme, cached_branch_drawing};
-use crate::{Commit, RevisionRange};
-
-const COMMIT_LIMIT: usize = 500;
-
-fn use_commits(
-    scope: &mut Scope,
-    repo: &Rc<Path>,
-    vcs: &Rc<VcsService>,
-    watcher: &Rc<WatcherService>,
-) -> Rc<Vec<Commit>> {
-    let (commits, set_commits) = use_state(scope, || Rc::new(Vec::<Commit>::new()));
-    let (refreshes, set_refreshes) = use_state(scope, || 0u32);
-
-    let watcher_for_effect = Rc::clone(watcher);
-    use_effect(scope, Rc::clone(repo), move || {
-        watcher_for_effect.subscribe(move |refresh: watcher::Refresh| {
-            if refresh.head || refresh.refs {
-                set_refreshes.update(|n| *n += 1);
-            }
-        });
-    });
-
-    let repo_for_commits = Rc::clone(repo);
-    let vcs_for_commits = Rc::clone(vcs);
-    let loaded_commits = use_memo(scope, (Rc::clone(repo), refreshes), move || {
-        vcs_for_commits.list_commits(&repo_for_commits, COMMIT_LIMIT)
-    });
-    let commits_ready = loaded_commits.is_ready();
-
-    let commits_for_effect = Rc::clone(&loaded_commits);
-    use_effect(
-        scope,
-        (Rc::clone(repo), refreshes, commits_ready),
-        move || {
-            let Some(Ok(listed)) = commits_for_effect.take() else {
-                return;
-            };
-            set_commits.update(|current| {
-                if **current != listed {
-                    *current = Rc::new(listed);
-                }
-            });
-        },
-    );
-
-    commits
-}
 
 fn configured_theme(name: &str) -> Theme {
     if name == "auto" {
@@ -98,7 +52,6 @@ pub fn App(
         configured_theme(&theme_name)
     });
     let branch_drawing = *use_memo(scope, (), cached_branch_drawing);
-    let commits = use_commits(scope, cwd, vcs, watcher);
 
     let exit = use_exit(scope);
     let explorer_width = config.ui.explorer_width;
@@ -152,7 +105,6 @@ pub fn App(
                 set_revision_range: Some(set_revision_range),
                 picking,
                 set_picking: Some(set_picking),
-                commits,
                 file: file.as_ref().map(Rc::clone),
                 set_file: Some(set_file),
                 directory: directory.as_ref().map(Rc::clone),

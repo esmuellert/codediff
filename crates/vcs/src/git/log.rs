@@ -61,6 +61,27 @@ pub fn list(repo: &Repo, order: Order, limit: usize) -> Result<Vec<Entry>> {
     parse(&run::run(&repo.root, &args)?)
 }
 
+/// Resolves `revs` to deduplicated commit records in caller order.
+pub fn resolve(repo: &Repo, revs: &[String]) -> Result<Vec<Entry>> {
+    let mut oids: Vec<String> = Vec::new();
+    for rev in revs {
+        if let Ok(hash) = rev_parse::resolve(repo, rev)
+            && !oids.iter().any(|seen| seen == hash.as_str())
+        {
+            oids.push(hash.as_str().to_owned());
+        }
+    }
+    if oids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut args = vec!["log", "--no-walk=unsorted", "--decorate=full", FORMAT];
+    for oid in &oids {
+        args.push(oid.as_str());
+    }
+    args.push("--");
+    parse(&run::run(&repo.root, &args)?)
+}
+
 /// Parses NUL-delimited `git log` output into raw entries.
 pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>> {
     let text = std::str::from_utf8(bytes).map_err(|_| Error::NotUtf8 {

@@ -32,6 +32,7 @@ enum Event {
     #[cfg(unix)]
     Signal(i32),
     RepositoryChanged(watcher::Refresh),
+    WarmCommits,
     /// A background thread changed a file list, file diff, or syntax spans.
     Redraw,
 }
@@ -87,6 +88,7 @@ pub fn main(
         .map_err(std::io::Error::other)?,
     );
 
+    let vcs_for_loop = Rc::clone(&vcs);
     let mut tree = Tree::new::<App>(AppProps {
         cwd: Rc::from(cwd),
         revision_range,
@@ -98,6 +100,11 @@ pub fn main(
         watcher: Rc::clone(&watcher),
     });
 
+    // Enqueued onto `events_rx` so `loom::run` draws Frame 0 first (queuing
+    // `Explorer::list_files` and `RevisionHeader::resolve_commits` onto `"vcs"`),
+    // and then queues `warm_commits` behind them.
+    let _ = events_tx.send(Event::WarmCommits);
+
     #[cfg(unix)]
     spawn_signals(events_tx.clone(), Event::Signal);
 
@@ -106,6 +113,7 @@ pub fn main(
     #[cfg(debug_assertions)]
     let rebuild_flag = Rc::clone(&rebuild);
 
+    let warm_tx = events_tx.clone();
     loom::run(
         &mut tree,
         events_rx,
@@ -127,7 +135,17 @@ pub fn main(
                 std::process::exit(128 + signal);
             }
             Event::RepositoryChanged(refresh) => {
+                if refresh.head || refresh.refs {
+                    vcs_for_loop.invalidate_commits();
+                }
                 watcher.notify(refresh);
+                if refresh.head || refresh.refs {
+                    let _ = warm_tx.send(Event::WarmCommits);
+                }
+                Flow::Continue
+            }
+            Event::WarmCommits => {
+                vcs_for_loop.warm_commits(&watcher_root);
                 Flow::Continue
             }
             Event::Redraw => {

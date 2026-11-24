@@ -1,17 +1,20 @@
 //! One-line revision header for selecting left/right endpoints and swapping them.
 
+use std::path::Path;
 use std::rc::Rc;
 
 use crate::RevisionRange;
 use loom::{
     Basis, Bubble, Gap, GapProps, Layout, Listeners, Node, Row, RowProps, Scope, Text, TextProps,
-    component, crossterm::event::MouseButton, rsx, use_context, use_measure,
+    component, crossterm::event::MouseButton, rsx, use_context, use_effect, use_measure, use_memo,
+    use_state,
 };
 use ratatui::style::{Color, Modifier, Style};
 
 use super::context::Ui;
-use super::revisions::{RevisionSide, find_commit, head_commit, swap_revision_range};
+use super::revisions::{RevisionSide, find_commit, head_commit, range_revs, swap_revision_range};
 use crate::Commit;
+use crate::services::{Resource, VcsService, WatcherService};
 use crate::theme::Theme;
 
 const ICON_BRANCH: &str = "\u{f418}";
@@ -339,13 +342,91 @@ fn meta_part(
     }
 }
 
+fn use_range_commits(
+    scope: &mut Scope,
+    repo: &Rc<Path>,
+    revision_range: &RevisionRange,
+    vcs: Option<&Rc<VcsService>>,
+    watcher: Option<&Rc<WatcherService>>,
+) -> Rc<Vec<Commit>> {
+    let (commits, set_commits) = use_state(scope, || Rc::new(Vec::<Commit>::new()));
+    let (refreshes, set_refreshes) = use_state(scope, || 0u32);
+
+    let watcher_for_effect = watcher.map(Rc::clone);
+    use_effect(scope, Rc::clone(repo), move || {
+        let Some(watcher) = watcher_for_effect else {
+            return;
+        };
+        watcher.subscribe(move |refresh: watcher::Refresh| {
+            if refresh.head || refresh.refs {
+                set_refreshes.update(|n| *n += 1);
+            }
+        });
+    });
+
+    let revs = range_revs(revision_range);
+    let revs_for_memo = revs.clone();
+    let repo_for_commits = Rc::clone(repo);
+    let vcs_for_commits = vcs.map(Rc::clone);
+    let loaded_commits = use_memo(
+        scope,
+        (Rc::clone(repo), revs.clone(), refreshes),
+        move || vcs_for_commits.map(|vcs| vcs.resolve_commits(&repo_for_commits, revs_for_memo)),
+    );
+
+    let mut effective_commits = Rc::clone(&commits);
+    if let Some(Ok(resolved)) = loaded_commits
+        .as_ref()
+        .as_ref()
+        .and_then(|res| res.is_ready().then(|| res.take()).flatten())
+        && *effective_commits != resolved
+    {
+        let next = Rc::new(resolved);
+        effective_commits = Rc::clone(&next);
+        set_commits.set(next);
+    }
+
+    let commits_ready = loaded_commits
+        .as_ref()
+        .as_ref()
+        .is_some_and(Resource::is_ready);
+    let commits_for_effect = Rc::clone(&loaded_commits);
+    use_effect(
+        scope,
+        (Rc::clone(repo), revs, refreshes, commits_ready),
+        move || {
+            let Some(Ok(resolved)) = commits_for_effect
+                .as_ref()
+                .as_ref()
+                .and_then(Resource::take)
+            else {
+                return;
+            };
+            set_commits.update(|current| {
+                if **current != resolved {
+                    *current = Rc::new(resolved);
+                }
+            });
+        },
+    );
+
+    effective_commits
+}
+
 #[component]
 pub fn RevisionHeader(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
     let theme = &ctx.theme;
     let (node_ref, size) = use_measure(scope);
 
-    let commits = &ctx.commits;
+    let commits = use_range_commits(
+        scope,
+        &ctx.repo,
+        &ctx.revision_range,
+        ctx.vcs.as_ref(),
+        ctx.watcher.as_ref(),
+    );
+    let commits = &commits;
     let (left, right, merge_base, can_swap) = match &ctx.revision_range {
         RevisionRange::Worktree => (
             format_head(commits),

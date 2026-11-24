@@ -7,10 +7,10 @@ use file_types::{File, RepoPath, Revs};
 use loom::{SetState, context};
 
 use super::revisions::RevisionSide;
+use crate::RevisionRange;
 use crate::keybindings::KeyMap;
 use crate::services::{DiffService, SyntaxService, VcsService, WatcherService};
 use crate::theme::Theme;
-use crate::{Commit, RevisionRange};
 
 /// A selected directory and the changed files beneath it.
 #[derive(Clone)]
@@ -44,7 +44,6 @@ pub struct Context {
     pub set_revision_range: Option<SetState<RevisionRange>>,
     pub picking: Option<RevisionSide>,
     pub set_picking: Option<SetState<Option<RevisionSide>>>,
-    pub commits: Rc<Vec<Commit>>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub directory: Option<Rc<DirectorySelection>>,
@@ -67,7 +66,6 @@ impl Default for Context {
             set_revision_range: None,
             picking: None,
             set_picking: None,
-            commits: Rc::new(Vec::new()),
             file: None,
             set_file: None,
             directory: None,
@@ -91,7 +89,6 @@ impl Context {
             && self.set_revision_range == other.set_revision_range
             && self.picking == other.picking
             && self.set_picking == other.set_picking
-            && Rc::ptr_eq(&self.commits, &other.commits)
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
             && same_rc(&self.directory, &other.directory)
