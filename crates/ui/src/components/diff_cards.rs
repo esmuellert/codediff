@@ -3,9 +3,6 @@
 //! Cards are appended in file order as their diffs arrive. The line after
 //! the last card asks for the next file when it comes into view.
 
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
-
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -22,11 +19,14 @@ use syntax::Span;
 use super::context::Ui;
 use super::diff_card::{DiffCard, DiffCardProps, card_height};
 use crate::keybindings::Action;
+use crate::services::Resource;
+
+type CachedSpans = (usize, Arc<Mutex<[Vec<Vec<Span>>; 2]>>);
 
 #[component]
 pub fn DiffCards(
     scope: &mut Scope,
-    files: Rc<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
+    files: Rc<Vec<Resource<Arc<DiffContent>>>>,
     more_files: bool,
     open_next: Rc<dyn Fn()>,
     viewer_mode: ViewerMode,
@@ -39,10 +39,7 @@ pub fn DiffCards(
     let wrap = *wrap;
     let (node_ref, size) = use_measure(scope);
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
-    let card_colours = use_ref(
-        scope,
-        HashMap::<usize, (usize, Arc<Mutex<[Vec<Vec<Span>>; 2]>>)>::new,
-    );
+    let card_colours = use_ref(scope, HashMap::<usize, CachedSpans>::new);
     let card_width = size.width.saturating_sub(2);
     let line = |key: usize, text: String| {
         rsx! {
@@ -59,9 +56,8 @@ pub fn DiffCards(
     let mut cards = Vec::new();
     let mut heights = Vec::new();
     let mut reading = false;
-    for (index, diff) in files.iter().enumerate() {
-        let diff = diff.lock().unwrap().clone();
-        match diff {
+    for (index, resource) in files.iter().enumerate() {
+        match resource.get() {
             Some(Ok(content)) => {
                 let content_id = Arc::as_ptr(&content) as usize;
                 let colours = {

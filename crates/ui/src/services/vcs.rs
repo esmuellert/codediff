@@ -1,72 +1,32 @@
 //! Runs repository queries and staging on one background thread.
 
-#![allow(clippy::type_complexity)]
-
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 
 use anyhow::Context;
 use file_types::{File, RepoPath, Rev, Revs};
 use vcs::{Commit, CommitOrder, Repository, RevisionRange};
 
+use super::{Resource, Writer};
+
 enum Request {
     ListFiles {
         repo: PathBuf,
         revision_range: RevisionRange,
-        slot: Weak<Mutex<Option<Result<Vec<File>, String>>>>,
+        out: Writer<Vec<File>>,
     },
     ListCommits {
         repo: PathBuf,
         limit: usize,
-        slot: Weak<Mutex<Option<Result<Vec<Commit>, String>>>>,
+        out: Writer<Vec<Commit>>,
     },
     ToggleStage {
         path: RepoPath,
         after: Rev,
     },
-}
-
-enum Backend {
-    Git {
-        cached: Option<(PathBuf, Repository)>,
-    },
-    Fake {
-        list_files: Box<dyn FnMut(&Path, &RevisionRange) -> Result<Vec<File>, String> + Send>,
-        list_commits: Box<dyn FnMut(&Path, usize) -> Result<Vec<Commit>, String> + Send>,
-    },
-}
-
-impl Backend {
-    fn list_files(
-        &mut self,
-        repo: &Path,
-        revision_range: &RevisionRange,
-    ) -> Result<Vec<File>, String> {
-        match self {
-            Self::Git { cached } => {
-                list_files(cached, repo, revision_range).map_err(|why| format!("{why:#}"))
-            }
-            Self::Fake { list_files, .. } => list_files(repo, revision_range),
-        }
-    }
-
-    fn list_commits(&mut self, repo: &Path, limit: usize) -> Result<Vec<Commit>, String> {
-        match self {
-            Self::Git { cached } => {
-                list_commits(cached, repo, limit).map_err(|why| format!("{why:#}"))
-            }
-            Self::Fake { list_commits, .. } => list_commits(repo, limit),
-        }
-    }
-
-    fn toggle_stage(&mut self, path: &RepoPath, after: &Rev) {
-        if let Self::Git { cached } = self {
-            let _ = toggle_stage(cached, path, after);
-        }
-    }
 }
 
 /// Lists changed files, lists commits, and toggles staging on one `"vcs"` thread.
@@ -78,32 +38,66 @@ pub struct VcsService {
 impl VcsService {
     /// Starts the `"vcs"` worker thread backed by real Git repositories.
     pub fn start(redraw: impl Fn() + Send + Sync + 'static) -> Self {
-        Self::spawn(redraw, Backend::Git { cached: None })
+        let mut cached: Option<(PathBuf, Repository)> = None;
+        Self::spawn(redraw, move |request| match request {
+            Request::ListFiles {
+                repo,
+                revision_range,
+                out,
+            } => {
+                out.fill(|| {
+                    list_files(&mut cached, &repo, &revision_range)
+                        .map_err(|why| format!("{why:#}"))
+                });
+                true
+            }
+            Request::ListCommits { repo, limit, out } => {
+                out.fill(|| {
+                    list_commits(&mut cached, &repo, limit).map_err(|why| format!("{why:#}"))
+                });
+                true
+            }
+            Request::ToggleStage { path, after } => {
+                let _ = toggle_stage(&mut cached, &path, &after);
+                false
+            }
+        })
     }
 
     /// Starts the `"vcs"` worker thread with fake file and commit closures for tests and stories.
     pub fn fake(
         redraw: impl Fn() + Send + Sync + 'static,
-        list_files: impl FnMut(&Path, &RevisionRange) -> Result<Vec<File>, String> + Send + 'static,
-        list_commits: impl FnMut(&Path, usize) -> Result<Vec<Commit>, String> + Send + 'static,
+        mut list_files: impl FnMut(&Path, &RevisionRange) -> Result<Vec<File>, String> + Send + 'static,
+        mut list_commits: impl FnMut(&Path, usize) -> Result<Vec<Commit>, String> + Send + 'static,
     ) -> Self {
-        Self::spawn(
-            redraw,
-            Backend::Fake {
-                list_files: Box::new(list_files),
-                list_commits: Box::new(list_commits),
-            },
-        )
+        Self::spawn(redraw, move |request| match request {
+            Request::ListFiles {
+                repo,
+                revision_range,
+                out,
+            } => {
+                out.fill(|| list_files(&repo, &revision_range));
+                true
+            }
+            Request::ListCommits { repo, limit, out } => {
+                out.fill(|| list_commits(&repo, limit));
+                true
+            }
+            Request::ToggleStage { .. } => false,
+        })
     }
 
-    fn spawn(redraw: impl Fn() + Send + Sync + 'static, backend: Backend) -> Self {
+    fn spawn(
+        redraw: impl Fn() + Send + Sync + 'static,
+        handle: impl FnMut(Request) -> bool + Send + 'static,
+    ) -> Self {
         let redraw: Arc<dyn Fn() + Send + Sync> = Arc::new(redraw);
         let pending_jobs = Arc::new(AtomicUsize::new(0));
         let (requests, receiver) = channel();
         let worker_pending = Arc::clone(&pending_jobs);
         thread::Builder::new()
             .name("vcs".to_owned())
-            .spawn(move || worker(backend, receiver, &redraw, &worker_pending))
+            .spawn(move || worker(handle, receiver, &redraw, &worker_pending))
             .expect("the vcs thread starts");
         Self {
             requests,
@@ -112,39 +106,31 @@ impl VcsService {
     }
 
     /// Starts listing changed files for `revision_range` under `repo`.
-    pub fn list_files(
-        &self,
-        repo: &Path,
-        revision_range: RevisionRange,
-    ) -> Arc<Mutex<Option<Result<Vec<File>, String>>>> {
-        let slot = Arc::new(Mutex::new(None));
+    pub fn list_files(&self, repo: &Path, revision_range: RevisionRange) -> Resource<Vec<File>> {
+        let (resource, out) = Resource::pending();
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.requests
             .send(Request::ListFiles {
                 repo: repo.to_path_buf(),
                 revision_range,
-                slot: Arc::downgrade(&slot),
+                out,
             })
             .expect("the vcs thread is running");
-        slot
+        resource
     }
 
     /// Starts listing up to `limit` commits under `repo`.
-    pub fn list_commits(
-        &self,
-        repo: &Path,
-        limit: usize,
-    ) -> Arc<Mutex<Option<Result<Vec<Commit>, String>>>> {
-        let slot = Arc::new(Mutex::new(None));
+    pub fn list_commits(&self, repo: &Path, limit: usize) -> Resource<Vec<Commit>> {
+        let (resource, out) = Resource::pending();
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.requests
             .send(Request::ListCommits {
                 repo: repo.to_path_buf(),
                 limit,
-                slot: Arc::downgrade(&slot),
+                out,
             })
             .expect("the vcs thread is running");
-        slot
+        resource
     }
 
     /// Stages or unstages `path` according to `revs` on the `"vcs"` worker thread.
@@ -168,41 +154,13 @@ impl VcsService {
 }
 
 fn worker(
-    mut backend: Backend,
+    mut handle: impl FnMut(Request) -> bool,
     requests: Receiver<Request>,
     redraw: &Arc<dyn Fn() + Send + Sync>,
     pending_jobs: &AtomicUsize,
 ) {
     for request in requests {
-        let should_redraw = match request {
-            Request::ListFiles {
-                repo,
-                revision_range,
-                slot,
-            } => {
-                if slot.strong_count() > 0 {
-                    let result = backend.list_files(&repo, &revision_range);
-                    if let Some(slot) = slot.upgrade() {
-                        *slot.lock().unwrap() = Some(result);
-                    }
-                }
-                true
-            }
-            Request::ListCommits { repo, limit, slot } => {
-                if slot.strong_count() > 0 {
-                    let result = backend.list_commits(&repo, limit);
-                    if let Some(slot) = slot.upgrade() {
-                        *slot.lock().unwrap() = Some(result);
-                    }
-                }
-                true
-            }
-            Request::ToggleStage { path, after } => {
-                backend.toggle_stage(&path, &after);
-                false
-            }
-        };
-        if should_redraw {
+        if handle(request) {
             redraw();
         }
         pending_jobs.fetch_sub(1, Ordering::SeqCst);

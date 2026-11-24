@@ -1,12 +1,9 @@
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
-
 #[path = "support/fake_services.rs"]
 mod fake_services;
 
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use diff::DiffContent;
 use file_types::{CommitHash, File, RepoPath, Revs, Stats, ViewerMode};
@@ -14,6 +11,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, crokey, rsx};
 use ui::Theme;
 use ui::components::{Context, DiffCard, DiffCardProps, DiffCards, DiffCardsProps, Ui};
+use ui::services::Resource;
 
 fn file_at(path: &str) -> File {
     File::unchanged_path(
@@ -72,10 +70,7 @@ fn harness(content: DiffContent, width: u16, height: u16) -> Harness {
 }
 
 #[component]
-fn CardsHost(
-    _scope: &mut Scope,
-    files: Rc<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
-) -> Node {
+fn CardsHost(_scope: &mut Scope, files: Rc<Vec<Resource<Arc<DiffContent>>>>) -> Node {
     rsx! {
         DiffCards {
             files: Rc::clone(files),

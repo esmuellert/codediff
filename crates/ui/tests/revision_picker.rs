@@ -1,7 +1,5 @@
 //! Tests for the `RevisionPicker` component.
 
-#![allow(clippy::type_complexity)]
-
 use std::cell::RefCell;
 use std::rc::Rc;
 

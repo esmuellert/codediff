@@ -2,8 +2,6 @@
 
 // Each test binary uses part of this file.
 #![allow(dead_code)]
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
 
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
@@ -14,7 +12,7 @@ use diff::DiffContent;
 use file_types::File;
 use loom::testing::Harness;
 use syntax::Span;
-use ui::services::{DiffService, SyntaxService, VcsService};
+use ui::services::{DiffService, Resource, SyntaxService, VcsService};
 
 pub struct FakeServices {
     pub vcs: Rc<VcsService>,
@@ -142,10 +140,8 @@ pub fn wait_diff(diff: &DiffService, redraws: &Receiver<()>, harness: &mut Harne
     wait_while(|| diff.is_busy(), redraws, harness);
 }
 
-/// Each content loaded and diffed into its own slot.
-pub fn loaded(
-    contents: Vec<DiffContent>,
-) -> Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>> {
+/// Each content loaded and diffed into its own resource.
+pub fn loaded(contents: Vec<DiffContent>) -> Vec<Resource<Arc<DiffContent>>> {
     let files: Vec<File> = contents
         .iter()
         .map(|content| content.file().clone())

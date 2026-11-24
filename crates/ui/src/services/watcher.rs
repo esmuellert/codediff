@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use loom::{Observable, Observer, observable};
+use loom::{Observer, observable};
 use watcher::{Refresh, Subscription};
 
 /// Owns the filesystem watcher subscription and multicasts [`Refresh`] events.
@@ -30,13 +30,13 @@ impl WatcherService {
         }
     }
 
-    /// Subscribes to repository refresh notifications.
-    pub fn subscribe(&self) -> Observable<Refresh> {
+    /// Subscribes `callback` to repository refresh notifications.
+    pub fn subscribe(&self, callback: impl FnMut(Refresh) + 'static) {
         let (observer, changes) = observable();
+        changes.subscribe(callback);
         let mut observers = self.observers.borrow_mut();
         observers.retain(Observer::is_wanted);
         observers.push(observer);
-        changes
     }
 
     /// Delivers `refresh` to every active subscriber.

@@ -18,7 +18,7 @@ App
                   └─ SingleFile
 ```
 
-`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the diff slot `DiffService::load` returned for the selected file (or for a selected directory's opened files), requests syntax spans from `SyntaxService::highlight`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
+`Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the `Resource<Arc<DiffContent>>` that `DiffService::load` returned for the selected file (or for a selected directory's opened files), requests syntax spans from `SyntaxService::highlight`, chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.
 
 ## Services and background work
 
@@ -27,7 +27,7 @@ App
 - `SyntaxService` highlights diffed files in chunks on one `"syntax"` thread.
 - `WatcherService` multicasts `watcher::Refresh` values.
 
-The UI thread never runs Git or computes a diff while painting. Selecting another file or directory drops the old slots, and the threads skip work for files nobody holds.
+The UI thread never runs Git or computes a diff while painting. Selecting another file or directory drops the old resources, and the threads skip work for files nobody holds.
 
 ## Navigation
 

@@ -1,11 +1,9 @@
 //! Loads and diffs files on one background thread.
 
-#![allow(clippy::type_complexity)]
-
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 
 use anyhow::Context;
@@ -13,9 +11,11 @@ use diff::{DiffContent, Settings};
 use file_types::{DiffVersion, File};
 use vcs::Repository;
 
+use super::{Resource, Writer};
+
 /// Reads file contents and computes diffs on one `"diff"` thread.
 pub struct DiffService {
-    requests: Sender<(File, Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>)>,
+    requests: Sender<(File, Writer<Arc<DiffContent>>)>,
     pending_jobs: Arc<AtomicUsize>,
 }
 
@@ -23,11 +23,18 @@ impl DiffService {
     /// Starts the `"diff"` worker thread backed by Git repositories.
     pub fn start(redraw: impl Fn() + Send + Sync + 'static, settings: Settings) -> Self {
         let mut cached: Option<(PathBuf, Repository)> = None;
-        Self::fake(redraw, move |file| load_file(&mut cached, file, settings))
+        Self::spawn(redraw, move |file| load_file(&mut cached, file, settings))
     }
 
     /// Starts the `"diff"` worker thread with a custom file loader for tests and stories.
     pub fn fake(
+        redraw: impl Fn() + Send + Sync + 'static,
+        load: impl FnMut(&File) -> Result<DiffContent, String> + Send + 'static,
+    ) -> Self {
+        Self::spawn(redraw, load)
+    }
+
+    fn spawn(
         redraw: impl Fn() + Send + Sync + 'static,
         load: impl FnMut(&File) -> Result<DiffContent, String> + Send + 'static,
     ) -> Self {
@@ -46,22 +53,23 @@ impl DiffService {
     }
 
     /// Starts loading and diffing one file.
-    ///
-    /// The returned slot holds `None` until the file has been diffed.
-    pub fn load(&self, file: File) -> Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>> {
-        let slot = Arc::new(Mutex::new(None));
-        self.refresh(file, &slot);
-        slot
+    pub fn load(&self, file: File) -> Resource<Arc<DiffContent>> {
+        let (resource, out) = Resource::pending();
+        self.pending_jobs.fetch_add(1, Ordering::SeqCst);
+        self.requests
+            .send((file, out))
+            .expect("the diff thread is running");
+        resource
     }
 
-    /// Loads and diffs `file` again into an existing `slot`.
+    /// Loads and diffs `file` again into an existing `resource`.
     ///
     /// Keeps the current `Arc<DiffContent>` untouched when the text on both
     /// sides is unchanged so downstream syntax spans stay valid.
-    pub fn refresh(&self, file: File, slot: &Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>) {
+    pub fn refresh(&self, file: File, resource: &Resource<Arc<DiffContent>>) {
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.requests
-            .send((file, Arc::downgrade(slot)))
+            .send((file, resource.writer()))
             .expect("the diff thread is running");
     }
 
@@ -73,33 +81,15 @@ impl DiffService {
 
 fn worker(
     mut load: impl FnMut(&File) -> Result<DiffContent, String>,
-    requests: Receiver<(File, Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>)>,
+    requests: Receiver<(File, Writer<Arc<DiffContent>>)>,
     redraw: &Arc<dyn Fn() + Send + Sync>,
     pending_jobs: &AtomicUsize,
 ) {
-    for (file, slot) in requests {
-        if slot.strong_count() > 0 {
-            let result = load(&file).map(Arc::new);
-            if let Some(slot) = slot.upgrade() {
-                replace_diff(result, &slot);
-            }
-        }
+    for (file, out) in requests {
+        out.update(|| load(&file).map(Arc::new), |old, new| same_text(old, new));
         redraw();
         pending_jobs.fetch_sub(1, Ordering::SeqCst);
     }
-}
-
-fn replace_diff(
-    result: Result<Arc<DiffContent>, String>,
-    slot: &Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
-) {
-    let mut current = slot.lock().unwrap();
-    if let (Some(Ok(old)), Ok(new)) = (current.as_ref(), &result)
-        && same_text(old, new)
-    {
-        return;
-    }
-    *current = Some(result);
 }
 
 /// Whether two diffs are of the same file with the same text on each side.

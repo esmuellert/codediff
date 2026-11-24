@@ -1,8 +1,5 @@
 //! Loads the selected file or directory and chooses its view.
 
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -20,7 +17,7 @@ use super::diff_cards::{DiffCards, DiffCardsProps};
 use super::diff_header::{DiffHeader, DiffHeaderProps, DiffViewMenu, DiffViewMenuProps};
 use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
-use crate::services::DiffService;
+use crate::services::{DiffService, Resource};
 use crate::view::terminal_lines::TerminalLine;
 
 /// The semantic screen position shared by a file's layouts.
@@ -30,14 +27,11 @@ pub struct ScrollPosition {
     pub first_cell: u32,
 }
 
-/// Opens the selected file and keeps it up to date.
+/// Loads the selected file and keeps it up to date.
 ///
-/// Returns the file's diff slot. `DiffService` fills it in; the slot holds
-/// `None` until the file has been read.
-fn use_selected_file(
-    scope: &mut Scope,
-    ctx: &Context,
-) -> Rc<Option<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>> {
+/// Returns the file's diff resource. `DiffService` fills it in once the file
+/// has been read and diffed.
+fn use_selected_file(scope: &mut Scope, ctx: &Context) -> Rc<Option<Resource<Arc<DiffContent>>>> {
     // A selected directory is shown as cards instead.
     let selected = if ctx.directory.is_some() {
         None
@@ -49,12 +43,12 @@ fn use_selected_file(
     let selected_file = use_ref(scope, || None::<Rc<File>>);
     selected_file.current().clone_from(&selected);
 
-    // A file is opened once. A new listing of the same file only brings new
+    // A file is loaded once. A new listing of the same file only brings new
     // line counts, so files are compared by path and revisions.
     let path_and_revs = selected
         .as_deref()
         .map(|file| (file.path().clone(), file.revs()));
-    let diff_slot = use_memo(scope, path_and_revs.clone(), {
+    let resource = use_memo(scope, path_and_revs.clone(), {
         let diff = ctx.diff.clone();
         move || match (diff, selected) {
             (Some(diff), Some(file)) => Some(diff.load((*file).clone())),
@@ -62,48 +56,45 @@ fn use_selected_file(
         }
     });
 
-    // When the file changes on disk, load it again into the same diff slot.
+    // When the file changes on disk, load it again into the same resource.
     // It keeps showing the file until the new result is ready.
     use_effect(scope, path_and_revs, {
         let diff = ctx.diff.clone();
         let watcher = ctx.watcher.clone();
-        let diff_slot = Rc::clone(&diff_slot);
+        let resource = Rc::clone(&resource);
         move || {
-            let Some(slot) = diff_slot.as_ref().clone() else {
+            let Some(resource) = resource.as_ref().clone() else {
                 return;
             };
             let (Some(diff), Some(watcher)) = (diff, watcher) else {
                 return;
             };
-            watcher.subscribe().subscribe(move |refresh| {
+            watcher.subscribe(move |refresh| {
                 let Some(file) = selected_file.current().clone() else {
                     return;
                 };
                 if refresh_affects_file(refresh, &file) {
-                    diff.refresh((*file).clone(), &slot);
+                    diff.refresh((*file).clone(), &resource);
                 }
             });
         }
     });
 
-    diff_slot
+    resource
 }
 
-/// The files of the selected directory that have been opened, in order.
+/// The files of the selected directory that have been loaded, in order.
 /// The cards ask for the next one when their end comes into view.
 struct DirectoryFiles {
     files: Vec<File>,
-    opened: RefCell<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
+    opened: RefCell<Vec<Resource<Arc<DiffContent>>>>,
 }
 
 impl DirectoryFiles {
     fn open_next(&self, diff: &DiffService) {
         let mut opened = self.opened.borrow_mut();
         // One file at a time, in order.
-        if opened
-            .last()
-            .is_some_and(|slot| slot.lock().unwrap().is_none())
-        {
+        if opened.last().is_some_and(|resource| !resource.is_ready()) {
             return;
         }
         if let Some(file) = self.files.get(opened.len()) {
@@ -178,13 +169,10 @@ fn viewer_mode_listener(
 #[component]
 pub fn DiffViewer(scope: &mut Scope) -> Node {
     let ctx = use_context::<Ui>(scope);
-    let diff_slot = use_selected_file(scope, &ctx);
+    let selected_resource = use_selected_file(scope, &ctx);
     // No file, a file not read yet, its diff, or why it could not be read.
-    let diff = diff_slot
-        .as_ref()
-        .as_ref()
-        .map(|diff| diff.lock().unwrap().clone());
-    let content = match &diff {
+    let loaded = selected_resource.as_ref().as_ref().map(Resource::get);
+    let content = match &loaded {
         Some(Some(Ok(content))) => Some(Arc::clone(content)),
         _ => None,
     };
@@ -272,9 +260,9 @@ pub fn DiffViewer(scope: &mut Scope) -> Node {
             }
         }
     } else if content.is_none()
-        && let Some(diff) = diff
+        && let Some(loaded) = loaded
     {
-        match diff {
+        match loaded {
             Some(Err(error)) => message(error),
             _ => message("Loading file…".to_owned()),
         }

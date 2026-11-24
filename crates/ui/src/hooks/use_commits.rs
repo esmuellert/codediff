@@ -22,28 +22,26 @@ pub fn use_commits(
 
     let watcher_for_effect = Rc::clone(watcher);
     use_effect(scope, Rc::clone(repo), move || {
-        watcher_for_effect
-            .subscribe()
-            .subscribe(move |refresh: watcher::Refresh| {
-                if refresh.head || refresh.refs {
-                    set_refreshes.update(|n| *n += 1);
-                }
-            });
+        watcher_for_effect.subscribe(move |refresh: watcher::Refresh| {
+            if refresh.head || refresh.refs {
+                set_refreshes.update(|n| *n += 1);
+            }
+        });
     });
 
     let repo_for_commits = Rc::clone(repo);
     let vcs_for_commits = Rc::clone(vcs);
-    let commit_slot = use_memo(scope, (Rc::clone(repo), refreshes), move || {
+    let loaded_commits = use_memo(scope, (Rc::clone(repo), refreshes), move || {
         vcs_for_commits.list_commits(&repo_for_commits, COMMIT_LIMIT)
     });
-    let commits_ready = commit_slot.lock().unwrap().is_some();
+    let commits_ready = loaded_commits.is_ready();
 
-    let commit_slot_for_effect = Rc::clone(&commit_slot);
+    let commits_for_effect = Rc::clone(&loaded_commits);
     use_effect(
         scope,
         (Rc::clone(repo), refreshes, commits_ready),
         move || {
-            let Some(Ok(listed)) = commit_slot_for_effect.lock().unwrap().take() else {
+            let Some(Ok(listed)) = commits_for_effect.take() else {
                 return;
             };
             set_commits.update(|current| {

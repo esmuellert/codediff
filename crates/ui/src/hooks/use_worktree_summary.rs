@@ -7,7 +7,7 @@ use std::rc::Rc;
 use loom::{Scope, use_effect, use_memo, use_state};
 
 use crate::RevisionRange;
-use crate::services::{VcsService, WatcherService};
+use crate::services::{Resource, VcsService, WatcherService};
 
 fn format_worktree_summary(count: usize) -> String {
     match count {
@@ -35,37 +35,32 @@ pub fn use_worktree_summary(
         let Some(watcher) = watcher_for_effect else {
             return;
         };
-        watcher
-            .subscribe()
-            .subscribe(move |refresh: watcher::Refresh| {
-                if !refresh.is_empty() {
-                    set_refreshes.update(|n| *n += 1);
-                }
-            });
+        watcher.subscribe(move |refresh: watcher::Refresh| {
+            if !refresh.is_empty() {
+                set_refreshes.update(|n| *n += 1);
+            }
+        });
     });
 
     let repo_for_files = Rc::clone(repo);
     let vcs_for_files = vcs.map(Rc::clone);
-    let file_slot = use_memo(scope, (enabled, Rc::clone(repo), refreshes), move || {
+    let loaded_files = use_memo(scope, (enabled, Rc::clone(repo), refreshes), move || {
         if !enabled {
             return None;
         }
         vcs_for_files.map(|vcs| vcs.list_files(&repo_for_files, RevisionRange::Worktree))
     });
-    let files_ready = file_slot
+    let files_ready = loaded_files
         .as_ref()
         .as_ref()
-        .is_some_and(|slot| slot.lock().unwrap().is_some());
+        .is_some_and(Resource::is_ready);
 
-    let file_slot_for_effect = Rc::clone(&file_slot);
+    let files_for_effect = Rc::clone(&loaded_files);
     use_effect(
         scope,
         (enabled, Rc::clone(repo), refreshes, files_ready),
         move || {
-            let Some(Ok(listed)) = file_slot_for_effect
-                .as_ref()
-                .as_ref()
-                .and_then(|slot| slot.lock().unwrap().take())
+            let Some(Ok(listed)) = files_for_effect.as_ref().as_ref().and_then(Resource::take)
             else {
                 return;
             };

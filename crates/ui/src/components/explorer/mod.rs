@@ -44,13 +44,11 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             let Some(watcher) = watcher else {
                 return;
             };
-            watcher
-                .subscribe()
-                .subscribe(move |refresh: watcher::Refresh| {
-                    if refresh_affects_listing(refresh, &revision_range_for_watcher) {
-                        set_refreshes.update(|refreshes| *refreshes += 1);
-                    }
-                });
+            watcher.subscribe(move |refresh: watcher::Refresh| {
+                if refresh_affects_listing(refresh, &revision_range_for_watcher) {
+                    set_refreshes.update(|refreshes| *refreshes += 1);
+                }
+            });
         },
     );
     let repo_to_list = Rc::clone(&repo);
@@ -64,7 +62,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
     let listing_ready = listing
         .as_ref()
         .as_ref()
-        .is_some_and(|listing| listing.lock().unwrap().is_some());
+        .is_some_and(crate::services::Resource::is_ready);
     use_effect(
         scope,
         (repo, revision_range, refreshes, listing_ready),
@@ -72,7 +70,7 @@ pub fn Explorer(scope: &mut Scope) -> LoomNode {
             let Some(result) = listing
                 .as_ref()
                 .as_ref()
-                .and_then(|listing| listing.lock().unwrap().take())
+                .and_then(crate::services::Resource::take)
             else {
                 return;
             };

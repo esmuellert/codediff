@@ -16,15 +16,15 @@ codediff
       └─ loom tree           event routing, layout, components, painting
 ```
 
-The UI thread owns the terminal and the Loom tree. Background threads perform blocking Git, diff, syntax, and filesystem work. Each service worker writes its result into the shared slot (`Arc<Mutex<…>>`) it was given and then asks the main loop to redraw. A result nobody holds any more is not written, so a file the user has left cannot appear.
+The UI thread owns the terminal and the Loom tree. Background threads perform blocking Git, diff, syntax, and filesystem work. Each service worker writes its result into the `Resource<T>` it was given and then asks the main loop to redraw. A result nobody holds any more is not written, so a file the user has left cannot appear.
 
 Opening a file follows this path:
 
-1. `Explorer` calls `VcsService::list_files` and shows the files once the slot is filled in.
+1. `Explorer` calls `VcsService::list_files` and shows the files once the `Resource` is ready.
 2. `Explorer` puts the selected `file_types::File` into shared context.
-3. `DiffViewer` calls `DiffService::load`, which returns the diff slot.
+3. `DiffViewer` calls `DiffService::load`, which returns a `Resource<Arc<DiffContent>>`.
 4. The diff thread reads both sides, computes the diff with `vscode-diff`, and builds a `diff::DiffContent`.
-5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there, and calls `SyntaxService::highlight` for its span slot.
+5. `DiffViewer` renders `SideBySide`, `Inline`, or `SingleFile` as soon as the diff is there, and calls `SyntaxService::highlight` for its syntax spans.
 6. The syntax thread colours the file in chunks; each chunk is drawn as it arrives.
 
 A selected directory opens its files one at a time, when the line below the last card comes into view.

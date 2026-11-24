@@ -1,7 +1,5 @@
 //! Highlights diffed files in chunks on one background thread.
 
-#![allow(clippy::type_complexity)]
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, Weak};
@@ -14,9 +12,11 @@ use syntax::{Clues, Engine, Highlighted, Palette, Span};
 /// Lines highlighted before the interface is told.
 const CHUNK_LINES: u32 = 2_000;
 
+type SideSpans = [Vec<Vec<Span>>; 2];
+
 /// Highlights [`DiffContent`] lines on one `"syntax"` thread.
 pub struct SyntaxService {
-    requests: Sender<(Arc<DiffContent>, Weak<Mutex<[Vec<Vec<Span>>; 2]>>)>,
+    requests: Sender<(Arc<DiffContent>, Weak<Mutex<SideSpans>>)>,
     pending_jobs: Arc<AtomicUsize>,
 }
 
@@ -37,8 +37,8 @@ impl SyntaxService {
         }
     }
 
-    /// Starts highlighting `content`, returning the shared span slot filled in chunks.
-    pub fn highlight(&self, content: Arc<DiffContent>) -> Arc<Mutex<[Vec<Vec<Span>>; 2]>> {
+    /// Starts highlighting `content`, returning the shared spans filled in chunks.
+    pub fn highlight(&self, content: Arc<DiffContent>) -> Arc<Mutex<SideSpans>> {
         let spans = Arc::new(Mutex::new([Vec::new(), Vec::new()]));
         self.pending_jobs.fetch_add(1, Ordering::SeqCst);
         self.requests
@@ -54,7 +54,7 @@ impl SyntaxService {
 }
 
 fn worker(
-    requests: Receiver<(Arc<DiffContent>, Weak<Mutex<[Vec<Vec<Span>>; 2]>>)>,
+    requests: Receiver<(Arc<DiffContent>, Weak<Mutex<SideSpans>>)>,
     redraw: &Arc<dyn Fn() + Send + Sync>,
     pending_jobs: &AtomicUsize,
 ) {

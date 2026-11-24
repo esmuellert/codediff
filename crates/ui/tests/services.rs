@@ -71,13 +71,13 @@ fn every_open_file_gets_its_own_diff_and_colours() {
     let b = diff.load(file("b.rs"));
     wait_until_idle(|| diff.is_busy(), &redraws);
 
-    let a_content = a.lock().unwrap().clone().unwrap().unwrap();
-    let b_content = b.lock().unwrap().clone().unwrap().unwrap();
-    let a_colours = syntax.highlight(Arc::clone(&a_content));
-    let b_colours = syntax.highlight(Arc::clone(&b_content));
+    let a_content = a.get().unwrap().unwrap();
+    let b_content = b.get().unwrap().unwrap();
+    let a_spans = syntax.highlight(Arc::clone(&a_content));
+    let b_spans = syntax.highlight(Arc::clone(&b_content));
     wait_until_idle(|| syntax.is_busy(), &redraws);
 
-    for ((content, colours), expected) in [(&a_content, &a_colours), (&b_content, &b_colours)]
+    for ((content, spans), expected) in [(&a_content, &a_spans), (&b_content, &b_spans)]
         .into_iter()
         .zip(["let value = 2", "let other = 3"])
     {
@@ -87,9 +87,9 @@ fn every_open_file_gets_its_own_diff_and_colours() {
             .line(DiffVersion::Modified, 1)
             .unwrap();
         assert!(line.contains(expected), "{line}");
-        let colours = colours.lock().unwrap();
-        assert!(!colours[DiffVersion::Original as usize][0].is_empty());
-        assert!(!colours[DiffVersion::Modified as usize][0].is_empty());
+        let spans = spans.lock().unwrap();
+        assert!(!spans[DiffVersion::Original as usize][0].is_empty());
+        assert!(!spans[DiffVersion::Modified as usize][0].is_empty());
     }
 }
 
@@ -102,10 +102,10 @@ fn a_file_that_cannot_be_read_reports_why_and_the_next_one_still_loads() {
     wait_until_idle(|| diff.is_busy(), &redraws);
 
     assert_eq!(
-        bad.lock().unwrap().clone().unwrap().err().as_deref(),
+        bad.take().unwrap().err().as_deref(),
         Some("cannot read bad.rs")
     );
-    assert!(matches!(*good.lock().unwrap(), Some(Ok(_))));
+    assert!(matches!(good.get(), Some(Ok(_))));
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn a_file_nobody_holds_any_more_is_not_read() {
     wait_until_idle(|| diff.is_busy(), &redraws);
 
     assert_eq!(*reads.lock().unwrap(), ["a.txt", "a.txt"]);
-    assert!(matches!(*second_a.lock().unwrap(), Some(Ok(_))));
+    assert!(matches!(second_a.get(), Some(Ok(_))));
 }
 
 #[test]
@@ -164,14 +164,11 @@ fn a_listed_repository_reports_its_files_or_why_it_could_not() {
 
     let listed = vcs.list_files(Path::new("/repo"), RevisionRange::Worktree);
     wait_until_idle(|| vcs.is_busy(), &redraws);
-    assert_eq!(*listed.lock().unwrap(), Some(Ok(vec![file("a.rs")])));
+    assert_eq!(listed.take(), Some(Ok(vec![file("a.rs")])));
 
     let failed = vcs.list_files(Path::new("/elsewhere"), RevisionRange::Worktree);
     wait_until_idle(|| vcs.is_busy(), &redraws);
-    assert_eq!(
-        *failed.lock().unwrap(),
-        Some(Err("not a repository".to_owned()))
-    );
+    assert_eq!(failed.take(), Some(Err("not a repository".to_owned())));
 }
 
 #[test]
@@ -184,14 +181,14 @@ fn refreshing_a_file_whose_text_is_the_same_keeps_its_arc_identity() {
         },
         move |_| Ok(text.clone()),
     );
-    let slot = diff.load(file("a.rs"));
+    let resource = diff.load(file("a.rs"));
     wait_until_idle(|| diff.is_busy(), &redraws);
-    let diff_before = slot.lock().unwrap().clone().unwrap().unwrap();
+    let diff_before = resource.get().unwrap().unwrap();
 
-    diff.refresh(file("a.rs"), &slot);
+    diff.refresh(file("a.rs"), &resource);
     wait_until_idle(|| diff.is_busy(), &redraws);
 
-    let diff_after = slot.lock().unwrap().clone().unwrap().unwrap();
+    let diff_after = resource.get().unwrap().unwrap();
     assert!(
         Arc::ptr_eq(&diff_before, &diff_after),
         "unchanged text must preserve Arc<DiffContent> pointer identity"
@@ -200,7 +197,7 @@ fn refreshing_a_file_whose_text_is_the_same_keeps_its_arc_identity() {
 
 #[test]
 fn refreshing_a_file_whose_text_changed_replaces_its_diff_and_stops_dropped_syntax_job() {
-    // Colouring 3000 lines takes long enough for dropping the old colours slot to abort chunking.
+    // Highlighting 3000 lines takes long enough for dropping the old spans to abort chunking.
     let lines: Vec<String> = (0..3000)
         .map(|line| format!("let old{line} = 1;"))
         .collect();
@@ -224,17 +221,17 @@ fn refreshing_a_file_whose_text_changed_replaces_its_diff_and_stops_dropped_synt
         let _ = redraw_tx.send(());
     });
 
-    let slot = diff.load(file("a.rs"));
+    let resource = diff.load(file("a.rs"));
     wait_until_idle(|| diff.is_busy(), &redraws);
-    let old_content = slot.lock().unwrap().clone().unwrap().unwrap();
-    let old_colours = syntax.highlight(old_content);
+    let old_content = resource.get().unwrap().unwrap();
+    let old_spans = syntax.highlight(old_content);
 
-    diff.refresh(file("a.rs"), &slot);
+    diff.refresh(file("a.rs"), &resource);
     wait_until_idle(|| diff.is_busy(), &redraws);
-    drop(old_colours);
+    drop(old_spans);
 
-    let new_content = slot.lock().unwrap().clone().unwrap().unwrap();
-    let new_colours = syntax.highlight(Arc::clone(&new_content));
+    let new_content = resource.get().unwrap().unwrap();
+    let new_spans = syntax.highlight(Arc::clone(&new_content));
     wait_until_idle(|| syntax.is_busy(), &redraws);
 
     assert_eq!(
@@ -244,9 +241,9 @@ fn refreshing_a_file_whose_text_changed_replaces_its_diff_and_stops_dropped_synt
             .line(DiffVersion::Modified, 1),
         Some("fn main() { let value = 3; }")
     );
-    let colours = new_colours.lock().unwrap();
-    assert_eq!(colours[DiffVersion::Original as usize].len(), 1);
-    assert_eq!(colours[DiffVersion::Modified as usize].len(), 1);
+    let spans = new_spans.lock().unwrap();
+    assert_eq!(spans[DiffVersion::Original as usize].len(), 1);
+    assert_eq!(spans[DiffVersion::Modified as usize].len(), 1);
 }
 
 struct FixtureRepo {
@@ -275,9 +272,9 @@ fn untracked_and_deleted_files_carry_one_sided_counts() {
     let vcs = VcsService::start(move || {
         let _ = redraw_tx.send(());
     });
-    let slot = vcs.list_files(&fixture.dir, RevisionRange::Worktree);
+    let files_resource = vcs.list_files(&fixture.dir, RevisionRange::Worktree);
     wait_until_idle(|| vcs.is_busy(), &redraws);
-    let files = slot.lock().unwrap().take().unwrap().unwrap();
+    let files = files_resource.take().unwrap().unwrap();
 
     let untracked = files
         .iter()
@@ -302,10 +299,10 @@ fn untracked_and_deleted_files_carry_one_sided_counts() {
         },
         Settings::default(),
     );
-    let binary_slot = diff.load(binary);
+    let binary_resource = diff.load(binary);
     wait_until_idle(|| diff.is_busy(), &diff_rx);
     assert_eq!(
-        binary_slot.lock().unwrap().take().unwrap().err().as_deref(),
+        binary_resource.take().unwrap().err().as_deref(),
         Some("picture.png is binary — there are no lines to review")
     );
 }
@@ -317,9 +314,9 @@ fn a_file_staged_and_edited_again_carries_a_count_per_revision_pair() {
     let vcs = VcsService::start(move || {
         let _ = redraw_tx.send(());
     });
-    let slot = vcs.list_files(&fixture.dir, RevisionRange::Worktree);
+    let files_resource = vcs.list_files(&fixture.dir, RevisionRange::Worktree);
     wait_until_idle(|| vcs.is_busy(), &redraws);
-    let files = slot.lock().unwrap().take().unwrap().unwrap();
+    let files = files_resource.take().unwrap().unwrap();
 
     let found: Vec<(&'static str, Option<Stats>)> = files
         .iter()
@@ -384,38 +381,22 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
 
     fs::write(
         dir.join("src/engine.rs"),
-        "pub fn compute(limit: usize) -> usize {
-    let base = 1;
-    limit + base
-}
-",
+        "pub fn compute(limit: usize) -> usize {\n    let base = 1;\n    limit + base\n}\n",
     )
     .unwrap();
-    fs::write(
-        dir.join("src/obsolete.rs"),
-        "pub fn old() {}
-",
-    )
-    .unwrap();
+    fs::write(dir.join("src/obsolete.rs"), "pub fn old() {}\n").unwrap();
     git(&["add", "-A"], "2026-01-01T00:00:00Z");
     git(&["commit", "-qm", "first"], "2026-01-01T00:00:00Z");
     let first = git(&["rev-parse", "HEAD"], "2026-01-01T00:00:00Z");
 
     fs::write(
         dir.join("src/engine.rs"),
-        "pub fn compute(limit: usize) -> usize {
-    let step = 2;
-    limit.saturating_add(step)
-}
-",
+        "pub fn compute(limit: usize) -> usize {\n    let step = 2;\n    limit.saturating_add(step)\n}\n",
     )
     .unwrap();
     fs::write(
         dir.join("src/added.rs"),
-        "pub fn added() -> bool {
-    true
-}
-",
+        "pub fn added() -> bool {\n    true\n}\n",
     )
     .unwrap();
     git(&["rm", "-q", "src/obsolete.rs"], "2026-01-02T00:00:00Z");
@@ -424,12 +405,7 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
     let second = git(&["rev-parse", "HEAD"], "2026-01-02T00:00:00Z");
 
     // Leave dirty working-tree noise to prove Between ignores the working tree.
-    fs::write(
-        dir.join("dirty.rs"),
-        "pub fn dirty() {}
-",
-    )
-    .unwrap();
+    fs::write(dir.join("dirty.rs"), "pub fn dirty() {}\n").unwrap();
 
     let (redraw_tx, redraw_rx) = mpsc::channel();
     let vcs_redraw = redraw_tx.clone();
@@ -447,13 +423,11 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
         let _ = redraw_tx.send(());
     });
 
-    let slot = vcs.list_files(&dir, RevisionRange::Between(first, second));
+    let files_resource = vcs.list_files(&dir, RevisionRange::Between(first, second));
     wait_until_idle(|| vcs.is_busy(), &redraw_rx);
-    let files = slot
-        .lock()
-        .unwrap()
+    let files = files_resource
         .take()
-        .expect("slot filled")
+        .expect("files loaded")
         .expect("listing succeeded");
 
     let summary: Vec<(&str, ChangeType, Option<Stats>)> = files
@@ -487,14 +461,12 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
         .into_iter()
         .find(|file| file.path().as_str() == "src/engine.rs")
         .expect("engine.rs listed");
-    let diff_slot = diff.load(engine);
+    let diff_resource = diff.load(engine);
     wait_until_idle(|| diff.is_busy(), &redraw_rx);
 
-    let content = diff_slot
-        .lock()
-        .unwrap()
-        .clone()
-        .expect("diff filled")
+    let content = diff_resource
+        .get()
+        .expect("diff loaded")
         .expect("diff computed");
     let alignment = content.alignment().expect("two-sided alignment");
     assert_eq!(
@@ -506,21 +478,21 @@ fn commit_to_commit_listing_open_and_colour_produce_aligned_diffs_and_spans() {
         Some("    let step = 2;")
     );
 
-    let colours_slot = syntax.highlight(content);
+    let spans_handle = syntax.highlight(content);
     wait_until_idle(|| syntax.is_busy(), &redraw_rx);
-    let colours = colours_slot.lock().unwrap();
-    assert!(!colours[DiffVersion::Original as usize].is_empty());
-    assert!(!colours[DiffVersion::Modified as usize].is_empty());
+    let spans = spans_handle.lock().unwrap();
+    assert!(!spans[DiffVersion::Original as usize].is_empty());
+    assert!(!spans[DiffVersion::Modified as usize].is_empty());
     assert!(
-        colours[DiffVersion::Original as usize]
+        spans[DiffVersion::Original as usize]
             .iter()
-            .any(|spans| !spans.is_empty()),
+            .any(|line_spans| !line_spans.is_empty()),
         "original commit lines received syntax spans"
     );
     assert!(
-        colours[DiffVersion::Modified as usize]
+        spans[DiffVersion::Modified as usize]
             .iter()
-            .any(|spans| !spans.is_empty()),
+            .any(|line_spans| !line_spans.is_empty()),
         "modified commit lines received syntax spans"
     );
 }
@@ -559,43 +531,26 @@ fn list_commits_and_toggle_stage_serialize_cleanly_on_vcs_service() {
     };
 
     git(&["init", "-b", "main", "--quiet"]);
-    fs::write(
-        root.join("a.txt"),
-        "one
-",
-    )
-    .unwrap();
+    fs::write(root.join("a.txt"), "one\n").unwrap();
     git(&["add", "."]);
     git(&["commit", "-m", "first commit", "--quiet"]);
-    fs::write(
-        root.join("a.txt"),
-        "two
-",
-    )
-    .unwrap();
+    fs::write(root.join("a.txt"), "two\n").unwrap();
     git(&["add", "."]);
     git(&["commit", "-m", "second commit", "--quiet"]);
 
     // Edit a.txt in worktree so toggle_stage can stage and unstage it sequentially.
-    fs::write(
-        root.join("a.txt"),
-        "three
-",
-    )
-    .unwrap();
+    fs::write(root.join("a.txt"), "three\n").unwrap();
 
     let (tx, rx) = mpsc::channel();
     let vcs = VcsService::start(move || {
         let _ = tx.send(());
     });
-    let commit_slot = vcs.list_commits(root, 10);
+    let commits_resource = vcs.list_commits(root, 10);
     rx.recv_timeout(Duration::from_secs(5))
         .expect("redraw notification after list_commits");
     wait_until_idle(|| vcs.is_busy(), &rx);
 
-    let commits = commit_slot
-        .lock()
-        .unwrap()
+    let commits = commits_resource
         .take()
         .expect("commits populated")
         .expect("commits ok");
@@ -607,20 +562,20 @@ fn list_commits_and_toggle_stage_serialize_cleanly_on_vcs_service() {
     let repo_path = RepoPath::new("a.txt", root);
     let worktree_revs = Revs::worktree_against(commits[0].hash.clone());
     vcs.toggle_stage(&repo_path, &worktree_revs);
-    let staged_slot = vcs.list_files(root, RevisionRange::Worktree);
+    let staged_resource = vcs.list_files(root, RevisionRange::Worktree);
     wait_until_idle(|| vcs.is_busy(), &rx);
 
-    let staged_files = staged_slot.lock().unwrap().take().unwrap().unwrap();
+    let staged_files = staged_resource.take().unwrap().unwrap();
     assert_eq!(staged_files.len(), 1);
     assert_eq!(staged_files[0].revs().after, Rev::Index);
 
     // Unstage via VcsService::toggle_stage and list_files again!
     let index_revs = Revs::new(Rev::Commit(commits[0].hash.clone()), Rev::Index);
     vcs.toggle_stage(&repo_path, &index_revs);
-    let unstaged_slot = vcs.list_files(root, RevisionRange::Worktree);
+    let unstaged_resource = vcs.list_files(root, RevisionRange::Worktree);
     wait_until_idle(|| vcs.is_busy(), &rx);
 
-    let unstaged_files = unstaged_slot.lock().unwrap().take().unwrap().unwrap();
+    let unstaged_files = unstaged_resource.take().unwrap().unwrap();
     assert_eq!(unstaged_files.len(), 1);
     assert_eq!(unstaged_files[0].revs().after, Rev::Worktree);
 }

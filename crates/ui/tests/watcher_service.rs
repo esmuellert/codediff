@@ -15,14 +15,14 @@ fn Subscribers(
     let watcher_for_first = Rc::clone(watcher);
     let first = Rc::clone(first);
     use_effect(scope, (), move || {
-        watcher_for_first.subscribe().subscribe(move |_| {
+        watcher_for_first.subscribe(move |_| {
             first.set(first.get() + 1);
         });
     });
     let watcher_for_second = Rc::clone(watcher);
     let second = Rc::clone(second);
     use_effect(scope, (), move || {
-        watcher_for_second.subscribe().subscribe(move |_| {
+        watcher_for_second.subscribe(move |_| {
             second.set(second.get() + 1);
         });
     });

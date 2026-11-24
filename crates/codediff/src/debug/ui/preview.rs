@@ -1,8 +1,5 @@
 //! The small gallery shell around production components.
 
-// The opened files are spelled out in full rather than hidden behind a name.
-#![allow(clippy::type_complexity)]
-
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -20,6 +17,7 @@ use ui::components::explorer::Explorer;
 use ui::components::revision_header::RevisionHeader;
 use ui::components::revision_picker::RevisionPicker;
 use ui::components::{Context, DirectorySelection, Ui, UiProps};
+use ui::services::Resource;
 
 use super::definition::{StoryComponent, StoryDefinition};
 use super::gallery_header::{GalleryHeader, GalleryHeaderProps, Shortcut};
@@ -37,7 +35,7 @@ pub(super) fn StoryPreview(
     scope: &mut Scope,
     definition: &'static StoryDefinition,
     base_context: Context,
-    files: Rc<Vec<Arc<Mutex<Option<Result<Arc<DiffContent>, String>>>>>>,
+    files: Rc<Vec<Resource<Arc<DiffContent>>>>,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
@@ -83,10 +81,7 @@ pub(super) fn StoryPreview(
     });
     let theme = *context.theme;
     // Code stories show the files they opened, once they have been diffed.
-    let content = files
-        .first()
-        .and_then(|diff| diff.lock().unwrap().clone())
-        .and_then(Result::ok);
+    let content = files.first().and_then(Resource::get).and_then(Result::ok);
     let content_key = content
         .as_ref()
         .map(|content| Arc::as_ptr(content) as usize);
