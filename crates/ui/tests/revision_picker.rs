@@ -136,6 +136,7 @@ fn mount_picker(props: PickerHostProps, width: u16, height: u16) -> Harness {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
+            h.redraw_all();
             h.force_draw();
         }
         for _ in 0..4 {
