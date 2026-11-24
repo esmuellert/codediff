@@ -171,7 +171,6 @@ pub const NON_BLOCKING_DIRS: &[&str] = &[
     "crates/loom/src/layout",
     "crates/loom/src/paint",
     "crates/ui/src/components",
-    "crates/ui/src/hooks",
 ];
 
 /// Hot-path files checked like [`NON_BLOCKING_DIRS`].

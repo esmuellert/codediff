@@ -7,8 +7,7 @@ use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use syntax::Span;
 use ui::Theme;
-use ui::components::diff_viewer::ScrollPosition;
-use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
+use ui::components::diff_viewer::{DiffViewerContainer, DiffViewerContainerProps, ScrollPosition};
 use ui::components::{Context, Ui};
 
 use crate::fake_services::highlighted;

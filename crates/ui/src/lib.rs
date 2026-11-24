@@ -1,11 +1,9 @@
 #![doc = include_str!("../README.md")]
 
 pub mod components;
-pub mod hooks;
 mod keybindings;
 pub mod services;
 pub mod theme;
-mod view;
 
 pub use keybindings::{Action, KeyMap};
 pub use theme::{Flavour, Rgb, TerminalProbe, Theme, blend, catppuccin, probe};

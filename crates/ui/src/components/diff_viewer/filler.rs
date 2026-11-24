@@ -5,7 +5,7 @@ use std::rc::Rc;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Paint, Scope, component, rsx, use_context};
 use ratatui::{layout::Rect, style::Style};
 
-use super::context::Ui;
+use crate::components::context::Ui;
 
 #[component]
 pub fn Filler(scope: &mut Scope) -> Node {

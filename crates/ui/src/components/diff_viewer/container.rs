@@ -10,14 +10,14 @@ use loom::{
 };
 use syntax::Span;
 
-use super::context::Ui;
-use super::diff_viewer::ScrollPosition;
+use super::ScrollPosition;
 use super::inline::{Inline, InlineGeometry, InlineProps, inline_geometry};
+use super::navigation::use_diff_viewer_navigation;
 use super::side_by_side::{SideBySide, SideBySideGeometry, SideBySideProps, side_by_side_geometry};
 use super::single_file::{SingleFile, SingleFileGeometry, SingleFileProps, single_file_geometry};
+use super::terminal_lines::{TerminalLine, WrappedViewLine, find_terminal_line_index};
 use super::welcome::Welcome;
-use crate::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
-use crate::view::terminal_lines::{TerminalLine, WrappedViewLine, find_terminal_line_index};
+use crate::components::context::Ui;
 
 /// The part of the Loom viewport that a diff renderer is allowed to read.
 #[derive(Clone)]

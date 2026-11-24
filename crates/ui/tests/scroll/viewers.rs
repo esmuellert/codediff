@@ -6,8 +6,7 @@ use std::sync::Arc;
 use loom::testing::Harness;
 use loom::{Node, Scope, component, rsx, use_ref};
 use ui::Theme;
-use ui::components::diff_viewer::ScrollPosition;
-use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
+use ui::components::diff_viewer::{DiffViewerContainer, DiffViewerContainerProps, ScrollPosition};
 use ui::components::{Context, Ui};
 
 #[component]

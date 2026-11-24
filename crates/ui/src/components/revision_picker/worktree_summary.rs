@@ -17,7 +17,7 @@ fn format_worktree_summary(count: usize) -> String {
     }
 }
 
-pub fn use_worktree_summary(
+pub(super) fn use_worktree_summary(
     scope: &mut Scope,
     enabled: bool,
     repo: &Rc<Path>,

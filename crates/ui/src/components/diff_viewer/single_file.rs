@@ -12,12 +12,10 @@ use loom::{
 use syntax::Span;
 
 use super::code_text::{CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells};
-use super::context::Ui;
-use super::diff_viewer_container::DiffVisibleRange;
+use super::container::DiffVisibleRange;
 use super::gutter::{Gutter, GutterProps, width_for_line_count};
-use crate::view::terminal_lines::{
-    TerminalLine, WrappedViewLine, terminal_line_count, wrap_view_line,
-};
+use super::terminal_lines::{TerminalLine, WrappedViewLine, terminal_line_count, wrap_view_line};
+use crate::components::context::Ui;
 
 pub(crate) struct SingleFileGeometry {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,

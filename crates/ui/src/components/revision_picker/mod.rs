@@ -5,6 +5,7 @@ mod build;
 pub mod commit_graph;
 mod header;
 mod worktree;
+mod worktree_summary;
 
 use std::rc::Rc;
 
@@ -22,10 +23,10 @@ use self::commit_graph::build::{SymbolSet, graph};
 use self::commit_graph::entry::{Entry, EntryProps};
 use self::header::header;
 use self::worktree::{WorktreeRow, WorktreeRowProps, worktree_indent};
+use self::worktree_summary::use_worktree_summary;
 use super::context::Ui;
 use super::revisions::{RevisionSide, apply_picked_revision, initial_for_side};
 use crate::Commit;
-use crate::hooks::use_worktree_summary::use_worktree_summary;
 use crate::keybindings::Action;
 
 const SCROLLOFF: u32 = 3;

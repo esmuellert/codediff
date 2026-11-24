@@ -14,14 +14,14 @@ use syntax::Span;
 use super::code_text::{
     self, CodeText, CodeTextProps, horizontal_scroll_extent, longest_line_cells,
 };
-use super::context::Ui;
-use super::diff_viewer_container::DiffVisibleRange;
+use super::compact::view_lines as compact_view_lines;
+use super::container::DiffVisibleRange;
 use super::fold::{FoldMarker, is_fold_marker};
 use super::gutter::{self, Gutter, GutterProps, width_for_line_count};
-use crate::view::compact::view_lines as compact_view_lines;
-use crate::view::terminal_lines::{
+use super::terminal_lines::{
     TerminalLine, WrappedViewLine, terminal_line_count, terminal_view_lines,
 };
+use crate::components::context::Ui;
 
 pub(crate) struct InlineGeometry {
     pub(crate) wrapped_lines: Rc<Vec<WrappedViewLine>>,

@@ -16,8 +16,8 @@ use loom::{
 };
 use syntax::Span;
 
-use super::context::Ui;
-use super::diff_card::{DiffCard, DiffCardProps, card_height};
+use super::card::{DiffCard, DiffCardProps, card_height};
+use crate::components::context::Ui;
 use crate::keybindings::Action;
 use crate::services::Resource;
 

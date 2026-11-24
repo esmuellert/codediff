@@ -12,12 +12,12 @@ use loom::{
 };
 use syntax::Span;
 
-use super::border::{Border, BorderProps};
-use super::context::Ui;
-use super::diff_viewer_container::{DiffGeometry, DiffVisibleRange, diff_geometry};
+use super::container::{DiffGeometry, DiffVisibleRange, diff_geometry};
 use super::inline::{Inline, InlineProps, inline_geometry};
 use super::side_by_side::{SideBySide, SideBySideProps, side_by_side_geometry};
 use super::single_file::{SingleFile, SingleFileProps, single_file_geometry};
+use crate::components::border::{Border, BorderProps};
+use crate::components::context::Ui;
 use crate::keybindings::Action;
 
 pub(crate) fn card_height(
@@ -156,7 +156,7 @@ pub fn DiffCard(
     let file = content.file();
     let change = file.get_change_type();
     let path = file.path().as_str().to_owned();
-    let status = super::explorer::letter(change);
+    let status = crate::components::explorer::letter(change);
     let status_width = (status.chars().count() + 2) as u16;
     let stats = file.get_stats().filter(|stats| !stats.is_empty());
     let border_layout = match height {
