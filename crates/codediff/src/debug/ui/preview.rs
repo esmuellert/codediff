@@ -12,14 +12,14 @@ use loom::{
     use_exit, use_ref, use_state,
 };
 use syntax::Span;
-use ui::Commit;
 use ui::components::border::{Border, BorderProps};
 use ui::components::diff_card::{DiffCard, DiffCardProps};
 use ui::components::diff_cards::{DiffCards, DiffCardsProps};
 use ui::components::diff_viewer::{DiffViewer, ScrollPosition};
 use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use ui::components::explorer::Explorer;
-use ui::components::revision_picker::{RevisionPicker, RevisionPickerProps};
+use ui::components::revision_header::RevisionHeader;
+use ui::components::revision_picker::RevisionPicker;
 use ui::components::{Context, DirectorySelection, Ui, UiProps};
 
 use super::definition::{StoryComponent, StoryDefinition};
@@ -44,14 +44,20 @@ pub(super) fn StoryPreview(
             Arc<Mutex<[Vec<Vec<Span>>; 2]>>,
         )>,
     >,
-    commits: Rc<Vec<Commit>>,
-    worktree_summary: Option<Rc<str>>,
     navigate: Option<Rc<dyn Fn(PreviewAction)>>,
 ) -> Node {
     let (selected_file, set_selected_file) = use_state(scope, || None);
     let (selected_directory, set_selected_directory) =
         use_state(scope, || None::<Rc<DirectorySelection>>);
+    let initial_range = base_context.revision_range.clone();
+    let (revision_range, set_revision_range) = use_state(scope, move || initial_range);
+    let initial_picking = base_context.picking;
+    let (picking, set_picking) = use_state(scope, move || initial_picking);
     let mut context = base_context.clone();
+    context.revision_range = revision_range;
+    context.set_revision_range = Some(set_revision_range);
+    context.picking = picking;
+    context.set_picking = Some(set_picking);
     context.file = selected_file.as_ref().map(Rc::clone);
     context.set_file = Some(set_selected_file);
     context.directory = selected_directory.as_ref().map(Rc::clone);
@@ -137,16 +143,8 @@ pub(super) fn StoryPreview(
                 }
             }
         },
-        StoryComponent::RevisionPicker => rsx! {
-            RevisionPicker {
-                commits: Rc::clone(commits),
-                worktree_summary: worktree_summary.clone(),
-                initial: None,
-                on_select: None,
-                on_open: None,
-                on_close: None,
-            }
-        },
+        StoryComponent::RevisionPicker => rsx! { RevisionPicker {} },
+        StoryComponent::RevisionHeader => rsx! { RevisionHeader {} },
         StoryComponent::SideBySide => rsx! {
             DiffViewerContainer {
                 key: content.as_ref().map_or(0, |content| Arc::as_ptr(content) as usize),

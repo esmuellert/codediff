@@ -1,4 +1,4 @@
-//! Shared state, and the one provider that owns it.
+//! Shared state provided at the root by `App`.
 
 use std::path::Path;
 use std::rc::Rc;
@@ -6,12 +6,14 @@ use std::rc::Rc;
 use diff_service::DiffService;
 use diff_service::files::RevisionRange;
 use file_types::{File, RepoPath, Revs};
-use loom::{Node, Scope, SetState, component, context, rsx, use_memo, use_state};
+use loom::{SetState, context};
 
+use super::revisions::RevisionSide;
+use crate::Commit;
 use crate::keybindings::KeyMap;
 use crate::services::version_control::VersionControlService;
 use crate::services::watcher::WatcherService;
-use crate::theme::{Theme, cached_branch_drawing};
+use crate::theme::Theme;
 
 /// A selected directory and the changed files beneath it.
 #[derive(Clone)]
@@ -43,6 +45,9 @@ pub struct Context {
     pub repo: Rc<Path>,
     pub revision_range: RevisionRange,
     pub set_revision_range: Option<SetState<RevisionRange>>,
+    pub picking: Option<RevisionSide>,
+    pub set_picking: Option<SetState<Option<RevisionSide>>>,
+    pub commits: Rc<Vec<Commit>>,
     pub file: Option<Rc<File>>,
     pub set_file: Option<SetState<Option<Rc<File>>>>,
     pub directory: Option<Rc<DirectorySelection>>,
@@ -50,7 +55,6 @@ pub struct Context {
     pub diff_service: Option<Rc<DiffService>>,
     pub version_control_service: Option<Rc<VersionControlService>>,
     pub watcher_service: Option<Rc<WatcherService>>,
-    pub set_repo: Option<SetState<Rc<Path>>>,
 }
 
 impl Default for Context {
@@ -63,6 +67,9 @@ impl Default for Context {
             repo: Rc::from(Path::new("")),
             revision_range: RevisionRange::Worktree,
             set_revision_range: None,
+            picking: None,
+            set_picking: None,
+            commits: Rc::new(Vec::new()),
             file: None,
             set_file: None,
             directory: None,
@@ -70,7 +77,6 @@ impl Default for Context {
             diff_service: None,
             version_control_service: None,
             watcher_service: None,
-            set_repo: None,
         }
     }
 }
@@ -84,6 +90,9 @@ impl Context {
             && Rc::ptr_eq(&self.repo, &other.repo)
             && self.revision_range == other.revision_range
             && self.set_revision_range == other.set_revision_range
+            && self.picking == other.picking
+            && self.set_picking == other.set_picking
+            && Rc::ptr_eq(&self.commits, &other.commits)
             && same_rc(&self.file, &other.file)
             && self.set_file == other.set_file
             && same_rc(&self.directory, &other.directory)
@@ -94,7 +103,6 @@ impl Context {
                 &other.version_control_service,
             )
             && same_rc(&self.watcher_service, &other.watcher_service)
-            && self.set_repo == other.set_repo
     }
 }
 
@@ -110,60 +118,3 @@ context!(
     pub Ui: Context = Context::default(),
     |a: &Context, b: &Context| a.same(b)
 );
-
-/// Provides shared state and service handles.
-#[component]
-pub fn UiProvider(
-    scope: &mut Scope,
-    cwd: Rc<Path>,
-    revision_range: RevisionRange,
-    config: Rc<config::Config>,
-    keybindings: Rc<KeyMap>,
-    diff_service: Rc<DiffService>,
-    version_control_service: Rc<VersionControlService>,
-    watcher_service: Rc<WatcherService>,
-    children: loom::Children,
-) -> Node {
-    let initial = Rc::clone(cwd);
-    let initial_revision_range = revision_range.clone();
-    let (repo, set_repo) = use_state(scope, || initial);
-    let (revision_range, set_revision_range) = use_state(scope, || initial_revision_range);
-    let (file, set_file) = use_state(scope, || None::<Rc<File>>);
-    let (directory, set_directory) = use_state(scope, || None::<Rc<DirectorySelection>>);
-
-    let theme_name = config.ui.theme.clone();
-    let theme = use_memo(scope, theme_name.clone(), move || {
-        configured_theme(&theme_name)
-    });
-    let branch_drawing = *use_memo(scope, (), cached_branch_drawing);
-
-    rsx! {
-        Ui {
-            value: Context {
-                config: Rc::clone(config),
-                keybindings: Rc::clone(keybindings),
-                theme,
-                branch_drawing,
-                repo,
-                revision_range,
-                set_revision_range: Some(set_revision_range),
-                file: file.as_ref().map(Rc::clone),
-                set_file: Some(set_file),
-                directory: directory.as_ref().map(Rc::clone),
-                set_directory: Some(set_directory),
-                diff_service: Some(Rc::clone(diff_service)),
-                version_control_service: Some(Rc::clone(version_control_service)),
-                watcher_service: Some(Rc::clone(watcher_service)),
-                set_repo: Some(set_repo),
-            },
-            { children.clone() }
-        }
-    }
-}
-
-fn configured_theme(name: &str) -> Theme {
-    if name == "auto" {
-        return Theme::from_environment();
-    }
-    Theme::named(name).unwrap_or_else(Theme::from_environment)
-}

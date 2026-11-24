@@ -160,6 +160,12 @@ pub struct Keybindings {
     pub start: Vec<String>,
     #[serde(default = "default_end")]
     pub end: Vec<String>,
+    #[serde(default = "default_pick_left")]
+    pub pick_left: Vec<String>,
+    #[serde(default = "default_pick_right")]
+    pub pick_right: Vec<String>,
+    #[serde(default = "default_swap_revisions")]
+    pub swap_revisions: Vec<String>,
 }
 
 impl Default for Keybindings {
@@ -179,6 +185,9 @@ impl Default for Keybindings {
             move_right: default_move_right(),
             start: default_start(),
             end: default_end(),
+            pick_left: default_pick_left(),
+            pick_right: default_pick_right(),
+            swap_revisions: default_swap_revisions(),
         }
     }
 }
@@ -200,6 +209,9 @@ impl Keybindings {
             ("move_right", &self.move_right),
             ("start", &self.start),
             ("end", &self.end),
+            ("pick_left", &self.pick_left),
+            ("pick_right", &self.pick_right),
+            ("swap_revisions", &self.swap_revisions),
         ];
         for (name, values) in bindings {
             if values.is_empty() {
@@ -211,6 +223,18 @@ impl Keybindings {
         }
         Ok(())
     }
+}
+
+fn default_pick_left() -> Vec<String> {
+    vec!["a".to_owned()]
+}
+
+fn default_pick_right() -> Vec<String> {
+    vec!["b".to_owned()]
+}
+
+fn default_swap_revisions() -> Vec<String> {
+    vec!["s".to_owned()]
 }
 
 fn default_quit() -> Vec<String> {

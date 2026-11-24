@@ -8,14 +8,14 @@ The application UI for `codediff`. It owns the terminal-facing component tree, n
 
 ```text
 App
-└─ UiProvider
-   └─ Row
-      ├─ Border ─ Explorer
-      └─ Border ─ DiffViewer
-                     ├─ DiffHeader
-                     ├─ SideBySide
-                     ├─ Inline
-                     └─ SingleFile
+├─ RevisionHeader
+└─ Row
+   ├─ Border ─ Explorer
+   └─ Border ─ DiffViewer / RevisionPicker
+                  ├─ DiffHeader
+                  ├─ SideBySide
+                  ├─ Inline
+                  └─ SingleFile
 ```
 
 `Explorer` owns its loaded file list, selection, folds, and tree/list mode. `DiffViewer` holds the slots `diff_service::DiffService::open` returned for the selected file (or for a selected directory's opened files), chooses the layout, and keeps the active diff's screen state. `Gutter`, `CodeText`, and `Filler` receive the values they paint as props.

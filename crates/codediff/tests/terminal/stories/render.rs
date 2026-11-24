@@ -205,6 +205,16 @@ const EXPECTED_STORIES: &[(&str, &[&str], &[&str])] = &[
             "No revisions match.",
         ],
     ),
+    (
+        "revision-header/default",
+        &["Working tree", "From", "\u{f418} main", "codediff"],
+        &["Compare", "[s] swap", "⇄", "6152138"],
+    ),
+    (
+        "revision-header/picking",
+        &["Working tree", "From", "\u{f418} main", "codediff"],
+        &["Compare", "[s] swap", "⇄", "6152138"],
+    ),
 ];
 
 fn snapshot(story: &str) -> String {
@@ -262,7 +272,7 @@ fn catalog_snapshot_has_a_clear_two_line_menu() {
     let screen = String::from_utf8(output.stdout).expect("catalog is utf-8");
     let mut lines = screen.lines();
 
-    assert_eq!(lines.next(), Some(" STORIES  40"));
+    assert_eq!(lines.next(), Some(" STORIES  42"));
     let menu = lines.next().unwrap_or_default();
     for label in ["j/k Select", "Enter Open", "/ Filter", "q Quit"] {
         assert!(menu.contains(label), "missing {label:?}: {menu:?}");

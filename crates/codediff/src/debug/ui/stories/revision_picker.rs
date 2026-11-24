@@ -55,7 +55,7 @@ const fn story(
 fn branch_drawing_picker() -> Result<StoryFixture> {
     Ok(StoryFixture::RevisionPicker {
         commits: branching_history(),
-        worktree_summary: "changed · 6 files".to_owned(),
+        worktree_files: 6,
         branch_drawing: true,
     })
 }
@@ -63,7 +63,7 @@ fn branch_drawing_picker() -> Result<StoryFixture> {
 fn box_fallback_picker() -> Result<StoryFixture> {
     Ok(StoryFixture::RevisionPicker {
         commits: branching_history(),
-        worktree_summary: "changed · 6 files".to_owned(),
+        worktree_files: 6,
         branch_drawing: false,
     })
 }
