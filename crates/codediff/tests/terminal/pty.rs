@@ -32,9 +32,28 @@ pub fn collect(
     (thread, shared)
 }
 
-/// Blocks until the child has drawn a quiet frame.
+/// Blocks until the child has entered the alternate screen and drawn a quiet frame.
+///
+/// Checking `ENTER_ALT` avoids mistaking the startup `OSC 11` / `DA1` terminal
+/// probe query (which awaits up to 500 ms on an unresponsive PTY) for a frame.
 pub fn drawn(output: &Arc<Mutex<Output>>) {
-    drawn_after(output, 0);
+    const QUIET: Duration = Duration::from_millis(250);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        {
+            let held = output.lock().expect("nothing else holds the lock");
+            if held
+                .bytes
+                .windows(ENTER_ALT.len())
+                .any(|w| w == ENTER_ALT.as_bytes())
+                && held.last.is_some_and(|last| last.elapsed() >= QUIET)
+            {
+                return;
+            }
+        }
+        assert!(Instant::now() < deadline, "the child never drew anything");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// Blocks until output grew past `before` and the new frame went quiet.

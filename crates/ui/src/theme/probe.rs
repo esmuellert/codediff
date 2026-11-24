@@ -33,14 +33,18 @@ impl TerminalProbe {
         if let Some(term) = environment("TERM")
             && (term.eq_ignore_ascii_case("xterm-kitty")
                 || term.eq_ignore_ascii_case("xterm-ghostty")
-                || term.eq_ignore_ascii_case("ghostty"))
+                || term.eq_ignore_ascii_case("ghostty")
+                || term.eq_ignore_ascii_case("wezterm")
+                || term.eq_ignore_ascii_case("contour"))
         {
             return true;
         }
         if let Some(program) = environment("TERM_PROGRAM")
             && (program.eq_ignore_ascii_case("ghostty")
                 || program.eq_ignore_ascii_case("vscode")
-                || program.eq_ignore_ascii_case("kitty"))
+                || program.eq_ignore_ascii_case("kitty")
+                || program.eq_ignore_ascii_case("wezterm")
+                || program.eq_ignore_ascii_case("contour"))
         {
             return true;
         }
@@ -48,7 +52,7 @@ impl TerminalProbe {
     }
 }
 
-/// Queries the attached terminal once, waiting at most 40 ms for a reply, and caches the result.
+/// Queries the attached terminal once, waiting at most 500 ms for a reply, and caches the result.
 pub fn probe() -> TerminalProbe {
     *PROBED.get_or_init(|| {
         #[cfg(unix)]
@@ -285,6 +289,7 @@ mod parser {
 #[cfg(unix)]
 mod unix {
     use std::io::{IsTerminal, Write};
+    use std::os::fd::BorrowedFd;
     use std::time::{Duration, Instant};
 
     use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -294,28 +299,28 @@ mod unix {
     use super::parser::{has_da1, parse_response};
     use super::{QUERY, TerminalProbe};
 
-    const TIMEOUT: Duration = Duration::from_millis(40);
+    const TIMEOUT: Duration = Duration::from_millis(500);
 
-    struct RawGuard {
+    struct RawGuard<'fd> {
+        fd: BorrowedFd<'fd>,
         original: Termios,
     }
 
-    impl RawGuard {
-        fn enter() -> Option<Self> {
-            let stdin = rustix::stdio::stdin();
-            let original = tcgetattr(stdin).ok()?;
+    impl<'fd> RawGuard<'fd> {
+        fn enter(fd: BorrowedFd<'fd>) -> Option<Self> {
+            let original = tcgetattr(fd).ok()?;
             let mut raw = original.clone();
             raw.make_raw();
             raw.special_codes[SpecialCodeIndex::VMIN] = 0;
             raw.special_codes[SpecialCodeIndex::VTIME] = 0;
-            tcsetattr(stdin, OptionalActions::Now, &raw).ok()?;
-            Some(Self { original })
+            tcsetattr(fd, OptionalActions::Now, &raw).ok()?;
+            Some(Self { fd, original })
         }
     }
 
-    impl Drop for RawGuard {
+    impl Drop for RawGuard<'_> {
         fn drop(&mut self) {
-            let _ = tcsetattr(rustix::stdio::stdin(), OptionalActions::Now, &self.original);
+            let _ = tcsetattr(self.fd, OptionalActions::Now, &self.original);
         }
     }
 
@@ -323,21 +328,22 @@ mod unix {
         if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
             return TerminalProbe::default();
         }
-        let Some(_guard) = RawGuard::enter() else {
+        let mut stdout = std::io::stdout().lock();
+        probe_tty(rustix::stdio::stdin(), &mut stdout)
+    }
+
+    pub(super) fn probe_tty(input: BorrowedFd<'_>, output: &mut impl Write) -> TerminalProbe {
+        let Some(_guard) = RawGuard::enter(input) else {
             return TerminalProbe::default();
         };
 
         // Discard unread bytes sitting on stdin so we only inspect the reply.
-        drain_pending();
+        drain_pending(input);
 
-        {
-            let mut stdout = std::io::stdout().lock();
-            if stdout.write_all(QUERY).is_err() || stdout.flush().is_err() {
-                return TerminalProbe::default();
-            }
+        if output.write_all(QUERY).is_err() || output.flush().is_err() {
+            return TerminalProbe::default();
         }
 
-        let stdin = rustix::stdio::stdin();
         let deadline = Instant::now() + TIMEOUT;
         let mut reply = Vec::with_capacity(128);
         let mut chunk = [0u8; 128];
@@ -350,11 +356,11 @@ mod unix {
                 tv_sec: remaining.as_secs() as _,
                 tv_nsec: remaining.subsec_nanos() as _,
             };
-            let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
+            let mut fds = [PollFd::new(&input, PollFlags::IN)];
             match poll(&mut fds, Some(&timeout)) {
                 Ok(0) => break,
                 Ok(_) => loop {
-                    match rustix::io::read(stdin, &mut chunk) {
+                    match rustix::io::read(input, &mut chunk) {
                         Ok(0) => break,
                         Ok(read) => {
                             reply.extend_from_slice(&chunk[..read]);
@@ -377,18 +383,17 @@ mod unix {
         parse_response(&reply)
     }
 
-    fn drain_pending() {
-        let stdin = rustix::stdio::stdin();
+    fn drain_pending(input: BorrowedFd<'_>) {
         let zero = Timespec {
             tv_sec: 0,
             tv_nsec: 0,
         };
         let mut chunk = [0u8; 128];
         loop {
-            let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
+            let mut fds = [PollFd::new(&input, PollFlags::IN)];
             match poll(&mut fds, Some(&zero)) {
                 Ok(0) | Err(_) => break,
-                Ok(_) => match rustix::io::read(stdin, &mut chunk) {
+                Ok(_) => match rustix::io::read(input, &mut chunk) {
                     Ok(0) | Err(_) => break,
                     Ok(_) => {}
                 },
@@ -518,11 +523,102 @@ mod tests {
         assert!(!unprobed.supports_branch_drawing(environment(&[])));
         assert!(unprobed.supports_branch_drawing(environment(&[("TERM", "xterm-kitty")])));
         assert!(unprobed.supports_branch_drawing(environment(&[("TERM", "xterm-ghostty")])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM", "wezterm")])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM", "contour")])));
         assert!(unprobed.supports_branch_drawing(environment(&[("TERM_PROGRAM", "vscode")])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM_PROGRAM", "WezTerm")])));
+        assert!(unprobed.supports_branch_drawing(environment(&[("TERM_PROGRAM", "contour")])));
         assert!(!unprobed.supports_branch_drawing(environment(&[("TERM_PROGRAM", "Alacritty")])));
 
         let old_kitty = parse_response(b"\x1bP>|kitty(0.35.0)\x1b\\");
         assert!(!old_kitty.supports_branch_drawing(environment(&[("TERM", "xterm-kitty")])));
+
+        let old_wezterm = parse_response(b"\x1bP>|WezTerm 20240203-110809\x1b\\");
+        assert!(!old_wezterm.supports_branch_drawing(environment(&[
+            ("TERM", "wezterm"),
+            ("TERM_PROGRAM", "WezTerm"),
+        ])));
+
+        let old_contour = parse_response(b"\x1bP>|contour 0.4.3\x1b\\");
+        assert!(!old_contour.supports_branch_drawing(environment(&[
+            ("TERM", "contour"),
+            ("TERM_PROGRAM", "contour"),
+        ])));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pty_probe_waits_past_40ms_ssh_rtt_and_exits_on_da1() {
+        use std::io::{Read, Write};
+        use std::os::fd::AsFd;
+        use std::time::{Duration, Instant};
+
+        use portable_pty::{PtySize, native_pty_system};
+
+        let pty = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("opening a pty");
+        let tty_path = pty.master.tty_name().expect("pty slave path");
+        let slave_in = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&tty_path)
+            .expect("opening pty slave input");
+        let mut slave_out = slave_in.try_clone().expect("cloning pty slave output");
+
+        let mut reader = pty.master.try_clone_reader().expect("reading pty master");
+        let mut writer = pty.master.take_writer().expect("writing pty master");
+
+        let responder = std::thread::spawn(move || {
+            let mut received = Vec::new();
+            let mut chunk = [0u8; 64];
+            while !received.ends_with(b"\x1b[c") {
+                let read = reader.read(&mut chunk).expect("reading query from pty");
+                assert!(read > 0, "pty closed before DA1 query arrived");
+                received.extend_from_slice(&chunk[..read]);
+            }
+
+            // Simulate an ~80 ms SSH round-trip split across two TCP segments (> 40 ms).
+            std::thread::sleep(Duration::from_millis(55));
+            writer
+                .write_all(b"\x1b]11;rgb:1e1e/1e1e/2e2e\x07\x1bP>|xterm.js(6.1.0)")
+                .expect("writing first reply chunk");
+            writer.flush().expect("flushing first reply chunk");
+
+            std::thread::sleep(Duration::from_millis(25));
+            writer
+                .write_all(b"\x1b\\\x1b[?64;1;2;6;22c")
+                .expect("writing second reply chunk with DA1");
+            writer.flush().expect("flushing second reply chunk");
+        });
+
+        let started = Instant::now();
+        let probed = unix::probe_tty(slave_in.as_fd(), &mut slave_out);
+        let elapsed = started.elapsed();
+
+        responder.join().expect("joining pty responder");
+
+        assert_eq!(
+            probed,
+            TerminalProbe {
+                background: Some(Rgb(0x1e, 0x1e, 0x2e)),
+                truecolor: None,
+                branch_drawing: Some(true),
+            }
+        );
+        assert!(
+            elapsed >= Duration::from_millis(75),
+            "expected probe to wait across the simulated ~80 ms RTT, got {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_millis(350),
+            "expected probe to exit immediately on DA1 well before the 500 ms ceiling, got {elapsed:?}"
+        );
     }
 
     #[test]
