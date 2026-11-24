@@ -5,7 +5,7 @@ use loom::{
     Basis, Column, ColumnProps, Layout, Node, Row, RowProps, Scope, Scroll, ScrollOffset,
     ScrollProps, Text, TextProps, component, rsx, use_scroll,
 };
-use ui::hooks::use_diff_viewer_navigation::use_diff_viewer_navigation;
+use ui::components::diff_viewer::use_diff_viewer_navigation;
 
 #[component]
 fn Probe(

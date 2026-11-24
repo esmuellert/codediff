@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::context::Ui;
+use crate::components::context::Ui;
 use loom::{Canvas, CanvasProps, Layout, Node, Scope, component, rsx, use_context};
 
 const LOGO: &[&str] = &[
@@ -18,7 +18,7 @@ const HINT: &str = "Select a file to review.";
 const KEYS: &str = "[j/k] Navigate  [Enter] Open  [q] Quit";
 
 #[component]
-pub fn Welcome(scope: &mut Scope) -> Node {
+pub(super) fn Welcome(scope: &mut Scope) -> Node {
     let theme = use_context::<Ui>(scope).theme;
     let base = theme.normal;
     let logo_color = base.fg(theme.tree.heading);

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use loom::testing::Harness;
 use ratatui::style::{Color, Style};
 use ui::Theme;
-use ui::components::code_text::{CodeText, CodeTextProps};
+use ui::components::diff_viewer::{CodeText, CodeTextProps};
 use ui::components::{Context, Ui};
 
 fn one_range(range: Range<u32>) -> Vec<Range<u32>> {

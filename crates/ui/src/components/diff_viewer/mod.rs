@@ -1,5 +1,31 @@
 //! Loads the selected file or directory and chooses its view.
 
+mod card;
+mod cards;
+mod code_text;
+mod compact;
+mod container;
+mod filler;
+mod fold;
+mod gutter;
+mod header;
+mod inline;
+mod navigation;
+mod side_by_side;
+mod single_file;
+mod terminal_lines;
+mod welcome;
+
+pub use card::{DiffCard, DiffCardProps};
+pub use cards::{DiffCards, DiffCardsProps};
+pub use code_text::{CodeText, CodeTextProps};
+pub use container::{DiffViewerContainer, DiffViewerContainerProps};
+pub use filler::{Filler, FillerProps};
+pub use gutter::{Gutter, GutterProps};
+pub use header::{DiffHeader, DiffHeaderProps, DiffViewMenu, DiffViewMenuProps};
+pub use navigation::use_diff_viewer_navigation;
+pub use terminal_lines::{TerminalLine, terminal_line_pairs};
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -13,12 +39,8 @@ use loom::{
 };
 
 use super::context::{Context, Ui, directory_key};
-use super::diff_cards::{DiffCards, DiffCardsProps};
-use super::diff_header::{DiffHeader, DiffHeaderProps, DiffViewMenu, DiffViewMenuProps};
-use super::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
 use crate::keybindings::Action;
 use crate::services::{DiffService, Resource};
-use crate::view::terminal_lines::TerminalLine;
 
 /// The semantic screen position shared by a file's layouts.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

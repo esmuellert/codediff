@@ -9,10 +9,10 @@ use loom::{
     use_exit, use_memo, use_ref, use_state,
 };
 use ui::components::border::{Border, BorderProps};
-use ui::components::diff_card::{DiffCard, DiffCardProps};
-use ui::components::diff_cards::{DiffCards, DiffCardsProps};
-use ui::components::diff_viewer::{DiffViewer, ScrollPosition};
-use ui::components::diff_viewer_container::{DiffViewerContainer, DiffViewerContainerProps};
+use ui::components::diff_viewer::{
+    DiffCard, DiffCardProps, DiffCards, DiffCardsProps, DiffViewer, DiffViewerContainer,
+    DiffViewerContainerProps, ScrollPosition,
+};
 use ui::components::explorer::Explorer;
 use ui::components::revision_header::RevisionHeader;
 use ui::components::revision_picker::RevisionPicker;

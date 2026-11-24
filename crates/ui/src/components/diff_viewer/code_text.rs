@@ -11,9 +11,9 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use super::context::Ui;
+use super::terminal_lines::TerminalLine;
+use crate::components::context::Ui;
 use crate::theme::Code;
-use crate::view::terminal_lines::TerminalLine;
 
 const TAB_WIDTH: u8 = 4;
 

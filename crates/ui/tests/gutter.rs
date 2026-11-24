@@ -2,7 +2,7 @@
 
 use loom::testing::Harness;
 use ratatui::style::{Color, Style};
-use ui::components::gutter::{Gutter, GutterProps};
+use ui::components::diff_viewer::{Gutter, GutterProps};
 
 fn gutter(number: Option<u32>, width: u16) -> Harness {
     let style = Style::default().fg(Color::White).bg(Color::DarkGray);

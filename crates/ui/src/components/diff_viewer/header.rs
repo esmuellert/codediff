@@ -10,7 +10,7 @@ use loom::{
 };
 use ratatui::style::{Modifier, Style};
 
-use super::context::{DirectorySelection, Ui};
+use crate::components::context::{DirectorySelection, Ui};
 use crate::theme::{Theme, icon};
 
 const MENU_INNER_WIDTH: u16 = 22;
@@ -111,7 +111,7 @@ fn file_title(file: &File, theme: &Theme) -> Node {
                 }
 
                 let change = file.get_change_type();
-                let symbol = format!(" {}  ", super::explorer::letter(change));
+                let symbol = format!(" {}  ", crate::components::explorer::letter(change));
                 let symbol_style = theme.normal.fg(theme.change.of(change));
                 let symbol_width = cell_width(&symbol);
                 if area.width <= symbol_width {

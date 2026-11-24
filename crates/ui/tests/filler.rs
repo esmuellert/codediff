@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use loom::testing::Harness;
 use ui::Theme;
-use ui::components::filler::{Filler, FillerProps};
+use ui::components::diff_viewer::{Filler, FillerProps};
 use ui::components::{Context, Ui};
 
 fn filler(width: u16) -> Harness {
@@ -48,7 +48,7 @@ fn the_filler_uses_the_filler_style() {
 #[test]
 fn a_filler_beside_a_gutter_fills_the_remaining_width() {
     use loom::{Layout, Node, Row, RowProps, Scope, component, rsx};
-    use ui::components::gutter::{Gutter, GutterProps};
+    use ui::components::diff_viewer::{Gutter, GutterProps};
 
     #[component]
     fn GutterAndFiller(scope: &mut Scope) -> Node {

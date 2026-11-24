@@ -5,8 +5,8 @@ use std::rc::Rc;
 use loom::{Basis, Canvas, CanvasProps, Layout, Node, Paint, Scope, component, rsx, use_context};
 use ratatui::{layout::Rect, style::Style};
 
-use super::context::Ui;
-use crate::view::terminal_lines::TerminalLine;
+use super::terminal_lines::TerminalLine;
+use crate::components::context::Ui;
 
 pub(crate) fn is_fold_marker(original: &TerminalLine, modified: &TerminalLine) -> bool {
     matches!(
