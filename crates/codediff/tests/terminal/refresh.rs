@@ -232,7 +232,7 @@ fn a_change_that_leaves_the_text_the_same_keeps_the_directory_cards_in_place() {
         codediff
             .screen()
             .lines()
-            .nth(2)
+            .nth(3)
             .is_some_and(|line| line.contains(" 14 a line 14 "))
     });
     let screen_before = codediff.screen();

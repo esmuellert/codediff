@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use diff_service::DiffService;
+use file_types::{File, Oid, RepoPath, Revs};
 use loom::crokey::KeyCombination;
 use loom::ratatui::buffer::Buffer;
 use loom::ratatui::layout::Rect;
@@ -54,14 +55,12 @@ pub(super) fn story_props(
                 ..UiContext::default()
             },
             files: Rc::new(Vec::new()),
-            commits: Rc::new(Vec::new()),
-            worktree_summary: None,
             navigate,
         };
         return (pipeline, props, Some(repo));
     }
 
-    let (listed, contents, commits, worktree_summary, branch_drawing, open) = match fixture {
+    let (listed, contents, commits, picking, branch_drawing, open) = match fixture {
         StoryFixture::Welcome => (None, Vec::new(), Vec::new(), None, false, false),
         StoryFixture::Explorer(files) => (Some(files), Vec::new(), Vec::new(), None, false, false),
         StoryFixture::ExplorerCards { files, diffs } => {
@@ -70,16 +69,29 @@ pub(super) fn story_props(
         StoryFixture::Repository { .. } => unreachable!("handled above"),
         StoryFixture::RevisionPicker {
             commits,
-            worktree_summary,
+            worktree_files,
             branch_drawing,
-        } => (
-            None,
-            Vec::new(),
-            commits,
-            Some(Rc::from(worktree_summary)),
-            branch_drawing,
-            false,
-        ),
+        } => {
+            let files: Vec<File> = (1..=worktree_files)
+                .map(|i| {
+                    File::unchanged_path(
+                        RepoPath::new(format!("src/file_{i}.rs"), Path::new("/codediff")),
+                        Revs::worktree_against(Oid::new("base")),
+                    )
+                })
+                .collect();
+            (
+                Some(files),
+                Vec::new(),
+                commits,
+                None,
+                branch_drawing,
+                false,
+            )
+        }
+        StoryFixture::RevisionHeader { commits, active } => {
+            (None, Vec::new(), commits, active, false, false)
+        }
         StoryFixture::SideBySide(content)
         | StoryFixture::Inline(content)
         | StoryFixture::SingleFile(content)
@@ -125,13 +137,13 @@ pub(super) fn story_props(
         base_context: UiContext {
             theme: Rc::new(Theme::DARK),
             branch_drawing,
-            repo: Rc::from(Path::new("/codediff-story")),
+            repo: Rc::from(Path::new("/codediff")),
+            picking,
+            commits: Rc::new(commits),
             diff_service: Some(Rc::clone(&pipeline)),
             ..UiContext::default()
         },
         files: Rc::new(files),
-        commits: Rc::new(commits),
-        worktree_summary,
         navigate,
     };
     (pipeline, props, None)
@@ -349,7 +361,8 @@ mod tests {
                 }
                 StoryComponent::Welcome
                 | StoryComponent::Explorer
-                | StoryComponent::RevisionPicker => unreachable!(),
+                | StoryComponent::RevisionPicker
+                | StoryComponent::RevisionHeader => unreachable!(),
             }
         }
     }

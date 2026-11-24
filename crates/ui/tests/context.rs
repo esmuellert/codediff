@@ -1,6 +1,6 @@
 //! The context value must not churn across renders.
 //!
-//! `UiProvider` puts an `Rc` for each field into the context. If any of
+//! `App` puts an `Rc` for each field into the context. If any of
 //! those are rebuilt every render, `Context::same` returns false, every
 //! reader is marked dirty, and `needs_draw()` is true after every draw.
 //! The loop then hits its 4-extra-draw cap every single frame.

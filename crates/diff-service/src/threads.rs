@@ -8,7 +8,7 @@
 // The slots are spelled out in full rather than hidden behind new names.
 #![allow(clippy::type_complexity)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, Weak};
@@ -26,6 +26,10 @@ const CHUNK_LINES: u32 = 2_000;
 /// Lists changed files and diffs and colours them away from the interface.
 pub struct DiffService {
     lists: Sender<(Request, Weak<Mutex<Option<Result<Vec<File>, String>>>>)>,
+    commits: Sender<(
+        (PathBuf, usize),
+        Weak<Mutex<Option<Result<Vec<vcs::Commit>, String>>>>,
+    )>,
     diffs: Sender<(
         File,
         Weak<Mutex<Option<Result<Arc<DiffContent>, String>>>>,
@@ -38,10 +42,16 @@ pub struct DiffService {
 impl DiffService {
     /// Starts the threads on a Git repository.
     pub fn start(redraw: impl Fn() + Send + Sync + 'static, settings: Settings) -> Self {
-        Self::new(
+        Self::with_commits(
             redraw,
             |request| files::get_files(request).map_err(|why| format!("{why:#}")),
             move |file| compare(file, settings),
+            |repo, limit| {
+                let repository = vcs::Repository::open(repo).map_err(|why| format!("{why:#}"))?;
+                repository
+                    .list_commits(vcs::CommitOrder::Topological, limit)
+                    .map_err(|why| format!("{why:#}"))
+            },
         )
     }
 
@@ -51,9 +61,19 @@ impl DiffService {
         list: impl FnMut(&Request) -> Result<Vec<File>, String> + Send + 'static,
         read: impl FnMut(&File) -> Result<DiffContent, String> + Send + 'static,
     ) -> Self {
+        Self::with_commits(redraw, list, read, |_, _| Ok(Vec::new()))
+    }
+
+    fn with_commits(
+        redraw: impl Fn() + Send + Sync + 'static,
+        list: impl FnMut(&Request) -> Result<Vec<File>, String> + Send + 'static,
+        read: impl FnMut(&File) -> Result<DiffContent, String> + Send + 'static,
+        commits_fn: impl FnMut(&Path, usize) -> Result<Vec<vcs::Commit>, String> + Send + 'static,
+    ) -> Self {
         let redraw: Arc<dyn Fn() + Send + Sync> = Arc::new(redraw);
         let pending_jobs = Arc::new(AtomicUsize::new(0));
         let (lists, list_requests) = channel();
+        let (commits, commit_requests) = channel();
         let (diffs, diff_requests) = channel();
         let (colours, colour_requests) = channel();
 
@@ -63,6 +83,20 @@ impl DiffService {
             .name("files".to_owned())
             .spawn(move || list_files(list, list_requests, &redraw_after_list, &pending_after_list))
             .expect("the files thread starts");
+
+        let (redraw_after_commits, pending_after_commits) =
+            (Arc::clone(&redraw), Arc::clone(&pending_jobs));
+        thread::Builder::new()
+            .name("commits".to_owned())
+            .spawn(move || {
+                list_commits(
+                    commits_fn,
+                    commit_requests,
+                    &redraw_after_commits,
+                    &pending_after_commits,
+                )
+            })
+            .expect("the commits thread starts");
 
         let (redraw_after_diff, pending_after_diff) =
             (Arc::clone(&redraw), Arc::clone(&pending_jobs));
@@ -87,6 +121,7 @@ impl DiffService {
 
         Self {
             lists,
+            commits,
             diffs,
             pending_jobs,
         }
@@ -106,6 +141,21 @@ impl DiffService {
             .send((request, Arc::downgrade(&files)))
             .expect("the files thread is running");
         files
+    }
+
+    /// Starts listing up to `limit` commits under `repo`. The slot holds `None`
+    /// until they are listed.
+    pub fn list_commits(
+        &self,
+        repo: &Path,
+        limit: usize,
+    ) -> Arc<Mutex<Option<Result<Vec<vcs::Commit>, String>>>> {
+        let commits = Arc::new(Mutex::new(None));
+        self.pending_jobs.fetch_add(1, Ordering::SeqCst);
+        self.commits
+            .send(((repo.to_path_buf(), limit), Arc::downgrade(&commits)))
+            .expect("the commits thread is running");
+        commits
     }
 
     /// Starts reading, diffing and colouring one file.
@@ -159,6 +209,26 @@ fn list_files(
             let result = list(&request);
             if let Some(files) = files.upgrade() {
                 *files.lock().unwrap() = Some(result);
+            }
+        }
+        finish(redraw, pending_jobs);
+    }
+}
+
+fn list_commits(
+    mut list: impl FnMut(&Path, usize) -> Result<Vec<vcs::Commit>, String>,
+    requests: Receiver<(
+        (PathBuf, usize),
+        Weak<Mutex<Option<Result<Vec<vcs::Commit>, String>>>>,
+    )>,
+    redraw: &Arc<dyn Fn() + Send + Sync>,
+    pending_jobs: &AtomicUsize,
+) {
+    for ((repo, limit), commits) in requests {
+        if commits.strong_count() > 0 {
+            let result = list(&repo, limit);
+            if let Some(commits) = commits.upgrade() {
+                *commits.lock().unwrap() = Some(result);
             }
         }
         finish(redraw, pending_jobs);

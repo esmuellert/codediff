@@ -5,11 +5,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use file_types::{Oid, Rev};
+use std::path::Path;
+
+use diff_service::DiffService;
+use diff_service::files::RevisionRange;
+use file_types::{File, Oid, RepoPath, Revs};
 use loom::crokey::key;
 use loom::testing::Harness;
+use loom::{Node, Scope, component, rsx, use_memo, use_state};
 use ratatui::style::{Color, Modifier};
-use ui::components::{Context, RevisionPicker, RevisionPickerProps, Ui};
+use ui::components::{Context, RevisionPicker, RevisionSide, Ui, UiProps};
 use ui::{Commit, Theme};
 
 fn commit(oid: &str, parents: &[&str], subject: &str) -> Commit {
@@ -58,31 +63,86 @@ fn decorated_commits() -> Vec<Commit> {
     vec![head, merge, topic, tagged, older_tag]
 }
 
-fn harness_with_theme(
-    props: RevisionPickerProps,
-    theme: Theme,
-    branch_drawing: bool,
-    width: u16,
-    height: u16,
-) -> Harness {
-    let mut h = Harness::new::<RevisionPicker>(props, width, height).provide::<Ui>(Context {
-        theme: Rc::new(theme),
-        branch_drawing,
-        ..Context::default()
-    });
-    for _ in 0..4 {
-        h.force_draw();
-    }
-    h
+fn fake_worktree_files(count: usize) -> Vec<File> {
+    (1..=count)
+        .map(|i| {
+            File::unchanged_path(
+                RepoPath::new(format!("src/file_{i}.rs"), Path::new("/repo")),
+                Revs::worktree_against(Oid::new("base")),
+            )
+        })
+        .collect()
 }
 
-fn harness_with_props(
-    props: RevisionPickerProps,
+#[component]
+fn PickerHost(
+    scope: &mut Scope,
+    commits: Rc<Vec<Commit>>,
+    worktree_files: Option<usize>,
+    initial_range: RevisionRange,
+    initial_picking: Option<RevisionSide>,
+    theme: Theme,
     branch_drawing: bool,
-    width: u16,
-    height: u16,
-) -> Harness {
-    harness_with_theme(props, Theme::DARK, branch_drawing, width, height)
+    range_log: Option<Rc<RefCell<RevisionRange>>>,
+    picking_log: Option<Rc<RefCell<Option<RevisionSide>>>>,
+) -> Node {
+    let init_range = initial_range.clone();
+    let init_picking = *initial_picking;
+    let (revision_range, set_revision_range) = use_state(scope, move || init_range);
+    let (picking, set_picking) = use_state(scope, move || init_picking);
+    if let Some(log) = range_log.as_ref() {
+        *log.borrow_mut() = revision_range.clone();
+    }
+    if let Some(log) = picking_log.as_ref() {
+        *log.borrow_mut() = picking;
+    }
+    let base = use_memo(scope, (), Context::default);
+    let theme_val = *theme;
+    let theme_rc = use_memo(scope, theme_val.name, move || theme_val);
+    let files_count = *worktree_files;
+    let diff_service = use_memo(scope, files_count, move || {
+        let files = files_count.map(fake_worktree_files).unwrap_or_default();
+        DiffService::new(|| {}, move |_| Ok(files.clone()), |_| Err(String::new()))
+    });
+    let mut ctx = (*base).clone();
+    ctx.theme = theme_rc;
+    ctx.branch_drawing = *branch_drawing;
+    ctx.revision_range = revision_range;
+    ctx.set_revision_range = Some(set_revision_range);
+    ctx.picking = picking;
+    ctx.set_picking = picking_log.is_some().then_some(set_picking);
+    ctx.commits = Rc::clone(commits);
+    ctx.diff_service = files_count.map(|_| Rc::clone(&diff_service));
+    rsx! {
+        Ui {
+            value: ctx,
+            RevisionPicker {}
+        }
+    }
+}
+
+fn mount_picker(props: PickerHostProps, width: u16, height: u16) -> Harness {
+    let has_service = props.worktree_files.is_some();
+    let mut h = Harness::new::<PickerHost>(props, width, height);
+    for _ in 0..6 {
+        h.force_draw();
+    }
+    if has_service {
+        for _ in 0..50 {
+            if h.screen()
+                .iter()
+                .any(|l| l.contains("changed ·") || l.contains("clean"))
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            h.force_draw();
+        }
+        for _ in 0..4 {
+            h.force_draw();
+        }
+    }
+    h
 }
 
 fn harness(
@@ -91,19 +151,24 @@ fn harness(
     branch_drawing: bool,
     width: u16,
     height: u16,
-    on_select: Option<Rc<dyn Fn(Rev)>>,
-    on_open: Option<Rc<dyn Fn(Rev)>>,
 ) -> Harness {
-    harness_with_props(
-        RevisionPickerProps {
+    let (worktree_files, initial_picking) = match worktree_summary {
+        Some("changed · 6 files") => (Some(6), None),
+        Some("changed · 1 file") => (Some(1), None),
+        Some(_) => (Some(0), None),
+        None => (None, Some(RevisionSide::Left)),
+    };
+    mount_picker(
+        PickerHostProps {
             commits: Rc::new(commits),
-            worktree_summary: worktree_summary.map(Rc::from),
-            initial: None,
-            on_select,
-            on_open,
-            on_close: None,
+            worktree_files,
+            initial_range: RevisionRange::Worktree,
+            initial_picking,
+            theme: Theme::DARK,
+            branch_drawing,
+            range_log: None,
+            picking_log: None,
         },
-        branch_drawing,
         width,
         height,
     )
@@ -126,19 +191,12 @@ fn selected_row_containing(h: &mut Harness, needle: &str) -> Option<u16> {
 
 #[test]
 fn browse_mode_renders_header_working_tree_separator_and_skips_separator_on_j_k() {
-    let selected: Rc<RefCell<Vec<Rev>>> = Rc::new(RefCell::new(Vec::new()));
-    let selected_cb = Rc::clone(&selected);
-
     let mut h = harness(
         decorated_commits(),
         Some("changed · 6 files"),
         true,
         110,
         10,
-        Some(Rc::new(move |rev| {
-            selected_cb.borrow_mut().push(rev);
-        })),
-        None,
     );
 
     assert!(!h.screen().join("\n").contains('›'));
@@ -185,15 +243,10 @@ fn browse_mode_renders_header_working_tree_separator_and_skips_separator_on_j_k(
     assert_eq!(h.style_at(0, 3).bg, cursor_bg);
     assert_ne!(h.style_at(0, 1).bg, cursor_bg);
     assert_ne!(h.style_at(0, 2).bg, cursor_bg);
-    assert_eq!(*selected.borrow(), vec![Rev::Commit(Oid::new("fb0d76c"))]);
 
     // `k` steps straight back across the separator to Working tree (row 1).
     h.press(key!(k)).force_draw();
     assert_eq!(h.style_at(0, 1).bg, cursor_bg);
-    assert_eq!(
-        *selected.borrow(),
-        vec![Rev::Commit(Oid::new("fb0d76c")), Rev::Worktree]
-    );
 }
 
 #[test]
@@ -204,8 +257,6 @@ fn search_filters_into_compact_flat_list_without_pipes_and_treats_j_k_q_as_query
         false,
         110,
         10,
-        None,
-        None,
     );
 
     // Click `[/] search` on the right side of header row 0 to open search.
@@ -259,15 +310,7 @@ fn exiting_search_via_esc_or_backspace_restores_exact_browse_selection_and_scrol
         })
         .collect();
 
-    let mut h = harness(
-        commits,
-        Some("changed · 6 files"),
-        true,
-        100,
-        10,
-        None,
-        None,
-    );
+    let mut h = harness(commits, Some("changed · 6 files"), true, 100, 10);
 
     // Move down to commit #15 (candidate 16: Working tree is 0, commit #0..#15 are 1..=16).
     for _ in 0..16 {
@@ -333,23 +376,25 @@ fn cjk_query_backspace_enter_on_open_and_empty_no_matches_state() {
     cjk.branches = vec!["功能/搜索".to_owned()];
     commits.push(cjk);
 
-    let opened: Rc<RefCell<Vec<Rev>>> = Rc::new(RefCell::new(Vec::new()));
-    let opened_cb = Rc::clone(&opened);
-    let mut h = harness(
-        commits,
-        Some("changed · 2 files"),
-        true,
+    let range_log = Rc::new(RefCell::new(RevisionRange::Worktree));
+    let mut h = mount_picker(
+        PickerHostProps {
+            commits: Rc::new(commits),
+            worktree_files: Some(6),
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Right),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: Some(Rc::clone(&range_log)),
+            picking_log: None,
+        },
         100,
         10,
-        None,
-        Some(Rc::new(move |rev| {
-            opened_cb.borrow_mut().push(rev);
-        })),
     );
 
     // Enter on initial row opens Rev::Worktree.
     h.press(key!(enter)).force_draw();
-    assert_eq!(*opened.borrow(), vec![Rev::Worktree]);
+    assert_eq!(*range_log.borrow(), RevisionRange::Worktree);
 
     // Search with CJK + emoji, Backspace emoji + one CJK char safely on char boundaries, then Enter.
     h.press(key!('/')).force_draw();
@@ -366,15 +411,14 @@ fn cjk_query_backspace_enter_on_open_and_empty_no_matches_state() {
     assert_eq!(h.screen_line(1), " > 搜索过");
     h.press(key!(enter)).force_draw();
     assert_eq!(
-        *opened.borrow(),
-        vec![Rev::Worktree, Rev::Commit(Oid::new("c7c7c7c"))]
+        *range_log.borrow(),
+        RevisionRange::Between("fb0d76c".to_owned(), "c7c7c7c".to_owned())
     );
 
     // Non-matching query renders " No revisions match." and Enter is a safe no-op.
     press_text(&mut h, "zzzz");
     assert_eq!(h.screen_line(2), " No revisions match.");
     h.press(key!(enter)).force_draw();
-    assert_eq!(opened.borrow().len(), 2);
 }
 
 #[test]
@@ -382,15 +426,7 @@ fn matching_working_tree_and_commits_together_keeps_separator_between_them() {
     let mut commits = decorated_commits();
     commits[2].subject = "feat: working tree status badge".to_owned();
 
-    let mut h = harness(
-        commits,
-        Some("changed · 6 files"),
-        false,
-        100,
-        10,
-        None,
-        None,
-    );
+    let mut h = harness(commits, Some("changed · 6 files"), false, 100, 10);
 
     h.press(key!('/')).force_draw();
     press_text(&mut h, "working tree");
@@ -419,23 +455,20 @@ fn matching_working_tree_and_commits_together_keeps_separator_between_them() {
 
 #[test]
 fn multi_key_bursts_in_a_single_frame_preserve_every_keystroke_and_navigation() {
-    let selected: Rc<RefCell<Vec<Rev>>> = Rc::new(RefCell::new(Vec::new()));
-    let opened: Rc<RefCell<Vec<Rev>>> = Rc::new(RefCell::new(Vec::new()));
-    let selected_cb = Rc::clone(&selected);
-    let opened_cb = Rc::clone(&opened);
-
-    let mut h = harness(
-        decorated_commits(),
-        Some("changed · 6 files"),
-        false,
-        110,
+    let range_log = Rc::new(RefCell::new(RevisionRange::Worktree));
+    let mut h = mount_picker(
+        PickerHostProps {
+            commits: Rc::new(decorated_commits()),
+            worktree_files: Some(6),
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Right),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: Some(Rc::clone(&range_log)),
+            picking_log: None,
+        },
+        100,
         10,
-        Some(Rc::new(move |rev| {
-            selected_cb.borrow_mut().push(rev);
-        })),
-        Some(Rc::new(move |rev| {
-            opened_cb.borrow_mut().push(rev);
-        })),
     );
 
     let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
@@ -448,14 +481,6 @@ fn multi_key_bursts_in_a_single_frame_preserve_every_keystroke_and_navigation() 
         cursor_bg,
         "expected commit #2 selected after 3 rapid j presses:\n{}",
         h.screen().join("\n")
-    );
-    assert_eq!(
-        *selected.borrow(),
-        vec![
-            Rev::Commit(Oid::new("fb0d76c")),
-            Rev::Commit(Oid::new("91dba92")),
-            Rev::Commit(Oid::new("f8b977f")),
-        ]
     );
 
     // Burst 2: pasting `"/v0.28"` in one crossterm poll batch without intermediate draws!
@@ -479,7 +504,10 @@ fn multi_key_bursts_in_a_single_frame_preserve_every_keystroke_and_navigation() 
     h.press(key!(enter));
     h.force_draw().force_draw();
     assert_eq!(h.screen_line(1), " > v0.28.3");
-    assert_eq!(*opened.borrow(), vec![Rev::Commit(Oid::new("89480e6"))]);
+    assert_eq!(
+        *range_log.borrow(),
+        RevisionRange::Between("fb0d76c".to_owned(), "89480e6".to_owned())
+    );
 
     // Burst 4: multiple Backspaces in a single batch (`".3"` removed -> back to `"v0.28"`),
     // followed by `Down` + `Enter` in the same batch!
@@ -491,11 +519,8 @@ fn multi_key_bursts_in_a_single_frame_preserve_every_keystroke_and_navigation() 
     assert_eq!(h.screen_line(1), " > v0.28");
     assert_eq!(h.style_at(0, 3).bg, cursor_bg);
     assert_eq!(
-        *opened.borrow(),
-        vec![
-            Rev::Commit(Oid::new("89480e6")),
-            Rev::Commit(Oid::new("89480e6")),
-        ]
+        *range_log.borrow(),
+        RevisionRange::Between("fb0d76c".to_owned(), "89480e6".to_owned())
     );
 
     // Burst 5: `Esc` + `q` in one batch closes search (restoring commit #2) and quits!
@@ -521,16 +546,20 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
     let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
 
     // Case 1: `commits` already populated at mount.
-    let mut sync_h = harness_with_props(
-        RevisionPickerProps {
+    let mut sync_h = mount_picker(
+        PickerHostProps {
             commits: Rc::new(commits.clone()),
-            worktree_summary: Some(Rc::from("changed · 6 files")),
-            initial: Some(Rev::Commit(target_oid.clone())),
-            on_select: None,
-            on_open: None,
-            on_close: None,
+            worktree_files: Some(6),
+            initial_range: RevisionRange::Between(
+                "HEAD".to_owned(),
+                target_oid.as_str().to_owned(),
+            ),
+            initial_picking: Some(RevisionSide::Right),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
         },
-        true,
         100,
         10,
     );
@@ -554,29 +583,35 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
     assert_eq!(sync_h.style_at(0, sync_row).bg, cursor_bg);
 
     // Case 2: `commits` starts empty on first mount, then populates asynchronously on rerender.
-    let mut async_h = harness_with_props(
-        RevisionPickerProps {
+    let mut async_h = mount_picker(
+        PickerHostProps {
             commits: Rc::new(Vec::new()),
-            worktree_summary: Some(Rc::from("changed · 6 files")),
-            initial: Some(Rev::Commit(target_oid.clone())),
-            on_select: None,
-            on_open: None,
-            on_close: None,
+            worktree_files: Some(6),
+            initial_range: RevisionRange::Between(
+                "HEAD".to_owned(),
+                target_oid.as_str().to_owned(),
+            ),
+            initial_picking: Some(RevisionSide::Right),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
         },
-        true,
         100,
         10,
     );
     assert!(async_h.screen_line(1).starts_with(" Working tree"));
     assert_eq!(async_h.style_at(0, 1).bg, cursor_bg);
 
-    async_h.set_props::<RevisionPicker>(RevisionPickerProps {
+    async_h.set_props::<PickerHost>(PickerHostProps {
         commits: Rc::new(commits),
-        worktree_summary: Some(Rc::from("changed · 6 files")),
-        initial: Some(Rev::Commit(target_oid)),
-        on_select: None,
-        on_open: None,
-        on_close: None,
+        worktree_files: None,
+        initial_range: RevisionRange::Against(target_oid.as_str().to_owned()),
+        initial_picking: Some(RevisionSide::Left),
+        theme: Theme::DARK,
+        branch_drawing: true,
+        range_log: None,
+        picking_log: None,
     });
     for _ in 0..4 {
         async_h.force_draw();
@@ -604,22 +639,20 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
 }
 
 #[test]
-fn two_step_esc_exits_search_before_invoking_on_close_and_q_invokes_on_close_without_exiting() {
-    let close_count = Rc::new(RefCell::new(0usize));
-    let close_cb = Rc::clone(&close_count);
+fn two_step_esc_exits_search_before_closing_picking_and_q_closes_without_exiting() {
+    let picking_log = Rc::new(RefCell::new(Some(RevisionSide::Right)));
 
-    let mut h = harness_with_props(
-        RevisionPickerProps {
+    let mut h = mount_picker(
+        PickerHostProps {
             commits: Rc::new(decorated_commits()),
-            worktree_summary: Some(Rc::from("changed · 6 files")),
-            initial: None,
-            on_select: None,
-            on_open: None,
-            on_close: Some(Rc::new(move || {
-                *close_cb.borrow_mut() += 1;
-            })),
+            worktree_files: Some(6),
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Right),
+            theme: Theme::DARK,
+            branch_drawing: false,
+            range_log: None,
+            picking_log: Some(Rc::clone(&picking_log)),
         },
-        false,
         110,
         10,
     );
@@ -628,24 +661,39 @@ fn two_step_esc_exits_search_before_invoking_on_close_and_q_invokes_on_close_wit
     h.press(key!('/')).force_draw();
     press_text(&mut h, "v0.28");
     assert_eq!(h.screen_line(1), " > v0.28");
-    assert_eq!(*close_count.borrow(), 0);
+    assert_eq!(*picking_log.borrow(), Some(RevisionSide::Right));
 
-    // First `Esc`: closes search and restores browse mode; does NOT call `on_close`.
+    // First `Esc`: closes search and restores browse mode; keeps `picking` open.
     h.press(key!(esc)).force_draw();
     assert!(h.screen_line(0).ends_with("[/] search"));
     assert!(h.screen_line(1).contains("Working tree"));
-    assert_eq!(*close_count.borrow(), 0);
+    assert_eq!(*picking_log.borrow(), Some(RevisionSide::Right));
     assert!(!h.exiting());
 
-    // Second `Esc` in browse mode: calls `on_close` once without exiting the app.
+    // Second `Esc` in browse mode: clears `picking` without exiting the app.
     h.press(key!(esc)).force_draw();
-    assert_eq!(*close_count.borrow(), 1);
+    assert_eq!(*picking_log.borrow(), None);
     assert!(!h.exiting());
 
-    // Pressing `q` in browse mode with `on_close: Some(...)` also calls `on_close` instead of `exit()`.
-    h.press(key!(q)).force_draw();
-    assert_eq!(*close_count.borrow(), 2);
-    assert!(!h.exiting());
+    // Pressing `q` in browse mode with `picking: Some(...)` also clears `picking` instead of `exit()`.
+    let picking_log_q = Rc::new(RefCell::new(Some(RevisionSide::Left)));
+    let mut h_q = mount_picker(
+        PickerHostProps {
+            commits: Rc::new(decorated_commits()),
+            worktree_files: None,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: false,
+            range_log: None,
+            picking_log: Some(Rc::clone(&picking_log_q)),
+        },
+        110,
+        10,
+    );
+    h_q.press(key!(q)).force_draw();
+    assert_eq!(*picking_log_q.borrow(), None);
+    assert!(!h_q.exiting());
 }
 
 fn graph_fixture_commits() -> Vec<Commit> {
@@ -678,7 +726,7 @@ fn graph_fixture_commits() -> Vec<Commit> {
 #[test]
 fn empty_list_without_worktree_renders_placeholder_without_markers() {
     for branch_drawing in [false, true] {
-        let mut h = harness(Vec::new(), None, branch_drawing, 80, 6, None, None);
+        let mut h = harness(Vec::new(), None, branch_drawing, 80, 6);
         let screen = h.screen().join("\n");
         assert!(screen.contains("No commits"), "{screen}");
         assert!(!screen.contains('›'), "{screen}");
@@ -697,7 +745,7 @@ fn branch_drawing_and_box_drawing_modes_render_dag_curves_and_merge_glyphs() {
     let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
 
     // BranchDrawing mode (row 0 is `git log`, rows 1..4 are commits when worktree_summary is None).
-    let mut branch_h = harness(graph_fixture_commits(), None, true, 120, 7, None, None);
+    let mut branch_h = harness(graph_fixture_commits(), None, true, 120, 7);
     let row1 = branch_h.screen_line(1);
     assert!(row1.starts_with(" \u{f5f6}"), "{row1:?}");
     assert_eq!(branch_h.style_at(0, 1).bg, cursor_bg);
@@ -719,7 +767,7 @@ fn branch_drawing_and_box_drawing_modes_render_dag_curves_and_merge_glyphs() {
     assert!(row4.contains("HEAD  initial baseline commit"), "{row4:?}");
 
     // BoxDrawing fallback mode.
-    let mut box_h = harness(graph_fixture_commits(), None, false, 120, 7, None, None);
+    let mut box_h = harness(graph_fixture_commits(), None, false, 120, 7);
     assert!(box_h.screen_line(1).starts_with(" ○"));
     assert_eq!(box_h.style_at(0, 1).bg, cursor_bg);
     assert_eq!(
@@ -739,15 +787,7 @@ fn branch_drawing_and_box_drawing_modes_render_dag_curves_and_merge_glyphs() {
 #[test]
 fn selecting_a_merge_commit_highlights_its_outgoing_pipes_in_both_modes() {
     for branch_drawing in [false, true] {
-        let mut h = harness(
-            graph_fixture_commits(),
-            None,
-            branch_drawing,
-            100,
-            7,
-            None,
-            None,
-        );
+        let mut h = harness(graph_fixture_commits(), None, branch_drawing, 100, 7);
 
         // Row 0 is header; row 1 = head, row 2 = merge, row 3 = topic, row 4 = root.
         // Pipe lane 0 starts at x = 1 (1-column left margin).
@@ -770,19 +810,19 @@ fn selecting_a_merge_commit_highlights_its_outgoing_pipes_in_both_modes() {
 fn ref_colours_and_lane_colours_never_emit_rgb_in_basic_themes() {
     for theme in Theme::ALL {
         for branch_drawing in [false, true] {
-            let mut h = harness_with_theme(
-                RevisionPickerProps {
+            let mut h = mount_picker(
+                PickerHostProps {
                     commits: Rc::new(graph_fixture_commits()),
-                    worktree_summary: Some(Rc::from("changed · 6 files")),
-                    initial: None,
-                    on_select: None,
-                    on_open: None,
-                    on_close: None,
+                    worktree_files: Some(6),
+                    initial_range: RevisionRange::Worktree,
+                    initial_picking: None,
+                    theme,
+                    branch_drawing,
+                    range_log: None,
+                    picking_log: None,
                 },
-                theme,
-                branch_drawing,
                 120,
-                8,
+                12,
             );
 
             // Row 0: header, Row 1: Working tree, Row 2: separator, Row 3: first commit.
@@ -842,7 +882,7 @@ fn start_and_end_keys_jump_across_eighty_virtualized_commits() {
         })
         .collect();
 
-    let mut h = harness(commits, Some("changed · 6 files"), true, 90, 10, None, None);
+    let mut h = harness(commits, Some("changed · 6 files"), true, 90, 10);
     assert!(h.screen().join("\n").contains("Working tree"));
     assert!(h.screen().join("\n").contains("subject-00"));
     assert!(!h.screen().join("\n").contains("subject-40"));
@@ -864,7 +904,7 @@ fn reloading_commits_preserves_selected_commit_by_oid_and_settles() {
         commit("1111111", &["2222222"], "first"),
         commit("2222222", &[], "target"),
     ];
-    let mut h = harness(initial, Some("changed · 6 files"), true, 80, 8, None, None);
+    let mut h = harness(initial, Some("changed · 6 files"), true, 80, 8);
     // Row 0 = header, Row 1 = Working tree, Row 2 = separator, Row 3 = first, Row 4 = target.
     h.press(key!(j)).press(key!(j)).force_draw();
     let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
@@ -876,13 +916,15 @@ fn reloading_commits_preserves_selected_commit_by_oid_and_settles() {
         commit("1111111", &["2222222"], "first"),
         commit("2222222", &[], "target"),
     ];
-    h.set_props::<RevisionPicker>(RevisionPickerProps {
+    h.set_props::<PickerHost>(PickerHostProps {
         commits: Rc::new(reloaded),
-        worktree_summary: Some(Rc::from("changed · 6 files")),
-        initial: None,
-        on_select: None,
-        on_open: None,
-        on_close: None,
+        worktree_files: Some(6),
+        initial_range: RevisionRange::Worktree,
+        initial_picking: None,
+        theme: Theme::DARK,
+        branch_drawing: true,
+        range_log: None,
+        picking_log: None,
     });
     for _ in 0..5 {
         h.force_draw();
@@ -905,19 +947,78 @@ fn narrow_and_cjk_widths_never_panic_in_browse_or_search_modes() {
     let commits = vec![cjk, commit("91dba92", &[], "second")];
 
     for width in [1u16, 2, 4, 8, 12, 20, 32, 60] {
-        let mut h = harness(
-            commits.clone(),
-            Some("changed · 6 files"),
-            true,
-            width,
-            6,
-            None,
-            None,
-        );
+        let mut h = harness(commits.clone(), Some("changed · 6 files"), true, width, 6);
         assert_eq!(h.screen().len(), 6);
         assert!(!h.screen().join("\n").contains('›'));
         h.press(key!('/')).force_draw();
         press_text(&mut h, "主分支");
         assert_eq!(h.screen().len(), 6);
     }
+}
+
+#[test]
+fn clicking_an_unselected_row_selects_it_and_clicking_again_opens_it() {
+    let commits = vec![
+        commit("aaaaaaa", &["bbbbbbb"], "first commit"),
+        commit("bbbbbbb", &["ccccccc"], "second commit"),
+        commit("ccccccc", &[], "third commit"),
+    ];
+    let range_log = Rc::new(RefCell::new(RevisionRange::Worktree));
+    let picking_log = Rc::new(RefCell::new(Some(RevisionSide::Left)));
+    let mut h = mount_picker(
+        PickerHostProps {
+            commits: Rc::new(commits),
+            worktree_files: None,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: false,
+            range_log: Some(Rc::clone(&range_log)),
+            picking_log: Some(Rc::clone(&picking_log)),
+        },
+        80,
+        8,
+    );
+
+    // Row 0 is header, row 1 is first commit, row 2 is second commit
+    h.click(5, 2);
+    assert_eq!(*range_log.borrow(), RevisionRange::Worktree);
+    assert_eq!(*picking_log.borrow(), Some(RevisionSide::Left));
+
+    // Clicking the now-selected row applies it (same as Enter)
+    h.click(5, 2);
+    h.force_draw();
+    assert_eq!(
+        *range_log.borrow(),
+        RevisionRange::Against("bbbbbbb".to_owned())
+    );
+    assert_eq!(*picking_log.borrow(), None);
+
+    // Rapid two-click batch on third commit (row 3) without intermediate draw
+    let range_log2 = Rc::new(RefCell::new(RevisionRange::Worktree));
+    let mut h2 = mount_picker(
+        PickerHostProps {
+            commits: Rc::new(vec![
+                commit("aaaaaaa", &["bbbbbbb"], "first commit"),
+                commit("bbbbbbb", &["ccccccc"], "second commit"),
+                commit("ccccccc", &[], "third commit"),
+            ]),
+            worktree_files: None,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: false,
+            range_log: Some(Rc::clone(&range_log2)),
+            picking_log: None,
+        },
+        80,
+        8,
+    );
+    h2.click(5, 3);
+    h2.click(5, 3);
+    h2.force_draw();
+    assert_eq!(
+        *range_log2.borrow(),
+        RevisionRange::Against("ccccccc".to_owned())
+    );
 }

@@ -19,6 +19,9 @@ pub enum Action {
     MoveRight,
     Start,
     End,
+    PickLeft,
+    PickRight,
+    SwapRevisions,
 }
 
 /// Parsed key combinations used by the component listeners.
@@ -38,6 +41,9 @@ pub struct KeyMap {
     move_right: Vec<KeyCombination>,
     start: Vec<KeyCombination>,
     end: Vec<KeyCombination>,
+    pick_left: Vec<KeyCombination>,
+    pick_right: Vec<KeyCombination>,
+    swap_revisions: Vec<KeyCombination>,
 }
 
 impl KeyMap {
@@ -59,6 +65,9 @@ impl KeyMap {
             move_right: parse(Action::MoveRight, &config.move_right)?,
             start: parse(Action::Start, &config.start)?,
             end: parse(Action::End, &config.end)?,
+            pick_left: parse(Action::PickLeft, &config.pick_left)?,
+            pick_right: parse(Action::PickRight, &config.pick_right)?,
+            swap_revisions: parse(Action::SwapRevisions, &config.swap_revisions)?,
         })
     }
 
@@ -78,6 +87,9 @@ impl KeyMap {
             Action::MoveRight => &self.move_right,
             Action::Start => &self.start,
             Action::End => &self.end,
+            Action::PickLeft => &self.pick_left,
+            Action::PickRight => &self.pick_right,
+            Action::SwapRevisions => &self.swap_revisions,
         };
         keys.contains(&key)
     }

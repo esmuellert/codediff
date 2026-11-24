@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 use diff_service::diff::DiffContent;
 use file_types::File;
 use loom::crokey::KeyCombination;
+use ui::components::RevisionSide;
 use vcs::{Commit, RevisionRange};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub enum StoryComponent {
     Explorer,
     ExplorerCards,
     RevisionPicker,
+    RevisionHeader,
     SideBySide,
     Inline,
     SingleFile,
@@ -76,8 +78,12 @@ pub enum StoryFixture {
     },
     RevisionPicker {
         commits: Vec<Commit>,
-        worktree_summary: String,
+        worktree_files: usize,
         branch_drawing: bool,
+    },
+    RevisionHeader {
+        commits: Vec<Commit>,
+        active: Option<RevisionSide>,
     },
     SideBySide(Rc<DiffContent>),
     Inline(Rc<DiffContent>),
@@ -93,6 +99,7 @@ impl StoryFixture {
             Self::Explorer(_) => StoryComponent::Explorer,
             Self::ExplorerCards { .. } | Self::Repository { .. } => StoryComponent::ExplorerCards,
             Self::RevisionPicker { .. } => StoryComponent::RevisionPicker,
+            Self::RevisionHeader { .. } => StoryComponent::RevisionHeader,
             Self::SideBySide(_) => StoryComponent::SideBySide,
             Self::Inline(_) => StoryComponent::Inline,
             Self::SingleFile(_) => StoryComponent::SingleFile,
