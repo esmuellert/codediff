@@ -123,7 +123,7 @@ signal-hook = { version = "0.4", features = ["iterator"] }
 rustix = { version = "1", features = ["event", "stdio", "termios"] }
 # Filesystem watcher: detects worktree and .git changes so the explorer stays
 # current without polling. The debouncer collapses rapid events into one.
-notify = "=9.0.0-rc.8"
+notify = "=9.0.0"
 # Respects .gitignore so build output never triggers a refresh.
 ignore = "0.4"
 # Structured logging; the binary enables it with the hidden --log option.
