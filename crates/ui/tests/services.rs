@@ -545,7 +545,7 @@ fn list_commits_and_toggle_stage_serialize_cleanly_on_vcs_service() {
     let vcs = VcsService::start(move || {
         let _ = tx.send(());
     });
-    let commits_resource = vcs.list_commits(root, 10);
+    let commits_resource = vcs.list_commits(root, 0, 10);
     rx.recv_timeout(Duration::from_secs(5))
         .expect("redraw notification after list_commits");
     wait_until_idle(|| vcs.is_busy(), &rx);

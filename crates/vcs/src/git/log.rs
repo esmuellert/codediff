@@ -38,11 +38,12 @@ pub struct Entry {
 
 const FORMAT: &str = "--format=%h%x00%p%x00%D%x00%s%x00%an%x00%cs%x00";
 
-/// Lists up to `limit` raw commit records in `order`.
-pub fn list(repo: &Repo, order: Order, limit: usize) -> Result<Vec<Entry>> {
+/// Lists up to `limit` raw commit records in `order`, skipping the first `skip`.
+pub fn list(repo: &Repo, order: Order, skip: usize, limit: usize) -> Result<Vec<Entry>> {
     if limit == 0 {
         return Ok(Vec::new());
     }
+    let skipped = format!("--skip={skip}");
     let count = format!("-n{limit}");
     let mut args = vec![
         "log",
@@ -54,6 +55,9 @@ pub fn list(repo: &Repo, order: Order, limit: usize) -> Result<Vec<Entry>> {
     ];
     if rev_parse::resolve(repo, "HEAD").is_ok() {
         args.push("HEAD");
+    }
+    if skip > 0 {
+        args.push(&skipped);
     }
     args.push(&count);
     args.push(FORMAT);

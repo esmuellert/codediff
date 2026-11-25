@@ -1166,3 +1166,202 @@ fn warmed_vcs_paints_revision_picker_on_first_frame_without_blank_flash() {
         "expected RevisionHeader to update in 1 frame from warm cache: {header_line:?}"
     );
 }
+
+#[test]
+fn lazy_loads_five_hundred_commit_batches_at_four_hundred_waterline_without_jumping_scroll_or_selection()
+ {
+    let all_commits: Vec<Commit> = (0..1200)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parent = format!("{:07x}", index + 1);
+            let parents: Vec<&str> = if index + 1 < 1200 {
+                vec![parent.as_str()]
+            } else {
+                Vec::new()
+            };
+            let mut c = commit(&hash, &parents, &format!("subject-{index:04}"));
+            if index == 0 {
+                c.current = true;
+                c.branches = vec!["main".to_owned()];
+            }
+            c
+        })
+        .collect();
+
+    let requested_limits = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+    let limits_for_vcs = std::sync::Arc::clone(&requested_limits);
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        |_, _| Ok(Vec::new()),
+        move |_, limit| {
+            if limit != usize::MAX {
+                limits_for_vcs.lock().unwrap().push(limit);
+            }
+            Ok(all_commits.iter().take(limit).cloned().collect())
+        },
+    ));
+    let watcher = Rc::new(ui::services::WatcherService::fake());
+    let mut h = Harness::new::<PickerHost>(
+        PickerHostProps {
+            vcs: Rc::clone(&vcs),
+            watcher,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
+        },
+        100,
+        21, // header = 1 row -> viewport_rows = 20 (PageDown steps by 19 rows)
+    );
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+
+    // Initial mount fetched exactly batch 1 (`skip=0, limit=501`).
+    assert_eq!(*requested_limits.lock().unwrap(), vec![501]);
+    assert!(selected_row_containing(&mut h, "subject-0000").is_some());
+
+    // Step down 20 times with PageDown (20 * 19 = 380 -> selected = 380, viewport_bottom = 384 < 400):
+    // still below the 400 waterline, so NO second batch has been requested yet!
+    for _ in 0..20 {
+        h.press(key!(pagedown)).force_draw();
+    }
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(
+        *requested_limits.lock().unwrap(),
+        vec![501],
+        "must not prefetch before reaching row 400"
+    );
+    assert!(selected_row_containing(&mut h, "subject-0380").is_some());
+
+    // One more PageDown brings selected = 399 and after layout clamping viewport_bottom = 403 >= 400!
+    // Two draws settle `keep_y_visible` -> `view.clamped_offset()` -> `use_effect` waterline trigger,
+    // while preserving the exact selected commit (`subject-0399`) and viewport lines without any jump!
+    h.press(key!(pagedown)).force_draw().force_draw();
+    let screen_before_append = h.screen();
+    let row_before_append = selected_row_containing(&mut h, "subject-0399")
+        .expect("subject-0399 selected at waterline");
+
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(*requested_limits.lock().unwrap(), vec![501, 1001]);
+    assert_eq!(
+        selected_row_containing(&mut h, "subject-0399"),
+        Some(row_before_append),
+        "appending batch 2 must keep selection on subject-0399 at the exact same screen row"
+    );
+    assert_eq!(
+        h.screen(),
+        screen_before_append,
+        "appending batch 2 must not jump scroll offset"
+    );
+
+    // Continue paging down past row 900 (27 * 19 = 513 -> 399 + 513 = 912 >= 900):
+    // triggers batch 3 (`skip=1000, limit=501` -> fake closure receives `1501`), returning the remaining 200 commits (`1000..1200`) and setting `has_more = false`.
+    for _ in 0..27 {
+        h.press(key!(pagedown)).force_draw();
+    }
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(*requested_limits.lock().unwrap(), vec![501, 1001, 1501]);
+    assert!(selected_row_containing(&mut h, "subject-0912").is_some());
+
+    // Jump to the very end (`$`) -> reaches commit #1199 (`subject-1199`) and triggers NO further batch requests!
+    h.press(key!('$')).force_draw().force_draw();
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(
+        *requested_limits.lock().unwrap(),
+        vec![501, 1001, 1501],
+        "must stop requesting once returned batch <= 500"
+    );
+    assert!(selected_row_containing(&mut h, "subject-1199").is_some());
+}
+
+#[test]
+fn page_and_half_page_keys_step_by_viewport_height_in_browse_and_search_modes() {
+    let commits: Vec<Commit> = (0..60)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parent = format!("{:07x}", index + 1);
+            let mut c = commit(&hash, &[&parent], &format!("entry-{index:02}"));
+            if index == 0 {
+                c.current = true;
+                c.branches = vec!["main".to_owned()];
+            }
+            c
+        })
+        .collect();
+
+    // Height = 11 -> Browse header = 1 row -> viewport_rows = 10 -> full page = 9, half page = 5.
+    let mut h = mount_picker(
+        PickerFixture {
+            commits: Rc::new(commits),
+            worktree_files: None,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
+        },
+        90,
+        11,
+    );
+
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+
+    // PageDown (+9) -> entry-09
+    h.press(key!(pagedown)).force_draw().force_draw();
+    assert!(
+        selected_row_containing(&mut h, "entry-09").is_some(),
+        "screen:
+{}",
+        h.screen().join(
+            "
+"
+        )
+    );
+
+    // Ctrl-d (+5) -> entry-14
+    h.press(key!(ctrl - d)).force_draw().force_draw();
+    assert!(
+        selected_row_containing(&mut h, "entry-14").is_some(),
+        "screen:
+{}",
+        h.screen().join(
+            "
+"
+        )
+    );
+
+    // Ctrl-u (-5) -> entry-09
+    h.press(key!(ctrl - u)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-09").is_some());
+
+    // PageUp (-9) -> entry-00
+    h.press(key!(pageup)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+
+    // In `/` search mode: header = 2 rows -> viewport_rows = 9 -> full page = 8, half page = 4,
+    // and Ctrl-d / Ctrl-u / PageDown / PageUp navigate without inserting into the search query!
+    h.press(key!('/')).force_draw();
+    press_text(&mut h, "entry-");
+    h.force_draw();
+    assert_eq!(h.screen_line(1), " > entry-");
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+
+    h.press(key!(pagedown)).force_draw().force_draw();
+    assert_eq!(h.screen_line(1), " > entry-");
+    assert!(selected_row_containing(&mut h, "entry-08").is_some());
+
+    h.press(key!(ctrl - d)).force_draw().force_draw();
+    assert_eq!(h.screen_line(1), " > entry-");
+    assert!(selected_row_containing(&mut h, "entry-12").is_some());
+
+    h.press(key!(ctrl - u)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-08").is_some());
+
+    h.press(key!(pageup)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+}

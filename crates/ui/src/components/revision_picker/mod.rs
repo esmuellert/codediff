@@ -16,14 +16,14 @@ use file_types::Rev;
 use loom::{
     Basis, Bubble, Column, ColumnProps, Divider, DividerProps, Layout, Listeners, Node as LoomNode,
     Scope, Scroll, ScrollHandle, ScrollOffset, ScrollProps, Text, TextProps, component, rsx,
-    use_context, use_exit, use_layout_effect, use_measure, use_memo, use_ref, use_scroll,
-    use_state,
+    use_context, use_effect, use_exit, use_layout_effect, use_measure, use_memo, use_ref,
+    use_scroll, use_state,
 };
 
 use self::build::{DisplayRow, RevisionList, build_list};
 use self::commit_graph::build::{SymbolSet, graph};
 use self::commit_graph::entry::{Entry, EntryProps};
-use self::commits::use_commits;
+use self::commits::{BATCH_SIZE, PREFETCH_MARGIN, use_commits};
 use self::header::header;
 use self::worktree::{WorktreeRow, WorktreeRowProps, worktree_indent};
 use self::worktree_summary::use_worktree_summary;
@@ -185,7 +185,8 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         SymbolSet::BoxDrawing
     };
 
-    let commits = use_commits(scope, &ctx.repo, ctx.vcs.as_ref(), ctx.watcher.as_ref());
+    let (commits, load_more) =
+        use_commits(scope, &ctx.repo, ctx.vcs.as_ref(), ctx.watcher.as_ref());
     let commits = &commits;
     let show_worktree = ctx.picking != Some(RevisionSide::Left);
     let loaded_summary = use_worktree_summary(
@@ -256,9 +257,24 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
         }
     });
     let (view, scroll) = use_scroll(scope, || ScrollOffset::ZERO);
+    let header_rows: u16 = if picker.searching { 2 } else { 1 };
+    let viewport_rows = size.height.saturating_sub(header_rows);
     let top_line = view.clamped_offset().y;
     let visible_start = top_line.min(row_count.saturating_sub(1));
     let visible_count = u32::from(size.height).saturating_add(4);
+
+    let selected_row = list.row_for_candidate(active_selected).unwrap_or(0);
+    let viewport_bottom = (top_line + u32::from(viewport_rows)) as usize;
+    let reach = selected_row.max(viewport_bottom);
+    let should_prefetch = !filtering
+        && load_more.is_some()
+        && commits.len() >= BATCH_SIZE
+        && reach >= commits.len().saturating_sub(PREFETCH_MARGIN);
+    use_effect(scope, (should_prefetch, commits.len()), move || {
+        if let (true, Some(load_more)) = (should_prefetch, load_more) {
+            load_more();
+        }
+    });
 
     let has_commits = !commits.is_empty();
     let anchor_shifted = picker.browse_anchor.is_some()
@@ -408,6 +424,11 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                     bubble = Bubble::Stop;
                     return;
                 }
+                if let Some(delta) = page_step(pressed, viewport_rows) {
+                    state.move_by(delta, init_ref, &current_list, scroll);
+                    bubble = Bubble::Stop;
+                    return;
+                }
                 if pressed == key!(backspace) {
                     let mut next = state.query.clone();
                     if next.pop().is_some() {
@@ -458,6 +479,12 @@ pub fn RevisionPicker(scope: &mut Scope) -> LoomNode {
                 }
                 k if keybindings.matches(Action::MoveUp, k) => {
                     state.move_by(-1, init_ref, &current_list, scroll);
+                    bubble = Bubble::Stop;
+                }
+                k if page_step(k, viewport_rows).is_some() => {
+                    if let Some(delta) = page_step(k, viewport_rows) {
+                        state.move_by(delta, init_ref, &current_list, scroll);
+                    }
                     bubble = Bubble::Stop;
                 }
                 k if keybindings.matches(Action::Start, k) => {
@@ -631,5 +658,21 @@ fn plain_character(pressed: KeyCombination) -> Option<char> {
     match pressed.codes {
         OneToThree::One(KeyCode::Char(character)) => Some(character),
         _ => None,
+    }
+}
+
+fn page_step(pressed: KeyCombination, viewport_rows: u16) -> Option<isize> {
+    let full = usize::from(viewport_rows.saturating_sub(1).max(1)) as isize;
+    let half = usize::from((viewport_rows / 2).max(1)) as isize;
+    if pressed == key!(pagedown) {
+        Some(full)
+    } else if pressed == key!(pageup) {
+        Some(-full)
+    } else if pressed == key!(ctrl - d) {
+        Some(half)
+    } else if pressed == key!(ctrl - u) {
+        Some(-half)
+    } else {
+        None
     }
 }

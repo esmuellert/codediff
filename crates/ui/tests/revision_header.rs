@@ -250,3 +250,54 @@ fn narrow_width_hides_repo_and_branch_cleanly_without_clipping_endpoints() {
     assert!(line.contains(" \u{e5fe} Working tree ▾"), "{line:?}");
     assert!(!line.contains("codediff"), "{line:?}");
 }
+
+#[test]
+fn resolves_old_tag_and_branch_beyond_first_five_hundred_commits() {
+    let mut commits: Vec<Commit> = (0..650)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parents = if index + 1 < 650 {
+                vec![CommitHash::new(format!("{:07x}", index + 1))]
+            } else {
+                Vec::new()
+            };
+            Commit {
+                hash: CommitHash::new(hash),
+                parents,
+                current: index == 0,
+                branches: if index == 0 {
+                    vec!["main".to_owned()]
+                } else if index == 580 {
+                    vec!["release/legacy".to_owned()]
+                } else {
+                    Vec::new()
+                },
+                remotes: Vec::new(),
+                tags: if index == 620 {
+                    vec!["v0.1.0".to_owned()]
+                } else {
+                    Vec::new()
+                },
+                subject: format!("commit-{index:04}"),
+                author: "Alex".to_owned(),
+                date: "2026-09-01".to_owned(),
+            }
+        })
+        .collect();
+    assert_eq!(commits.len(), 650);
+    // Ensure old commits sit well past index 500.
+    assert_eq!(commits[580].branches, vec!["release/legacy"]);
+    assert_eq!(commits[620].tags, vec!["v0.1.0"]);
+    commits.shrink_to_fit();
+
+    let (mut harness, _vcs, _redraws) = mount_with_commits(
+        RevisionRange::Between("v0.1.0".to_owned(), "release/legacy".to_owned()),
+        None,
+        commits,
+        120,
+    );
+    let line = harness.screen_line(0);
+    assert!(line.contains(" \u{f412} v0.1.0 ▾ "), "{line:?}");
+    assert!(line.contains(" \u{f418} release/legacy ▾ "), "{line:?}");
+    assert!(line.contains("codediff  \u{f418} main"), "{line:?}");
+}

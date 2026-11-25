@@ -13,7 +13,7 @@ use vcs::{Commit, CommitOrder, Repository, RevisionRange};
 use super::{Resource, Writer};
 use crate::components::revisions::find_commit;
 
-const WARM_COMMIT_LIMIT: usize = 500;
+const WARM_COMMIT_LIMIT: usize = 501;
 
 struct CachedFirstPage {
     requested_repo: PathBuf,
@@ -32,6 +32,7 @@ enum Request {
     },
     ListCommits {
         repo: PathBuf,
+        skip: usize,
         limit: usize,
         out: Writer<Vec<Commit>>,
     },
@@ -74,17 +75,25 @@ impl VcsService {
                 });
                 true
             }
-            Request::ListCommits { repo, limit, out } => {
+            Request::ListCommits {
+                repo,
+                skip,
+                limit,
+                out,
+            } => {
                 out.fill(|| {
-                    let (root, commits) = list_commits(&mut cached, &repo, limit)
+                    let (root, commits) = list_commits(&mut cached, &repo, skip, limit)
                         .map_err(|why| format!("{why:#}"))?;
-                    store_first_page(&worker_cache, &repo, &root, limit, &commits);
+                    if skip == 0 {
+                        store_first_page(&worker_cache, &repo, &root, limit, &commits);
+                    }
                     Ok(commits)
                 });
                 true
             }
             Request::WarmCommits { repo } => {
-                if let Ok((root, commits)) = list_commits(&mut cached, &repo, WARM_COMMIT_LIMIT) {
+                if let Ok((root, commits)) = list_commits(&mut cached, &repo, 0, WARM_COMMIT_LIMIT)
+                {
                     store_first_page(&worker_cache, &repo, &root, WARM_COMMIT_LIMIT, &commits);
                 }
                 false
@@ -119,19 +128,26 @@ impl VcsService {
                 out.fill(|| list_files(&repo, &revision_range));
                 true
             }
-            Request::ListCommits { repo, limit, out } => {
+            Request::ListCommits {
+                repo,
+                skip,
+                limit,
+                out,
+            } => {
                 out.fill(|| {
-                    let result = list_commits(&repo, limit);
-                    if let Ok(commits) = &result {
-                        store_first_page(&worker_cache, &repo, &repo, limit, commits);
+                    let all = list_commits(&repo, skip.saturating_add(limit))?;
+                    let page: Vec<Commit> = all.into_iter().skip(skip).take(limit).collect();
+                    if skip == 0 {
+                        store_first_page(&worker_cache, &repo, &repo, limit, &page);
                     }
-                    result
+                    Ok(page)
                 });
                 true
             }
             Request::WarmCommits { repo } => {
-                if let Ok(commits) = list_commits(&repo, WARM_COMMIT_LIMIT) {
-                    store_first_page(&worker_cache, &repo, &repo, WARM_COMMIT_LIMIT, &commits);
+                if let Ok(all) = list_commits(&repo, WARM_COMMIT_LIMIT) {
+                    let page: Vec<Commit> = all.into_iter().take(WARM_COMMIT_LIMIT).collect();
+                    store_first_page(&worker_cache, &repo, &repo, WARM_COMMIT_LIMIT, &page);
                 }
                 false
             }
@@ -180,9 +196,11 @@ impl VcsService {
         resource
     }
 
-    /// Starts listing up to `limit` commits under `repo`, returning synchronously on a first-page cache hit.
-    pub fn list_commits(&self, repo: &Path, limit: usize) -> Resource<Vec<Commit>> {
-        if let Some(cached) = read_first_page(&self.first_page_cache, repo, limit) {
+    /// Starts listing up to `limit` commits under `repo`, skipping the first `skip`.
+    pub fn list_commits(&self, repo: &Path, skip: usize, limit: usize) -> Resource<Vec<Commit>> {
+        if skip == 0
+            && let Some(cached) = read_first_page(&self.first_page_cache, repo, limit)
+        {
             return Resource::ready(Ok(cached));
         }
         let (resource, out) = Resource::pending();
@@ -190,6 +208,7 @@ impl VcsService {
         self.requests
             .send(Request::ListCommits {
                 repo: repo.to_path_buf(),
+                skip,
                 limit,
                 out,
             })
@@ -361,12 +380,13 @@ fn list_files(
 fn list_commits(
     cached: &mut Option<(PathBuf, Repository)>,
     repo: &Path,
+    skip: usize,
     limit: usize,
 ) -> anyhow::Result<(PathBuf, Vec<Commit>)> {
     let repository = repository(cached, repo)?;
     let root = repository.repo_path().root.clone();
     let commits = repository
-        .list_commits(CommitOrder::Topological, limit)
+        .list_commits(CommitOrder::Topological, skip, limit)
         .context("listing commits")?;
     Ok((root, commits))
 }
