@@ -72,11 +72,15 @@ fn fake_worktree_files(count: usize) -> Vec<File> {
         .collect()
 }
 
+mod support {
+    pub mod fake_services;
+}
+
 #[component]
 fn PickerHost(
     scope: &mut Scope,
-    commits: Rc<Vec<Commit>>,
-    worktree_files: Option<usize>,
+    vcs: Rc<VcsService>,
+    watcher: Rc<ui::services::WatcherService>,
     initial_range: RevisionRange,
     initial_picking: Option<RevisionSide>,
     theme: Theme,
@@ -97,11 +101,6 @@ fn PickerHost(
     let base = use_memo(scope, (), Context::default);
     let theme_val = *theme;
     let theme_rc = use_memo(scope, theme_val.name, move || theme_val);
-    let files_count = *worktree_files;
-    let vcs = use_memo(scope, files_count, move || {
-        let files = files_count.map(fake_worktree_files).unwrap_or_default();
-        VcsService::fake(|| {}, move |_, _| Ok(files.clone()), |_, _| Ok(Vec::new()))
-    });
     let mut ctx = (*base).clone();
     ctx.theme = theme_rc;
     ctx.branch_drawing = *branch_drawing;
@@ -109,8 +108,8 @@ fn PickerHost(
     ctx.set_revision_range = Some(set_revision_range);
     ctx.picking = picking;
     ctx.set_picking = picking_log.is_some().then_some(set_picking);
-    ctx.commits = Rc::clone(commits);
-    ctx.vcs = files_count.map(|_| Rc::clone(&vcs));
+    ctx.vcs = Some(Rc::clone(vcs));
+    ctx.watcher = Some(Rc::clone(watcher));
     rsx! {
         Ui {
             value: ctx,
@@ -119,28 +118,47 @@ fn PickerHost(
     }
 }
 
-fn mount_picker(props: PickerHostProps, width: u16, height: u16) -> Harness {
-    let has_service = props.worktree_files.is_some();
-    let mut h = Harness::new::<PickerHost>(props, width, height);
-    for _ in 0..6 {
-        h.force_draw();
-    }
-    if has_service {
-        for _ in 0..50 {
-            if h.screen()
-                .iter()
-                .any(|l| l.contains("changed ·") || l.contains("clean"))
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            h.redraw_all();
-            h.force_draw();
-        }
-        for _ in 0..4 {
-            h.force_draw();
-        }
-    }
+struct PickerFixture {
+    commits: Rc<Vec<Commit>>,
+    worktree_files: Option<usize>,
+    initial_range: RevisionRange,
+    initial_picking: Option<RevisionSide>,
+    theme: Theme,
+    branch_drawing: bool,
+    range_log: Option<Rc<RefCell<RevisionRange>>>,
+    picking_log: Option<Rc<RefCell<Option<RevisionSide>>>>,
+}
+
+fn mount_picker(props: PickerFixture, width: u16, height: u16) -> Harness {
+    let commits_vec = (*props.commits).clone();
+    let files = props
+        .worktree_files
+        .map(fake_worktree_files)
+        .unwrap_or_default();
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        move |_, _| Ok(files.clone()),
+        move |_, limit| Ok(commits_vec.iter().take(limit).cloned().collect()),
+    ));
+    let watcher = Rc::new(ui::services::WatcherService::fake());
+    let mut h = Harness::new::<PickerHost>(
+        PickerHostProps {
+            vcs: Rc::clone(&vcs),
+            watcher,
+            initial_range: props.initial_range,
+            initial_picking: props.initial_picking,
+            theme: props.theme,
+            branch_drawing: props.branch_drawing,
+            range_log: props.range_log,
+            picking_log: props.picking_log,
+        },
+        width,
+        height,
+    );
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
     h
 }
 
@@ -158,7 +176,7 @@ fn harness(
         None => (None, Some(RevisionSide::Left)),
     };
     mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(commits),
             worktree_files,
             initial_range: RevisionRange::Worktree,
@@ -377,7 +395,7 @@ fn cjk_query_backspace_enter_on_open_and_empty_no_matches_state() {
 
     let range_log = Rc::new(RefCell::new(RevisionRange::Worktree));
     let mut h = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(commits),
             worktree_files: Some(6),
             initial_range: RevisionRange::Worktree,
@@ -456,7 +474,7 @@ fn matching_working_tree_and_commits_together_keeps_separator_between_them() {
 fn multi_key_bursts_in_a_single_frame_preserve_every_keystroke_and_navigation() {
     let range_log = Rc::new(RefCell::new(RevisionRange::Worktree));
     let mut h = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(decorated_commits()),
             worktree_files: Some(6),
             initial_range: RevisionRange::Worktree,
@@ -546,7 +564,7 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
 
     // Case 1: `commits` already populated at mount.
     let mut sync_h = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(commits.clone()),
             worktree_files: Some(6),
             initial_range: RevisionRange::Between(
@@ -581,16 +599,28 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
     assert_eq!(sync_h.screen(), sync_screen);
     assert_eq!(sync_h.style_at(0, sync_row).bg, cursor_bg);
 
-    // Case 2: `commits` starts empty on first mount, then populates asynchronously on rerender.
-    let mut async_h = mount_picker(
+    // Case 2: while `VcsService` is still in flight on frame 0, `RevisionPicker` renders only the quiet
+    // header shell (no `"No commits"` flash), then mounts `PickerList` scrolled to commit #25 once ready.
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let release_rx = std::sync::Mutex::new(release_rx);
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        |_, _| Ok(Vec::new()),
+        move |_, limit| {
+            let _ = release_rx.lock().unwrap().recv();
+            Ok(commits.iter().take(limit).cloned().collect())
+        },
+    ));
+    let watcher = Rc::new(ui::services::WatcherService::fake());
+    let mut async_h = Harness::new::<PickerHost>(
         PickerHostProps {
-            commits: Rc::new(Vec::new()),
-            worktree_files: Some(6),
-            initial_range: RevisionRange::Between(
-                "HEAD".to_owned(),
-                target_hash.as_str().to_owned(),
-            ),
-            initial_picking: Some(RevisionSide::Right),
+            vcs: Rc::clone(&vcs),
+            watcher,
+            initial_range: RevisionRange::Against(target_hash.as_str().to_owned()),
+            initial_picking: Some(RevisionSide::Left),
             theme: Theme::DARK,
             branch_drawing: true,
             range_log: None,
@@ -599,22 +629,11 @@ fn initial_commit_scrolls_into_view_both_on_mount_and_after_async_load_and_resto
         100,
         10,
     );
-    assert!(async_h.screen_line(1).starts_with(" Working tree"));
-    assert_eq!(async_h.style_at(0, 1).bg, cursor_bg);
+    async_h.force_draw().force_draw();
+    assert!(async_h.screen_line(0).starts_with("git log"));
 
-    async_h.set_props::<PickerHost>(PickerHostProps {
-        commits: Rc::new(commits),
-        worktree_files: None,
-        initial_range: RevisionRange::Against(target_hash.as_str().to_owned()),
-        initial_picking: Some(RevisionSide::Left),
-        theme: Theme::DARK,
-        branch_drawing: true,
-        range_log: None,
-        picking_log: None,
-    });
-    for _ in 0..4 {
-        async_h.force_draw();
-    }
+    let _ = release_tx.send(());
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut async_h);
 
     let async_row = selected_row_containing(&mut async_h, "subject-25")
         .expect("expected async-loaded commit #25 selected and scrolled into view");
@@ -642,7 +661,7 @@ fn two_step_esc_exits_search_before_closing_picking_and_q_closes_without_exiting
     let picking_log = Rc::new(RefCell::new(Some(RevisionSide::Right)));
 
     let mut h = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(decorated_commits()),
             worktree_files: Some(6),
             initial_range: RevisionRange::Worktree,
@@ -677,7 +696,7 @@ fn two_step_esc_exits_search_before_closing_picking_and_q_closes_without_exiting
     // Pressing `q` in browse mode with `picking: Some(...)` also clears `picking` instead of `exit()`.
     let picking_log_q = Rc::new(RefCell::new(Some(RevisionSide::Left)));
     let mut h_q = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(decorated_commits()),
             worktree_files: None,
             initial_range: RevisionRange::Worktree,
@@ -810,7 +829,7 @@ fn ref_colours_and_lane_colours_never_emit_rgb_in_basic_themes() {
     for theme in Theme::ALL {
         for branch_drawing in [false, true] {
             let mut h = mount_picker(
-                PickerHostProps {
+                PickerFixture {
                     commits: Rc::new(graph_fixture_commits()),
                     worktree_files: Some(6),
                     initial_range: RevisionRange::Worktree,
@@ -899,39 +918,95 @@ fn start_and_end_keys_jump_across_eighty_virtualized_commits() {
 
 #[test]
 fn reloading_commits_preserves_selected_commit_by_hash_and_settles() {
-    let initial = vec![
+    let shared_commits = std::sync::Arc::new(std::sync::Mutex::new(vec![
         commit("1111111", &["2222222"], "first"),
         commit("2222222", &[], "target"),
-    ];
-    let mut h = harness(initial, Some("changed · 6 files"), true, 80, 8);
+    ]));
+    let shared_for_vcs = std::sync::Arc::clone(&shared_commits);
+    let files = fake_worktree_files(6);
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        move |_, _| Ok(files.clone()),
+        move |_, limit| {
+            Ok(shared_for_vcs
+                .lock()
+                .unwrap()
+                .iter()
+                .take(limit)
+                .cloned()
+                .collect())
+        },
+    ));
+    let watcher = Rc::new(ui::services::WatcherService::fake());
+    let mut h = Harness::new::<PickerHost>(
+        PickerHostProps {
+            vcs: Rc::clone(&vcs),
+            watcher: Rc::clone(&watcher),
+            initial_range: RevisionRange::Worktree,
+            initial_picking: None,
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
+        },
+        80,
+        8,
+    );
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+
     // Row 0 = header, Row 1 = Working tree, Row 2 = separator, Row 3 = first, Row 4 = target.
     h.press(key!(j)).press(key!(j)).force_draw();
     let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
     assert_eq!(h.style_at(0, 4).bg, cursor_bg);
     assert!(h.screen_line(4).contains("target"));
 
-    let reloaded = vec![
+    *shared_commits.lock().unwrap() = vec![
         commit("0000000", &["1111111"], "newest"),
         commit("1111111", &["2222222"], "first"),
         commit("2222222", &[], "target"),
     ];
-    h.set_props::<PickerHost>(PickerHostProps {
-        commits: Rc::new(reloaded),
-        worktree_files: Some(6),
-        initial_range: RevisionRange::Worktree,
-        initial_picking: None,
-        theme: Theme::DARK,
-        branch_drawing: true,
-        range_log: None,
-        picking_log: None,
+    watcher.notify(watcher::Refresh {
+        head: true,
+        ..Default::default()
     });
-    for _ in 0..5 {
-        h.force_draw();
-    }
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
 
     assert!(!h.needs_draw());
     assert_eq!(h.style_at(0, 5).bg, cursor_bg);
     assert!(h.screen_line(5).contains("target"));
+}
+
+#[test]
+fn left_side_worktree_range_resolves_head_commit_after_async_initial_batch() {
+    let mut older = commit("2222222", &[], "older commit");
+    older.tags = vec!["v0.1.0".to_owned()];
+    let mut head = commit("1111111", &["2222222"], "head commit");
+    head.current = true;
+    head.branches = vec!["main".to_owned()];
+
+    // Even if `head` is not at index 0 (e.g. another branch tip precedes it), `RevisionSide::Left`
+    // with `RevisionRange::Worktree` resolves `"HEAD"` to `head.hash` once commits arrive!
+    let tip = commit("0000000", &["1111111"], "ahead branch tip");
+    let mut h = mount_picker(
+        PickerFixture {
+            commits: Rc::new(vec![tip, head, older]),
+            worktree_files: None,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
+        },
+        90,
+        8,
+    );
+    let cursor_bg = Theme::DARK.normal.patch(Theme::DARK.cursor_line).bg;
+    assert_eq!(h.style_at(0, 2).bg, cursor_bg);
+    assert!(h.screen_line(2).contains("HEAD -> main"));
 }
 
 #[test]
@@ -965,7 +1040,7 @@ fn clicking_an_unselected_row_selects_it_and_clicking_again_opens_it() {
     let range_log = Rc::new(RefCell::new(RevisionRange::Worktree));
     let picking_log = Rc::new(RefCell::new(Some(RevisionSide::Left)));
     let mut h = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(commits),
             worktree_files: None,
             initial_range: RevisionRange::Worktree,
@@ -996,7 +1071,7 @@ fn clicking_an_unselected_row_selects_it_and_clicking_again_opens_it() {
     // Rapid two-click batch on third commit (row 3) without intermediate draw
     let range_log2 = Rc::new(RefCell::new(RevisionRange::Worktree));
     let mut h2 = mount_picker(
-        PickerHostProps {
+        PickerFixture {
             commits: Rc::new(vec![
                 commit("aaaaaaa", &["bbbbbbb"], "first commit"),
                 commit("bbbbbbb", &["ccccccc"], "second commit"),
@@ -1020,4 +1095,273 @@ fn clicking_an_unselected_row_selects_it_and_clicking_again_opens_it() {
         *range_log2.borrow(),
         RevisionRange::Against("ccccccc".to_owned())
     );
+}
+
+#[test]
+fn warmed_vcs_paints_revision_picker_on_first_frame_without_blank_flash() {
+    let commits: Vec<Commit> = (0..40)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parent = format!("{:07x}", index + 1);
+            let mut c = commit(&hash, &[&parent], &format!("subject-{index:02}"));
+            if index == 0 {
+                c.current = true;
+                c.branches = vec!["main".to_owned()];
+            }
+            c
+        })
+        .collect();
+    let target_hash = CommitHash::new("0000019"); // commit #25 (`subject-25`)
+
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        |_, _| Ok(Vec::new()),
+        move |_, limit| Ok(commits.iter().take(limit).cloned().collect()),
+    ));
+    let repo_path: Rc<Path> = Rc::from(Path::new("/repo"));
+    vcs.warm_commits(&repo_path);
+
+    let diff = Rc::new(ui::services::DiffService::fake(
+        || {},
+        |_| Err("no files".to_owned()),
+    ));
+    let syntax = Rc::new(ui::services::SyntaxService::start(|| {}));
+    let watcher = Rc::new(ui::services::WatcherService::fake());
+
+    let mut app = Harness::new::<ui::components::App>(
+        ui::components::AppProps {
+            cwd: Rc::clone(&repo_path),
+            revision_range: RevisionRange::Against(target_hash.as_str().to_owned()),
+            config: Rc::new(config::Config::default()),
+            keybindings: Rc::new(ui::KeyMap::default()),
+            vcs: Rc::clone(&vcs),
+            diff,
+            syntax,
+            watcher,
+        },
+        110,
+        16,
+    );
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut app);
+    assert!(!app.screen().join("\n").contains("git log"));
+
+    // Press `a` and draw ONCE without waiting for any background worker:
+    // Frame 0 must already show `git log` AND `subject-25` scrolled into view!
+    app.press(key!(a)).force_draw();
+    let first_frame = app.screen().join("\n");
+    assert!(
+        first_frame.contains("git log") && first_frame.contains("subject-25"),
+        "expected populated RevisionPicker scrolled to subject-25 on very first frame:\n{first_frame}"
+    );
+
+    // Move up 25 commits to `main` (`0000000`) and press `Enter`:
+    // `RevisionHeader` resolves `HEAD` synchronously from the warm first-page cache on Frame 0!
+    app.press(key!('0')).press(key!(enter)).force_draw();
+    let header_line = app.screen_line(0);
+    assert!(
+        header_line.contains(" \u{f418} main ▾ "),
+        "expected RevisionHeader to update in 1 frame from warm cache: {header_line:?}"
+    );
+}
+
+#[test]
+fn lazy_loads_five_hundred_commit_batches_at_four_hundred_waterline_without_jumping_scroll_or_selection()
+ {
+    let all_commits: Vec<Commit> = (0..1200)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parent = format!("{:07x}", index + 1);
+            let parents: Vec<&str> = if index + 1 < 1200 {
+                vec![parent.as_str()]
+            } else {
+                Vec::new()
+            };
+            let mut c = commit(&hash, &parents, &format!("subject-{index:04}"));
+            if index == 0 {
+                c.current = true;
+                c.branches = vec!["main".to_owned()];
+            }
+            c
+        })
+        .collect();
+
+    let requested_limits = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+    let limits_for_vcs = std::sync::Arc::clone(&requested_limits);
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        |_, _| Ok(Vec::new()),
+        move |_, limit| {
+            if limit != usize::MAX {
+                limits_for_vcs.lock().unwrap().push(limit);
+            }
+            Ok(all_commits.iter().take(limit).cloned().collect())
+        },
+    ));
+    let watcher = Rc::new(ui::services::WatcherService::fake());
+    let mut h = Harness::new::<PickerHost>(
+        PickerHostProps {
+            vcs: Rc::clone(&vcs),
+            watcher,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
+        },
+        100,
+        21, // header = 1 row -> viewport_rows = 20 (PageDown steps by 19 rows)
+    );
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+
+    // Initial mount fetched exactly batch 1 (`skip=0, limit=501`).
+    assert_eq!(*requested_limits.lock().unwrap(), vec![501]);
+    assert!(selected_row_containing(&mut h, "subject-0000").is_some());
+
+    // Step down 20 times with PageDown (20 * 19 = 380 -> selected = 380, viewport_bottom = 384 < 400):
+    // still below the 400 waterline, so NO second batch has been requested yet!
+    for _ in 0..20 {
+        h.press(key!(pagedown)).force_draw();
+    }
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(
+        *requested_limits.lock().unwrap(),
+        vec![501],
+        "must not prefetch before reaching row 400"
+    );
+    assert!(selected_row_containing(&mut h, "subject-0380").is_some());
+
+    // One more PageDown brings selected = 399 and after layout clamping viewport_bottom = 403 >= 400!
+    // Two draws settle `keep_y_visible` -> `view.clamped_offset()` -> `use_effect` waterline trigger,
+    // while preserving the exact selected commit (`subject-0399`) and viewport lines without any jump!
+    h.press(key!(pagedown)).force_draw().force_draw();
+    let screen_before_append = h.screen();
+    let row_before_append = selected_row_containing(&mut h, "subject-0399")
+        .expect("subject-0399 selected at waterline");
+
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(*requested_limits.lock().unwrap(), vec![501, 1001]);
+    assert_eq!(
+        selected_row_containing(&mut h, "subject-0399"),
+        Some(row_before_append),
+        "appending batch 2 must keep selection on subject-0399 at the exact same screen row"
+    );
+    assert_eq!(
+        h.screen(),
+        screen_before_append,
+        "appending batch 2 must not jump scroll offset"
+    );
+
+    // Continue paging down past row 900 (27 * 19 = 513 -> 399 + 513 = 912 >= 900):
+    // triggers batch 3 (`skip=1000, limit=501` -> fake closure receives `1501`), returning the remaining 200 commits (`1000..1200`) and setting `has_more = false`.
+    for _ in 0..27 {
+        h.press(key!(pagedown)).force_draw();
+    }
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(*requested_limits.lock().unwrap(), vec![501, 1001, 1501]);
+    assert!(selected_row_containing(&mut h, "subject-0912").is_some());
+
+    // Jump to the very end (`$`) -> reaches commit #1199 (`subject-1199`) and triggers NO further batch requests!
+    h.press(key!('$')).force_draw().force_draw();
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut h);
+    assert_eq!(
+        *requested_limits.lock().unwrap(),
+        vec![501, 1001, 1501],
+        "must stop requesting once returned batch <= 500"
+    );
+    assert!(selected_row_containing(&mut h, "subject-1199").is_some());
+}
+
+#[test]
+fn page_and_half_page_keys_step_by_viewport_height_in_browse_and_search_modes() {
+    let commits: Vec<Commit> = (0..60)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parent = format!("{:07x}", index + 1);
+            let mut c = commit(&hash, &[&parent], &format!("entry-{index:02}"));
+            if index == 0 {
+                c.current = true;
+                c.branches = vec!["main".to_owned()];
+            }
+            c
+        })
+        .collect();
+
+    // Height = 11 -> Browse header = 1 row -> viewport_rows = 10 -> full page = 9, half page = 5.
+    let mut h = mount_picker(
+        PickerFixture {
+            commits: Rc::new(commits),
+            worktree_files: None,
+            initial_range: RevisionRange::Worktree,
+            initial_picking: Some(RevisionSide::Left),
+            theme: Theme::DARK,
+            branch_drawing: true,
+            range_log: None,
+            picking_log: None,
+        },
+        90,
+        11,
+    );
+
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+
+    // PageDown (+9) -> entry-09
+    h.press(key!(pagedown)).force_draw().force_draw();
+    assert!(
+        selected_row_containing(&mut h, "entry-09").is_some(),
+        "screen:
+{}",
+        h.screen().join(
+            "
+"
+        )
+    );
+
+    // Ctrl-d (+5) -> entry-14
+    h.press(key!(ctrl - d)).force_draw().force_draw();
+    assert!(
+        selected_row_containing(&mut h, "entry-14").is_some(),
+        "screen:
+{}",
+        h.screen().join(
+            "
+"
+        )
+    );
+
+    // Ctrl-u (-5) -> entry-09
+    h.press(key!(ctrl - u)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-09").is_some());
+
+    // PageUp (-9) -> entry-00
+    h.press(key!(pageup)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+
+    // In `/` search mode: header = 2 rows -> viewport_rows = 9 -> full page = 8, half page = 4,
+    // and Ctrl-d / Ctrl-u / PageDown / PageUp navigate without inserting into the search query!
+    h.press(key!('/')).force_draw();
+    press_text(&mut h, "entry-");
+    h.force_draw();
+    assert_eq!(h.screen_line(1), " > entry-");
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
+
+    h.press(key!(pagedown)).force_draw().force_draw();
+    assert_eq!(h.screen_line(1), " > entry-");
+    assert!(selected_row_containing(&mut h, "entry-08").is_some());
+
+    h.press(key!(ctrl - d)).force_draw().force_draw();
+    assert_eq!(h.screen_line(1), " > entry-");
+    assert!(selected_row_containing(&mut h, "entry-12").is_some());
+
+    h.press(key!(ctrl - u)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-08").is_some());
+
+    h.press(key!(pageup)).force_draw().force_draw();
+    assert!(selected_row_containing(&mut h, "entry-00").is_some());
 }

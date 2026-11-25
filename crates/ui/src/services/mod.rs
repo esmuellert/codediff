@@ -22,6 +22,10 @@ impl<T> Clone for Resource<T> {
 }
 
 impl<T> Resource<T> {
+    pub(super) fn ready(value: Result<T, String>) -> Self {
+        Self(Arc::new(Mutex::new(Some(value))))
+    }
+
     pub(super) fn pending() -> (Self, Writer<T>) {
         let inner = Arc::new(Mutex::new(None));
         let writer = Writer(Arc::downgrade(&inner));

@@ -15,7 +15,7 @@ pub fn run(dir: &str, order: LogOrder, limit: usize) -> Result<()> {
     let repository = Repository::open(std::path::Path::new(dir))
         .with_context(|| format!("opening a repository at {dir}"))?;
     let commits = repository
-        .list_commits(commit_order, limit)
+        .list_commits(commit_order, 0, limit)
         .with_context(|| format!("reading commit history at {dir}"))?;
 
     if commits.is_empty() {

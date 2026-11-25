@@ -44,9 +44,22 @@ pub struct Commit {
 }
 
 impl Repository {
-    /// Lists up to `limit` commits in `order`.
-    pub fn list_commits(&self, order: CommitOrder, limit: usize) -> crate::Result<Vec<Commit>> {
-        Ok(log::list(&self.repo, order.git_order(), limit)?
+    /// Lists up to `limit` commits in `order`, skipping the first `skip`.
+    pub fn list_commits(
+        &self,
+        order: CommitOrder,
+        skip: usize,
+        limit: usize,
+    ) -> crate::Result<Vec<Commit>> {
+        Ok(log::list(&self.repo, order.git_order(), skip, limit)?
+            .into_iter()
+            .map(entry_to_commit)
+            .collect())
+    }
+
+    /// Resolves `revs` to deduplicated commits in caller order.
+    pub fn resolve_commits(&self, revs: &[String]) -> crate::Result<Vec<Commit>> {
+        Ok(log::resolve(&self.repo, revs)?
             .into_iter()
             .map(entry_to_commit)
             .collect())

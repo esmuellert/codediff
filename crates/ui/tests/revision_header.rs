@@ -60,12 +60,16 @@ fn sample_commits() -> Rc<Vec<Commit>> {
     ])
 }
 
+mod support {
+    pub mod fake_services;
+}
+
 #[component]
 fn HeaderHost(
     scope: &mut Scope,
     initial_range: RevisionRange,
     initial_picking: Option<RevisionSide>,
-    commits: Rc<Vec<Commit>>,
+    vcs: Rc<ui::services::VcsService>,
 ) -> Node {
     let init_range = initial_range.clone();
     let init_picking = *initial_picking;
@@ -78,7 +82,7 @@ fn HeaderHost(
         set_revision_range: Some(set_revision_range),
         picking,
         set_picking: Some(set_picking),
-        commits: Rc::clone(commits),
+        vcs: Some(Rc::clone(vcs)),
         ..Context::default()
     };
     rsx! {
@@ -89,22 +93,48 @@ fn HeaderHost(
     }
 }
 
+fn mount_with_commits(
+    initial_range: RevisionRange,
+    initial_picking: Option<RevisionSide>,
+    commits: Vec<Commit>,
+    width: u16,
+) -> (
+    Harness,
+    Rc<ui::services::VcsService>,
+    std::sync::mpsc::Receiver<()>,
+) {
+    let (redraw_tx, redraws) = std::sync::mpsc::channel();
+    let vcs = Rc::new(ui::services::VcsService::fake(
+        move || {
+            let _ = redraw_tx.send(());
+        },
+        |_, _| Ok(Vec::new()),
+        move |_, limit| Ok(commits.iter().take(limit).cloned().collect()),
+    ));
+    let mut harness = Harness::new::<HeaderHost>(
+        HeaderHostProps {
+            initial_range,
+            initial_picking,
+            vcs: Rc::clone(&vcs),
+        },
+        width,
+        1,
+    );
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut harness);
+    (harness, vcs, redraws)
+}
+
 fn mount(
     initial_range: RevisionRange,
     initial_picking: Option<RevisionSide>,
     width: u16,
 ) -> Harness {
-    let mut harness = Harness::new::<HeaderHost>(
-        HeaderHostProps {
-            initial_range,
-            initial_picking,
-            commits: sample_commits(),
-        },
+    let (harness, _vcs, _redraws) = mount_with_commits(
+        initial_range,
+        initial_picking,
+        (*sample_commits()).clone(),
         width,
-        1,
     );
-    harness.force_draw();
-    harness.force_draw();
     harness
 }
 
@@ -139,9 +169,10 @@ fn worktree_renders_from_to_semantic_icons_repo_branch_and_hides_swap() {
 
 #[test]
 fn between_and_merge_base_render_tag_and_commit_icons_and_swap() {
-    let mut harness = mount(
+    let (mut harness, vcs, redraws) = mount_with_commits(
         RevisionRange::Between("fb0d76c".to_owned(), "deadbee".to_owned()),
         None,
+        (*sample_commits()).clone(),
         110,
     );
     let before = harness.screen_line(0);
@@ -149,8 +180,8 @@ fn between_and_merge_base_render_tag_and_commit_icons_and_swap() {
     assert!(before.contains("  to  "), "{before:?}");
     assert!(before.contains(" \u{f417} deadbee ▾ "), "{before:?}");
     assert!(before.contains(" ⇄ "), "{before:?}");
-
     harness.click(col_of(&before, "⇄"), 0);
+    support::fake_services::wait_vcs(&vcs, &redraws, &mut harness);
     let after = harness.screen_line(0);
     assert!(
         col_of(&after, "\u{f417} deadbee") < col_of(&after, "\u{f412} v0.29.0"),
@@ -218,4 +249,55 @@ fn narrow_width_hides_repo_and_branch_cleanly_without_clipping_endpoints() {
     assert!(line.contains(" \u{f418} main ▾ "), "{line:?}");
     assert!(line.contains(" \u{e5fe} Working tree ▾"), "{line:?}");
     assert!(!line.contains("codediff"), "{line:?}");
+}
+
+#[test]
+fn resolves_old_tag_and_branch_beyond_first_five_hundred_commits() {
+    let mut commits: Vec<Commit> = (0..650)
+        .map(|index| {
+            let hash = format!("{index:07x}");
+            let parents = if index + 1 < 650 {
+                vec![CommitHash::new(format!("{:07x}", index + 1))]
+            } else {
+                Vec::new()
+            };
+            Commit {
+                hash: CommitHash::new(hash),
+                parents,
+                current: index == 0,
+                branches: if index == 0 {
+                    vec!["main".to_owned()]
+                } else if index == 580 {
+                    vec!["release/legacy".to_owned()]
+                } else {
+                    Vec::new()
+                },
+                remotes: Vec::new(),
+                tags: if index == 620 {
+                    vec!["v0.1.0".to_owned()]
+                } else {
+                    Vec::new()
+                },
+                subject: format!("commit-{index:04}"),
+                author: "Alex".to_owned(),
+                date: "2026-09-01".to_owned(),
+            }
+        })
+        .collect();
+    assert_eq!(commits.len(), 650);
+    // Ensure old commits sit well past index 500.
+    assert_eq!(commits[580].branches, vec!["release/legacy"]);
+    assert_eq!(commits[620].tags, vec!["v0.1.0"]);
+    commits.shrink_to_fit();
+
+    let (mut harness, _vcs, _redraws) = mount_with_commits(
+        RevisionRange::Between("v0.1.0".to_owned(), "release/legacy".to_owned()),
+        None,
+        commits,
+        120,
+    );
+    let line = harness.screen_line(0);
+    assert!(line.contains(" \u{f412} v0.1.0 ▾ "), "{line:?}");
+    assert!(line.contains(" \u{f418} release/legacy ▾ "), "{line:?}");
+    assert!(line.contains("codediff  \u{f418} main"), "{line:?}");
 }

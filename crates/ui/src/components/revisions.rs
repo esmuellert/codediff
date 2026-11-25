@@ -12,6 +12,29 @@ pub enum RevisionSide {
     Right,
 }
 
+/// Revision names needed to resolve `HEAD` and the active revisions of `range`.
+pub fn range_revs(range: &RevisionRange) -> Vec<String> {
+    let mut revs = vec!["HEAD".to_owned()];
+    let mut push = |rev: &str| {
+        if !revs.iter().any(|seen| seen == rev) {
+            revs.push(rev.to_owned());
+        }
+    };
+    match range {
+        RevisionRange::Worktree => {}
+        RevisionRange::Staged(rev) | RevisionRange::Against(rev) => push(rev),
+        RevisionRange::Between(from, to) => {
+            push(from);
+            push(to);
+        }
+        RevisionRange::MergeBase(base, head) => {
+            push(base);
+            push(head);
+        }
+    }
+    revs
+}
+
 /// Returns the currently checked-out commit, if present in `commits`.
 pub fn head_commit(commits: &[Commit]) -> Option<&Commit> {
     commits.iter().find(|commit| commit.current)

@@ -64,14 +64,14 @@ fn unborn_repository_returns_empty_commit_history() {
     let repo = Repo::new("unborn");
     let git = repo.open();
     assert!(
-        git.list_commits(CommitOrder::default(), 50)
+        git.list_commits(CommitOrder::default(), 0, 50)
             .expect("list_commits succeeds on unborn repo")
             .is_empty()
     );
 
     repo.write("draft.txt", "pending\n");
     assert!(
-        git.list_commits(CommitOrder::CommitDate, 50)
+        git.list_commits(CommitOrder::CommitDate, 0, 50)
             .expect("list_commits succeeds with untracked file")
             .is_empty()
     );
@@ -123,7 +123,7 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
 
     let git = repo.open();
     let commits = git
-        .list_commits(CommitOrder::Topological, 20)
+        .list_commits(CommitOrder::Topological, 0, 20)
         .expect("listing commits");
     assert_eq!(commits.len(), 4, "stash commits excluded: {commits:?}");
 
@@ -162,14 +162,18 @@ fn list_commits_returns_topological_merge_graph_and_stripped_labels() {
     assert!(root_commit.parents.is_empty());
     assert_eq!(root_commit.tags, vec!["v1.0.0"]);
 
-    // Limit caps the number of returned commits.
+    // Skip + limit slice history into contiguous pages without overlap.
     let limited = git
-        .list_commits(CommitOrder::Topological, 2)
+        .list_commits(CommitOrder::Topological, 0, 2)
         .expect("limited commits");
     assert_eq!(limited.len(), 2);
     assert_eq!(limited[0].hash, merge_hash);
+    let second_page = git
+        .list_commits(CommitOrder::Topological, 2, 2)
+        .expect("second page");
+    assert_eq!(second_page, commits[2..]);
     assert!(
-        git.list_commits(CommitOrder::Topological, 0)
+        git.list_commits(CommitOrder::Topological, 0, 0)
             .expect("zero limit")
             .is_empty()
     );
@@ -191,7 +195,7 @@ fn detached_checkout_marks_current_commit_without_inventing_branch() {
 
     let commits = repo
         .open()
-        .list_commits(CommitOrder::Topological, 10)
+        .list_commits(CommitOrder::Topological, 0, 10)
         .expect("listing commits");
     assert_eq!(commits.len(), 2);
     assert_eq!(commits[0].hash, detached_hash);
@@ -255,7 +259,7 @@ fn commit_orders_distinguish_topological_commit_date_and_author_date() {
 
     let git = repo.open();
     let subjects = |order: CommitOrder| -> Vec<String> {
-        git.list_commits(order, 20)
+        git.list_commits(order, 0, 20)
             .expect("list_commits succeeds")
             .into_iter()
             .map(|c| c.subject)
@@ -284,4 +288,65 @@ fn commit_orders_distinguish_topological_commit_date_and_author_date() {
     assert_ne!(topo, by_commit);
     assert_ne!(topo, by_author);
     assert_ne!(by_commit, by_author);
+}
+
+#[test]
+fn resolve_commits_fetches_named_and_old_revisions_beyond_log_top_with_decorations() {
+    let repo = Repo::new("resolve-commits");
+    assert!(
+        repo.open()
+            .resolve_commits(&["HEAD".to_owned(), "missing".to_owned()])
+            .expect("unborn repo resolves to empty")
+            .is_empty()
+    );
+
+    repo.write("file.txt", "0\n");
+    repo.git(&["add", "-A"]);
+    repo.git(&["commit", "-qm", "root commit"]);
+    let root_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+    repo.git(&["tag", "-a", "v0.1.0", "-m", "initial release"]);
+
+    for step in 1..=6 {
+        repo.write("file.txt", &format!("{step}\n"));
+        repo.git(&["add", "-A"]);
+        repo.git(&["commit", "-qm", &format!("step {step}")]);
+        if step == 2 {
+            repo.git(&["branch", "release/old"]);
+            repo.git(&["update-ref", "refs/remotes/origin/release/old", "HEAD"]);
+        }
+    }
+    let old_branch_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "release/old"]));
+    let head_hash = CommitHash::new(repo.git(&["rev-parse", "--short", "HEAD"]));
+
+    let git = repo.open();
+    let top_two = git
+        .list_commits(CommitOrder::Topological, 0, 2)
+        .expect("top two");
+    assert_eq!(top_two.len(), 2);
+    assert!(!top_two.iter().any(|c| c.hash == root_hash));
+
+    let resolved = git
+        .resolve_commits(&[
+            "v0.1.0".to_owned(),
+            "no-such-ref".to_owned(),
+            "release/old".to_owned(),
+            "HEAD".to_owned(),
+            head_hash.as_str().to_owned(),
+        ])
+        .expect("resolve_commits succeeds");
+
+    assert_eq!(resolved.len(), 3, "deduplicates HEAD and skips unknown ref");
+    assert_eq!(resolved[0].hash, root_hash);
+    assert!(!resolved[0].current);
+    assert_eq!(resolved[0].tags, vec!["v0.1.0"]);
+    assert_eq!(resolved[0].subject, "root commit");
+
+    assert_eq!(resolved[1].hash, old_branch_hash);
+    assert!(!resolved[1].current);
+    assert_eq!(resolved[1].branches, vec!["release/old"]);
+    assert_eq!(resolved[1].remotes, vec!["origin/release/old"]);
+
+    assert_eq!(resolved[2].hash, head_hash);
+    assert!(resolved[2].current);
+    assert_eq!(resolved[2].branches, vec!["main"]);
 }
